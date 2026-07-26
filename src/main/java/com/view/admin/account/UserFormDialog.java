@@ -1,4 +1,4 @@
-package com.view.admin;
+package com.view.admin.account;
 
 import com.components.crud.BaseFormDialog;
 import com.components.crud.CrudMode;
