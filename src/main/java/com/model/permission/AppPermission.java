@@ -12,5 +12,6 @@ import com.permission.Permission;
  */
 public enum AppPermission implements Permission {
     DASHBOARD_VIEW,
-    USER_MANAGE
+    USER_MANAGE,
+    CUSTOMER_MANAGE
 }

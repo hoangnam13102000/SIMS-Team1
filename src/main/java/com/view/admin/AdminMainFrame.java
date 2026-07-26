@@ -9,6 +9,7 @@ import com.theme.ThemeManager;
 import com.view.LoginFrame;
 import com.view.layouts.MainLayout;
 import com.view.admin.account.UserAccountPanel;
+import com.view.admin.customer.CustomerPanel;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
@@ -68,6 +69,7 @@ public class AdminMainFrame extends JFrame {
         layout = new MainLayout("Khu vực quản trị");
         layout.addPage("dashboard", "Tổng quan", FontAwesomeSolid.TACHOMETER_ALT, new DashboardPanel(), AppPermission.DASHBOARD_VIEW);
         layout.addPage("users", "Quản lý tài khoản", FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
+        layout.addPage("customers", "Quản lý khách hàng", FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
 
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);

@@ -14,9 +14,6 @@ import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
-import javax.swing.BorderFactory;
-import javax.swing.border.EmptyBorder;
-import javax.swing.border.LineBorder;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -55,44 +52,63 @@ public class UserFormDialog extends BaseFormDialog<User> {
     }
 
     @Override
+    protected int getDialogWidth() {
+        return 520;
+    }
+
+    @Override
     protected int getDialogHeight() {
-        return mode == CrudMode.ADD ? 560 : 500;
+        return mode == CrudMode.ADD ? 540 : 480;
     }
 
     @Override
     protected void buildFields(JPanel panel) {
-        usernameField = addTextField(panel, "Tên đăng nhập");
+        // Hang 1: Ho va ten + Ten dang nhap tren cung 1 hang (dang luoi 2 cot
+        // chuyen nghiep hon xep chong 1 cot mac dinh - giong bo cuc mau).
+        fullNameField = newTextField();
+        usernameField = newTextField();
         if (mode == CrudMode.EDIT) {
             usernameField.setEnabled(false); // Khong cho doi username sau khi da tao
         }
+        fieldRow(panel,
+                fieldGroup("Họ và tên", true, fullNameField),
+                fieldGroup("Tên đăng nhập", true, usernameField));
 
-        fullNameField = addTextField(panel, "Họ và tên");
-        emailField = addTextField(panel, "Email");
-        phoneField = addTextField(panel, "Số điện thoại");
-        roleCombo = addComboBox(panel, "Vai trò", ROLE_LABELS);
+        emailField = addTextField(panel, "Email", true);
+        phoneField = addTextField(panel, "Số điện thoại", false);
 
+        // Hang vai tro: khi Sua co them Trang thai di kem tren cung hang;
+        // khi Them moi Vai tro chiem tron 1 hang.
+        roleCombo = newComboBox(ROLE_LABELS);
         if (mode == CrudMode.EDIT) {
-            statusCombo = addComboBox(panel, "Trạng thái", STATUS_LABELS);
+            statusCombo = newComboBox(STATUS_LABELS);
+            fieldRow(panel,
+                    fieldGroup("Vai trò", true, roleCombo),
+                    fieldGroup("Trạng thái", true, statusCombo));
+        } else {
+            panel.add(fieldLabel("Vai trò", true));
+            roleCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(roleCombo);
+            panel.add(Box.createVerticalStrut(14));
         }
 
         if (mode == CrudMode.ADD) {
-            passwordField = addPasswordField(panel, "Mật khẩu ban đầu");
+            passwordField = new JPasswordField();
+            styleField(passwordField);
+            panel.add(fieldGroup("Mật khẩu ban đầu", true, passwordField));
+            panel.add(hintLabel("Ít nhất 6 ký tự"));
+            panel.add(Box.createVerticalStrut(14));
         }
     }
 
-    /** BaseFormDialog chỉ có addTextField/addTextArea/addComboBox - tự thêm 1 field mật khẩu theo cùng style. */
-    private JPasswordField addPasswordField(JPanel panel, String label) {
-        panel.add(fieldLabel(label));
-        JPasswordField field = new JPasswordField();
-        field.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        field.setAlignmentX(Component.LEFT_ALIGNMENT);
-        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
-        field.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(6, 10, 6, 10)));
-        panel.add(field);
-        panel.add(Box.createVerticalStrut(14));
-        return field;
+    /** Tao JComboBox da style dong bo voi text field nhung chua add vao panel - dung khi ghep hang ngang qua fieldRow(). */
+    private <E> JComboBox<E> newComboBox(E[] items) {
+        JComboBox<E> combo = new JComboBox<>(items);
+        combo.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        combo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        combo.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        combo.setBackground(AppColor.WHITE);
+        return combo;
     }
 
     @Override

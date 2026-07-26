@@ -220,7 +220,18 @@ public abstract class BaseFormDialog<T> extends JDialog {
     // ---------------------------------------------------------------
 
     protected final JLabel fieldLabel(String text) {
-        JLabel label = new JLabel(text);
+        return fieldLabel(text, false);
+    }
+
+    private static String toHex(Color c) {
+        return String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue());
+    }
+
+    /** Nhãn field - khi {@code required = true} sẽ hiện thêm dấu * đỏ (chuẩn form chuyên nghiệp: báo trường bắt buộc ngay trên nhãn). */
+    protected final JLabel fieldLabel(String text, boolean required) {
+        JLabel label = new JLabel(required
+                ? "<html>" + text + " <font color='" + toHex(AppColor.ERROR) + "'>*</font></html>"
+                : text);
         label.setFont(new Font("Segoe UI", Font.BOLD, 12));
         label.setForeground(AppColor.TEXT_MUTED);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -228,13 +239,63 @@ public abstract class BaseFormDialog<T> extends JDialog {
         return label;
     }
 
+    /** Chú thích nhỏ dưới field (vd "Ít nhất 6 ký tự") - cùng vai trò với text hỗ trợ trong hình mẫu web. */
+    protected final JLabel hintLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        label.setForeground(AppColor.TEXT_MUTED);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        label.setBorder(new EmptyBorder(4, 2, 0, 0));
+        return label;
+    }
+
     protected JTextField addTextField(JPanel panel, String label) {
-        panel.add(fieldLabel(label));
-        JTextField field = new JTextField();
-        styleField(field);
+        return addTextField(panel, label, false);
+    }
+
+    protected JTextField addTextField(JPanel panel, String label, boolean required) {
+        panel.add(fieldLabel(label, required));
+        JTextField field = newTextField();
         panel.add(field);
         panel.add(Box.createVerticalStrut(14));
         return field;
+    }
+
+    /** Tạo JTextField đã style sẵn nhưng KHÔNG add vào panel - dùng khi ghép nhiều field trên cùng 1 hàng qua {@link #fieldRow}. */
+    protected JTextField newTextField() {
+        JTextField field = new JTextField();
+        styleField(field);
+        return field;
+    }
+
+    /**
+     * Gộp nhiều "nhóm field" (nhãn + ô nhập) thành 1 hàng ngang chia đều cột -
+     * layout dạng lưới chuyên nghiệp hơn BoxLayout 1 cột mặc định (vd Họ tên
+     * và Tên đăng nhập cùng 1 hàng thay vì xếp chồng).
+     */
+    protected JPanel fieldRow(JPanel panel, JComponent... groups) {
+        JPanel row = new JPanel(new GridLayout(1, groups.length, 16, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 64));
+        for (JComponent g : groups) {
+            row.add(g);
+        }
+        panel.add(row);
+        panel.add(Box.createVerticalStrut(14));
+        return row;
+    }
+
+    /** 1 "ô" trong {@link #fieldRow}: nhãn (kèm * nếu bắt buộc) xếp trên field. */
+    protected JPanel fieldGroup(String label, boolean required, JComponent field) {
+        JPanel group = new JPanel();
+        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
+        group.setOpaque(false);
+        group.setAlignmentX(Component.LEFT_ALIGNMENT);
+        group.add(fieldLabel(label, required));
+        field.setAlignmentX(Component.LEFT_ALIGNMENT);
+        group.add(field);
+        return group;
     }
 
     protected JTextArea addTextArea(JPanel panel, String label) {
@@ -266,7 +327,7 @@ public abstract class BaseFormDialog<T> extends JDialog {
         return combo;
     }
 
-    private void styleField(JTextField field) {
+    protected void styleField(JTextField field) {
         field.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         field.setAlignmentX(Component.LEFT_ALIGNMENT);
         field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));

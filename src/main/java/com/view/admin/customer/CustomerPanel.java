@@ -1,14 +1,13 @@
-package com.view.admin.account;
+package com.view.admin.customer;
 
 import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
-import com.dao.UserDAO;
-import com.model.Role;
-import com.model.User;
-import com.service.AuthService;
+import com.dao.CustomerDAO;
+import com.model.Customer;
 import com.theme.AppColor;
+import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -21,30 +20,38 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
+/**
+ * Trang "Quản lý khách hàng" trong khu vực quản trị - chỉ hiện với tài khoản
+ * có quyền {@link com.model.permission.AppPermission#CUSTOMER_MANAGE}
+ * (xem AdminMainFrame.buildContent()).
+ * <p>
+ * Khách hàng tự đăng ký qua RegisterFrame (không tạo mới từ đây - xem
+ * {@link #getAddButtonLabel()}), Admin chỉ xem/sửa thông tin, cộng/trừ điểm
+ * thành viên, vô hiệu hóa hoặc khóa/mở khóa tài khoản khi cần.
+ */
+public class CustomerPanel extends BaseCrudPanel<Customer> {
 
-public class UserAccountPanel extends BaseCrudPanel<User> {
+    private final CustomerDAO customerDAO = new CustomerDAO();
 
-    private final UserDAO userDAO = new UserDAO();
-
-    public UserAccountPanel() {
+    public CustomerPanel() {
         super();
 
-        // Bo sung nut hanh dong Khoa/Mo khoa ben canh nut "Sua" mac dinh da
-        // duoc BaseCrudPanel gan san trong constructor cha
-        // (enableActions(supportsView/Edit/Delete)).
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
                 .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                         this::editRowPublic)
-                // Khoa/Mo khoa gop chung 1 slot - icon/mau/tooltip doi theo
-                // trang thai IsLocked cua tung dong thay vi 2 nut rieng luon
-                // hien du (1 nut luon mo/xam) gay roi mat cho cot Thao tac.
+                // Khoa/Mo khoa gop chung 1 slot, giong UserAccountPanel - icon/mau/
+                // tooltip doi theo trang thai IsLocked cua tung dong. Overload nay
+                // (icon/mau/tooltip la ham theo modelRow) BAT BUOC 6 tham so, tham
+                // so cuoi (enabledPredicate) truyen null => luon cho phep bam
+                // (khac UserAccountPanel dung canManage() de tu-chan-khoa-chinh-minh,
+                // khong can o day vi Admin khong nam trong danh sach Customer).
                 .add("lock-toggle",
                         this::lockToggleIcon,
                         this::lockToggleColor,
                         this::lockToggleTooltip,
                         this::toggleLockRow,
-                        row -> canManage(row)));
+                        null));
 
         table.setImageColumn(0, 36);
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
@@ -58,105 +65,102 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     // ---------------------------------------------------------------
 
     @Override
-    protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.USERS_COG; }
+    protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.ID_CARD; }
 
     @Override
-    protected String getPageTitle() { return "Quản lý tài khoản"; }
+    protected String getPageTitle() { return "Quản lý khách hàng"; }
 
     @Override
-    protected String getPageSubtitle() { return "Quản lý tài khoản người dùng và phân quyền trong hệ thống"; }
+    protected String getPageSubtitle() { return "Xem và quản lý thông tin, điểm thành viên của khách hàng"; }
 
+    /** Khach hang tu dang ky qua RegisterFrame - khong tao moi tu trang quan tri nay. */
     @Override
-    protected String getAddButtonLabel() { return "Thêm tài khoản"; }
+    protected String getAddButtonLabel() { return null; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"", "Tên đăng nhập", "Họ và tên", "Email", "Số điện thoại", "Vai trò", "Trạng thái", "Khóa"};
+        return new String[]{"", "Tên đăng nhập", "Họ và tên", "Email", "Số điện thoại", "Điểm thành viên", "Trạng thái", "Khóa"};
     }
 
     @Override
-    protected Object[] mapRowToColumns(User item) {
+    protected Object[] mapRowToColumns(Customer item) {
         return new Object[]{
                 item.getAvatarUrl(),
                 item.getUsername(),
                 item.getFullName(),
                 item.getEmail(),
                 item.getPhone(),
-                roleLabel(item.getRole()),
+                NumberUtil.formatThousands(item.getMemberPoint()),
                 item.getStatus(),
                 item.isLocked() ? "LOCKED" : "NORMAL"
         };
     }
 
+    /** Cột "Điểm thành viên" (chỉ số 5) đã format bằng NumberUtil - sort theo giá trị số thay vì chữ cái. */
     @Override
-    protected String getEntityLabel() { return "tài khoản"; }
+    protected int[] numericColumns() { return new int[]{5}; }
 
     @Override
-    protected String getItemDisplayName(User item) {
+    protected String getEntityLabel() { return "khách hàng"; }
+
+    @Override
+    protected String getItemDisplayName(Customer item) {
         return item.getFullName() + " (" + item.getUsername() + ")";
     }
 
     @Override
-    protected PaginationHelper.PaginationResult<User> fetchPage(int page, int pageSize) {
-        return userDAO.getPaged(page, pageSize);
+    protected PaginationHelper.PaginationResult<Customer> fetchPage(int page, int pageSize) {
+        return customerDAO.getPaged(page, pageSize);
     }
 
     @Override
-    protected PaginationHelper.PaginationResult<User> searchPage(String keyword, int page, int pageSize) {
-        return userDAO.search(keyword, page, pageSize);
+    protected PaginationHelper.PaginationResult<Customer> searchPage(String keyword, int page, int pageSize) {
+        return customerDAO.search(keyword, page, pageSize);
     }
 
     @Override
-    protected java.util.List<User> fetchAllForExport() {
-        return userDAO.getAll();
+    protected List<Customer> fetchAllForExport() {
+        return customerDAO.getAll();
     }
 
     @Override
-    protected void openForm(User item) {
-        CrudMode mode = item == null ? CrudMode.ADD : CrudMode.EDIT;
+    protected void openForm(Customer item) {
+        if (item == null) return; // khong ho tro them moi - xem getAddButtonLabel()
         Window owner = SwingUtilities.getWindowAncestor(this);
-        UserFormDialog dialog = new UserFormDialog(
-                owner instanceof Frame ? (Frame) owner : null, mode, item, userDAO);
+        CustomerFormDialog dialog = new CustomerFormDialog(
+                owner instanceof Frame ? (Frame) owner : null, CrudMode.EDIT, item, customerDAO);
         dialog.onSaved(this::handleFormSaved);
         dialog.setVisible(true);
     }
 
-    /** Không hỗ trợ xóa cứng - dùng "Vô hiệu hóa" trong form Sửa thay thế. */
+    /** Khong ho tro xoa cung - dung "Vo hieu hoa" trong form Sua thay the (giong UserAccountPanel). */
     @Override
     protected boolean supportsDelete() { return false; }
 
     @Override
-    protected boolean deleteItem(User item) { return false; }
+    protected boolean deleteItem(Customer item) { return false; }
 
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo tên đăng nhập, họ tên, email..."; }
 
-    /**
-     * Goi y autocomplete gom ho ten VA ten dang nhap cua toan bo tai khoan -
-     * khop voi 2 tieu chi chinh trong placeholder tim kiem o tren. Duoc
-     * BaseCrudPanel goi tren 1 background thread (SwingWorker) nen truy van
-     * userDAO.getAll() (blocking) o day an toan, khong lam treo UI.
-     */
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
         List<String> names = new ArrayList<>();
-        for (User u : userDAO.getAll()) {
-            if (u.getFullName() != null && !u.getFullName().isBlank()) {
-                names.add(u.getFullName());
+        for (Customer c : customerDAO.getAll()) {
+            if (c.getFullName() != null && !c.getFullName().isBlank()) {
+                names.add(c.getFullName());
             }
-            if (u.getUsername() != null && !u.getUsername().isBlank()) {
-                names.add(u.getUsername());
+            if (c.getUsername() != null && !c.getUsername().isBlank()) {
+                names.add(c.getUsername());
             }
         }
         return new ArrayList<>(new LinkedHashSet<>(names)); // loai trung, giu thu tu
     }
 
     /**
-     * Chua co noi nao trong app publish DataChangedEvent cho Users (chi co
-     * hang so ORDER/PHONE), nen co che AutoRefresher (bind san trong
-     * BaseCrudPanel) khong bao gio tu kich hoat cho panel nay. Override truc
-     * tiep goi reload() de bang luon phan anh dung du lieu ngay sau khi
-     * Them/Sua/Khoa/Mo khoa thanh cong.
+     * Chua co noi nao trong app publish DataChangedEvent cho Customers, nen
+     * override truc tiep goi reload() de bang phan anh ngay du lieu moi sau
+     * khi Sua/Khoa/Mo khoa thanh cong (giong UserAccountPanel).
      */
     @Override
     protected void onDataChanged() {
@@ -168,23 +172,12 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     // ---------------------------------------------------------------
 
     private void editRowPublic(int modelRow) {
-        User item = rowToItem(modelRow);
+        Customer item = rowToItem(modelRow);
         if (item != null) openForm(item);
     }
 
-    private int currentUserId() {
-        User current = AuthService.getInstance().getCurrentUser();
-        return current != null ? current.getUserId() : -1;
-    }
-
-    /** Không cho Admin tự khóa chính tài khoản đang đăng nhập - tránh tự khóa mình ngoài hệ thống. */
-    private boolean canManage(int modelRow) {
-        User item = rowToItem(modelRow);
-        return item != null && item.getUserId() != currentUserId();
-    }
-
     private boolean isLockedRow(int modelRow) {
-        User item = rowToItem(modelRow);
+        Customer item = rowToItem(modelRow);
         return item != null && item.isLocked();
     }
 
@@ -209,15 +202,15 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     }
 
     private void lockRow(int modelRow) {
-        User item = rowToItem(modelRow);
+        Customer item = rowToItem(modelRow);
         if (item == null) return;
 
         boolean confirmed = BaseDialog.confirm(this, "Khóa tài khoản",
-                "Khóa tài khoản \"" + getItemDisplayName(item) + "\"? Tài khoản này sẽ không thể đăng nhập cho tới khi được mở khóa lại.",
+                "Khóa tài khoản \"" + getItemDisplayName(item) + "\"? Khách hàng này sẽ không thể đăng nhập cho tới khi được mở khóa lại.",
                 "Khóa tài khoản", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.LOCK);
         if (!confirmed) return;
 
-        if (userDAO.setLocked(item.getUserId(), true)) {
+        if (customerDAO.setLocked(item.getCustomerId(), true)) {
             BaseDialog.success(this, "Thành công", "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {
@@ -226,10 +219,10 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     }
 
     private void unlockRow(int modelRow) {
-        User item = rowToItem(modelRow);
+        Customer item = rowToItem(modelRow);
         if (item == null) return;
 
-        if (userDAO.setLocked(item.getUserId(), false)) {
+        if (customerDAO.setLocked(item.getCustomerId(), false)) {
             BaseDialog.success(this, "Thành công", "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {
@@ -240,24 +233,6 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     // ---------------------------------------------------------------
     // Nhãn / màu hiển thị
     // ---------------------------------------------------------------
-
-    /**
-     * Truoc day dung mang ROLE_LABELS lap chi so theo Role.ordinal() - de vo
-     * dong bo khi enum Role them/bot gia tri (vd CUSTOMER dung ordinal 4
-     * nhung mang chi co 4 phan tu -> ArrayIndexOutOfBoundsException khi
-     * render bang). Doi sang switch tren ten enum de khong bao gio crash du
-     * enum co thay doi sau nay, va luon co gia tri fallback ro rang.
-     */
-    private static String roleLabel(Role role) {
-        switch (role) {
-            case ADMIN: return "Quản trị viên";
-            case SALES_MANAGER: return "Quản lý bán hàng";
-            case INVENTORY_MANAGER: return "Quản lý kho";
-            case SALES_STAFF: return "Nhân viên bán hàng";
-            case CUSTOMER: return "Khách hàng";
-            default: return role.name();
-        }
-    }
 
     private String statusLabel(Object value) {
         return "DISABLED".equalsIgnoreCase(String.valueOf(value)) ? "Vô hiệu hóa" : "Đang hoạt động";
