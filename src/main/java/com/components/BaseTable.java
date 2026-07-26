@@ -23,6 +23,9 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -55,6 +58,7 @@ public class BaseTable extends JPanel {
     private boolean actionsEnabled = false;
     private ActionColumn actionColumn;
     private int actionColumnIndex = -1;
+    private boolean actionClickHandlerInstalled = false;
 
     /** Cac cot khong nen cho sort (action, anh, STT...) - tu dong gom lai khi cau hinh. */
     private final Set<Integer> autoNonSortableColumns = new LinkedHashSet<>();
@@ -414,12 +418,53 @@ public class BaseTable extends JPanel {
             autoNonSortableColumns.add(actionColumnIndex);
             // them cot moi -> JTable da xoa renderer cua moi cot, khoi phuc lai ngay
             reapplyAllColumnRenderers();
-            actionColumn.installClickHandler(table, actionColumnIndex);
+            installActionClickHandlerOnce();
         } else {
             table.getColumnModel().getColumn(actionColumnIndex).setHeaderValue(actionColumn.getHeaderName());
             applyActionColumnRenderer();
         }
         return this;
+    }
+
+    /**
+     * Gan DUY NHAT 1 lan MouseListener/MouseMotionListener cho cot Thao tac,
+     * luon doc truong {@code this.actionColumn} tai thoi diem click (KHONG
+     * "dinh cung" vao 1 instance ActionColumn cu the). Truoc day
+     * ActionColumn.installClickHandler(table, idx) duoc goi lai moi lan
+     * setActionColumn() - nhung chi lan dau (luc actionsEnabled con false) la
+     * thuc su gan listener; cac lan setActionColumn() sau (vd doi bo nut khi
+     * subclass tu cau hinh lai) chi cap nhat duoc RENDERER, con MouseListener
+     * van la ban dau => bam bat ky icon nao cung chay dung 1 hanh dong cua bo
+     * nut dau tien (bug thuc te da gap). Sua bang cach gan handler 1 lan duy
+     * nhat va luon doc actionColumn hien tai moi khi co click.
+     */
+    private void installActionClickHandlerOnce() {
+        if (actionClickHandlerInstalled) return;
+        actionClickHandlerInstalled = true;
+
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (actionColumn == null || actionColumn.isEmpty()) return;
+                int viewCol = table.columnAtPoint(e.getPoint());
+                int viewRow = table.rowAtPoint(e.getPoint());
+                if (viewRow < 0 || viewCol != actionColumnIndex) return;
+
+                Rectangle cellRect = table.getCellRect(viewRow, viewCol, false);
+                int relativeX = e.getX() - cellRect.x;
+                int modelRow = table.convertRowIndexToModel(viewRow);
+                actionColumn.handleClick(modelRow, relativeX, cellRect.width);
+            }
+        });
+
+        table.addMouseMotionListener(new MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                int viewCol = table.columnAtPoint(e.getPoint());
+                boolean overActions = viewCol == actionColumnIndex && table.rowAtPoint(e.getPoint()) >= 0;
+                table.setCursor(overActions ? new Cursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
+            }
+        });
     }
 
     private void applyActionColumnRenderer() {

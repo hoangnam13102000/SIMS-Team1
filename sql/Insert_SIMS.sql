@@ -6,11 +6,15 @@ USE SIMS_DB;
 GO
 
 -- ---- 1. Roles ----
+-- Da bo sung 'CUSTOMER' (truoc day bi thieu -> khien moi lan tu dang ky
+-- qua RegisterFrame deu that bai vi Users.RoleID NOT NULL khong tim thay
+-- RoleCode = 'CUSTOMER').
 INSERT INTO Roles (RoleCode, RoleName, Description) VALUES
 ('ADMIN',             N'Quản trị viên',        N'Toàn quyền hệ thống'),
 ('SALES_MANAGER',     N'Quản lý bán hàng',     N'Giám sát hoạt động bán hàng'),
 ('INVENTORY_MANAGER', N'Quản lý kho',          N'Kiểm soát nhập - xuất - tồn kho'),
-('SALES_STAFF',       N'Nhân viên bán hàng',   N'Trực tiếp giao dịch với khách');
+('SALES_STAFF',       N'Nhân viên bán hàng',   N'Trực tiếp giao dịch với khách'),
+('CUSTOMER',          N'Khách hàng',           N'Tự đăng ký, xem sản phẩm và mua hàng ở phía client');
 GO
 
 -- ---- 2. Permissions ----
@@ -58,15 +62,31 @@ SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'SALES_MANAGER'), PermissionID
 FROM Permissions
 WHERE PermissionCode IN ('REPORT_REVENUE','REPORT_PROFIT','EXCEPTION_REPORT_HANDLE',
                           'RETURN_APPROVE','AUDIT_VIEW');
+
+-- Khach hang (tu dang ky o client): chi duoc tim/xem san pham
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'CUSTOMER'), PermissionID
+FROM Permissions
+WHERE PermissionCode IN ('PRODUCT_SEARCH');
 GO
 
 -- ---- 4. Users ----
-INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID) VALUES
-('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Nguyễn Văn Admin',  'admin@connectmart.vn',   '0900000001', (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
-('salesmgr', '$2a$10$examplehash.salesmgr.000000000000000000000000000', N'Trần Thị Bích',     'bich.sm@connectmart.vn', '0900000002', (SELECT RoleID FROM Roles WHERE RoleCode='SALES_MANAGER')),
-('invmgr',   '$2a$10$examplehash.invmgr.0000000000000000000000000000',  N'Lê Văn Kho',        'kho.im@connectmart.vn',  '0900000003', (SELECT RoleID FROM Roles WHERE RoleCode='INVENTORY_MANAGER')),
-('staff01',  '$2a$10$examplehash.staff01.000000000000000000000000000', N'Phạm Thị Ngân',     'ngan.staff@connectmart.vn', '0900000004', (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),
-('staff02',  '$2a$10$examplehash.staff02.000000000000000000000000000', N'Hoàng Văn Sơn',     'son.staff@connectmart.vn', '0900000005', (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF'));
+-- Da them cot AvatarUrl (anh dai dien, co the NULL neu chua upload).
+INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, RoleID) VALUES
+('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Nguyễn Văn Admin',  'admin@connectmart.vn',   '0900000001', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
+('salesmgr', '$2a$10$examplehash.salesmgr.000000000000000000000000000', N'Trần Thị Bích',     'bich.sm@connectmart.vn', '0900000002', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_MANAGER')),
+('invmgr',   '$2a$10$examplehash.invmgr.0000000000000000000000000000',  N'Lê Văn Kho',        'kho.im@connectmart.vn',  '0900000003', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='INVENTORY_MANAGER')),
+('staff01',  '$2a$10$examplehash.staff01.000000000000000000000000000', N'Phạm Thị Ngân',     'ngan.staff@connectmart.vn', '0900000004', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),
+('staff02',  '$2a$10$examplehash.staff02.000000000000000000000000000', N'Hoàng Văn Sơn',     'son.staff@connectmart.vn', '0900000005', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),
+-- Tai khoan khach hang (Role = CUSTOMER) - can co truoc vi Customers gio ke thua Users
+('lan.nguyen',  '$2a$10$examplehash.customer1.00000000000000000000000', N'Nguyễn Thị Lan',  'lan.nguyen@gmail.com', '0912345678', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER')),
+('hung.tran',   '$2a$10$examplehash.customer2.00000000000000000000000', N'Trần Văn Hùng',   'hung.tran@gmail.com',  '0987654321', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER')),
+('khach_le',    '$2a$10$examplehash.guest.000000000000000000000000000', N'Khách lẻ',        NULL,                    NULL,          NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER'));
+GO
+
+-- Tai khoan 'khach_le' chi la ho so dai dien cho khach vang lai (khong tu dang nhap
+-- duoc vi mat khau la placeholder) - vo hieu hoa de tranh bi dung de dang nhap that.
+UPDATE Users SET Status = 'DISABLED' WHERE Username = 'khach_le';
 GO
 
 -- ---- 5. Categories ----
@@ -115,10 +135,13 @@ INSERT INTO SupplierProducts (SupplierID, ProductID, SupplyPrice, IsPreferred) V
 GO
 
 -- ---- 9. Customers ----
-INSERT INTO Customers (FullName, Phone, Email, MemberPoint) VALUES
-(N'Nguyễn Thị Lan',  '0912345678', 'lan.nguyen@gmail.com', 120),
-(N'Trần Văn Hùng',   '0987654321', 'hung.tran@gmail.com',  35),
-(N'Khách lẻ',        NULL,         NULL,                   0);   -- dai dien cho khach vang lai khong luu thong tin
+-- Customers gio ke thua Users (CustomerID = UserID), nen chi con insert
+-- CustomerID (tro toi tai khoan da tao o buoc 4) + MemberPoint rieng cua
+-- ho so khach hang. FullName/Phone/Email lay thang tu Users, khong luu trung.
+INSERT INTO Customers (CustomerID, MemberPoint) VALUES
+((SELECT UserID FROM Users WHERE Username = 'lan.nguyen'), 120),
+((SELECT UserID FROM Users WHERE Username = 'hung.tran'),   35),
+((SELECT UserID FROM Users WHERE Username = 'khach_le'),     0);   -- dai dien cho khach vang lai khong luu thong tin
 GO
 
 -- ---- 10. Shift ----
@@ -132,7 +155,7 @@ INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod
 ('HD-20260725-001',
  (SELECT TOP 1 ShiftID FROM Shifts ORDER BY ShiftID DESC),
  (SELECT UserID FROM Users WHERE Username='staff01'),
- (SELECT CustomerID FROM Customers WHERE FullName=N'Nguyễn Thị Lan'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID = c.CustomerID WHERE u.FullName=N'Nguyễn Thị Lan'),
  'CASH', 8, 0);
 GO
 

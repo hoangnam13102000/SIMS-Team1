@@ -22,6 +22,10 @@ public final class RolePermissions {
         MAP.put(Role.SALES_MANAGER, PermissionSet.EMPTY);
         MAP.put(Role.INVENTORY_MANAGER, PermissionSet.EMPTY);
         MAP.put(Role.SALES_STAFF, PermissionSet.EMPTY);
+
+        // CUSTOMER: khach hang tu dang ky o RegisterFrame, chi dung ClientMainFrame
+        // (xem san pham, trang ca nhan) - khong co quyen nghiep vu/quan tri nao.
+        MAP.put(Role.CUSTOMER, PermissionSet.EMPTY);
     }
 
     private RolePermissions() {

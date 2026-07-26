@@ -67,6 +67,7 @@ public class AdminMainFrame extends JFrame {
 
         layout = new MainLayout("Khu vực quản trị");
         layout.addPage("dashboard", "Tổng quan", FontAwesomeSolid.TACHOMETER_ALT, new DashboardPanel(), AppPermission.DASHBOARD_VIEW);
+        layout.addPage("users", "Quản lý tài khoản", FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
 
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);

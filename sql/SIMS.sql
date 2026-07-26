@@ -3,6 +3,12 @@
    Schema hoan chinh, T-SQL (SQL Server)
    ============================================================ */
 
+IF DB_ID('SIMS_DB') IS NOT NULL
+BEGIN
+    ALTER DATABASE SIMS_DB SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE SIMS_DB;
+END
+GO
 CREATE DATABASE SIMS_DB;
 GO
 USE SIMS_DB;
@@ -41,6 +47,7 @@ CREATE TABLE Users (
     FullName        NVARCHAR(100) NOT NULL,
     Email           VARCHAR(100)  NULL,
     Phone           VARCHAR(20)   NULL,
+    AvatarUrl       NVARCHAR(500) NULL,              -- anh dai dien: URL hoac duong dan file cuc bo
     RoleID          INT NOT NULL FOREIGN KEY REFERENCES Roles(RoleID),
     IsLocked        BIT NOT NULL DEFAULT 0,          -- R5: tam khoa sau 5 lan sai
     FailedLoginCount INT NOT NULL DEFAULT 0,
@@ -72,22 +79,33 @@ CREATE TABLE Suppliers (
 );
 GO
 
+-- Customers KE THUA Users (Class-Table Inheritance): moi Customer BAT BUOC
+-- la 1 Users (Role = CUSTOMER). CustomerID dung lai chinh UserID (shared PK),
+-- KHONG con IDENTITY rieng va KHONG con luu trung FullName/Phone/Email nua -
+-- 3 truong nay lay thang tu Users. Cach nay cung loai bo luon loi cu: truoc
+-- day Customers.Phone la UNIQUE nhung NULL (khach khong nhap SDT), ma SQL
+-- Server chi cho phep DUY NHAT 1 dong NULL trong 1 cot UNIQUE => tu khach
+-- thu 2 tro di dang ky se bi loi vi pham UNIQUE. Gio Phone chi con o Users
+-- (khong UNIQUE) nen khong con van de nay.
 CREATE TABLE Customers (
-    CustomerID      INT IDENTITY(1,1) PRIMARY KEY,
-    FullName        NVARCHAR(100) NOT NULL,
-    Phone           VARCHAR(20) NULL UNIQUE,
-    Email           VARCHAR(100) NULL,
+    CustomerID      INT NOT NULL PRIMARY KEY,        -- = Users.UserID (1-1, ke thua)
     MemberPoint     INT NOT NULL DEFAULT 0,
-    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT FK_Customers_Users
+        FOREIGN KEY (CustomerID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE                              -- xoa Users thi xoa luon ho so Customers
 );
 GO
 
 CREATE TABLE Products (
+    
     ProductID       INT IDENTITY(1,1) PRIMARY KEY,
     ProductName     NVARCHAR(150) NOT NULL,
     CategoryID      INT NOT NULL FOREIGN KEY REFERENCES Categories(CategoryID),
     ImportPrice     DECIMAL(18,0) NOT NULL CHECK (ImportPrice >= 0),
     SellPrice       DECIMAL(18,0) NOT NULL,
+    ImageUrl        NVARCHAR(500) NULL,
     Stock           INT NOT NULL DEFAULT 0 CHECK (Stock >= 0),
     MinStock        INT NOT NULL DEFAULT 5 CHECK (MinStock >= 0),
     Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'

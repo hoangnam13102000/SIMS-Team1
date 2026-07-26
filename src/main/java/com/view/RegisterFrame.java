@@ -285,7 +285,7 @@ public class RegisterFrame extends JFrame {
 
             @Override
             public void mouseClicked(MouseEvent e) {
-                // ✅ Lấy trực tiếp từ RoundedPasswordField
+                
                 JPasswordField pf = confirmPasswordField.getPasswordField();
                 isShowing = !isShowing;
 
@@ -401,6 +401,8 @@ public class RegisterFrame extends JFrame {
         newUser.setFullName(username);
         newUser.setEmail(email);
         newUser.setPhone("");
+        newUser.setRole(Role.CUSTOMER);
+        
         
 
         boolean ok = userDAO.register(newUser, password);

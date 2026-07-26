@@ -72,14 +72,18 @@ public class ClientMainFrame extends JFrame {
             setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
         });
 
-        addPage("home", "Trang chủ", FontAwesomeSolid.HOME, new HomePanel());
+        HomePanel homePanel = new HomePanel();
+        addPage("home", "Trang chủ", FontAwesomeSolid.HOME, homePanel);
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
 
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // addPage("products", "San pham", FontAwesomeSolid.STORE, new ProductStorePanel());
 
         header.onNavigate(this::showPage);
-        header.onSearch(keyword -> showPage("home"));
+        header.onSearch(keyword -> {
+            showPage("home");
+            homePanel.search(keyword);
+        });
         header.onProfile(() -> showPage("profile"));
         header.onLogout(this::doLogout);
 
