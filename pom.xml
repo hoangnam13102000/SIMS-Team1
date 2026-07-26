@@ -1,0 +1,72 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>github.myproject</groupId>
+  <artifactId>sims</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+
+  <!--
+    Khung Swing dung chung, tach ra tu myShop. Gom:
+      - Dang nhap / Dang ky (+ xac thuc OTP qua Gmail)
+      - Frame Admin (Sidebar + MainLayout) voi 1 trang "Tong quan" mau
+      - Frame Client (Header + CardLayout) voi 1 trang "Trang chu" mau +
+        "Trang ca nhan" (sua thong tin / doi mat khau, tinh nang that)
+      - He thong theme Light/Dark, permission, validation, config ma hoa
+        (AES-256-GCM), CRUD framework (BaseCrudPanel/BaseFormDialog), BaseTable...
+    Cac tinh nang nghiep vu rieng cua myShop (Phone/Cart/Order/Revenue/Backup/
+    Chat/Payment...) van con nguyen trong project myShop, KHONG bi anh huong.
+  -->
+
+  <dependencies>
+    <dependency>
+        <groupId>com.formdev</groupId>
+        <artifactId>flatlaf</artifactId>
+        <version>3.7.1</version>
+    </dependency>
+
+    <dependency>
+        <groupId>com.microsoft.sqlserver</groupId>
+        <artifactId>mssql-jdbc</artifactId>
+        <version>12.6.1.jre11</version>
+    </dependency>
+
+    <!-- Core va FontAwesome 5 -->
+    <dependency>
+        <groupId>org.kordamp.ikonli</groupId>
+        <artifactId>ikonli-swing</artifactId>
+        <version>12.4.0</version>
+    </dependency>
+    <dependency>
+        <groupId>org.kordamp.ikonli</groupId>
+        <artifactId>ikonli-fontawesome5-pack</artifactId>
+        <version>12.4.0</version>
+    </dependency>
+
+    <!-- Dung boi BaseFormDialog (snapshot JSON cho audit trail) -->
+    <dependency>
+        <groupId>com.google.code.gson</groupId>
+        <artifactId>gson</artifactId>
+        <version>2.10.1</version>
+    </dependency>
+
+    <!-- Gui email OTP qua Gmail SMTP (dang ky tai khoan) -->
+    <dependency>
+        <groupId>com.sun.mail</groupId>
+        <artifactId>jakarta.mail</artifactId>
+        <version>2.0.1</version>
+    </dependency>
+
+    <!-- BCrypt hash mat khau: tu sinh salt ngau nhien + co cost factor -->
+    <dependency>
+        <groupId>org.mindrot</groupId>
+        <artifactId>jbcrypt</artifactId>
+        <version>0.4</version>
+    </dependency>
+  </dependencies>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+  </properties>
+
+</project>

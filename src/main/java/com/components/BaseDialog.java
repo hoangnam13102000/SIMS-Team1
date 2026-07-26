@@ -1,0 +1,314 @@
+package com.components;
+
+import com.theme.AppColor;
+import com.theme.AppConstant;
+import com.theme.AppFont;
+import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.awt.event.KeyEvent;
+
+public final class BaseDialog {
+
+    // Constants for modern button design
+    private static final int BUTTON_CORNER_RADIUS = AppConstant.RADIUS_LG;
+    private static final int BUTTON_PADDING_TOP = 10;
+    private static final int BUTTON_PADDING_BOTTOM = 10;
+    private static final int BUTTON_PADDING_LEFT = 24;
+    private static final int BUTTON_PADDING_RIGHT = 24;
+
+    private BaseDialog() {}
+
+    // ---------------------------------------------------------------------
+    // XAC NHAN XOA 
+    // ---------------------------------------------------------------------
+
+    /** Xac nhan xoa 1 doi tuong theo ten. Vi du: confirmDelete(this, "điện thoại", "iPhone 15"). */
+    public static boolean confirmDelete(Component parent, String itemType, String itemName) {
+        String message = "Bạn có chắc muốn xóa " + itemType + " \"" + itemName + "\"?\nHành động này không thể hoàn tác.";
+        return confirm(parent, "Xác nhận xóa", message, "Xóa", AppColor.ERROR, AppColor.ERROR_HOVER, FontAwesomeSolid.TRASH);
+    }
+
+    /** Xac nhan chung (khong danger), vi du xac nhan cap nhat trang thai don hang. */
+    public static boolean confirm(Component parent, String title, String message) {
+        return confirm(parent, title, message, "Xác nhận", AppColor.ACCENT, AppColor.ACCENT_HOVER, FontAwesomeSolid.QUESTION_CIRCLE);
+    }
+
+    public static boolean confirm(Component parent, String title, String message,
+                                   String confirmText, Color confirmColor, Color confirmHover, FontAwesomeSolid icon) {
+        boolean[] resultHolder = {false};
+        JDialog dialog = buildBaseDialog(parent, title);
+
+        JPanel body = buildBody(icon, confirmColor, title, message, null);
+        dialog.add(body, BorderLayout.CENTER);
+
+        JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
+        JButton confirmButton = createModernButton(confirmText, confirmColor, confirmHover, Color.WHITE);
+        cancelButton.addActionListener(e -> dialog.dispose());
+        confirmButton.addActionListener(e -> { resultHolder[0] = true; dialog.dispose(); });
+
+        dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(confirmButton);
+        showCentered(dialog);
+        return resultHolder[0];
+    }
+
+    // ---------------------------------------------------------------------
+    // NHAP LIEU DANG TEXT (thay cho JOptionPane.showInputDialog)
+    // ---------------------------------------------------------------------
+
+    /** Vi du: BaseDialog.inputText(this, "Thêm danh mục", "Tên danh mục:", "", "Thêm"). Tra ve null neu bam Hủy. */
+    public static String inputText(Component parent, String title, String label, String initialValue, String confirmText) {
+        String[] resultHolder = {null};
+        JDialog dialog = buildBaseDialog(parent, title);
+
+        JTextField field = new JTextField(initialValue == null ? "" : initialValue);
+        styleField(field);
+
+        JPanel body = buildBody(FontAwesomeSolid.EDIT, AppColor.ACCENT, title, label, field);
+        dialog.add(body, BorderLayout.CENTER);
+
+        JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
+        JButton confirmButton = createModernButton(confirmText, AppColor.ACCENT, AppColor.ACCENT_HOVER, Color.WHITE);
+        cancelButton.addActionListener(e -> dialog.dispose());
+        Runnable submit = () -> {
+            String value = field.getText().trim();
+            if (!value.isEmpty()) { resultHolder[0] = value; dialog.dispose(); }
+        };
+        confirmButton.addActionListener(e -> submit.run());
+        field.addActionListener(e -> submit.run());
+
+        dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(confirmButton);
+        SwingUtilities.invokeLater(field::requestFocusInWindow);
+        showCentered(dialog);
+        return resultHolder[0];
+    }
+
+    // ---------------------------------------------------------------------
+    // CHON TU DANH SACH (thay cho JOptionPane.showInputDialog voi mang lua chon)
+    // ---------------------------------------------------------------------
+
+    /** Vi du: BaseDialog.select(this, "Cập nhật trạng thái", "Trạng thái mới:", STATUSES, order.getStatus()). */
+    public static String select(Component parent, String title, String label, String[] options, String initialValue) {
+        String[] resultHolder = {null};
+        JDialog dialog = buildBaseDialog(parent, title);
+
+        JComboBox<String> combo = new JComboBox<>(options);
+        combo.setSelectedItem(initialValue);
+        combo.setFont(AppFont.FIELD);
+        combo.setBackground(AppColor.WHITE);
+        combo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true),
+                new EmptyBorder(4, 8, 4, 8)));
+
+        JPanel body = buildBody(FontAwesomeSolid.LIST_UL, AppColor.ACCENT, title, label, combo);
+        dialog.add(body, BorderLayout.CENTER);
+
+        JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
+        JButton confirmButton = createModernButton("Cập nhật", AppColor.ACCENT, AppColor.ACCENT_HOVER, Color.WHITE);
+        cancelButton.addActionListener(e -> dialog.dispose());
+        confirmButton.addActionListener(e -> {
+            resultHolder[0] = (String) combo.getSelectedItem();
+            dialog.dispose();
+        });
+
+        dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(confirmButton);
+        showCentered(dialog);
+        return resultHolder[0];
+    }
+
+ // ---------------------------------------------------------------------
+    // THONG BAO 
+    // ---------------------------------------------------------------------
+
+    public static void info(Component parent, String title, String message) {
+        AppAlert.info(parent, title, message);
+    }
+
+    public static void success(Component parent, String title, String message) {
+        AppAlert.success(parent, title, message);
+    }
+
+    public static void error(Component parent, String title, String message) {
+        AppAlert.error(parent, title, message);
+    }
+
+    // ---------------------------------------------------------------------
+    // HELPERS DUNG CHUNG
+    // ---------------------------------------------------------------------
+
+    private static JDialog buildBaseDialog(Component parent, String title) {
+        Window owner = SwingUtilities.getWindowAncestor(parent);
+        JDialog dialog = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setLayout(new BorderLayout());
+        dialog.getContentPane().setBackground(AppColor.WHITE);
+        dialog.setResizable(false);
+
+        // ESC de dong (tuong duong Huy)
+        dialog.getRootPane().registerKeyboardAction(e -> dialog.dispose(),
+                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
+        return dialog;
+    }
+
+    /** extraField: field/combo nhap lieu tuy chon, dat ngay duoi phan message. Truyen null neu chi la thong bao/xac nhan. */
+    private static JPanel buildBody(FontAwesomeSolid iconType, Color iconColor, String title, String message, JComponent extraField) {
+        JPanel body = new JPanel();
+        body.setBackground(AppColor.WHITE);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(new EmptyBorder(24, 24, 8, 24));
+
+        JPanel headerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        headerRow.setOpaque(false);
+        headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        FontIcon icon = FontIcon.of(iconType, 26);
+        icon.setIconColor(iconColor);
+        JLabel iconLabel = new JLabel(icon);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(AppFont.DIALOG_TITLE);
+        titleLabel.setForeground(AppColor.TEXT_PRIMARY);
+
+        headerRow.add(iconLabel);
+        headerRow.add(titleLabel);
+        body.add(headerRow);
+        body.add(Box.createVerticalStrut(14));
+
+        JLabel messageLabel = new JLabel("<html><div style='width:280px'>" + message.replace("\n", "<br>") + "</div></html>");
+        messageLabel.setFont(AppFont.BODY);
+        messageLabel.setForeground(AppColor.TEXT_MUTED);
+        messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(messageLabel);
+
+        if (extraField != null) {
+            body.add(Box.createVerticalStrut(12));
+            extraField.setAlignmentX(Component.LEFT_ALIGNMENT);
+            extraField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+            body.add(extraField);
+        }
+
+        return body;
+    }
+
+    private static JPanel buildFooter(JButton... buttons) {
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        footer.setBackground(AppColor.WHITE);
+        footer.setBorder(new EmptyBorder(8, 16, 16, 16));
+        for (JButton button : buttons) footer.add(button);
+        return footer;
+    }
+
+    private static void styleField(JTextField field) {
+        field.setFont(AppFont.FIELD);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true),
+                new EmptyBorder(6, 10, 6, 10)));
+    }
+
+    /**
+     * Creates a modern button with rounded corners and smooth hover effects
+     */
+    private static JButton createModernButton(String text, Color bg, Color hover, Color fg) {
+        JButton button = new JButton(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                
+                // Draw rounded background
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), BUTTON_CORNER_RADIUS, BUTTON_CORNER_RADIUS);
+                
+                // Draw text
+                g2.setColor(getForeground());
+                FontMetrics fm = g2.getFontMetrics();
+                int textX = (getWidth() - fm.stringWidth(getText())) / 2;
+                int textY = (getHeight() - fm.getHeight()) / 2 + fm.getAscent();
+                g2.drawString(getText(), textX, textY);
+                
+                g2.dispose();
+            }
+        };
+        
+        button.setFont(AppFont.BODY_BOLD);
+        button.setForeground(fg);
+        button.setBackground(bg);
+        button.setFocusPainted(false);
+        button.setBorder(new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+                                        BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT));
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setOpaque(false); // Important for custom painting
+        button.setContentAreaFilled(false); // Prevent default painting
+        
+        // Add hover effect
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                button.setBackground(hover);
+                button.repaint();
+            }
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                button.setBackground(bg);
+                button.repaint();
+            }
+        });
+        
+        return button;
+    }
+
+    /**
+     * Alternative modern button creation using JButton with rounded border
+     * (Simpler approach without custom painting)
+     */
+    private static JButton createModernButtonAlt(String text, Color bg, Color hover, Color fg) {
+        JButton button = new JButton(text);
+        button.setFont(AppFont.BODY_BOLD);
+        button.setForeground(fg);
+        button.setBackground(bg);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(bg, 1, true),
+            new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+                          BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT)
+        ));
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setOpaque(true);
+        
+        // Add hover effect
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                button.setBackground(hover);
+                button.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(hover, 1, true),
+                    new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+                                  BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT)
+                ));
+            }
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                button.setBackground(bg);
+                button.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(bg, 1, true),
+                    new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+                                  BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT)
+                ));
+            }
+        });
+        
+        return button;
+    }
+
+    private static void showCentered(JDialog dialog) {
+        dialog.pack();
+        if (dialog.getWidth() < 360) dialog.setSize(360, dialog.getHeight());
+        dialog.setLocationRelativeTo(dialog.getOwner());
+        dialog.setVisible(true);
+    }
+}
