@@ -25,16 +25,16 @@ Sau nhiều năm mở rộng chi nhánh, Connect Mart gặp khó khăn khi vẫn
 
 ## Công nghệ sử dụng
 
-| Thành phần | Công nghệ |
-|---|---|
-| Ngôn ngữ | Java 17 |
-| Giao diện | Java Swing + FlatLaf (theme Light/Dark) |
-| Icon | Ikonli (FontAwesome 5) |
-| Cơ sở dữ liệu | Microsoft SQL Server (JDBC driver `mssql-jdbc`) |
-| Build tool | Apache Maven |
-| Bảo mật mật khẩu | JBCrypt (hash + salt) |
-| Gửi email OTP | Jakarta Mail (Gmail SMTP) |
-| Serialize dữ liệu | Gson (snapshot JSON cho audit trail) |
+| Thành phần        | Công nghệ                                       |
+| ----------------- | ----------------------------------------------- |
+| Ngôn ngữ          | Java 17                                         |
+| Giao diện         | Java Swing + FlatLaf (theme Light/Dark)         |
+| Icon              | Ikonli (FontAwesome 5)                          |
+| Cơ sở dữ liệu     | Microsoft SQL Server (JDBC driver `mssql-jdbc`) |
+| Build tool        | Apache Maven                                    |
+| Bảo mật mật khẩu  | JBCrypt (hash + salt)                           |
+| Gửi email OTP     | Jakarta Mail (Gmail SMTP)                       |
+| Serialize dữ liệu | Gson (snapshot JSON cho audit trail)            |
 
 **Công cụ phát triển:**
 
@@ -51,11 +51,13 @@ Sau nhiều năm mở rộng chi nhánh, Connect Mart gặp khó khăn khi vẫn
 ## Cài đặt và chạy dự án
 
 ### Bước 1 — Clone / giải nén dự án
+
 ```bash
 git clone <repo-url>
 ```
 
 ### Bước 2 — Thiết lập cơ sở dữ liệu (SSMS 2022)
+
 Mở **SSMS 2022**, kết nối tới SQL Server instance, sau đó chạy lần lượt các script trong thư mục `sql/`:
 
 ```
@@ -66,31 +68,39 @@ sql/SIMS_seed_admin.sql    -- Tạo tài khoản admin mặc định
 ```
 
 ### Bước 3 — Import dự án vào Eclipse
+
 1. Mở Eclipse → `File > Import > Existing Maven Projects` → chọn thư mục `SIMS`
 2. Đợi Eclipse tải dependencies qua Maven (m2e)
 3. Build project để có `target/classes` — chạy `mvn compile`, hoặc dùng `Project > Build` trong Eclipse
 
 ### Bước 4 — Khai báo cấu hình gốc trong `merged.properties`
+
 Mở file `merged.properties` ở thư mục gốc dự án, cập nhật các giá trị cho đúng môi trường của bạn (thông tin kết nối SQL Server vừa tạo ở Bước 2, email OTP, các key thanh toán...).
 
 ### Bước 5 — Sinh master key (genkey)
+
 Ứng dụng đọc cấu hình từ file **đã mã hoá** `secure-config.enc`, không đọc trực tiếp `merged.properties`. Vì vậy cần sinh một master key AES-256 trước bằng class `ConfigTool` (`src/main/java/com/security/tool/ConfigTool.java`). Có 2 cách chạy, chọn 1:
 
 **Cách A — Chạy ngay trong Eclipse (không cần mở terminal)**
+
 1. Mở file `ConfigTool.java` trong Package Explorer
 2. Chuột phải → `Run As > Java Application` (Eclipse sẽ tự thêm `target/classes` vào classpath giúp bạn)
 3. Lần chạy đầu tiên chưa có tham số, Eclipse chỉ in ra hướng dẫn sử dụng — vào `Run > Run Configurations... > (tab) Arguments > Program arguments`, gõ `genkey`, rồi bấm `Run` lại
 
 **Cách B — Chạy bằng Command Prompt / Terminal**
 Mở Command Prompt (cmd/PowerShell/terminal), `cd` vào thư mục gốc dự án (nơi có `pom.xml`), rồi chạy:
+
 ```bash
 java -cp target/classes com.security.tool.ConfigTool genkey
 ```
+
 > Đây là lệnh gõ ở cửa sổ dòng lệnh của hệ điều hành (không phải gõ trong khung soạn code của Eclipse). Lệnh này chỉ chạy được sau khi project đã build (đã có thư mục `target/classes` — Eclipse tự tạo khi bạn save/build project).
 
 Cả 2 cách đều in ra một **master key dạng Base64**. Set key này vào biến môi trường `MYSHOP_CONFIG_KEY`:
+
 - Nếu dùng Cách A (chạy trong Eclipse): vào `Run Configurations... > (tab) Environment > New...` → Name: `MYSHOP_CONFIG_KEY`, Value: key vừa sinh ra
 - Nếu dùng Cách B (terminal):
+
 ```bash
 # Windows (cmd)
 set MYSHOP_CONFIG_KEY=<key vừa sinh ra>
@@ -105,32 +115,98 @@ export MYSHOP_CONFIG_KEY=<key vừa sinh ra>
 > Lưu key này ở nơi riêng tư, an toàn (password manager). Không commit key lên Git — nếu mất key sẽ không giải mã lại được config cũ.
 
 ### Bước 6 — Mã hoá `merged.properties` thành `secure-config.enc`
+
 Với biến môi trường `MYSHOP_CONFIG_KEY` đã được set (theo Cách A hoặc B ở Bước 5), đổi tham số chạy của `ConfigTool` sang lệnh `encrypt`:
 
 - **Trong Eclipse**: `Run Configurations... > Arguments`, sửa Program arguments thành `encrypt merged.properties secure-config.enc`, rồi `Run`
 - **Terminal**:
+
 ```bash
 java -cp target/classes com.security.tool.ConfigTool encrypt merged.properties secure-config.enc
 ```
 
 Sau khi mã hoá thành công:
+
 1. Copy file `secure-config.enc` vừa tạo vào `src/main/resources/` (để được đóng gói cùng jar khi build), hoặc đặt cạnh file `.jar` khi triển khai thực tế.
 2. Xoá file `merged.properties` gốc (dạng plaintext), không commit file này lên Git.
 
 Có thể kiểm tra lại nội dung đã mã hoá đúng chưa bằng lệnh:
+
 ```bash
 java -cp target/classes com.security.tool.ConfigTool decrypt secure-config.enc
 ```
 
 ### Bước 7 — Chạy ứng dụng
+
 Trong Eclipse, đảm bảo biến môi trường `MYSHOP_CONFIG_KEY` đã được set cho Run Configuration (hoặc set ở cấp hệ điều hành), sau đó chạy file `src/main/java/com/Main.java` (Run As → Java Application).
 
 ## Thành viên nhóm
 
-| Họ và tên | Vai trò |
-|---|---|
-| Hoàng Trung Nam | Trưởng nhóm |
-| Lê Hoa Trường Vũ | Thành viên |
-| Trần Tài Phương | Thành viên |
-| Hà Minh Tuấn | Thành viên |# SIMS - Hệ Thống Quản Lý Bán Hàng & Kho
+| Họ và tên        | Vai trò     |
+| ---------------- | ----------- |
+| Hoàng Trung Nam  | Trưởng nhóm |
+| Lê Hoa Trường Vũ | Thành viên  |
+| Trần Tài Phương  | Thành viên  |
+| Hà Minh Tuấn     | Thành viên  |
 
+## Kiến trúc hệ thống (mô hình 3 lớp)
+
+```
+┌───────────────────────────────────────────────────────────┐
+│                        VIEW LAYER                         │
+│   Java Swing Forms (Admin / Sales / Inventory / Staff)    │
+│   - Nhận input người dùng, hiển thị dữ liệu               │
+└───────────────────────────┬───────────────────────────────┘
+                            │ gọi
+┌───────────────────────────▼───────────────────────────────┐
+│                       SERVICE LAYER                       │
+│   Xử lý nghiệp vụ (Business Logic)                        │
+│   - Kiểm tra Business Rules, điều phối transaction        │
+│   - Xác thực & phân quyền (RBAC)                          │
+└───────────────────────────┬───────────────────────────────┘
+                            │ gọi
+┌───────────────────────────▼───────────────────────────────┐
+│                         DAO LAYER                         │
+│   Data Access Object – CRUD qua JDBC (mssql-jdbc)         │
+└───────────────────────────┬───────────────────────────────┘
+                            │
+                    ┌───────▼────────┐
+                    │  SQL Server DB │
+                    │    SIMS_DB     │
+                    └────────────────┘
+```
+
+**Nguyên tắc phân lớp:**
+
+- **View**: chỉ chứa Swing components, sự kiện UI, không truy vấn DB trực tiếp
+- **Service**: chứa toàn bộ logic nghiệp vụ, validate ràng buộc, xử lý transaction, sinh snapshot JSON (Gson)
+- **DAO**: chỉ thao tác CSDL, trả về Model/Entity
+- **Model/Entity**: POJO ánh xạ bảng dữ liệu (User, Product, Invoice, Warehouse, Supplier...)
+- **Util/Common/Security**: JBCrypt, ConfigTool, gửi mail OTP
+
+**Cấu trúc thư mục dự kiến:**
+
+```
+src/main/java/com/
+├── Main.java
+├── model/          # Entity/POJO
+├── dao/            # Data Access Object
+├── service/        # Business logic theo vai trò
+├── view/           # Swing UI (theo vai trò)
+├── security/       # JBCrypt, ConfigTool, mã hóa AES
+├── util/           # Helper, Gson serialize, gửi mail
+└── config/         # Đọc cấu hình từ secure-config.enc
+```
+
+---
+
+## Phân công module cho từng thành viên (dự tính)
+
+| Thành viên                        | Module phụ trách chính       | Chi tiết công việc                                                                                                                                                               |
+| --------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hoàng Trung Nam** (Trưởng nhóm) | Core hệ thống + Module Admin | Thiết kế CSDL & ERD, Model dùng chung, Auth/Login/RBAC, ConfigTool, quản lý người dùng – danh mục – sản phẩm – nhà cung cấp – cấu hình hệ thống; điều phối tiến độ & review code |
+| **Lê Hoa Trường Vũ**              | Module Nhân viên Bán hàng    | Tìm sản phẩm, xem trạng thái kho, tạo/hủy hóa đơn, đổi/trả hàng, gửi thông báo hết hàng, gửi báo cáo ngoại lệ                                                                    |
+| **Trần Tài Phương**               | Module Quản lý Kho           | Nhập hàng vào kho, đối chiếu kho cuối ngày, xử lý báo cáo thiếu hàng, báo cáo & biểu đồ xu hướng tồn kho                                                                         |
+| **Hà Minh Tuấn**                  | Module Quản lý Bán hàng      | Thống kê bán hàng hằng ngày, xử lý báo cáo ngoại lệ, biểu đồ xu hướng mua hàng, báo cáo lợi nhuận                                                                                |
+
+**Công việc dùng chung (cả nhóm phối hợp):** thiết kế CSDL (Nam chủ trì, cả nhóm review), chuẩn hóa giao diện chung (FlatLaf, layout, icon), viết tài liệu/báo cáo, kiểm thử tích hợp giữa các module.
