@@ -1,10 +1,14 @@
 package com.components;
 
+import com.i18n.Lang;
+import com.i18n.LanguageManager;
 import com.settings.NotificationSettings;
 import com.theme.AppColor;
 import com.theme.AppShadow;
 import com.theme.ThemeManager;
 import com.theme.ThemeMode;
+
+import java.util.Locale;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -16,20 +20,6 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
-/**
- * Nut tron (FAB) noi goc man hinh, bam vao mo popup Cai dat gom:
- *  1. Giao dien: Sang / Toi
- *  2. Thong bao: bat/tat am thanh, va (chi o Admin) an thong bao don hang moi
- * <p>
- * Dung JLayeredPane cua JFrame (KHONG dung glass pane) nen co the gan them
- * vao bat ky JFrame nao ke ca frame da dung glass pane cho muc dich khac
- * (vd ChatWidget o ClientMainFrame) ma khong xung dot.
- *
- * Cach dung:
- *   SettingsButton.attach(this);                      // Admin: day du muc, goc phai duoi
- *   SettingsButton.attach(this, 76, false);            // Client: an muc "an don hang" (khong lien quan),
- *                                                       // lui vao 76px de tranh de len bong bong chat
- */
 public class SettingsButton extends JPanel {
 
     private static final int SIZE = 52;
@@ -41,7 +31,7 @@ public class SettingsButton extends JPanel {
     private SettingsButton() {
         setOpaque(false);
         setCursor(new Cursor(Cursor.HAND_CURSOR));
-        setToolTipText("Cài đặt");
+        setToolTipText(Lang.get("settings.tooltip"));
 
         addMouseListener(new MouseAdapter() {
             @Override
@@ -114,30 +104,41 @@ public class SettingsButton extends JPanel {
             new EmptyBorder(8, 8, 8, 8)
         ));
 
-        card.add(buildSectionTitle("Giao diện"));
-        card.add(buildThemeOption("Sáng", FontAwesomeSolid.SUN, ThemeMode.LIGHT, tm, popup));
+        card.add(buildSectionTitle(Lang.get("settings.section.appearance")));
+        card.add(buildThemeOption(Lang.get("settings.theme.light"), FontAwesomeSolid.SUN, ThemeMode.LIGHT, tm, popup));
         card.add(Box.createVerticalStrut(2));
-        card.add(buildThemeOption("Tối", FontAwesomeSolid.MOON, ThemeMode.DARK, tm, popup));
+        card.add(buildThemeOption(Lang.get("settings.theme.dark"), FontAwesomeSolid.MOON, ThemeMode.DARK, tm, popup));
 
         card.add(Box.createVerticalStrut(6));
         card.add(buildDivider());
         card.add(Box.createVerticalStrut(4));
 
-        card.add(buildSectionTitle("Thông báo"));
-        card.add(buildToggleRow("Âm thanh thông báo", FontAwesomeSolid.VOLUME_UP,
+        card.add(buildSectionTitle(Lang.get("settings.section.notification")));
+        card.add(buildToggleRow(Lang.get("settings.notification.sound"), FontAwesomeSolid.VOLUME_UP,
             ns.isSoundEnabled(), ns::setSoundEnabled));
 
         if (showOrderMuteOption) {
             card.add(Box.createVerticalStrut(2));
-            card.add(buildToggleRow("Ẩn thông báo đơn hàng mới", FontAwesomeSolid.BELL_SLASH,
+            card.add(buildToggleRow(Lang.get("settings.notification.muteOrders"), FontAwesomeSolid.BELL_SLASH,
                 ns.isOrdersMuted(), ns::setOrdersMuted));
 
-            JLabel hint = new JLabel("<html><div style='width:170px'>Đơn hàng vẫn được ghi lại đầy đủ, chỉ tạm ẩn số đếm và âm báo</div></html>");
+            JLabel hint = new JLabel("<html><div style='width:170px'>" + Lang.get("settings.notification.muteOrders.hint") + "</div></html>");
             hint.setFont(new Font("Segoe UI", Font.PLAIN, 10));
             hint.setForeground(AppColor.TEXT_MUTED);
             hint.setBorder(new EmptyBorder(4, 10, 2, 8));
             card.add(hint);
         }
+
+        card.add(Box.createVerticalStrut(6));
+        card.add(buildDivider());
+        card.add(Box.createVerticalStrut(4));
+
+        // ==== Ngôn ngữ / Language ====
+        LanguageManager lm = LanguageManager.getInstance();
+        card.add(buildSectionTitle(Lang.get("settings.section.language")));
+        card.add(buildLanguageOption(Lang.get("settings.language.vi"), new Locale("vi"), lm, popup));
+        card.add(Box.createVerticalStrut(2));
+        card.add(buildLanguageOption(Lang.get("settings.language.en"), Locale.ENGLISH, lm, popup));
 
         popup.add(card);
         popup.pack();
@@ -196,6 +197,58 @@ public class SettingsButton extends JPanel {
                 popup.setVisible(false);
                 if (tm.getMode() != mode) {
                     tm.setMode(mode);
+                }
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                row.setBackground(AppColor.BG_LIGHTER);
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                row.setBackground(active ? AppColor.ACCENT_SELECTION_BG : AppColor.WHITE);
+            }
+        });
+        return row;
+    }
+
+    /** Giong het buildThemeOption(...) nhung cho lua chon ngon ngu (Locale). */
+    private JPanel buildLanguageOption(String label, Locale locale, LanguageManager lm, JPopupMenu popup) {
+        boolean active = lm.getLocale().getLanguage().equals(locale.getLanguage());
+
+        JPanel row = new JPanel(new BorderLayout(10, 0));
+        row.setOpaque(true);
+        row.setBackground(active ? AppColor.ACCENT_SELECTION_BG : AppColor.WHITE);
+        row.setBorder(new EmptyBorder(8, 10, 8, 10));
+        row.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        row.setMaximumSize(new Dimension(220, 40));
+        row.setPreferredSize(new Dimension(200, 36));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.GLOBE, 14);
+        icon.setIconColor(active ? AppColor.ACCENT : AppColor.TEXT_MUTED);
+        JLabel iconLabel = new JLabel(icon);
+
+        JLabel text = new JLabel(label);
+        text.setFont(new Font("Segoe UI", active ? Font.BOLD : Font.PLAIN, 13));
+        text.setForeground(active ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
+
+        row.add(iconLabel, BorderLayout.WEST);
+        row.add(text, BorderLayout.CENTER);
+
+        if (active) {
+            FontIcon check = FontIcon.of(FontAwesomeSolid.CHECK, 12);
+            check.setIconColor(AppColor.ACCENT);
+            row.add(new JLabel(check), BorderLayout.EAST);
+        }
+
+        row.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                popup.setVisible(false);
+                if (!lm.getLocale().getLanguage().equals(locale.getLanguage())) {
+                    lm.setLocale(locale);
                 }
             }
 

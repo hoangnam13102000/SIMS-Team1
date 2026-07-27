@@ -7,6 +7,7 @@ import com.components.common.RoundedPasswordField;
 import com.validation.FormValidator;
 import com.validation.Rules;
 import com.dao.UserDAO;
+import com.i18n.Lang;
 import com.model.Role;
 import com.model.User;
 import com.service.OtpService;
@@ -28,14 +29,9 @@ import java.awt.event.MouseEvent;
 public class RegisterFrame extends JFrame {
 
     private static final String GMAIL_REGEX = "^[\\w.+-]+@gmail\\.com$";
-
-    // ✅ Dùng RoundedField cho email (JTextField)
     private RoundedField emailField;
-    // ✅ Dùng RoundedField cho username (JTextField)
     private RoundedField usernameField;
-    // ✅ Dùng RoundedPasswordField cho password (JPasswordField)
     private RoundedPasswordField passwordField;
-    // ✅ Dùng RoundedPasswordField cho confirm password (JPasswordField)
     private RoundedPasswordField confirmPasswordField;
     private JLabel messageLabel;
     private JLabel confirmMessageLabel;
@@ -46,7 +42,7 @@ public class RegisterFrame extends JFrame {
     private final OtpService otpService = new OtpService();
 
     public RegisterFrame() {
-        setTitle("Đăng ký tài khoản - " + AppConstant.APP_NAME);
+        setTitle(Lang.get("register.title.frame", AppConstant.APP_NAME));
         setSize(1000, 620);
         setMinimumSize(new Dimension(860, 560));
         setLocationRelativeTo(null);
@@ -79,12 +75,12 @@ public class RegisterFrame extends JFrame {
         form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
 
         // Title
-        JLabel title = new JLabel("Tạo tài khoản mới");
+        JLabel title = new JLabel(Lang.get("register.title"));
         title.setFont(AppFont.TITLE);
         title.setForeground(AppColor.TEXT_TITLE);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel subtitle = new JLabel("Đăng ký tài khoản khách hàng để bắt đầu mua sắm");
+        JLabel subtitle = new JLabel(Lang.get("register.subtitle"));
         subtitle.setFont(AppFont.BODY);
         subtitle.setForeground(AppColor.TEXT_MUTED);
         subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -114,7 +110,7 @@ public class RegisterFrame extends JFrame {
             }
         });
 
-        JLabel hint = new JLabel("Mật khẩu cần có ít nhất 6 ký tự");
+        JLabel hint = new JLabel(Lang.get("register.hint.password"));
         hint.setFont(AppFont.SMALL);
         hint.setForeground(AppColor.TEXT_MUTED);
         hint.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -136,7 +132,7 @@ public class RegisterFrame extends JFrame {
             }
         });
 
-        JLabel confirmHint = new JLabel("Nhập lại mật khẩu để xác nhận");
+        JLabel confirmHint = new JLabel(Lang.get("register.hint.confirmPassword"));
         confirmHint.setFont(AppFont.SMALL);
         confirmHint.setForeground(AppColor.TEXT_MUTED);
         confirmHint.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -152,11 +148,11 @@ public class RegisterFrame extends JFrame {
         messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         messageLabel.setBorder(new EmptyBorder(12, 0, 10, 0));
 
-        registerButton = new PrimaryButton("Đăng ký");
+        registerButton = new PrimaryButton(Lang.get("register.button"));
         registerButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         registerButton.addActionListener(e -> doRegister());
 
-        JPanel loginRow = createLinkRow("Đã có tài khoản?", " Đăng nhập", () -> {
+        JPanel loginRow = createLinkRow(Lang.get("register.haveAccount"), Lang.get("register.loginNow"), () -> {
             dispose();
             new LoginFrame();
         });
@@ -165,20 +161,20 @@ public class RegisterFrame extends JFrame {
         form.add(title);
         form.add(subtitle);
 
-        form.add(createLabel("Gmail *"));
+        form.add(createLabel(Lang.get("register.label.gmail")));
         form.add(emailField);
         form.add(Box.createVerticalStrut(14));
 
-        form.add(createLabel("Tên đăng nhập *"));
+        form.add(createLabel(Lang.get("register.label.username")));
         form.add(usernameField);
         form.add(Box.createVerticalStrut(14));
 
-        form.add(createLabel("Mật khẩu *"));
+        form.add(createLabel(Lang.get("register.label.password")));
         form.add(passwordField);
         form.add(hint);
         form.add(Box.createVerticalStrut(8));
 
-        form.add(createLabel("Xác nhận mật khẩu *"));
+        form.add(createLabel(Lang.get("register.label.confirmPassword")));
         form.add(confirmPasswordField);
         form.add(confirmHint);
         form.add(confirmMessageLabel);
@@ -243,7 +239,7 @@ public class RegisterFrame extends JFrame {
 
         JLabel toggle = new JLabel(eyeOpenIcon);
         toggle.setVerticalAlignment(SwingConstants.CENTER);
-        toggle.setToolTipText("Hiện mật khẩu");
+        toggle.setToolTipText(Lang.get("register.password.show"));
         toggle.setCursor(new Cursor(Cursor.HAND_CURSOR));
         toggle.addMouseListener(new MouseAdapter() {
             private boolean isShowing = false;
@@ -257,11 +253,11 @@ public class RegisterFrame extends JFrame {
                 if (isShowing) {
                     pf.setEchoChar((char) 0);
                     toggle.setIcon(eyeClosedIcon);
-                    toggle.setToolTipText("Ẩn mật khẩu");
+                    toggle.setToolTipText(Lang.get("register.password.hide"));
                 } else {
                     pf.setEchoChar('●');
                     toggle.setIcon(eyeOpenIcon);
-                    toggle.setToolTipText("Hiện mật khẩu");
+                    toggle.setToolTipText(Lang.get("register.password.show"));
                 }
                 pf.requestFocus();
             }
@@ -278,7 +274,7 @@ public class RegisterFrame extends JFrame {
 
         JLabel toggle = new JLabel(eyeOpenIcon);
         toggle.setVerticalAlignment(SwingConstants.CENTER);
-        toggle.setToolTipText("Hiện mật khẩu");
+        toggle.setToolTipText(Lang.get("register.password.show"));
         toggle.setCursor(new Cursor(Cursor.HAND_CURSOR));
         toggle.addMouseListener(new MouseAdapter() {
             private boolean isShowing = false;
@@ -292,11 +288,11 @@ public class RegisterFrame extends JFrame {
                 if (isShowing) {
                     pf.setEchoChar((char) 0);
                     toggle.setIcon(eyeClosedIcon);
-                    toggle.setToolTipText("Ẩn mật khẩu");
+                    toggle.setToolTipText(Lang.get("register.password.hide"));
                 } else {
                     pf.setEchoChar('●');
                     toggle.setIcon(eyeOpenIcon);
-                    toggle.setToolTipText("Hiện mật khẩu");
+                    toggle.setToolTipText(Lang.get("register.password.show"));
                 }
                 pf.requestFocus();
             }
@@ -323,10 +319,10 @@ public class RegisterFrame extends JFrame {
         }
 
         if (password.equals(confirm)) {
-            confirmMessageLabel.setText("✓ Mật khẩu khớp");
+            confirmMessageLabel.setText(Lang.get("register.passwordMatch"));
             confirmMessageLabel.setForeground(AppColor.GREEN);
         } else {
-            confirmMessageLabel.setText("✗ Mật khẩu không khớp");
+            confirmMessageLabel.setText(Lang.get("register.passwordMismatch"));
             confirmMessageLabel.setForeground(AppColor.RED_ALT);
         }
     }
@@ -339,18 +335,18 @@ public class RegisterFrame extends JFrame {
 
         FormValidator validator = new FormValidator();
         validator.field(email)
-                .required("Vui lòng nhập đầy đủ thông tin.")
-                .matches(GMAIL_REGEX, "Vui lòng nhập địa chỉ Gmail hợp lệ (vd: ten@gmail.com).")
-                .rule(Rules.custom(v -> !userDAO.emailExists(v), "Gmail này đã được dùng để đăng ký tài khoản khác."));
+                .required(Lang.get("register.error.requiredFields"))
+                .matches(GMAIL_REGEX, Lang.get("register.error.invalidGmail"))
+                .rule(Rules.custom(v -> !userDAO.emailExists(v), Lang.get("register.error.emailUsed")));
         validator.field(username)
-                .required("Vui lòng nhập đầy đủ thông tin.")
-                .rule(Rules.custom(v -> !userDAO.usernameExists(v), "Tên đăng nhập đã tồn tại, vui lòng chọn tên khác."));
+                .required(Lang.get("register.error.requiredFields"))
+                .rule(Rules.custom(v -> !userDAO.usernameExists(v), Lang.get("register.error.usernameExists")));
         validator.field(password)
-                .required("Vui lòng nhập đầy đủ thông tin.")
-                .minLength(6, "Mật khẩu phải có ít nhất 6 ký tự.");
+                .required(Lang.get("register.error.requiredFields"))
+                .minLength(6, Lang.get("register.error.passwordMinLength"));
         validator.field(confirm)
-                .required("Vui lòng nhập đầy đủ thông tin.")
-                .rule(Rules.equalsTo(passwordField::getText, "Mật khẩu xác nhận không khớp."));
+                .required(Lang.get("register.error.requiredFields"))
+                .rule(Rules.equalsTo(passwordField::getText, Lang.get("register.error.confirmMismatch")));
 
         String error = validator.validate();
         if (error != null) {
@@ -359,7 +355,7 @@ public class RegisterFrame extends JFrame {
         }
 
         registerButton.setEnabled(false);
-        showMessage("Đang gửi mã OTP tới " + email + " ...", AppColor.TEXT_MUTED);
+        showMessage(Lang.get("register.sendingOtp", email), AppColor.TEXT_MUTED);
 
         new SwingWorker<Void, Void>() {
             private Exception error;
@@ -378,7 +374,7 @@ public class RegisterFrame extends JFrame {
             protected void done() {
                 registerButton.setEnabled(true);
                 if (error != null) {
-                    showMessage("Gửi OTP thất bại: " + error.getMessage(), AppColor.ERROR);
+                    showMessage(Lang.get("register.sendOtpFailed", error.getMessage()), AppColor.ERROR);
                     return;
                 }
                 showMessage(" ", AppColor.SUCCESS);
@@ -392,7 +388,7 @@ public class RegisterFrame extends JFrame {
         otpDialog.setVisible(true);
 
         if (!otpDialog.isConfirmed()) {
-            showMessage("Bạn chưa xác nhận OTP, đăng ký bị hủy.", AppColor.ERROR);
+            showMessage(Lang.get("register.otpNotConfirmed"), AppColor.ERROR);
             return;
         }
 
@@ -407,9 +403,9 @@ public class RegisterFrame extends JFrame {
 
         boolean ok = userDAO.register(newUser, password);
         if (ok) {
-            showMessage("Đăng ký thành công! Bạn có thể đăng nhập ngay.", AppColor.SUCCESS);
+            showMessage(Lang.get("register.success"), AppColor.SUCCESS);
         } else {
-            showMessage("Đăng ký thất bại, vui lòng thử lại.", AppColor.ERROR);
+            showMessage(Lang.get("register.failed"), AppColor.ERROR);
         }
     }
 

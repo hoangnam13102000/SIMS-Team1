@@ -2,6 +2,8 @@ package com.view.admin;
 
 import com.components.BaseDialog;
 import com.components.SettingsButton;
+import com.i18n.Lang;
+import com.i18n.LanguageManager;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
 import com.theme.AppColor;
@@ -28,9 +30,10 @@ public class AdminMainFrame extends JFrame {
     private MainLayout layout;
     private String currentPageKey = "dashboard";
     private final Runnable onThemeChanged = this::rebuildContent;
+    private final Runnable onLangChanged = this::rebuildContent;
 
     public AdminMainFrame() {
-        setTitle("SIMS - Quản trị");
+        setTitle(Lang.get("admin.frame.title"));
         setSize(1280, 760);
         setMinimumSize(new Dimension(1024, 680));
         setLocationRelativeTo(null);
@@ -40,17 +43,22 @@ public class AdminMainFrame extends JFrame {
 
         buildContent();
 
-        // Nut cai dat (Sang/Toi) noi goc phai duoi man hinh.
+        // Nut cai dat (Sang/Toi, Ngon ngu) noi goc phai duoi man hinh.
         SettingsButton.attach(this);
 
         // Moi khi ThemeManager doi theme (Light/Dark), xay lai toan bo noi
         // dung de tat ca component doc lai dung mau + FlatLaf UI moi nhat.
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
 
+        // Moi khi LanguageManager doi ngon ngu (Viet/Anh), xay lai toan bo
+        // noi dung de tat ca component doc lai chuoi dich moi.
+        LanguageManager.getInstance().addRebuildListener(onLangChanged);
+
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosed(WindowEvent e) {
                 ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
+                LanguageManager.getInstance().removeRebuildListener(onLangChanged);
                 AuthService.getInstance().logout();
                 new LoginFrame();
             }
@@ -61,15 +69,16 @@ public class AdminMainFrame extends JFrame {
 
     /** Xay (hoac xay lai) toan bo noi dung ben trong frame - MainLayout + cac trang. */
     private void buildContent() {
+        setTitle(Lang.get("admin.frame.title"));
         if (layout != null) {
             remove(layout);
         }
         getContentPane().setBackground(AppColor.PAGE_BG);
 
-        layout = new MainLayout("Khu vực quản trị");
-        layout.addPage("dashboard", "Tổng quan", FontAwesomeSolid.TACHOMETER_ALT, new DashboardPanel(), AppPermission.DASHBOARD_VIEW);
-        layout.addPage("users", "Quản lý tài khoản", FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
-        layout.addPage("customers", "Quản lý khách hàng", FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
+        layout = new MainLayout(Lang.get("admin.mainlayout.title"));
+        layout.addPage("dashboard", Lang.get("sidebar.dashboard"), FontAwesomeSolid.TACHOMETER_ALT, new DashboardPanel(), AppPermission.DASHBOARD_VIEW);
+        layout.addPage("users", Lang.get("sidebar.users"), FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
+        layout.addPage("customers", Lang.get("sidebar.customers"), FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
 
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
@@ -93,9 +102,9 @@ public class AdminMainFrame extends JFrame {
     private void doLogout() {
         boolean confirmed = BaseDialog.confirm(
             this,
-            "Đăng xuất",
-            "Bạn có chắc muốn đăng xuất khỏi tài khoản?",
-            "Đăng xuất",
+            Lang.get("client.logout.confirm.title"),
+            Lang.get("client.logout.confirm.message"),
+            Lang.get("client.logout.confirm.button"),
             AppColor.ERROR,
             AppColor.ERROR_HOVER,
             FontAwesomeSolid.SIGN_OUT_ALT

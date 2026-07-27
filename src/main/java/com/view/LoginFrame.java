@@ -28,12 +28,12 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
+import com.i18n.Lang;
 import com.model.ActivityLog;
 public class LoginFrame extends JFrame {
 
-    // ✅ Dùng RoundedField cho username (JTextField)
+   
     private RoundedField usernameField;
-    // ✅ Dùng RoundedPasswordField cho password (JPasswordField)
     private RoundedPasswordField passwordField;
     private JCheckBox rememberCheckBox;
     private JLabel errorLabel;
@@ -50,9 +50,9 @@ public class LoginFrame extends JFrame {
         setLayout(new GridBagLayout());
 
         String[] features = {
-            "Quản lý kho hàng theo thời gian thực",
-            "Thanh toán đa kênh: MoMo, PayPal, tiền mặt",
-            "Đồng bộ đơn hàng tức thì qua WebSocket"
+            Lang.get("login.leftpanel.feature1"),
+            Lang.get("login.leftpanel.feature2"),
+            Lang.get("login.leftpanel.feature3")
         };
 
         GridBagConstraints gbc = new GridBagConstraints();
@@ -63,8 +63,8 @@ public class LoginFrame extends JFrame {
         gbc.gridx = 0;
         gbc.weightx = 0.42;
         add(new AuthLeftPanel(
-            "Phone Store",
-            "Nền tảng quản lý bán hàng dành cho chuỗi cửa hàng điện thoại — vận hành gọn nhẹ, chính xác và cập nhật theo thời gian thực.",
+            Lang.get("login.leftpanel.brand"),
+            Lang.get("login.leftpanel.tagline"),
             features
         ), gbc);
 
@@ -84,12 +84,12 @@ public class LoginFrame extends JFrame {
         form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
 
         // Title
-        JLabel title = new JLabel("Đăng nhập");
+        JLabel title = new JLabel(Lang.get("login.title"));
         title.setFont(AppFont.TITLE);
         title.setForeground(AppColor.TEXT_TITLE);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel subtitle = new JLabel("Nhập thông tin để truy cập hệ thống quản lý cửa hàng");
+        JLabel subtitle = new JLabel(Lang.get("login.subtitle"));
         subtitle.setFont(AppFont.BODY);
         subtitle.setForeground(AppColor.TEXT_MUTED);
         subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -114,7 +114,7 @@ public class LoginFrame extends JFrame {
         });
 
         // Remember me
-        rememberCheckBox = new JCheckBox("Ghi nhớ tên đăng nhập");
+        rememberCheckBox = new JCheckBox(Lang.get("login.rememberMe"));
         rememberCheckBox.setSelected(rememberedUsername != null);
         rememberCheckBox.setOpaque(false);
         rememberCheckBox.setFont(AppFont.SMALL);
@@ -123,7 +123,7 @@ public class LoginFrame extends JFrame {
         rememberCheckBox.setIconTextGap(8);
         rememberCheckBox.setIcon(new SquareCheckIcon());
 
-        JLabel forgot = new JLabel("Quên mật khẩu?");
+        JLabel forgot = new JLabel(Lang.get("login.forgotPassword"));
         forgot.setFont(AppFont.SMALL);
         forgot.setForeground(AppColor.ACCENT);
         forgot.setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -131,8 +131,8 @@ public class LoginFrame extends JFrame {
             @Override
             public void mouseClicked(MouseEvent e) {
                 JOptionPane.showMessageDialog(LoginFrame.this,
-                        "Vui lòng liên hệ quản trị viên hệ thống để được hỗ trợ đặt lại mật khẩu.",
-                        "Quên mật khẩu", JOptionPane.INFORMATION_MESSAGE);
+                        Lang.get("login.forgotPassword.dialog.message"),
+                        Lang.get("login.forgotPassword.dialog.title"), JOptionPane.INFORMATION_MESSAGE);
             }
         });
 
@@ -152,12 +152,12 @@ public class LoginFrame extends JFrame {
         errorLabel.setBorder(new EmptyBorder(2, 0, 8, 0));
 
         // Login button
-        loginButton = new PrimaryButton("Đăng nhập");
+        loginButton = new PrimaryButton(Lang.get("login.button"));
         loginButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         loginButton.addActionListener(e -> doLogin());
 
         // Register link
-        JPanel registerRow = createLinkRow("Chưa có tài khoản?", " Đăng ký ngay", () -> {
+        JPanel registerRow = createLinkRow(Lang.get("login.noAccount"), Lang.get("login.registerNow"), () -> {
             dispose();
             new RegisterFrame();
         });
@@ -165,10 +165,10 @@ public class LoginFrame extends JFrame {
         // Add all to form
         form.add(title);
         form.add(subtitle);
-        form.add(createLabel("Tên đăng nhập"));
+        form.add(createLabel(Lang.get("login.label.username")));
         form.add(usernameField);
         form.add(Box.createVerticalStrut(16));
-        form.add(createLabel("Mật khẩu"));
+        form.add(createLabel(Lang.get("login.label.password")));
         form.add(passwordField);
         form.add(optionsRow);
         form.add(errorLabel);
@@ -232,7 +232,7 @@ public class LoginFrame extends JFrame {
         
         JLabel toggle = new JLabel(eyeOpenIcon);
         toggle.setVerticalAlignment(SwingConstants.CENTER);
-        toggle.setToolTipText("Hiện mật khẩu");
+        toggle.setToolTipText(Lang.get("login.password.show"));
         toggle.setCursor(new Cursor(Cursor.HAND_CURSOR));
         toggle.addMouseListener(new MouseAdapter() {
             private boolean isShowing = false;
@@ -246,11 +246,11 @@ public class LoginFrame extends JFrame {
                 if (isShowing) {
                     pf.setEchoChar((char) 0);
                     toggle.setIcon(eyeClosedIcon);
-                    toggle.setToolTipText("Ẩn mật khẩu");
+                    toggle.setToolTipText(Lang.get("login.password.hide"));
                 } else {
                     pf.setEchoChar('●');
                     toggle.setIcon(eyeOpenIcon);
-                    toggle.setToolTipText("Hiện mật khẩu");
+                    toggle.setToolTipText(Lang.get("login.password.show"));
                 }
                 pf.requestFocus();
             }
@@ -272,7 +272,7 @@ public class LoginFrame extends JFrame {
         String password = passwordField.getText();
 
         if (username.isEmpty() || password.isEmpty()) {
-            errorLabel.setText("Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.");
+            errorLabel.setText(Lang.get("login.error.emptyFields"));
             return;
         }
 
@@ -293,11 +293,11 @@ public class LoginFrame extends JFrame {
                 	if (user == null) {
                 	    User existing = userDAO.findByUsername(username);
                 	    if (existing != null && existing.isLocked()) {
-                	        errorLabel.setText("Tài khoản đã bị tạm khoá do đăng nhập sai quá 5 lần. Liên hệ Admin.");
+                	        errorLabel.setText(Lang.get("login.error.locked"));
                 	    } else if (existing != null && existing.isDisabled()) {
-                	        errorLabel.setText("Tài khoản đã bị vô hiệu hoá.");
+                	        errorLabel.setText(Lang.get("login.error.disabled"));
                 	    } else {
-                	        errorLabel.setText("Sai tên đăng nhập hoặc mật khẩu.");
+                	        errorLabel.setText(Lang.get("login.error.wrongCredentials"));
                 	    }
                 	    AppLogger.getInstance().log(username, ActivityLog.ACTION_LOGIN_FAILED,
                 	            ActivityLog.ENTITY_USER, "Đăng nhập thất bại với tên đăng nhập \"" + username + "\"");
@@ -332,9 +332,8 @@ public class LoginFrame extends JFrame {
                     // it nhat con thay duoc co loi xay ra, thay vi khong co
                     // cua so nao hien len ca.
                     JOptionPane.showMessageDialog(null,
-                            "Đăng nhập thành công nhưng không thể mở màn hình chính.\n"
-                                    + "Vui lòng kiểm tra console/log để biết chi tiết lỗi, hoặc thử đăng nhập lại.",
-                            "Lỗi khởi động", JOptionPane.ERROR_MESSAGE);
+                            Lang.get("login.error.startupFailed"),
+                            Lang.get("login.error.startupFailed.title"), JOptionPane.ERROR_MESSAGE);
                 }
             }
         };

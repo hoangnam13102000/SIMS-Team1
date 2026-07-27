@@ -29,16 +29,10 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     public UserAccountPanel() {
         super();
 
-        // Bo sung nut hanh dong Khoa/Mo khoa ben canh nut "Sua" mac dinh da
-        // duoc BaseCrudPanel gan san trong constructor cha
-        // (enableActions(supportsView/Edit/Delete)).
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
                 .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                         this::editRowPublic)
-                // Khoa/Mo khoa gop chung 1 slot - icon/mau/tooltip doi theo
-                // trang thai IsLocked cua tung dong thay vi 2 nut rieng luon
-                // hien du (1 nut luon mo/xam) gay roi mat cho cot Thao tac.
                 .add("lock-toggle",
                         this::lockToggleIcon,
                         this::lockToggleColor,
@@ -46,9 +40,8 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
                         this::toggleLockRow,
                         row -> canManage(row)));
 
-        table.setImageColumn(0, 36);
-        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
-        table.setBadgeColumn(7, this::lockLabel, this::lockColor);
+        table.setBadgeColumn(4, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(5, this::lockLabel, this::lockColor);
 
         initialLoad();
     }
@@ -71,17 +64,15 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"", "Tên đăng nhập", "Họ và tên", "Email", "Số điện thoại", "Vai trò", "Trạng thái", "Khóa"};
+        return new String[]{"Tên đăng nhập", "Họ và tên", "Email", "Vai trò", "Trạng thái", "Khóa"};
     }
 
     @Override
     protected Object[] mapRowToColumns(User item) {
         return new Object[]{
-                item.getAvatarUrl(),
                 item.getUsername(),
                 item.getFullName(),
                 item.getEmail(),
-                item.getPhone(),
                 roleLabel(item.getRole()),
                 item.getStatus(),
                 item.isLocked() ? "LOCKED" : "NORMAL"

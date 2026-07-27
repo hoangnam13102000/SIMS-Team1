@@ -1,6 +1,7 @@
 package com.view.layouts;
 
 import com.components.SidebarItem;
+import com.i18n.Lang;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -82,7 +83,7 @@ public class Sidebar extends JPanel {
         separatorLine.setPreferredSize(new Dimension(10, 1));
         separatorWrap.add(separatorLine, BorderLayout.CENTER);
 
-        logoutItem = new SidebarItem("__logout__", "Đăng xuất", FontAwesomeSolid.SIGN_OUT_ALT);
+        logoutItem = new SidebarItem("__logout__", Lang.get("sidebar.logout"), FontAwesomeSolid.SIGN_OUT_ALT);
         logoutItem.setOnClick(() -> {
             if (logoutListener != null) logoutListener.run();
         });
@@ -97,7 +98,7 @@ public class Sidebar extends JPanel {
         headerPanel.setOpaque(false);
         headerPanel.setBorder(new EmptyBorder(0, 20, 12, 12));
 
-        sectionLabel = new JLabel("Menu");
+        sectionLabel = new JLabel(Lang.get("sidebar.menu"));
         sectionLabel.setForeground(TEXT_MUTED);
         sectionLabel.setFont(new Font("Segoe UI", Font.BOLD, 11));
 

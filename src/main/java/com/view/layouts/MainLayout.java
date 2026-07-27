@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 public class MainLayout extends JPanel {
 
     private final Sidebar sidebar;
+    private final Header header;
     private final JPanel contentPanel;
     private final CardLayout cardLayout;
     private Consumer<String> pageChangeListener;
@@ -26,16 +27,22 @@ public class MainLayout extends JPanel {
         setLayout(new BorderLayout());
 
         sidebar = new Sidebar();
+        header = new Header(headerSubtitle);
         cardLayout = new CardLayout();
         contentPanel = new JPanel(cardLayout);
         contentPanel.setBackground(AppColor.PAGE_BG);
 
         sidebar.onNavigate(this::showPage);
 
-        add(new Header(headerSubtitle, () -> showPage("orders"), () -> showPage("security")), BorderLayout.NORTH);
+        add(header, BorderLayout.NORTH);
         add(sidebar, BorderLayout.WEST);
         add(contentPanel, BorderLayout.CENTER);
         add(new Footer(), BorderLayout.SOUTH);
+    }
+
+    /** Cho phep man hinh chu (vd AdminMainFrame) gan them hanh vi rieng cho Header (avatar, chuong...). */
+    public Header getHeader() {
+        return header;
     }
 
     public void addPage(String key, String label,
@@ -69,5 +76,6 @@ public class MainLayout extends JPanel {
 
     public void onLogout(Runnable listener) {
         sidebar.onLogout(listener);
+        header.onLogout(listener);
     }
 }

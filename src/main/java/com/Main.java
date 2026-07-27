@@ -7,13 +7,7 @@ import com.view.LoginFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
-/**
- * Diem khoi dong MAU cua framework. Da bo cac phan rieng cua app goc
- * (DisasterRecoveryBootstrap, IncidentLogger, ghi log vao DB qua
- * ActivityLogDAO...) - AppLogger van dung duoc binh thuong, chi don gian la
- * chua co sink nao duoc gan (log() se khong lam gi cho toi khi ban tu
- * AppLogger.getInstance().setSink(...) trong app that cua minh).
- */
+
 public class Main {
 
     public static void main(String[] args) {

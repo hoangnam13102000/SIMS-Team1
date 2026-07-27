@@ -102,8 +102,17 @@ public final class ImageUtil {
 
     /** Icon avatar hinh tron kich thuoc dat truoc, tu duong dan anh (tu dong placeholder neu loi). */
     public static ImageIcon circularIcon(String pathOrUrl, int diameter) {
+        return circularIcon(pathOrUrl, diameter, "?");
+    }
+
+    /**
+     * Icon avatar hinh tron - neu doc anh loi/khong co thi tra ve placeholder
+     * voi chu cai dau lay tu {@code initials} (vd ten "Nam" -> "N"), dung cho
+     * AdminHeader/ClientHeader khi user chua upload anh dai dien.
+     */
+    public static ImageIcon circularIcon(String pathOrUrl, int diameter, String initials) {
         BufferedImage img = readSafe(pathOrUrl);
-        if (img == null) return new ImageIcon(placeholderAvatar(diameter, "?", AppColor.TEXT_MUTED_ALT));
+        if (img == null) return new ImageIcon(placeholderAvatar(diameter, initials, AppColor.ACCENT));
         return new ImageIcon(toCircular(scale(img, diameter, diameter)));
     }
 

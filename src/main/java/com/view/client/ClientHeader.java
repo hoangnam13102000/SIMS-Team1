@@ -1,6 +1,7 @@
 package com.view.client;
 
 
+import com.i18n.Lang;
 import com.theme.AppColor;
 import com.service.AuthService;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -108,7 +109,7 @@ public class ClientHeader extends JPanel {
         searchIconLabel.setBorder(new EmptyBorder(0, 0, 0, 8));
 
         searchField = new JTextField();
-        searchField.putClientProperty("JTextField.placeholderText", "Tìm kiếm...");
+        searchField.putClientProperty("JTextField.placeholderText", Lang.get("client.header.search.placeholder"));
         searchField.setOpaque(false);
         searchField.setBorder(null);
         searchField.setForeground(AppColor.TEXT_PRIMARY);
@@ -127,7 +128,7 @@ public class ClientHeader extends JPanel {
         fieldWrapper.add(searchIconLabel, BorderLayout.WEST);
         fieldWrapper.add(searchField, BorderLayout.CENTER);
 
-        JButton searchButton = new JButton("Tìm");
+        JButton searchButton = new JButton(Lang.get("client.header.searchButton"));
         searchButton.setFocusPainted(false);
         searchButton.setBorderPainted(false);
         searchButton.setBackground(AppColor.ACCENT_HOVER);
@@ -348,12 +349,12 @@ public class ClientHeader extends JPanel {
     private JPopupMenu buildAccountPopup() {
         JPopupMenu menu = new JPopupMenu();
 
-        JMenuItem profileItem = new JMenuItem("Trang cá nhân", FontIcon.of(FontAwesomeSolid.ID_CARD, 13));
+        JMenuItem profileItem = new JMenuItem(Lang.get("client.header.profile"), FontIcon.of(FontAwesomeSolid.ID_CARD, 13));
         profileItem.addActionListener(e -> {
             if (profileListener != null) profileListener.run();
         });
 
-        JMenuItem logoutItem = new JMenuItem("Đăng xuất", FontIcon.of(FontAwesomeSolid.SIGN_OUT_ALT, 13));
+        JMenuItem logoutItem = new JMenuItem(Lang.get("client.header.logout"), FontIcon.of(FontAwesomeSolid.SIGN_OUT_ALT, 13));
         logoutItem.addActionListener(e -> {
             if (logoutListener != null) logoutListener.run();
         });
@@ -367,7 +368,7 @@ public class ClientHeader extends JPanel {
     private String currentDisplayName() {
         return AuthService.getInstance().isLoggedIn()
                 ? AuthService.getInstance().getCurrentUser().getFullName()
-                : "Khách";
+                : Lang.get("client.header.guest");
     }
 
     /** Goi lai sau khi doi ho ten o Trang ca nhan de cap nhat lai chu tren badge. */

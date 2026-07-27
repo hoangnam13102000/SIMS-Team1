@@ -2,6 +2,8 @@ package com.view.client;
 
 import com.components.BaseDialog;
 import com.components.SettingsButton;
+import com.i18n.Lang;
+import com.i18n.LanguageManager;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
@@ -28,6 +30,7 @@ public class ClientMainFrame extends JFrame {
     private ClientHeader header;
     private String currentPageKey = "home";
     private final Runnable onThemeChanged = this::rebuildContent;
+    private final Runnable onLangChanged = this::rebuildContent;
 
     public ClientMainFrame() {
         setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
@@ -43,11 +46,13 @@ public class ClientMainFrame extends JFrame {
         SettingsButton.attach(this, 76, false);
 
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
+        LanguageManager.getInstance().addRebuildListener(onLangChanged);
 
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosed(WindowEvent e) {
                 ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
+                LanguageManager.getInstance().removeRebuildListener(onLangChanged);
                 AuthService.getInstance().logout();
                 new LoginFrame();
             }
@@ -73,7 +78,7 @@ public class ClientMainFrame extends JFrame {
         });
 
         HomePanel homePanel = new HomePanel();
-        addPage("home", "Trang chủ", FontAwesomeSolid.HOME, homePanel);
+        addPage("home", Lang.get("client.nav.home"), FontAwesomeSolid.HOME, homePanel);
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
 
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
@@ -116,9 +121,9 @@ public class ClientMainFrame extends JFrame {
     private void doLogout() {
         boolean confirmed = BaseDialog.confirm(
             this,
-            "Đăng xuất",
-            "Bạn có chắc muốn đăng xuất khỏi tài khoản?",
-            "Đăng xuất",
+            Lang.get("client.logout.confirm.title"),
+            Lang.get("client.logout.confirm.message"),
+            Lang.get("client.logout.confirm.button"),
             AppColor.ERROR,
             AppColor.ERROR_HOVER,
             FontAwesomeSolid.SIGN_OUT_ALT

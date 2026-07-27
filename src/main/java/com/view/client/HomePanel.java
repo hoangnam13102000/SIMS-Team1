@@ -6,6 +6,7 @@ import com.components.product.ProductGrid;
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.dao.ProductDAO;
+import com.i18n.Lang;
 import com.model.Product;
 import com.theme.AppColor;
 import com.theme.AppFont;
@@ -16,12 +17,6 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.List;
 
-/**
- * Trang chu phia khach hang: hien danh sach san pham dang ban (Status =
- * ACTIVE) duoi dang luoi the (ProductGrid + ProductCard), tai du lieu nen
- * qua SwingWorker de khong dong UI thread. Ho tro loc theo tu khoa - goi
- * tu ClientHeader (xem ClientMainFrame#header.onSearch) qua ham search().
- */
 public class HomePanel extends JPanel {
 
     private final ProductDAO productDAO = new ProductDAO();
@@ -44,7 +39,7 @@ public class HomePanel extends JPanel {
         contentArea = new JPanel(new BorderLayout());
         contentArea.setOpaque(false);
 
-        loadingOverlay = new LoadingOverlay("Đang tải sản phẩm...");
+        loadingOverlay = new LoadingOverlay(Lang.get("home.loading"));
 
         add(LoadingOverlay.attach(contentArea, loadingOverlay), BorderLayout.CENTER);
 
@@ -57,12 +52,12 @@ public class HomePanel extends JPanel {
         wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
         wrapper.setBorder(new EmptyBorder(AppSpacing.XL, AppSpacing.XL, AppSpacing.LG, AppSpacing.XL));
 
-        JLabel title = new JLabel("Sản phẩm nổi bật");
+        JLabel title = new JLabel(Lang.get("home.title"));
         title.setFont(AppFont.HEADING_LG);
         title.setForeground(AppColor.TEXT_TITLE);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel subtitle = new JLabel("Khám phá các sản phẩm đang có tại Connect Mart");
+        JLabel subtitle = new JLabel(Lang.get("home.subtitle"));
         subtitle.setFont(AppFont.BODY);
         subtitle.setForeground(AppColor.TEXT_MUTED);
         subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -121,7 +116,7 @@ public class HomePanel extends JPanel {
 
         if (products == null || products.isEmpty()) {
             EmptyState empty = currentKeyword.isEmpty()
-                    ? EmptyState.noData("sản phẩm")
+                    ? EmptyState.noData(Lang.get("home.noData.entity"))
                     : EmptyState.noSearchResult(currentKeyword);
             contentArea.add(empty, BorderLayout.CENTER);
         } else {
@@ -148,7 +143,7 @@ public class HomePanel extends JPanel {
 
     private void showError() {
         contentArea.removeAll();
-        contentArea.add(EmptyState.error("Không thể tải danh sách sản phẩm. Vui lòng thử lại sau."), BorderLayout.CENTER);
+        contentArea.add(EmptyState.error(Lang.get("home.loadError")), BorderLayout.CENTER);
         contentArea.revalidate();
         contentArea.repaint();
     }

@@ -1,6 +1,7 @@
 package com.view.layouts;
 
 
+import com.i18n.Lang;
 import com.theme.AppColor;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -24,7 +25,7 @@ public class Footer extends JPanel {
     }
 
     private JLabel buildCopyright() {
-        JLabel label = new JLabel("© " + Year.now().getValue() + " Phone Store — All rights reserved");
+        JLabel label = new JLabel(Lang.get("footer.copyright", String.valueOf(Year.now().getValue())));
         label.setForeground(AppColor.TEXT_MUTED);
         label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         return label;
@@ -33,7 +34,7 @@ public class Footer extends JPanel {
     private JPanel buildStatus() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 18, 0));
         panel.setOpaque(false);
-        panel.add(buildStatusChip("Đã kết nối CSDL", AppColor.GREEN));
+        panel.add(buildStatusChip(Lang.get("footer.dbConnected"), AppColor.GREEN));
 
         JLabel version = new JLabel("v1.0.0");
         version.setForeground(AppColor.TEXT_MUTED);

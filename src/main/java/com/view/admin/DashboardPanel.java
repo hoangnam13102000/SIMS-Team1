@@ -2,6 +2,7 @@ package com.view.admin;
 
 import com.components.StatCard;
 import com.components.dashboard.DashboardCard;
+import com.i18n.Lang;
 import com.theme.AppColor;
 import com.theme.AppSpacing;
 
@@ -11,12 +12,6 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 
-/**
- * Trang "Tong quan" MAU cua framework - demo cach dung StatCard + DashboardCard
- * de dung 1 trang dashboard that. Khong ket noi DB, chi hien du lieu tinh de
- * lam vi du bo cuc. Khi dung cho app that, thay 3 StatCard + noi dung ben
- * trong DashboardCard bang du lieu lay tu DAO/service cua ban.
- */
 public class DashboardPanel extends JPanel {
 
     public DashboardPanel() {
@@ -47,17 +42,17 @@ public class DashboardPanel extends JPanel {
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
-        row.add(new StatCard("Nguoi dung", "0", FontAwesomeSolid.USERS, AppColor.ACCENT));
-        row.add(new StatCard("Hoat dong hom nay", "0", FontAwesomeSolid.BOLT, AppColor.SUCCESS));
-        row.add(new StatCard("Canh bao", "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE, AppColor.WARNING));
+        row.add(new StatCard(Lang.get("dashboard.stat.users"), "0", FontAwesomeSolid.USERS, AppColor.ACCENT));
+        row.add(new StatCard(Lang.get("dashboard.stat.activityToday"), "0", FontAwesomeSolid.BOLT, AppColor.SUCCESS));
+        row.add(new StatCard(Lang.get("dashboard.stat.alerts"), "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE, AppColor.WARNING));
 
         return row;
     }
 
     private DashboardCard buildSampleCard() {
         DashboardCard card = new DashboardCard(
-                "Vi du noi dung",
-                "Thay panel nay bang bieu do/bang du lieu that cua ban",
+                Lang.get("dashboard.sample.title"),
+                Lang.get("dashboard.sample.subtitle"),
                 FontAwesomeSolid.CHART_BAR,
                 AppColor.ACCENT
         );
@@ -66,9 +61,7 @@ public class DashboardPanel extends JPanel {
         card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 220));
 
         JLabel placeholder = new JLabel(
-                "<html>Day la 1 trang mau (Dashboard) duoc giu lai trong framework<br>"
-                + "de minh hoa cach ghep StatCard + DashboardCard + BaseCrudPanel<br>"
-                + "khi ban them mot module nghiep vu moi.</html>",
+                Lang.get("dashboard.sample.placeholder"),
                 SwingConstants.CENTER);
         placeholder.setForeground(AppColor.TEXT_MUTED);
         card.getContentPanel().add(placeholder, BorderLayout.CENTER);
