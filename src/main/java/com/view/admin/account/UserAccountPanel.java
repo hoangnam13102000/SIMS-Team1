@@ -4,6 +4,7 @@ import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
+import com.components.table.AutoRowNumber;
 import com.dao.UserDAO;
 import com.model.Role;
 import com.model.User;
@@ -25,6 +26,7 @@ import javax.swing.SwingUtilities;
 public class UserAccountPanel extends BaseCrudPanel<User> {
 
     private final UserDAO userDAO = new UserDAO();
+    private AutoRowNumber stt;
 
     public UserAccountPanel() {
         super();
@@ -40,8 +42,15 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
                         this::toggleLockRow,
                         row -> canManage(row)));
 
-        table.setBadgeColumn(4, this::statusLabel, this::statusColor);
-        table.setBadgeColumn(5, this::lockLabel, this::lockColor);
+        stt = table.setAutoRowNumberColumn(0);
+        table.setBadgeColumn(5, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(6, this::lockLabel, this::lockColor);
+
+        // Dat do rong ro rang cho tung cot - neu khong JTable se tu chia deu
+        // theo do rong khung nhin, khien cac tieu de dai (vd "Tên đăng nhập",
+        // "Họ và tên") bi cat thanh "..." (giong da sua o CustomerPanel).
+        table.setColumnWidths(50, 115, 115, 180, 150, 130, 115);
+        table.setColumnMinWidths(45, 90, 85, 90, 110, 100, 95);
 
         initialLoad();
     }
@@ -64,12 +73,13 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Tên đăng nhập", "Họ và tên", "Email", "Vai trò", "Trạng thái", "Khóa"};
+        return new String[]{"STT", "Tên đăng nhập", "Họ và tên", "Email", "Vai trò", "Trạng thái", "Khóa"};
     }
 
     @Override
     protected Object[] mapRowToColumns(User item) {
         return new Object[]{
+                "",
                 item.getUsername(),
                 item.getFullName(),
                 item.getEmail(),
@@ -81,6 +91,13 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
 
     @Override
     protected String getEntityLabel() { return "tài khoản"; }
+
+    /** STT phải tính theo đúng trang đang xem, không luôn bắt đầu lại từ 1 (giống CustomerPanel). */
+    @Override
+    protected void afterRender(PaginationHelper.PaginationResult<User> result) {
+        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
+        table.getTable().repaint();
+    }
 
     @Override
     protected String getItemDisplayName(User item) {

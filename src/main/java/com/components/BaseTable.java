@@ -36,11 +36,6 @@ import java.util.function.Function;
 
 public class BaseTable extends JPanel {
 
-    // ===== MÀU SẮC =====
-    // HEADER_FG luon trang vi TABLE_HEADER_BG (Light lan Dark) deu la nen toi -
-    // khong can doi theo theme. ROW_EVEN/BORDER_COLOR thi CO doi theo theme nen
-    // khong the khai bao "static final" (se bi dong cung 1 gia tri mai mai tu
-    // lan load class dau tien) - doc truc tiep AppColor.XXX o tung noi dung.
     private static final Color HEADER_FG = Color.WHITE;
 
     private static final String ACTIONS_COLUMN_NAME = "Thao tác";
@@ -511,20 +506,7 @@ public class BaseTable extends JPanel {
     }
 
     // ===== ĐỘ RỘNG CỘT / CUỘN NGANG =====
-    /**
-     * Dat do rong "ua thich" (preferred width, px) cho tung cot theo dung thu
-     * tu khai bao trong constructor - mang co the ngan hon so cot (cac cot
-     * con lai giu nguyen do rong mac dinh cua JTable).
-     *
-     * CHI co tac dung ro rang khi ket hop voi {@link #enableHorizontalScroll()}:
-     * mac dinh JTable luon co bop/gian moi cot vua khit voi be rong scrollpane
-     * (khong bao gio vuot qua, cung khong bao gio hien thanh cuon ngang), nen
-     * neu khong goi enableHorizontalScroll() thi cac gia tri o day chi la
-     * "ty le uu tien" ban dau roi van bi ep lai vua khung.
-     *
-     * Vi du (cot "Chi tiết" can nhieu cho hon cac cot con lai):
-     *   table.setColumnWidths(140, 140, 160, 140, 500).enableHorizontalScroll();
-     */
+ 
     public BaseTable setColumnWidths(int... widths) {
         for (int i = 0; i < widths.length && i < table.getColumnModel().getColumnCount(); i++) {
             table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
@@ -533,30 +515,12 @@ public class BaseTable extends JPanel {
         return this;
     }
 
-    /**
-     * Cho phep bang cuon ngang khi tong do rong cac cot (xem setColumnWidths)
-     * vuot qua be rong scrollpane, thay vi hanh vi mac dinh cua JTable la luon
-     * co bop/gian cot vua khit voi vung nhin (AUTO_RESIZE_SUBSEQUENT_COLUMNS)
-     * - lam noi dung cot dai (vd mo ta/chi tiet) bi cat mat vinh vien ma
-     * khong co cach nao xem het duoc.
-     *
-     * KHONG chi ep cung AUTO_RESIZE_OFF: neu lam vay, nhung luc cua so du
-     * rong hon tong do rong cac cot, JTable se phinh to bang cho khop
-     * scrollpane nhung KHONG chia deu phan du cho cac cot (do la co che rieng
-     * cua AUTO_RESIZE_*, khong tu dong bat len chi vi bang duoc phinh to) -
-     * de lai khoang trang ben phai, nhin nhu toan bo noi dung bi don het ve
-     * ben trai. Thay vao do, ta tu theo doi kich thuoc viewport (qua
-     * ComponentListener) va CHUYEN DOI qua lai giua AUTO_RESIZE_ALL_COLUMNS
-     * (khi noi dung vua/nho hon khung - cot tu gian lap day, nhin gon nhu cac
-     * bang khac) va AUTO_RESIZE_OFF (khi noi dung vuot khung - giu nguyen do
-     * rong da dat, cho phep cuon ngang) - dung y muon "gian khi vua, cuon khi
-     * tran" thay vi chi mot trong hai trang thai co dinh.
-     *
-     * Chi nen bat cho cac bang co cot noi dung dai/khong co do dai co dinh
-     * (vd cot "Chi tiết" trong Nhat ky hoat dong) - cac bang thong thuong khac
-     * van nen giu hanh vi mac dinh (tu gian cot vua khung, nhin gon hon) nen
-     * day la tuy chon rieng tung bang, khong bat mac dinh cho tat ca BaseTable.
-     */
+    public BaseTable setColumnMinWidths(int... widths) {
+        for (int i = 0; i < widths.length && i < table.getColumnModel().getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setMinWidth(widths[i]);
+        }
+        return this;
+    }
     public BaseTable enableHorizontalScroll() {
         horizontalScrollEnabled = true;
         scrollPane.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
@@ -593,21 +557,12 @@ public class BaseTable extends JPanel {
     }
 
     // ===== IMAGE COLUMN (vd cot anh san pham/avatar) =====
-    /**
-     * Bien 1 cot thanh anh thu nho bo goc (kich thuoc vuong {@code size}px),
-     * tai bat dong bo va cache theo duong dan de khong giat UI. Tra ve
-     * {@link ImageColumn} de co the goi invalidate(path)/clearCache() sau khi
-     * sua/xoa anh.
-     *
-     * Vi du:
-     *   ImageColumn avatarCol = table.setImageColumn(1, 40);
-     *   ...
-     *   avatarCol.invalidate(phone.getImagePath()); // sau khi sua anh
-     */
+  
     public ImageColumn setImageColumn(int columnIndex, int size) {
         ImageColumn imageColumn = new ImageColumn(size);
         setColumnRenderer(columnIndex, imageColumn.renderer(rowColorProvider));
         autoNonSortableColumns.add(columnIndex);
+        if (sorter != null) sorter.disableSortingFor(toIntArray(autoNonSortableColumns));
         return imageColumn;
     }
 
@@ -615,25 +570,17 @@ public class BaseTable extends JPanel {
         ImageColumn imageColumn = new ImageColumn(size, radius);
         setColumnRenderer(columnIndex, imageColumn.renderer(rowColorProvider));
         autoNonSortableColumns.add(columnIndex);
+        if (sorter != null) sorter.disableSortingFor(toIntArray(autoNonSortableColumns));
         return imageColumn;
     }
 
     // ===== AUTO ROW NUMBER (cot STT) =====
-    /**
-     * Bien 1 cot thanh STT tu dong danh so theo vi tri dong dang hien thi
-     * (sau sort/filter) + pageOffset. Tra ve {@link AutoRowNumber} de goi
-     * setPageOffset(...) moi khi doi trang.
-     *
-     * Vi du:
-     *   AutoRowNumber stt = table.setAutoRowNumberColumn(0);
-     *   ...
-     *   stt.setPageOffset((currentPage - 1) * pageSize);
-     *   table.getTable().repaint();
-     */
+   
     public AutoRowNumber setAutoRowNumberColumn(int columnIndex) {
         AutoRowNumber autoRowNumber = new AutoRowNumber();
         setColumnRenderer(columnIndex, autoRowNumber.renderer(rowColorProvider));
         autoNonSortableColumns.add(columnIndex);
+        if (sorter != null) sorter.disableSortingFor(toIntArray(autoNonSortableColumns));
         return autoRowNumber;
     }
 

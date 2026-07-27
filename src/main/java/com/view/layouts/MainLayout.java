@@ -23,6 +23,7 @@ public class MainLayout extends JPanel {
         this("Cửa hàng điện thoại trực tuyến");
     }
 
+    
     public MainLayout(String headerSubtitle) {
         setLayout(new BorderLayout());
 
@@ -52,10 +53,14 @@ public class MainLayout extends JPanel {
 
     /** Them 1 trang, chi hien ra neu user hien tai co quyen tuong ung (permission = null -> luon hien). */
     public void addPage(String key, String label,
-                         org.kordamp.ikonli.fontawesome5.FontAwesomeSolid icon, JPanel panel,
-                         Permission permission) {
-        if (permission != null && !PermissionManager.getInstance().can(permission)) return;
-        sidebar.addItem(key, label, icon);
+            org.kordamp.ikonli.fontawesome5.FontAwesomeSolid icon, JPanel panel,
+            Permission permission) {
+		if (permission != null && !PermissionManager.getInstance().can(permission)) return;
+		sidebar.addItem(key, label, icon);
+		contentPanel.add(panel, key);
+	}
+    
+    public void addHiddenPage(String key, JPanel panel) {
         contentPanel.add(panel, key);
     }
 

@@ -4,6 +4,7 @@ import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
+import com.components.table.AutoRowNumber;
 import com.dao.CustomerDAO;
 import com.model.Customer;
 import com.theme.AppColor;
@@ -20,24 +21,19 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
-/**
- * Trang "Quản lý khách hàng" trong khu vực quản trị - chỉ hiện với tài khoản
- * có quyền {@link com.model.permission.AppPermission#CUSTOMER_MANAGE}
- * (xem AdminMainFrame.buildContent()).
- * <p>
- * Khách hàng tự đăng ký qua RegisterFrame (không tạo mới từ đây - xem
- * {@link #getAddButtonLabel()}), Admin chỉ xem/sửa thông tin, cộng/trừ điểm
- * thành viên, vô hiệu hóa hoặc khóa/mở khóa tài khoản khi cần.
- */
+
 public class CustomerPanel extends BaseCrudPanel<Customer> {
 
     private final CustomerDAO customerDAO = new CustomerDAO();
+    private AutoRowNumber stt;
 
     public CustomerPanel() {
         super();
 
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
+                .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+                        this::viewRowPublic)
                 .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                         this::editRowPublic)
                 // Khoa/Mo khoa gop chung 1 slot, giong UserAccountPanel - icon/mau/
@@ -53,9 +49,17 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
                         this::toggleLockRow,
                         null));
 
-        table.setImageColumn(0, 36);
+        stt = table.setAutoRowNumberColumn(0);
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
         table.setBadgeColumn(7, this::lockLabel, this::lockColor);
+
+        // Dat do rong "ua thich" theo ty le hop ly cho tung cot (STT/Trang
+        // thai/Khoa nho gon, Ho ten/Email rong hon) - ket hop voi hanh vi mac
+        // dinh cua JTable (AUTO_RESIZE_SUBSEQUENT_COLUMNS, khong bat
+        // enableHorizontalScroll() o day) se tu co gian ty le theo dung do
+        // rong khung nhin hien tai, tranh phai cuon ngang moi thay het cac cot.
+        table.setColumnWidths(55, 130, 85, 130, 80, 95, 115, 110);
+        table.setColumnMinWidths(48, 100, 60, 90, 65, 75, 90, 95);
 
         initialLoad();
     }
@@ -79,13 +83,13 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"", "Tên đăng nhập", "Họ và tên", "Email", "Số điện thoại", "Điểm thành viên", "Trạng thái", "Khóa"};
+    	return new String[]{"STT", "Đăng nhập", "Họ tên", "Email", "SĐT", "Điểm TV", "Trạng thái", "Khóa"};
     }
 
     @Override
     protected Object[] mapRowToColumns(Customer item) {
         return new Object[]{
-                item.getAvatarUrl(),
+                "",
                 item.getUsername(),
                 item.getFullName(),
                 item.getEmail(),
@@ -99,6 +103,14 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     /** Cột "Điểm thành viên" (chỉ số 5) đã format bằng NumberUtil - sort theo giá trị số thay vì chữ cái. */
     @Override
     protected int[] numericColumns() { return new int[]{5}; }
+
+    /** STT phải tính theo đúng trang đang xem (vd trang 2, 10 dòng/trang thì
+     *  dòng đầu là STT 11) chứ không luôn bắt đầu lại từ 1. */
+    @Override
+    protected void afterRender(PaginationHelper.PaginationResult<Customer> result) {
+        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
+        table.getTable().repaint();
+    }
 
     @Override
     protected String getEntityLabel() { return "khách hàng"; }
@@ -170,6 +182,15 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     // ---------------------------------------------------------------
     // Hành động: sửa / khóa / mở khóa
     // ---------------------------------------------------------------
+
+    private void viewRowPublic(int modelRow) {
+        Customer item = rowToItem(modelRow);
+        if (item == null) return;
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        CustomerDetailDialog dialog = new CustomerDetailDialog(
+                owner instanceof Frame ? (Frame) owner : null, item);
+        dialog.setVisible(true);
+    }
 
     private void editRowPublic(int modelRow) {
         Customer item = rowToItem(modelRow);

@@ -30,11 +30,6 @@ public class UserDAO extends BaseDAO<User> {
 
     private static final int MAX_FAILED_LOGIN = 5;
 
-    // ---------------------------------------------------------------
-    // Hook bắt buộc của BaseDAO - cho phép dùng chung getPaged()/search()/
-    // getAll() có sẵn thay vì tự viết lại SQL phân trang cho UserAccountPanel.
-    // ---------------------------------------------------------------
-
     @Override
     protected Connection getConnection() throws SQLException {
         return DBConnection.getConnection();
@@ -48,7 +43,7 @@ public class UserDAO extends BaseDAO<User> {
     @Override
     protected String getColumns() {
         return "u.UserID, u.Username, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
-                + "u.IsLocked, u.FailedLoginCount, u.Status, r.RoleCode";
+                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode";
     }
 
     @Override
@@ -77,7 +72,7 @@ public class UserDAO extends BaseDAO<User> {
      */
     public User login(String username, String rawPassword) {
         String sql = "SELECT u.UserID, u.Username, u.PasswordHash, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
-                + "u.IsLocked, u.FailedLoginCount, u.Status, r.RoleCode "
+                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode "
                 + "FROM Users u JOIN Roles r ON u.RoleID = r.RoleID "
                 + "WHERE u.Username = ?";
 
@@ -121,7 +116,7 @@ public class UserDAO extends BaseDAO<User> {
      */
     public User findByUsername(String username) {
         String sql = "SELECT u.UserID, u.Username, u.PasswordHash, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
-                + "u.IsLocked, u.FailedLoginCount, u.Status, r.RoleCode "
+                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode "
                 + "FROM Users u JOIN Roles r ON u.RoleID = r.RoleID "
                 + "WHERE u.Username = ?";
 
@@ -213,6 +208,20 @@ public class UserDAO extends BaseDAO<User> {
         }
     }
 
+    /** Cap nhat duong dan anh dai dien (dung khi nguoi dung tu upload avatar o trang ho so ca nhan). */
+    public boolean updateAvatar(int userId, String avatarUrl) {
+        String sql = "UPDATE Users SET AvatarUrl = ? WHERE UserID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, avatarUrl);
+            ps.setInt(2, userId);
+            return ps.executeUpdate() > 0;
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "UserDAO.updateAvatar - userId=" + userId, e);
+            return false;
+        }
+    }
+
     /** Kiem tra mat khau hien tai co dung khong (dung khi doi mat khau). */
     public boolean verifyPassword(int userId, String rawPassword) {
         String sql = "SELECT PasswordHash FROM Users WHERE UserID = ?";
@@ -263,8 +272,6 @@ public class UserDAO extends BaseDAO<User> {
 
         String insertUserSql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?))";
-        // Customers gio KE THUA Users (CustomerID = UserID, shared PK) - FullName/Phone/Email
-        // da nam san trong Users nen chi con insert CustomerID + MemberPoint mac dinh.
         String insertCustomerSql = "INSERT INTO Customers (CustomerID, MemberPoint) VALUES (?, 0)";
 
         Connection con = null;
@@ -345,6 +352,8 @@ public class UserDAO extends BaseDAO<User> {
         user.setLocked(rs.getBoolean("IsLocked"));
         user.setFailedLoginCount(rs.getInt("FailedLoginCount"));
         user.setStatus(rs.getString("Status"));
+        java.sql.Timestamp createdAt = rs.getTimestamp("CreatedAt");
+        if (createdAt != null) user.setCreatedAt(createdAt.toLocalDateTime());
         return user;
     }
 
@@ -439,11 +448,6 @@ public class UserDAO extends BaseDAO<User> {
 
         String sql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID, Status) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?), 'ACTIVE')";
-        // Customers ke thua Users (CustomerID = UserID, shared PK) - giong nhu
-        // register() cong khai, neu Admin tao tai khoan Role.CUSTOMER tu day
-        // cung PHAI tao kem dong Customers trong CUNG 1 transaction, neu khong
-        // se co User mang Role.CUSTOMER nhung thieu ho so Customers (loi o
-        // man khach hang phia client: diem thanh vien/lich su mua hang).
         String insertCustomerSql = "INSERT INTO Customers (CustomerID, MemberPoint) VALUES (?, 0)";
 
         Connection con = null;

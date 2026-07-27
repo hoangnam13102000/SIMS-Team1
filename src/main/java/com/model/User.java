@@ -12,7 +12,7 @@ public class User {
     private boolean locked;
     private int failedLoginCount;
     private String status; // ACTIVE | DISABLED
-
+    private java.time.LocalDateTime createdAt;
     public User() {
     }
 
@@ -24,7 +24,9 @@ public class User {
         this.phone = phone;
         this.role = role;
     }
-
+    public java.time.LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(java.time.LocalDateTime createdAt) { this.createdAt = createdAt; }
+    
     public int getUserId() { return userId; }
     public void setUserId(int userId) { this.userId = userId; }
 

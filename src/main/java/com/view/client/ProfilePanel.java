@@ -3,24 +3,38 @@ package com.view.client;
 
 import com.theme.AppColor;
 import com.dao.UserDAO;
+import com.model.Role;
 import com.model.User;
 import com.service.AuthService;
+import com.utils.FileUtil;
+import com.utils.ImageUtil;
 import com.validation.FormValidator;
 import com.validation.Rules;
+import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.io.File;
+import java.time.format.DateTimeFormatter;
 
-/**
- * Trang ho so ca nhan: sua ho ten / so dien thoai, va doi mat khau.
- * Gmail khong cho sua o day vi da duoc xac thuc OTP luc dang ky.
- */
 public class ProfilePanel extends JPanel {
+
+    private static final int AVATAR_SIZE = 120;
+    private static final int CARD_MAX_WIDTH = 640;
 
     private final UserDAO userDAO = new UserDAO();
     private Runnable onSavedListener;
+
+    private JLabel avatarLabel;
+    private JLabel nameLabel;
+    private JLabel rolePillLabel;
+    private JLabel emailValueLabel;
+    private JLabel phoneValueLabel;
+    private JLabel joinedLabel;
+    private JLabel avatarMessage;
 
     private JTextField fullNameField;
     private JTextField phoneField;
@@ -36,103 +50,279 @@ public class ProfilePanel extends JPanel {
         setBackground(AppColor.PAGE_BG);
         setBorder(new EmptyBorder(24, 32, 24, 32));
 
-        JPanel wrapper = new JPanel();
-        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
-        wrapper.setOpaque(false);
-
         JLabel title = new JLabel("Trang cá nhân");
         title.setFont(new Font("Segoe UI", Font.BOLD, 22));
         title.setForeground(AppColor.TEXT_PRIMARY);
-        title.setAlignmentX(Component.LEFT_ALIGNMENT);
         title.setBorder(new EmptyBorder(0, 0, 16, 0));
 
-        wrapper.add(title);
-        wrapper.add(buildInfoCard());
-        wrapper.add(Box.createVerticalStrut(20));
-        wrapper.add(buildPasswordCard());
+        JPanel content = new JPanel(new GridBagLayout());
+        content.setOpaque(false);
 
-        add(wrapper, BorderLayout.NORTH);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 0;
+        gbc.weighty = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.insets = new Insets(0, 0, 0, 20);
+        content.add(buildSideCard(), gbc);
+
+        JPanel rightColumn = new JPanel();
+        rightColumn.setOpaque(false);
+        rightColumn.setLayout(new BoxLayout(rightColumn, BoxLayout.Y_AXIS));
+        rightColumn.add(buildInfoFormCard());
+        rightColumn.add(Box.createVerticalStrut(20));
+        rightColumn.add(buildPasswordCard());
+
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        content.add(rightColumn, gbc);
+
+        JPanel northWrapper = new JPanel();
+        northWrapper.setOpaque(false);
+        northWrapper.setLayout(new BoxLayout(northWrapper, BoxLayout.Y_AXIS));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+        northWrapper.add(title);
+        northWrapper.add(content);
+
+        JScrollPane scrollPane = new JScrollPane(northWrapper);
+        scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+
+        add(scrollPane, BorderLayout.CENTER);
         loadCurrentUser();
     }
 
-    private JPanel buildInfoCard() {
-        JPanel card = card();
+    // ==================== Khoi ben trai: avatar + thong tin nhanh ====================
+
+    private JPanel buildSideCard() {
+        JPanel card = sideCard();
+
+        JPanel avatarWrapper = new JPanel(null);
+        avatarWrapper.setOpaque(false);
+        Dimension avatarWrapperSize = new Dimension(AVATAR_SIZE + 14, AVATAR_SIZE + 14);
+        avatarWrapper.setPreferredSize(avatarWrapperSize);
+        avatarWrapper.setMaximumSize(avatarWrapperSize);
+        avatarWrapper.setMinimumSize(avatarWrapperSize);
+
+        avatarLabel = new JLabel();
+        avatarLabel.setBounds(2, 2, AVATAR_SIZE, AVATAR_SIZE);
+        avatarWrapper.add(avatarLabel);
+
+        JButton cameraButton = circularIconButton(FontAwesomeSolid.CAMERA);
+        cameraButton.setBounds(AVATAR_SIZE - 22, AVATAR_SIZE - 18, 34, 34);
+        cameraButton.setToolTipText("Đổi ảnh đại diện");
+        cameraButton.addActionListener(e -> chooseAndUploadAvatar());
+        avatarWrapper.add(cameraButton);
+
+        JPanel avatarRow = new JPanel();
+        avatarRow.setOpaque(false);
+        avatarRow.setLayout(new BoxLayout(avatarRow, BoxLayout.X_AXIS));
+        avatarRow.setAlignmentX(Component.CENTER_ALIGNMENT);
+        avatarRow.add(Box.createHorizontalGlue());
+        avatarRow.add(avatarWrapper);
+        avatarRow.add(Box.createHorizontalGlue());
+        card.add(avatarRow);
+
+        card.add(Box.createVerticalStrut(14));
+
+        nameLabel = new JLabel(" ");
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 17));
+        nameLabel.setForeground(AppColor.TEXT_PRIMARY);
+        nameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        card.add(nameLabel);
+
+        card.add(Box.createVerticalStrut(8));
+
+        rolePillLabel = new JLabel(" ");
+        rolePillLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        rolePillLabel.setForeground(AppColor.ACCENT);
+        rolePillLabel.setOpaque(false);
+        rolePillLabel.setBorder(new EmptyBorder(4, 12, 4, 12));
+        JPanel pill = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(AppColor.ACCENT_BG_SOFT);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        pill.setOpaque(false);
+        pill.setMaximumSize(new Dimension(200, 26));
+        pill.add(rolePillLabel, BorderLayout.CENTER);
+
+        JPanel pillRow = new JPanel();
+        pillRow.setOpaque(false);
+        pillRow.setLayout(new BoxLayout(pillRow, BoxLayout.X_AXIS));
+        pillRow.setAlignmentX(Component.CENTER_ALIGNMENT);
+        pillRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        pillRow.add(Box.createHorizontalGlue());
+        pillRow.add(pill);
+        pillRow.add(Box.createHorizontalGlue());
+        card.add(pillRow);
+
+        avatarMessage = new JLabel(" ");
+        avatarMessage.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        avatarMessage.setAlignmentX(Component.CENTER_ALIGNMENT);
+        avatarMessage.setBorder(new EmptyBorder(8, 0, 0, 0));
+        card.add(avatarMessage);
+
+        card.add(Box.createVerticalStrut(16));
+        card.add(buildDivider());
+        card.add(Box.createVerticalStrut(16));
+
+        emailValueLabel = valueLabel();
+        card.add(infoRow(FontAwesomeSolid.ENVELOPE, "Email", emailValueLabel));
+        card.add(Box.createVerticalStrut(14));
+
+        phoneValueLabel = valueLabel();
+        card.add(infoRow(FontAwesomeSolid.PHONE, "Số điện thoại", phoneValueLabel));
+
+        card.add(Box.createVerticalStrut(16));
+
+        joinedLabel = new JLabel(" ");
+        joinedLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        joinedLabel.setForeground(AppColor.TEXT_MUTED);
+        joinedLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(joinedLabel);
+
+        return card;
+    }
+
+    private JPanel infoRow(FontAwesomeSolid iconType, String label, JLabel value) {
+        JPanel row = new JPanel(new BorderLayout(10, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
+
+        JPanel iconBox = new JPanel(new GridBagLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(AppColor.BG_LIGHTER);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+                g2.dispose();
+            }
+        };
+        iconBox.setOpaque(false);
+        iconBox.setPreferredSize(new Dimension(36, 36));
+        FontIcon icon = FontIcon.of(iconType, 14);
+        icon.setIconColor(AppColor.TEXT_MUTED);
+        iconBox.add(new JLabel(icon));
+        row.add(iconBox, BorderLayout.WEST);
+
+        JPanel textPanel = new JPanel();
+        textPanel.setOpaque(false);
+        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+
+        JLabel labelText = new JLabel(label);
+        labelText.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        labelText.setForeground(AppColor.TEXT_MUTED);
+        labelText.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        textPanel.add(labelText);
+        textPanel.add(value);
+        row.add(textPanel, BorderLayout.CENTER);
+
+        return row;
+    }
+
+    private JLabel valueLabel() {
+        JLabel label = new JLabel(" ");
+        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setForeground(AppColor.TEXT_PRIMARY);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return label;
+    }
+
+    private void chooseAndUploadAvatar() {
+        File selected = FileUtil.chooseImageFile(this);
+        if (selected == null) return;
+
+        if (!FileUtil.isWithinSizeLimit(selected, 5)) {
+            showMessage(avatarMessage, "Ảnh vượt quá 5MB, vui lòng chọn ảnh khác.", AppColor.ERROR);
+            return;
+        }
+
+        File saved = FileUtil.copyToDirectory(selected, "uploads/avatars");
+        if (saved == null) {
+            showMessage(avatarMessage, "Tải ảnh lên thất bại, vui lòng thử lại.", AppColor.ERROR);
+            return;
+        }
 
         User user = AuthService.getInstance().getCurrentUser();
+        boolean ok = userDAO.updateAvatar(user.getUserId(), saved.getPath());
+        if (ok) {
+            user.setAvatarUrl(saved.getPath());
+            avatarLabel.setIcon(ImageUtil.circularIcon(saved.getPath(), AVATAR_SIZE, user.getFullName()));
+            showMessage(avatarMessage, "Đã cập nhật ảnh đại diện.", AppColor.SUCCESS);
+            if (onSavedListener != null) onSavedListener.run();
+        } else {
+            showMessage(avatarMessage, "Lưu ảnh đại diện thất bại, vui lòng thử lại.", AppColor.ERROR);
+        }
+    }
 
-        card.add(cardTitle("Thông tin tài khoản"));
+    // ==================== Form: Thong tin ca nhan ====================
 
-        card.add(fieldLabel("Tên đăng nhập"));
-        JTextField usernameField = new JTextField(user.getUsername());
-        usernameField.setEditable(false);
-        styleField(usernameField);
-        card.add(usernameField);
+    private JPanel buildInfoFormCard() {
+        JPanel card = card();
+        card.add(cardTitle("Thông tin cá nhân"));
 
-        card.add(fieldLabel("Gmail"));
-        JTextField emailField = new JTextField(user.getEmail());
+        JPanel row = new JPanel(new GridLayout(1, 2, 16, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+
+        fullNameField = new JTextField();
+        styleField(fullNameField);
+        row.add(fieldGroup("Họ và tên", fullNameField));
+
+        phoneField = new JTextField();
+        styleField(phoneField);
+        row.add(fieldGroup("Số điện thoại", phoneField));
+
+        card.add(row);
+        card.add(Box.createVerticalStrut(8));
+
+        card.add(fieldLabel("Email"));
+        JTextField emailField = new JTextField(AuthService.getInstance().getCurrentUser().getEmail());
         emailField.setEditable(false);
         styleField(emailField);
         card.add(emailField);
 
-        card.add(fieldLabel("Họ và tên"));
-        fullNameField = new JTextField();
-        styleField(fullNameField);
-        card.add(fullNameField);
-
-        card.add(fieldLabel("Số điện thoại"));
-        phoneField = new JTextField();
-        styleField(phoneField);
-        card.add(phoneField);
+        JLabel emailHint = new JLabel("Email đăng nhập không thể thay đổi tại đây.");
+        emailHint.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        emailHint.setForeground(AppColor.TEXT_MUTED);
+        emailHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        emailHint.setBorder(new EmptyBorder(4, 0, 0, 0));
+        card.add(emailHint);
 
         infoMessage = new JLabel(" ");
         infoMessage.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         infoMessage.setAlignmentX(Component.LEFT_ALIGNMENT);
-        infoMessage.setBorder(new EmptyBorder(8, 0, 8, 0));
+        infoMessage.setBorder(new EmptyBorder(10, 0, 8, 0));
         card.add(infoMessage);
 
-        JButton saveButton = accentButton("Lưu thay đổi");
+        JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        buttonRow.setOpaque(false);
+        buttonRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        buttonRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        JButton saveButton = accentButton("Lưu thay đổi", FontAwesomeSolid.CHECK);
         saveButton.addActionListener(e -> saveProfile());
-        card.add(saveButton);
+        buttonRow.add(saveButton);
+        card.add(buttonRow);
 
         return card;
-    }
-
-    private JPanel buildPasswordCard() {
-        JPanel card = card();
-        card.add(cardTitle("Đổi mật khẩu"));
-
-        card.add(fieldLabel("Mật khẩu hiện tại"));
-        currentPasswordField = new JPasswordField();
-        styleField(currentPasswordField);
-        card.add(currentPasswordField);
-
-        card.add(fieldLabel("Mật khẩu mới"));
-        newPasswordField = new JPasswordField();
-        styleField(newPasswordField);
-        card.add(newPasswordField);
-
-        card.add(fieldLabel("Xác nhận mật khẩu mới"));
-        confirmPasswordField = new JPasswordField();
-        styleField(confirmPasswordField);
-        card.add(confirmPasswordField);
-
-        passwordMessage = new JLabel(" ");
-        passwordMessage.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        passwordMessage.setAlignmentX(Component.LEFT_ALIGNMENT);
-        passwordMessage.setBorder(new EmptyBorder(8, 0, 8, 0));
-        card.add(passwordMessage);
-
-        JButton changeButton = accentButton("Đổi mật khẩu");
-        changeButton.addActionListener(e -> changePassword());
-        card.add(changeButton);
-
-        return card;
-    }
-
-    private void loadCurrentUser() {
-        User user = AuthService.getInstance().getCurrentUser();
-        fullNameField.setText(user.getFullName());
-        phoneField.setText(user.getPhone());
     }
 
     private void saveProfile() {
@@ -144,7 +334,6 @@ public class ProfilePanel extends JPanel {
                 .required("Họ tên không được để trống.")
                 .maxLength(100, "Họ tên không được vượt quá 100 ký tự.");
         if (!phone.isEmpty()) {
-            // So dien thoai la truong tuy chon, nhung neu da nhap thi phai dung dinh dang.
             validator.field(phone)
                     .maxLength(20, "Số điện thoại không được vượt quá 20 ký tự.")
                     .phoneVn("Số điện thoại không hợp lệ (vd: 0912345678 hoặc +84912345678).");
@@ -161,11 +350,55 @@ public class ProfilePanel extends JPanel {
         if (ok) {
             user.setFullName(fullName);
             user.setPhone(phone);
+            refreshSideCard(user);
             showMessage(infoMessage, "Đã lưu thay đổi.", AppColor.SUCCESS);
             if (onSavedListener != null) onSavedListener.run();
         } else {
             showMessage(infoMessage, "Lưu thất bại, vui lòng thử lại.", AppColor.ERROR);
         }
+    }
+
+    // ==================== Form: Doi mat khau ====================
+
+    private JPanel buildPasswordCard() {
+        JPanel card = card();
+        card.add(cardTitle("Đổi mật khẩu"));
+
+        card.add(fieldLabel("Mật khẩu hiện tại"));
+        currentPasswordField = new JPasswordField();
+        card.add(passwordFieldWithToggle(currentPasswordField));
+
+        card.add(Box.createVerticalStrut(8));
+
+        JPanel row = new JPanel(new GridLayout(1, 2, 16, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+
+        newPasswordField = new JPasswordField();
+        row.add(fieldGroup("Mật khẩu mới", passwordFieldWithToggle(newPasswordField)));
+
+        confirmPasswordField = new JPasswordField();
+        row.add(fieldGroup("Xác nhận mật khẩu mới", passwordFieldWithToggle(confirmPasswordField)));
+
+        card.add(row);
+
+        passwordMessage = new JLabel(" ");
+        passwordMessage.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        passwordMessage.setAlignmentX(Component.LEFT_ALIGNMENT);
+        passwordMessage.setBorder(new EmptyBorder(10, 0, 8, 0));
+        card.add(passwordMessage);
+
+        JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        buttonRow.setOpaque(false);
+        buttonRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        buttonRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        JButton changeButton = accentButton("Đổi mật khẩu", FontAwesomeSolid.KEY);
+        changeButton.addActionListener(e -> changePassword());
+        buttonRow.add(changeButton);
+        card.add(buttonRow);
+
+        return card;
     }
 
     private void changePassword() {
@@ -207,11 +440,45 @@ public class ProfilePanel extends JPanel {
         }
     }
 
+    // ==================== Nap / lam moi du lieu ====================
+
+    private void loadCurrentUser() {
+        User user = AuthService.getInstance().getCurrentUser();
+        fullNameField.setText(user.getFullName());
+        phoneField.setText(user.getPhone());
+        refreshSideCard(user);
+    }
+
+    private void refreshSideCard(User user) {
+        nameLabel.setText(user.getFullName());
+        rolePillLabel.setText(roleLabel(user.getRole()));
+        emailValueLabel.setText(user.getEmail() == null || user.getEmail().isBlank() ? "-" : user.getEmail());
+        phoneValueLabel.setText(user.getPhone() == null || user.getPhone().isBlank() ? "-" : user.getPhone());
+        if (user.getCreatedAt() != null) {
+            joinedLabel.setText("Tham gia từ " + user.getCreatedAt().format(DateTimeFormatter.ofPattern("d/M/yyyy")));
+        } else {
+            joinedLabel.setText(" ");
+        }
+        avatarLabel.setIcon(ImageUtil.circularIcon(user.getAvatarUrl(), AVATAR_SIZE, user.getFullName()));
+    }
+
+    private static String roleLabel(Role role) {
+        if (role == null) return "";
+        switch (role) {
+            case ADMIN: return "Quản trị viên";
+            case SALES_MANAGER: return "Quản lý bán hàng";
+            case INVENTORY_MANAGER: return "Quản lý kho";
+            case SALES_STAFF: return "Nhân viên bán hàng";
+            case CUSTOMER: return "Khách hàng";
+            default: return role.name();
+        }
+    }
+
     public void onSaved(Runnable listener) {
         this.onSavedListener = listener;
     }
 
-    // ---- UI helpers ----
+    // ==================== UI helpers ====================
 
     private JPanel card() {
         JPanel card = new JPanel();
@@ -222,7 +489,37 @@ public class ProfilePanel extends JPanel {
                 new LineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(20, 20, 20, 20)
         ));
-        card.setMaximumSize(new Dimension(440, Integer.MAX_VALUE));
+        card.setMaximumSize(new Dimension(CARD_MAX_WIDTH, Integer.MAX_VALUE));
+        return card;
+    }
+
+    private JPanel sideCard() {
+        JPanel card = new JPanel() {
+            @Override
+            public Dimension getPreferredSize() {
+                Dimension d = super.getPreferredSize();
+                return new Dimension(260, d.height);
+            }
+
+            @Override
+            public Dimension getMaximumSize() {
+                Dimension d = super.getPreferredSize();
+                return new Dimension(260, d.height);
+            }
+
+            @Override
+            public Dimension getMinimumSize() {
+                Dimension d = super.getPreferredSize();
+                return new Dimension(260, d.height);
+            }
+        };
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBackground(AppColor.WHITE);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(24, 20, 20, 20)
+        ));
         return card;
     }
 
@@ -231,7 +528,7 @@ public class ProfilePanel extends JPanel {
         label.setFont(new Font("Segoe UI", Font.BOLD, 15));
         label.setForeground(AppColor.TEXT_PRIMARY);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
-        label.setBorder(new EmptyBorder(0, 0, 12, 0));
+        label.setBorder(new EmptyBorder(0, 0, 16, 0));
         return label;
     }
 
@@ -244,6 +541,16 @@ public class ProfilePanel extends JPanel {
         return label;
     }
 
+    private JPanel fieldGroup(String labelText, JComponent field) {
+        JPanel group = new JPanel();
+        group.setOpaque(false);
+        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
+        group.setAlignmentX(Component.LEFT_ALIGNMENT);
+        group.add(fieldLabel(labelText));
+        group.add(field);
+        return group;
+    }
+
     private void styleField(JTextField field) {
         field.setAlignmentX(Component.LEFT_ALIGNMENT);
         field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
@@ -253,17 +560,78 @@ public class ProfilePanel extends JPanel {
         ));
     }
 
-    private JButton accentButton(String text) {
-        JButton button = new JButton(text);
-        button.setAlignmentX(Component.LEFT_ALIGNMENT);
-        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
-        button.setBackground(AppColor.ACCENT);
+    private JPanel passwordFieldWithToggle(JPasswordField field) {
+        field.setBorder(new EmptyBorder(4, 8, 4, 0));
+
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+        wrapper.setBackground(AppColor.WHITE);
+        wrapper.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(0, 0, 0, 4)
+        ));
+        wrapper.add(field, BorderLayout.CENTER);
+
+        char defaultEcho = field.getEchoChar();
+        JButton toggle = new JButton(FontIcon.of(FontAwesomeSolid.EYE_SLASH, 14, AppColor.TEXT_MUTED));
+        toggle.setContentAreaFilled(false);
+        toggle.setBorderPainted(false);
+        toggle.setFocusPainted(false);
+        toggle.setOpaque(false);
+        toggle.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        toggle.setBorder(new EmptyBorder(0, 6, 0, 6));
+        toggle.addActionListener(e -> {
+            boolean currentlyHidden = field.getEchoChar() != 0;
+            field.setEchoChar(currentlyHidden ? (char) 0 : defaultEcho);
+            toggle.setIcon(FontIcon.of(currentlyHidden ? FontAwesomeSolid.EYE : FontAwesomeSolid.EYE_SLASH, 14, AppColor.TEXT_MUTED));
+        });
+        wrapper.add(toggle, BorderLayout.EAST);
+
+        return wrapper;
+    }
+
+    private JButton accentButton(String text, FontAwesomeSolid iconType) {
+        JButton button = new JButton(text, FontIcon.of(iconType, 13, Color.WHITE));
+        button.setIconTextGap(8);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
         button.setForeground(Color.WHITE);
+        button.setBackground(AppColor.ACCENT);
         button.setFocusPainted(false);
-        button.setBorder(new EmptyBorder(0, 0, 0, 0));
+        button.setBorder(new EmptyBorder(9, 18, 9, 18));
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
         button.getModel().addChangeListener(e ->
                 button.setBackground(button.getModel().isRollover() ? AppColor.ACCENT_HOVER : AppColor.ACCENT));
         return button;
+    }
+
+    private JButton circularIconButton(FontAwesomeSolid iconType) {
+        JButton button = new JButton(FontIcon.of(iconType, 13, Color.WHITE)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getModel().isRollover() ? AppColor.ACCENT_HOVER : AppColor.ACCENT);
+                g2.fillOval(0, 0, getWidth(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setOpaque(false);
+        button.setBorder(new EmptyBorder(0, 0, 0, 0));
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        return button;
+    }
+
+    private JComponent buildDivider() {
+        JSeparator sep = new JSeparator();
+        sep.setForeground(AppColor.BORDER);
+        sep.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        return sep;
     }
 
     private void showMessage(JLabel label, String text, Color color) {

@@ -9,6 +9,7 @@ import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
+import com.view.client.ProfilePanel;
 import com.view.layouts.MainLayout;
 import com.view.admin.account.UserAccountPanel;
 import com.view.admin.customer.CustomerPanel;
@@ -82,6 +83,11 @@ public class AdminMainFrame extends JFrame {
 
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
+
+        ProfilePanel profilePanel = new ProfilePanel();
+        profilePanel.onSaved(this::rebuildContent);
+        layout.addHiddenPage("profile", profilePanel);
+        layout.getHeader().onProfile(() -> layout.showPage("profile"));
 
         layout.onPageChange(key -> currentPageKey = key);
         layout.showPage(currentPageKey);

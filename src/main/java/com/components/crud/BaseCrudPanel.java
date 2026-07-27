@@ -452,6 +452,10 @@ public abstract class BaseCrudPanel<T> extends JPanel {
         } else {
             dataCardLayout.show(dataContainer, CARD_TABLE);
         }
+        afterRender(result);
+    }
+    
+    protected void afterRender(PaginationHelper.PaginationResult<T> result) {
     }
 
     /** Tải lại đúng trang/từ khóa đang hiển thị. Public để subclass gọi khi có sự kiện bên ngoài (vd websocket). */
