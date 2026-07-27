@@ -140,14 +140,6 @@ java -cp target/classes com.security.tool.ConfigTool decrypt secure-config.enc
 
 Trong Eclipse, đảm bảo biến môi trường `MYSHOP_CONFIG_KEY` đã được set cho Run Configuration (hoặc set ở cấp hệ điều hành), sau đó chạy file `src/main/java/com/Main.java` (Run As → Java Application).
 
-## Thành viên nhóm
-
-| Họ và tên        | Vai trò     |
-| ---------------- | ----------- |
-| Hoàng Trung Nam  | Trưởng nhóm |
-| Lê Hoa Trường Vũ | Thành viên  |
-| Trần Tài Phương  | Thành viên  |
-| Hà Minh Tuấn     | Thành viên  |
 
 ## Kiến trúc hệ thống (mô hình 3 lớp)
 
