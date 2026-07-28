@@ -10,14 +10,6 @@ import java.awt.event.ComponentEvent;
 import java.util.List;
 import java.util.function.Consumer;
 
-/**
- * Luoi (grid) hien thi danh sach ProductCard, tu dong doi so cot theo be
- * rong hien co (giong cach StatCard tu doi co chu khi resize) de dung
- * duoc ca khi cua so nho lai. Khong tu goi DB - chi nhan List<Product> co
- * san tu ben ngoai (vd HomePanel sau khi ProductDAO tra ve), nen component
- * nay tai su dung duoc cho bat ky man hinh nao can hien thi luoi san pham
- * (trang danh muc, ket qua tim kiem...).
- */
 public class ProductGrid extends JPanel {
 
     private static final int CARD_MIN_WIDTH = 220;
@@ -26,6 +18,7 @@ public class ProductGrid extends JPanel {
     private final JPanel grid;
     private List<Product> products = List.of();
     private Consumer<Product> onCardClick;
+    private Consumer<Product> onAddToCart;
     private int currentColumns = -1;
 
     public ProductGrid() {
@@ -46,6 +39,10 @@ public class ProductGrid extends JPanel {
 
     public void onCardClick(Consumer<Product> listener) {
         this.onCardClick = listener;
+    }
+
+    public void onAddToCart(Consumer<Product> listener) {
+        this.onAddToCart = listener;
     }
 
     /** Nap danh sach san pham moi va ve lai toan bo luoi. */
@@ -72,7 +69,7 @@ public class ProductGrid extends JPanel {
         grid.removeAll();
         grid.setLayout(new GridLayout(0, columns, GAP, GAP));
         for (Product product : products) {
-            ProductCard card = new ProductCard(product, onCardClick);
+            ProductCard card = new ProductCard(product, onCardClick, onAddToCart, null);
             grid.add(card);
         }
 

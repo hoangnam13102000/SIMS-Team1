@@ -3,11 +3,6 @@ package com.theme;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 
-/**
- * Font chuẩn dùng chung cho toàn app.
- * Giữ nguyên toàn bộ font tĩnh để tránh ảnh hưởng các component.
- * Bổ sung helper tạo font động (responsive).
- */
 public final class AppFont {
 
     private AppFont() {

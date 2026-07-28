@@ -15,6 +15,7 @@ public class Product {
     private String categoryName;
     private BigDecimal importPrice;
     private BigDecimal sellPrice;
+    private String imageUrl;
     private int stock;
     private int minStock;
     private String status; // ACTIVE | DISABLED
@@ -39,6 +40,9 @@ public class Product {
 
     public BigDecimal getSellPrice() { return sellPrice; }
     public void setSellPrice(BigDecimal sellPrice) { this.sellPrice = sellPrice; }
+
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
 
     public int getStock() { return stock; }
     public void setStock(int stock) { this.stock = stock; }

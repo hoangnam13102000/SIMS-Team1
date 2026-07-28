@@ -19,10 +19,6 @@ public class Main {
         // chua tung doi).
         ThemeManager.getInstance().applyStartupLookAndFeel();
 
-        // Kiem tra config bao mat NGAY LUC KHOI DONG (fail-fast). Neu thieu
-        // bien moi truong MYSHOP_CONFIG_KEY (doi ten qua -Dsecureconfig.envKeyName
-        // neu can) hoac file secure-config.enc bi hong/thieu, dung lai va bao
-        // loi ro rang thay vi de app chay mo ho roi crash sau.
         try {
             AppConfig.getInstance();
         } catch (Exception e) {

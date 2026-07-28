@@ -13,53 +13,58 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * DAO doc san pham tu bang Products (JOIN Categories de lay ten danh muc).
- * Hien chi phuc vu man hinh hien thi phia khach hang (HomePanel) nen chi
- * co cac ham doc (SELECT) - chua can INSERT/UPDATE/DELETE o day.
- */
+
 public class ProductDAO {
 
     private static final String BASE_SELECT =
             "SELECT p.ProductID, p.ProductName, p.CategoryID, c.CategoryName, "
-                    + "p.ImportPrice, p.SellPrice, p.Stock, p.MinStock, p.Status "
+                    + "p.ImportPrice, p.SellPrice, p.ImageUrl, p.Stock, p.MinStock, p.Status "
                     + "FROM Products p JOIN Categories c ON p.CategoryID = c.CategoryID ";
 
     /** Danh sach san pham dang ban (Status = ACTIVE), moi nhat/ten A-Z. */
     public List<Product> findAllActive() {
-        String sql = BASE_SELECT + "WHERE p.Status = 'ACTIVE' ORDER BY p.ProductName";
-        List<Product> result = new ArrayList<>();
-
-        try (Connection con = DBConnection.getConnection();
-             PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-
-            while (rs.next()) {
-                result.add(mapProduct(rs));
-            }
-        } catch (Exception e) {
-            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "ProductDAO.findAllActive", e);
-        }
-        return result;
+        return findActive(null, null);
     }
 
     /** Tim san pham dang ban theo tu khoa (ten san pham hoac ten danh muc), dung cho o tim kiem tren header. */
     public List<Product> searchActive(String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return findAllActive();
+        return findActive(keyword, null);
+    }
+
+    /** Danh sach san pham dang ban thuoc 1 danh muc, dung cho trang "Sản phẩm" phia client khi loc theo danh muc. */
+    public List<Product> findActiveByCategory(int categoryId) {
+        return findActive(null, categoryId);
+    }
+
+    /**
+     * Truy van hop nhat: san pham dang ban (Status = ACTIVE), loc theo tu
+     * khoa (ten san pham/ten danh muc) va/hoac theo danh muc - ca 2 tham so
+     * deu co the null/rong de bo qua dieu kien tuong ung.
+     */
+    public List<Product> findActive(String keyword, Integer categoryId) {
+        StringBuilder sql = new StringBuilder(BASE_SELECT).append("WHERE p.Status = 'ACTIVE' ");
+        List<Object> params = new ArrayList<>();
+
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            sql.append("AND (p.ProductName LIKE ? ESCAPE '\\' OR c.CategoryName LIKE ? ESCAPE '\\') ");
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            params.add(likeParam);
+            params.add(likeParam);
         }
+        if (categoryId != null) {
+            sql.append("AND p.CategoryID = ? ");
+            params.add(categoryId);
+        }
+        sql.append("ORDER BY p.ProductName");
 
-        String sql = BASE_SELECT
-                + "WHERE p.Status = 'ACTIVE' AND (p.ProductName LIKE ? ESCAPE '\\' OR c.CategoryName LIKE ? ESCAPE '\\') "
-                + "ORDER BY p.ProductName";
         List<Product> result = new ArrayList<>();
-        String likeParam = "%" + escapeLike(keyword.trim()) + "%";
-
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement ps = con.prepareStatement(sql)) {
+             PreparedStatement ps = con.prepareStatement(sql.toString())) {
 
-            ps.setString(1, likeParam);
-            ps.setString(2, likeParam);
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
+            }
 
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
@@ -67,7 +72,8 @@ public class ProductDAO {
                 }
             }
         } catch (Exception e) {
-            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "ProductDAO.searchActive - " + keyword, e);
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "ProductDAO.findActive - keyword=" + keyword + ", categoryId=" + categoryId, e);
         }
         return result;
     }
@@ -88,6 +94,7 @@ public class ProductDAO {
         product.setCategoryName(rs.getString("CategoryName"));
         product.setImportPrice(nullSafe(rs.getBigDecimal("ImportPrice")));
         product.setSellPrice(nullSafe(rs.getBigDecimal("SellPrice")));
+        product.setImageUrl(rs.getString("ImageUrl"));
         product.setStock(rs.getInt("Stock"));
         product.setMinStock(rs.getInt("MinStock"));
         product.setStatus(rs.getString("Status"));

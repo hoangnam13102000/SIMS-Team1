@@ -14,6 +14,7 @@ import javax.swing.event.PopupMenuListener;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -80,21 +81,9 @@ public class Header extends JPanel {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 14, 0));
         panel.setOpaque(false);
 
-        JPanel iconBadge = new JPanel(new GridBagLayout()) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(ACCENT_COLOR);
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
-                g2.dispose();
-            }
-        };
-        iconBadge.setOpaque(false);
-        iconBadge.setPreferredSize(new Dimension(42, 42));
-        FontIcon icon = FontIcon.of(FontAwesomeSolid.MOBILE_ALT, 20);
-        icon.setIconColor(Color.WHITE);
-        iconBadge.add(new JLabel(icon));
+        // Logo từ classpath: src/main/resources/logo/logo.png
+        JLabel logoLabel = new JLabel(loadLogoIcon(42));
+        logoLabel.setPreferredSize(new Dimension(42, 42));
 
         JPanel textPanel = new JPanel();
         textPanel.setOpaque(false);
@@ -114,9 +103,30 @@ public class Header extends JPanel {
         textPanel.add(Box.createVerticalStrut(2));
         textPanel.add(subtitleLabel);
 
-        panel.add(iconBadge);
+        panel.add(logoLabel);
         panel.add(textPanel);
         return panel;
+    }
+
+    /** Load logo.png từ resources, scale về size x size. Fallback icon nếu thiếu file. */
+    private static ImageIcon loadLogoIcon(int size) {
+        java.net.URL url = Header.class.getResource("/logo/logo.png");
+        if (url != null) {
+            ImageIcon raw = new ImageIcon(url);
+            Image scaled = raw.getImage().getScaledInstance(size, size, Image.SCALE_SMOOTH);
+            return new ImageIcon(scaled);
+        }
+        // Fallback: badge + icon mobile nếu không tìm thấy logo
+        BufferedImage fallback = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = fallback.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setColor(ACCENT_COLOR);
+        g2.fillRoundRect(0, 0, size, size, 12, 12);
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.MOBILE_ALT, Math.max(14, size / 2));
+        icon.setIconColor(Color.WHITE);
+        icon.paintIcon(null, g2, (size - icon.getIconWidth()) / 2, (size - icon.getIconHeight()) / 2);
+        g2.dispose();
+        return new ImageIcon(fallback);
     }
 
     // ==================== Ben phai: chuong + tai khoan ====================

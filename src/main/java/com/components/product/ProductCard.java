@@ -5,6 +5,7 @@ import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppRadius;
 import com.theme.AppSpacing;
+import com.utils.ImageUtil;
 import com.utils.NumberUtil;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -16,6 +17,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
 import java.util.function.Consumer;
 
 
@@ -126,28 +128,54 @@ public class ProductCard extends JPanel {
         }
     }
 
-    /** Vi schema chua co cot luu URL/binary anh nen dung icon dai dien theo danh muc tren nen mau nhe, bo goc tren giong khung anh that. */
+    /** Neu san pham co ImageUrl hop le thi ve anh that (cover-fit, bo goc tren); neu khong co/loi anh thi
+     *  dung icon dai dien theo danh muc tren nen mau nhe nhu truoc, bo goc tren giong khung anh that. */
     private JPanel buildImageArea(Product product) {
+        BufferedImage realImage = loadProductImage(product.getImageUrl());
+
         JPanel wrapper = new JPanel(new GridBagLayout()) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2.setClip(topRoundedShape(getWidth(), getHeight(), AppRadius.LARGE));
-                g2.setColor(categoryTint(product.getCategoryName()));
-                g2.fillRect(0, 0, getWidth(), getHeight());
+
+                if (realImage != null) {
+                    drawCoverFit(g2, realImage, getWidth(), getHeight());
+                } else {
+                    g2.setColor(categoryTint(product.getCategoryName()));
+                    g2.fillRect(0, 0, getWidth(), getHeight());
+                }
                 g2.dispose();
                 super.paintComponent(g);
             }
         };
         wrapper.setOpaque(false);
 
-        FontIcon icon = FontIcon.of(categoryIcon(product.getCategoryName()), IMAGE_ICON_SIZE);
-        icon.setIconColor(categoryIconColor(product.getCategoryName()));
-        JLabel iconLabel = new JLabel(icon);
-        wrapper.add(iconLabel);
+        if (realImage == null) {
+            FontIcon icon = FontIcon.of(categoryIcon(product.getCategoryName()), IMAGE_ICON_SIZE);
+            icon.setIconColor(categoryIconColor(product.getCategoryName()));
+            JLabel iconLabel = new JLabel(icon);
+            wrapper.add(iconLabel);
+        }
 
         return wrapper;
+    }
+
+    /** Doc anh san pham an toan tu duong dan/URL - tra ve null neu chua co hoac loi (khong lam crash luoi san pham). */
+    private BufferedImage loadProductImage(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) return null;
+        return ImageUtil.readSafe(imageUrl);
+    }
+
+    /** Ve anh phu kin het vung (w x h) kieu "cover" - giu ty le, cat bot phan du, luon lap day khung, khong bien dang. */
+    private void drawCoverFit(Graphics2D g2, BufferedImage img, int w, int h) {
+        double scale = Math.max((double) w / img.getWidth(), (double) h / img.getHeight());
+        int drawW = (int) Math.ceil(img.getWidth() * scale);
+        int drawH = (int) Math.ceil(img.getHeight() * scale);
+        int x = (w - drawW) / 2;
+        int y = (h - drawH) / 2;
+        g2.drawImage(img, x, y, drawW, drawH, null);
     }
 
     private Path2D topRoundedShape(int w, int h, int radius) {

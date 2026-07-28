@@ -22,8 +22,8 @@ import java.time.format.DateTimeFormatter;
 
 public class ProfilePanel extends JPanel {
 
-    private static final int AVATAR_SIZE = 120;
-    private static final int CARD_MAX_WIDTH = 640;
+	private static final int AVATAR_SIZE = 120;
+	private static final int SIDE_CARD_WIDTH = 300; // tăng từ 260 để tên đủ chỗ hiển thị
 
     private final UserDAO userDAO = new UserDAO();
     private Runnable onSavedListener;
@@ -106,7 +106,7 @@ public class ProfilePanel extends JPanel {
 
         JPanel avatarWrapper = new JPanel(null);
         avatarWrapper.setOpaque(false);
-        Dimension avatarWrapperSize = new Dimension(AVATAR_SIZE + 14, AVATAR_SIZE + 14);
+        Dimension avatarWrapperSize = new Dimension(AVATAR_SIZE + 20, AVATAR_SIZE + 20);
         avatarWrapper.setPreferredSize(avatarWrapperSize);
         avatarWrapper.setMaximumSize(avatarWrapperSize);
         avatarWrapper.setMinimumSize(avatarWrapperSize);
@@ -116,7 +116,7 @@ public class ProfilePanel extends JPanel {
         avatarWrapper.add(avatarLabel);
 
         JButton cameraButton = circularIconButton(FontAwesomeSolid.CAMERA);
-        cameraButton.setBounds(AVATAR_SIZE - 22, AVATAR_SIZE - 18, 34, 34);
+        cameraButton.setBounds(AVATAR_SIZE - 22, AVATAR_SIZE - 22, 34, 34);
         cameraButton.setToolTipText("Đổi ảnh đại diện");
         cameraButton.addActionListener(e -> chooseAndUploadAvatar());
         avatarWrapper.add(cameraButton);
@@ -489,7 +489,7 @@ public class ProfilePanel extends JPanel {
                 new LineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(20, 20, 20, 20)
         ));
-        card.setMaximumSize(new Dimension(CARD_MAX_WIDTH, Integer.MAX_VALUE));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         return card;
     }
 
@@ -498,19 +498,19 @@ public class ProfilePanel extends JPanel {
             @Override
             public Dimension getPreferredSize() {
                 Dimension d = super.getPreferredSize();
-                return new Dimension(260, d.height);
+                return new Dimension(SIDE_CARD_WIDTH, d.height);
             }
 
             @Override
             public Dimension getMaximumSize() {
                 Dimension d = super.getPreferredSize();
-                return new Dimension(260, d.height);
+                return new Dimension(SIDE_CARD_WIDTH, d.height);
             }
 
             @Override
             public Dimension getMinimumSize() {
                 Dimension d = super.getPreferredSize();
-                return new Dimension(260, d.height);
+                return new Dimension(SIDE_CARD_WIDTH, d.height);
             }
         };
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
@@ -553,19 +553,23 @@ public class ProfilePanel extends JPanel {
 
     private void styleField(JTextField field) {
         field.setAlignmentX(Component.LEFT_ALIGNMENT);
-        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        field.setPreferredSize(new Dimension(field.getPreferredSize().width, 40));
+        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         field.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(4, 8, 4, 8)
+                new EmptyBorder(6, 10, 6, 10)
         ));
     }
 
     private JPanel passwordFieldWithToggle(JPasswordField field) {
-        field.setBorder(new EmptyBorder(4, 8, 4, 0));
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        field.setBorder(new EmptyBorder(6, 10, 6, 0));
 
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
-        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+        wrapper.setPreferredSize(new Dimension(wrapper.getPreferredSize().width, 40));
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         wrapper.setBackground(AppColor.WHITE);
         wrapper.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(AppColor.BORDER, 1, true),

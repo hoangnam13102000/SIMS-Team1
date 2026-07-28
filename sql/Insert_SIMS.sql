@@ -294,3 +294,27 @@ INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái');
 GO
+
+UPDATE Products
+SET ImageUrl = 'uploads/products/tao-envy.jpg'
+WHERE ProductName = N'Táo Envy';
+
+UPDATE Products
+SET ImageUrl = 'uploads/products/chuoi-gia.jpg'
+WHERE ProductName = N'Chuối già';
+
+UPDATE Products
+SET ImageUrl = 'uploads/products/ca-chua.jpg'
+WHERE ProductName = N'Cà chua';
+
+UPDATE Products
+SET ImageUrl = 'uploads/products/ca-rot.jpg'
+WHERE ProductName = N'Cà rốt';
+
+UPDATE Products
+SET ImageUrl = 'uploads/products/nuoc-suoi.jpg'
+WHERE ProductName = N'Nước suối 500ml';
+
+UPDATE Products
+SET ImageUrl = 'uploads/products/ca-phe-bot.jpg'
+WHERE ProductName = N'Cà phê bột 500g';

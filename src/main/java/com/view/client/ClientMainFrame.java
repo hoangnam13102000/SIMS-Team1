@@ -17,12 +17,7 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
-/**
- * Frame khach hang MAU cua framework - chi con lai 1 trang "Trang chu" (rong,
- * demo cach ghep header/footer) va "Trang ca nhan" (ProfilePanel, tinh nang
- * that: sua ho ten/so dien thoai + doi mat khau). Khi dung cho app that, them
- * cac trang nghiep vu cua ban bang addPage(key, label, icon, panel) o duoi.
- */
+
 public class ClientMainFrame extends JFrame {
 
     private CardLayout cardLayout;
@@ -78,13 +73,20 @@ public class ClientMainFrame extends JFrame {
         });
 
         HomePanel homePanel = new HomePanel();
+        CategoriesPanel categoriesPanel = new CategoriesPanel();
+        ProductsPanel productsPanel = new ProductsPanel();
+
         addPage("home", Lang.get("client.nav.home"), FontAwesomeSolid.HOME, homePanel);
+        addPage("categories", Lang.get("client.nav.categories"), FontAwesomeSolid.TAGS, categoriesPanel);
+        addPage("products", Lang.get("client.nav.products"), FontAwesomeSolid.STORE, productsPanel);
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
 
-        // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
-        // addPage("products", "San pham", FontAwesomeSolid.STORE, new ProductStorePanel());
-
-        header.onNavigate(this::showPage);
+        header.onNavigate(key -> {
+            showPage(key);
+            if ("products".equals(key)) {
+                productsPanel.showAll();
+            }
+        });
         header.onSearch(keyword -> {
             showPage("home");
             homePanel.search(keyword);

@@ -2,17 +2,6 @@ package com.theme;
 
 import java.awt.Color;
 
-/**
- * Bang mau chu dao cua toan app - lay tu LoginFrame lam nguon chuan.
- * Cac man hinh/component khac (BaseTable, BaseDialog, AppAlert, BaseSearch, Pagination...)
- * nen tham chieu vao day thay vi tu khai bao Color rieng, tranh trung lap code.
- *
- * THEME: tu ban v2, cac truong ben duoi KHONG con la hang so tuyet doi - chung
- * duoc gan lai gia tri moi trong applyTheme(ThemeMode) moi khi nguoi dung doi
- * Light/Dark trong ThemeManager. Code goi noi khac van chi can viet AppColor.XXX
- * nhu cu, khong doi gi ca; mau se tu dong dung ban Light hoac Dark tuy theme
- * hien tai TAI THOI DIEM component duoc TAO MOI (xem ThemeManager.rebuild()).
- */
 public final class AppColor {
 
     private AppColor() {

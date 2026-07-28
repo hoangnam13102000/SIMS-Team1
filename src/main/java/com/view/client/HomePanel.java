@@ -8,6 +8,7 @@ import com.core.log.ErrorCode;
 import com.dao.ProductDAO;
 import com.i18n.Lang;
 import com.model.Product;
+import com.service.CartService;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppSpacing;
@@ -34,6 +35,26 @@ public class HomePanel extends JPanel {
         add(buildHeaderBlock(), BorderLayout.NORTH);
 
         productGrid = new ProductGrid();
+        productGrid.onAddToCart(product -> {
+            if (product.isOutOfStock()) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Sản phẩm đã hết hàng.",
+                        "Giỏ hàng",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            CartService.getInstance().addToCart(product, 1);
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Đã thêm \"" + product.getProductName() + "\" vào giỏ hàng.",
+                    "Giỏ hàng",
+                    JOptionPane.INFORMATION_MESSAGE
+            );          // <-- đóng showMessageDialog
+
+        });      
         productGrid.onCardClick(this::onProductSelected);
 
         contentArea = new JPanel(new BorderLayout());
