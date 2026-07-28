@@ -140,6 +140,13 @@ java -cp target/classes com.security.tool.ConfigTool decrypt secure-config.enc
 
 Trong Eclipse, đảm bảo biến môi trường `MYSHOP_CONFIG_KEY` đã được set cho Run Configuration (hoặc set ở cấp hệ điều hành), sau đó chạy file `src/main/java/com/Main.java` (Run As → Java Application).
 
+## Sơ đồ cơ sở dữ liệu – ERD
+
+Sơ đồ ERD của hệ thống SIMS thể hiện các bảng, khóa chính, khóa ngoại
+và mối quan hệ giữa các bảng trong cơ sở dữ liệu.
+
+🔗 [Xem sơ đồ ERD trực tuyến trên dbdiagram.io](https://dbdiagram.io/d/SIMS-6a68100ac3a90dd98dca30f9)
+
 
 ## Kiến trúc hệ thống (mô hình 3 lớp)
 
