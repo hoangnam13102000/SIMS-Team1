@@ -11,7 +11,6 @@ package com.core.log;
  */
 public enum ErrorCode {
 	
-	
 
     // ==== Cơ sở dữ liệu (DAO) ====
     DB_CONNECTION_FAIL("ERR-DB-001", "Không kết nối được cơ sở dữ liệu"),
@@ -43,9 +42,14 @@ public enum ErrorCode {
     // ==== Giao diện người dùng ====
     UI_ACTION_FAIL("ERR-UI-001", "Thao tác trên giao diện thất bại"),
     UI_DATA_LOAD_FAIL("ERR-UI-002", "Tải dữ liệu hiển thị lên giao diện thất bại"),
+    
+	// ==== Email ====
+    EMAIL_SEND_FAIL("ERR-MAIL-001", "Gửi email thất bại"),
 
     // ==== Hệ thống / không phân loại được ====
     SYSTEM_UNCAUGHT("ERR-SYS-001", "Lỗi hệ thống không xác định (uncaught exception)");
+	
+	
 
     private final String code;
     private final String description;

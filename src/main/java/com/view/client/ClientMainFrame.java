@@ -73,13 +73,26 @@ public class ClientMainFrame extends JFrame {
         });
 
         HomePanel homePanel = new HomePanel();
-        CategoriesPanel categoriesPanel = new CategoriesPanel();
         ProductsPanel productsPanel = new ProductsPanel();
 
+        CartPanel cartPanel = new CartPanel();
+        cartPanel.onCheckoutSuccess(() -> showPage("home"));
+        cartPanel.onContinueShopping(() -> {
+            showPage("products");
+            productsPanel.showAll();
+        });
+
         addPage("home", Lang.get("client.nav.home"), FontAwesomeSolid.HOME, homePanel);
-        addPage("categories", Lang.get("client.nav.categories"), FontAwesomeSolid.TAGS, categoriesPanel);
+        header.addCategoriesDropdown(Lang.get("client.nav.categories"), FontAwesomeSolid.TAGS);
         addPage("products", Lang.get("client.nav.products"), FontAwesomeSolid.STORE, productsPanel);
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
+        contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
+
+        // Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham, loc san theo danh muc do
+        header.onCategorySelect((categoryId, categoryName) -> {
+            showPage("products");
+            productsPanel.filterByCategory(categoryId, categoryName);
+        });
 
         header.onNavigate(key -> {
             showPage(key);
@@ -92,6 +105,10 @@ public class ClientMainFrame extends JFrame {
             homePanel.search(keyword);
         });
         header.onProfile(() -> showPage("profile"));
+        header.onCartClick(() -> {
+            showPage("cart");
+            cartPanel.loadCart();
+        });
         header.onLogout(this::doLogout);
 
         add(header, BorderLayout.NORTH);

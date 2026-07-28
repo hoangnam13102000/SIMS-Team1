@@ -1,70 +1,85 @@
 package com.view.client;
 
+import com.components.BaseDialog;
+import com.components.EmptyState;
+import com.i18n.Lang;
 import com.model.CartItem;
+import com.service.AuthService;
 import com.service.CartService;
 import com.theme.AppColor;
 import com.theme.AppFont;
+import com.theme.AppSpacing;
+import com.utils.ImageUtil;
 import com.utils.NumberUtil;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
+import java.util.List;
 
-/**
- * Trang gio hang day du (mo tu icon gio hang / nut "Xem gio hang" o dropdown).
- * Tham khao myShop CartPanel, dung Product thay Phone.
- */
 public class CartPanel extends JPanel {
 
-    private final JPanel listPanel;
-    private final JLabel totalLabel;
+    private static final int THUMB_SIZE = 72;
+    private static final int SUMMARY_WIDTH = 340;
+
+    private final CardLayout contentLayout = new CardLayout();
+    private final JPanel contentArea;
+
+    private final JPanel itemsRowsContainer;
+    private final JLabel itemsCountLabel;
+
+    private final JLabel subtotalCaptionLabel;
+    private final JLabel subtotalValueLabel;
+    private final JLabel totalValueLabel;
     private final JButton checkoutButton;
+
+    private JTextField nameField;
+    private JTextField phoneField;
+    private JTextField emailField;
+    private JTextField addressField;
+
     private Runnable onCheckoutSuccess;
+    private Runnable continueShoppingListener;
 
     public CartPanel() {
-        setLayout(new BorderLayout(0, 16));
+        setLayout(new BorderLayout());
         setBackground(AppColor.PAGE_BG);
-        setBorder(new EmptyBorder(24, 28, 24, 28));
 
-        JLabel title = new JLabel("Giỏ hàng của bạn");
-        title.setFont(AppFont.TITLE);
-        title.setForeground(AppColor.TEXT_PRIMARY);
+        add(buildHeaderBlock(), BorderLayout.NORTH);
 
-        listPanel = new JPanel();
-        listPanel.setOpaque(false);
-        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        contentArea = new JPanel(contentLayout);
+        contentArea.setOpaque(false);
 
-        JScrollPane scroll = new JScrollPane(listPanel);
+        contentArea.add(buildEmptyStatePanel(), "empty");
+
+        itemsCountLabel = new JLabel();
+        itemsRowsContainer = new JPanel();
+        itemsRowsContainer.setOpaque(false);
+        itemsRowsContainer.setLayout(new BoxLayout(itemsRowsContainer, BoxLayout.Y_AXIS));
+
+        subtotalCaptionLabel = new JLabel();
+        subtotalValueLabel = new JLabel();
+        totalValueLabel = new JLabel();
+        checkoutButton = buildCheckoutButton();
+
+        contentArea.add(buildTwoColumnLayout(), "items");
+
+        JScrollPane scroll = new JScrollPane(contentArea);
         scroll.setBorder(null);
-        scroll.setOpaque(false);
-        scroll.getViewport().setOpaque(false);
+        scroll.getViewport().setBackground(AppColor.PAGE_BG);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
-
-        totalLabel = new JLabel();
-        totalLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        totalLabel.setForeground(AppColor.TEXT_PRIMARY);
-
-        checkoutButton = new JButton("Thanh toán");
-        checkoutButton.setFocusPainted(false);
-        checkoutButton.setBackground(AppColor.ACCENT_HOVER);
-        checkoutButton.setForeground(Color.WHITE);
-        checkoutButton.setFont(AppFont.BODY_BOLD);
-        checkoutButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        checkoutButton.setBorder(new EmptyBorder(10, 20, 10, 20));
-        checkoutButton.addActionListener(e -> openCheckout());
-
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setOpaque(false);
-        footer.setBorder(new EmptyBorder(12, 0, 0, 0));
-        footer.add(totalLabel, BorderLayout.WEST);
-        footer.add(checkoutButton, BorderLayout.EAST);
-
-        add(title, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
-        add(footer, BorderLayout.SOUTH);
 
+        prefillShippingFromAccount();
+
+        CartService.getInstance().addListener(this::loadCart);
         loadCart();
     }
 
@@ -72,103 +87,610 @@ public class CartPanel extends JPanel {
         this.onCheckoutSuccess = listener;
     }
 
-    /** Goi lai moi khi mo trang gio hang de dong bo UI. */
-    public void loadCart() {
-        listPanel.removeAll();
-        java.util.List<CartItem> items = CartService.getInstance().getItems();
-
-        if (items.isEmpty()) {
-            JLabel empty = new JLabel("Giỏ hàng đang trống. Hãy thêm sản phẩm từ trang chủ.");
-            empty.setFont(AppFont.BODY);
-            empty.setForeground(AppColor.TEXT_MUTED);
-            empty.setBorder(new EmptyBorder(40, 0, 40, 0));
-            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
-            listPanel.add(empty);
-            checkoutButton.setEnabled(false);
-        } else {
-            checkoutButton.setEnabled(true);
-            for (CartItem item : items) {
-                listPanel.add(buildRow(item));
-                listPanel.add(Box.createVerticalStrut(10));
-            }
-        }
-
-        totalLabel.setText("Tổng: " + NumberUtil.formatThousands(CartService.getInstance().getTotal()) + " đ");
-        listPanel.revalidate();
-        listPanel.repaint();
+    /** Goi khi nguoi dung bam "Tiep tuc mua sam" tu trang thai gio hang rong - dieu huong sang trang San pham. */
+    public void onContinueShopping(Runnable listener) {
+        this.continueShoppingListener = listener;
     }
 
-    private JPanel buildRow(CartItem item) {
-        JPanel row = new JPanel(new BorderLayout(12, 0));
-        row.setOpaque(true);
-        row.setBackground(AppColor.WHITE);
-        row.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-            new EmptyBorder(12, 14, 12, 14)
-        ));
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 72));
+    private JPanel buildHeaderBlock() {
+        JPanel wrapper = new JPanel();
+        wrapper.setOpaque(false);
+        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
+        wrapper.setBorder(new EmptyBorder(AppSpacing.XL, AppSpacing.XL, AppSpacing.LG, AppSpacing.XL));
+
+        JLabel title = new JLabel(Lang.get("cart.title"));
+        title.setFont(AppFont.TITLE);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        wrapper.add(title);
+        return wrapper;
+    }
+
+    private JPanel buildEmptyStatePanel() {
+        EmptyState empty = EmptyState.noData(Lang.get("cart.noData.entity"));
+        empty.setAction(Lang.get("cart.continueShopping"), () -> {
+            if (continueShoppingListener != null) continueShoppingListener.run();
+        });
+
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.setBorder(new EmptyBorder(20, AppSpacing.XL, AppSpacing.XL, AppSpacing.XL));
+        wrapper.add(empty, BorderLayout.CENTER);
+        return wrapper;
+    }
+
+    private JPanel buildTwoColumnLayout() {
+        JPanel wrapper = new JPanel(new GridBagLayout());
+        wrapper.setOpaque(false);
+        wrapper.setBorder(new EmptyBorder(0, AppSpacing.XL, AppSpacing.XL, AppSpacing.XL));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.NORTH;
+
+        gbc.gridx = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.insets = new Insets(0, 0, 0, AppSpacing.LG);
+        wrapper.add(buildLeftColumn(), gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.VERTICAL;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        wrapper.add(buildSummaryCard(), gbc);
+
+        return wrapper;
+    }
+
+    private JPanel buildLeftColumn() {
+        JPanel column = new JPanel();
+        column.setOpaque(false);
+        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
+
+        column.add(buildItemsCard());
+        column.add(Box.createVerticalStrut(AppSpacing.MD));
+        column.add(buildLinksRow());
+        column.add(Box.createVerticalStrut(AppSpacing.LG));
+        column.add(buildShippingCard());
+
+        return column;
+    }
+
+    // ==================== Danh sach san pham (Cot trai) ====================
+
+    private JPanel buildItemsCard() {
+        JPanel card = card();
+
+        itemsCountLabel.setFont(AppFont.SMALL);
+        itemsCountLabel.setForeground(AppColor.TEXT_MUTED);
+        itemsCountLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        itemsCountLabel.setBorder(new EmptyBorder(0, 0, AppSpacing.MD, 0));
+
+        card.add(itemsCountLabel);
+        card.add(divider());
+        card.add(itemsRowsContainer);
+        return card;
+    }
+
+    /** Ve lai danh sach dong san pham trong the gio hang - khong dung toi shippingCard/cac o nhap. */
+    private void rebuildItemRows(List<CartItem> items) {
+        itemsRowsContainer.removeAll();
+        for (int i = 0; i < items.size(); i++) {
+            itemsRowsContainer.add(Box.createVerticalStrut(AppSpacing.MD));
+            itemsRowsContainer.add(buildItemRow(items.get(i)));
+            if (i < items.size() - 1) {
+                itemsRowsContainer.add(Box.createVerticalStrut(AppSpacing.MD));
+                itemsRowsContainer.add(divider());
+            }
+        }
+        itemsRowsContainer.revalidate();
+        itemsRowsContainer.repaint();
+    }
+
+    private JPanel buildItemRow(CartItem item) {
+        JPanel row = new JPanel(new BorderLayout(14, 0));
+        row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+
+        JLabel thumb = new JLabel(loadRoundedThumb(item.getProduct().getImageUrl(), THUMB_SIZE));
+        thumb.setVerticalAlignment(SwingConstants.TOP);
+        row.add(thumb, BorderLayout.WEST);
+
+        JPanel right = new JPanel();
+        right.setOpaque(false);
+        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
+
+        JPanel topRow = new JPanel(new BorderLayout());
+        topRow.setOpaque(false);
+        topRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        topRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
 
         JLabel name = new JLabel(item.getProduct().getProductName());
-        name.setFont(AppFont.BODY_BOLD);
+        name.setFont(new Font("Segoe UI", Font.BOLD, 14));
         name.setForeground(AppColor.TEXT_PRIMARY);
+        topRow.add(name, BorderLayout.WEST);
+        topRow.add(buildRemoveButton(item), BorderLayout.EAST);
+        right.add(topRow);
 
-        JLabel meta = new JLabel(NumberUtil.formatThousands(
-                item.getProduct().getSellPrice() == null ? 0 : item.getProduct().getSellPrice().longValue())
-                + " đ  ·  " + (item.getProduct().getCategoryName() == null ? "" : item.getProduct().getCategoryName()));
-        meta.setFont(AppFont.SMALL);
-        meta.setForeground(AppColor.TEXT_MUTED);
+        String categoryName = item.getProduct().getCategoryName();
+        if (categoryName != null && !categoryName.isBlank()) {
+            JLabel subtitle = new JLabel(categoryName);
+            subtitle.setFont(AppFont.SMALL);
+            subtitle.setForeground(AppColor.TEXT_MUTED);
+            subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+            subtitle.setBorder(new EmptyBorder(2, 0, 0, 0));
+            right.add(subtitle);
+        }
 
-        JPanel left = new JPanel();
-        left.setOpaque(false);
-        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
-        left.add(name);
-        left.add(Box.createVerticalStrut(4));
-        left.add(meta);
+        right.add(Box.createVerticalGlue());
 
-        SpinnerNumberModel model = new SpinnerNumberModel(
-                item.getQuantity(), 1, Math.max(1, item.getProduct().getStock()), 1);
-        JSpinner quantitySpinner = new JSpinner(model);
-        quantitySpinner.setPreferredSize(new Dimension(64, 30));
-        quantitySpinner.addChangeListener(e -> {
-            CartService.getInstance().updateQuantity(
-                    item.getProduct().getProductId(), (int) quantitySpinner.getValue());
-            loadCart();
-        });
+        JPanel bottomRow = new JPanel(new BorderLayout());
+        bottomRow.setOpaque(false);
+        bottomRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bottomRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
 
-        JLabel subtotal = new JLabel(NumberUtil.formatThousands(item.getSubtotal()) + " đ");
-        subtotal.setFont(AppFont.BODY_BOLD);
-        subtotal.setForeground(AppColor.ACCENT_HOVER);
+        JPanel priceStack = new JPanel();
+        priceStack.setOpaque(false);
+        priceStack.setLayout(new BoxLayout(priceStack, BoxLayout.Y_AXIS));
 
-        JButton removeButton = new JButton("Xóa");
-        removeButton.setForeground(AppColor.ERROR);
-        removeButton.setBorderPainted(false);
-        removeButton.setContentAreaFilled(false);
-        removeButton.setFocusPainted(false);
-        removeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        removeButton.addActionListener(e -> {
-            CartService.getInstance().removeItem(item.getProduct().getProductId());
-            loadCart();
-        });
+        JLabel price = new JLabel(NumberUtil.formatThousands(item.getSubtotal()) + " đ");
+        price.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        price.setForeground(AppColor.ACCENT_HOVER);
+        price.setAlignmentX(Component.LEFT_ALIGNMENT);
+        priceStack.add(price);
 
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
-        right.setOpaque(false);
-        right.add(quantitySpinner);
-        right.add(subtotal);
-        right.add(removeButton);
+        JLabel unitCaption = new JLabel(NumberUtil.formatThousands(unitPrice(item)) + " đ / " + Lang.get("cart.unit"));
+        unitCaption.setFont(AppFont.SMALL);
+        unitCaption.setForeground(AppColor.TEXT_MUTED);
+        unitCaption.setAlignmentX(Component.LEFT_ALIGNMENT);
+        priceStack.add(unitCaption);
 
-        row.add(left, BorderLayout.CENTER);
-        row.add(right, BorderLayout.EAST);
+        bottomRow.add(priceStack, BorderLayout.WEST);
+        bottomRow.add(buildQtyStepper(item), BorderLayout.EAST);
+        right.add(bottomRow);
+
+        row.add(right, BorderLayout.CENTER);
         return row;
     }
 
-    private void openCheckout() {
-        // SIMS chua co CheckoutDialog day du nhu myShop - thong bao tam.
-        JOptionPane.showMessageDialog(this,
-                "Chức năng thanh toán sẽ được bổ sung sau.\nTổng hiện tại: "
-                        + NumberUtil.formatThousands(CartService.getInstance().getTotal()) + " đ",
-                "Thanh toán",
-                JOptionPane.INFORMATION_MESSAGE);
+    private long unitPrice(CartItem item) {
+        return item.getProduct().getSellPrice() == null ? 0 : item.getProduct().getSellPrice().longValue();
+    }
+
+    private JButton buildRemoveButton(CartItem item) {
+        JButton button = new JButton() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                FontIcon icon = FontIcon.of(FontAwesomeSolid.TRASH_ALT, 14);
+                icon.setIconColor(AppColor.TEXT_MUTED);
+                int ix = (getWidth() - icon.getIconWidth()) / 2;
+                int iy = (getHeight() - icon.getIconHeight()) / 2;
+                icon.paintIcon(this, g, ix, iy);
+            }
+        };
+        button.setPreferredSize(new Dimension(26, 26));
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setToolTipText(Lang.get("cart.remove"));
+        button.addActionListener(e -> CartService.getInstance().removeItem(item.getProduct().getProductId()));
+        return button;
+    }
+
+    private JPanel buildQtyStepper(CartItem item) {
+        JPanel stepper = new JPanel(new GridLayout(1, 3));
+        stepper.setOpaque(false);
+        stepper.setBorder(new LineBorder(AppColor.BORDER, 1, true));
+        stepper.setPreferredSize(new Dimension(108, 36));
+
+        JButton minus = stepButton(FontAwesomeSolid.MINUS, item, -1);
+
+        JLabel qtyLabel = new JLabel(String.valueOf(item.getQuantity()), SwingConstants.CENTER);
+        qtyLabel.setFont(AppFont.BODY_BOLD);
+        qtyLabel.setForeground(AppColor.TEXT_PRIMARY);
+        qtyLabel.setBorder(BorderFactory.createMatteBorder(0, 1, 0, 1, AppColor.BORDER));
+
+        JButton plus = stepButton(FontAwesomeSolid.PLUS, item, 1);
+
+        stepper.add(minus);
+        stepper.add(qtyLabel);
+        stepper.add(plus);
+        return stepper;
+    }
+
+    private JButton stepButton(FontAwesomeSolid iconType, CartItem item, int delta) {
+        JButton button = new JButton() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                FontIcon icon = FontIcon.of(iconType, 10);
+                icon.setIconColor(AppColor.TEXT_SECONDARY);
+                int ix = (getWidth() - icon.getIconWidth()) / 2;
+                int iy = (getHeight() - icon.getIconHeight()) / 2;
+                icon.paintIcon(this, g, ix, iy);
+            }
+        };
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.addActionListener(e ->
+                CartService.getInstance().updateQuantity(item.getProduct().getProductId(), item.getQuantity() + delta));
+        return button;
+    }
+
+    // ==================== "Tiep tuc mua sam" / "Xoa toan bo gio hang" ====================
+
+    private JPanel buildLinksRow() {
+        JPanel row = new JPanel(new BorderLayout());
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+
+        JLabel continueLink = linkLabel("← " + Lang.get("cart.continueShopping"), AppColor.TEXT_MUTED);
+        continueLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (continueShoppingListener != null) continueShoppingListener.run();
+            }
+        });
+
+        JLabel clearLink = linkLabel(Lang.get("cart.clearAll"), AppColor.ERROR);
+        clearLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                handleClearAll();
+            }
+        });
+
+        row.add(continueLink, BorderLayout.WEST);
+        row.add(clearLink, BorderLayout.EAST);
+        return row;
+    }
+
+    private JLabel linkLabel(String text, Color color) {
+        JLabel label = new JLabel(text);
+        label.setFont(AppFont.SMALL_BOLD);
+        label.setForeground(color);
+        label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        return label;
+    }
+
+    private void handleClearAll() {
+        boolean confirmed = BaseDialog.confirm(
+                this,
+                Lang.get("cart.clearAll.confirm.title"),
+                Lang.get("cart.clearAll.confirm.message"),
+                Lang.get("cart.clearAll"),
+                AppColor.ERROR,
+                AppColor.ERROR_HOVER,
+                FontAwesomeSolid.TRASH_ALT
+        );
+        if (confirmed) {
+            CartService.getInstance().clear();
+        }
+    }
+
+    // ==================== Form "Thong tin giao hang" (Cot trai) ====================
+
+    private JPanel buildShippingCard() {
+        JPanel card = card();
+        card.add(cardTitle(Lang.get("cart.shipping.title")));
+
+        JPanel row1 = new JPanel(new GridLayout(1, 2, AppSpacing.LG, 0));
+        row1.setOpaque(false);
+        row1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+
+        nameField = new JTextField();
+        styleField(nameField);
+        row1.add(fieldGroup(Lang.get("cart.shipping.fullName") + " *", nameField));
+
+        phoneField = new JTextField();
+        styleField(phoneField);
+        row1.add(fieldGroup(Lang.get("cart.shipping.phone"), phoneField));
+
+        card.add(row1);
+
+        emailField = new JTextField();
+        styleField(emailField);
+        card.add(fieldGroup(Lang.get("cart.shipping.email") + " *", emailField));
+
+        addressField = new JTextField();
+        addressField.putClientProperty("JTextField.placeholderText", Lang.get("cart.shipping.address.placeholder"));
+        styleField(addressField);
+        card.add(fieldGroup(Lang.get("cart.shipping.address") + " *", addressField));
+
+        return card;
+    }
+
+    private void prefillShippingFromAccount() {
+        if (!AuthService.getInstance().isLoggedIn()) return;
+        com.model.User user = AuthService.getInstance().getCurrentUser();
+        if (user.getFullName() != null) nameField.setText(user.getFullName());
+        if (user.getPhone() != null) phoneField.setText(user.getPhone());
+        if (user.getEmail() != null) emailField.setText(user.getEmail());
+    }
+
+    // ==================== Tom tat don hang (Cot phai) ====================
+
+    private JPanel buildSummaryCard() {
+        JPanel card = sideCard();
+        card.add(cardTitle(Lang.get("cart.summary.title")));
+
+        // Giữ nguyên toàn bộ các dòng tóm tắt — chỉ sửa layout cho căn đều như hình
+        card.add(summaryRow(subtotalCaptionLabel, subtotalValueLabel, AppColor.TEXT_MUTED, AppColor.TEXT_PRIMARY, false));
+        card.add(Box.createVerticalStrut(AppSpacing.SM));
+
+        JLabel shippingLabel = new JLabel(Lang.get("cart.summary.shippingFee"));
+        JLabel shippingValue = new JLabel(Lang.get("cart.summary.freeShipping"));
+        card.add(summaryRow(shippingLabel, shippingValue, AppColor.TEXT_MUTED, AppColor.SUCCESS, false));
+
+        card.add(Box.createVerticalStrut(AppSpacing.MD));
+        card.add(summaryDivider());
+        card.add(Box.createVerticalStrut(AppSpacing.MD));
+
+        JLabel totalLabel = new JLabel(Lang.get("cart.summary.total"));
+        card.add(summaryRow(totalLabel, totalValueLabel, AppColor.TEXT_TITLE, AppColor.ACCENT_HOVER, true));
+        card.add(Box.createVerticalStrut(AppSpacing.LG));
+
+        card.add(checkoutButton);
+
+        JLabel caption = new JLabel(Lang.get("cart.summary.caption"), SwingConstants.CENTER);
+        caption.setFont(AppFont.SMALL);
+        caption.setForeground(AppColor.TEXT_MUTED);
+        caption.setAlignmentX(Component.LEFT_ALIGNMENT);
+        caption.setBorder(new EmptyBorder(AppSpacing.SM, 0, 0, 0));
+        caption.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        caption.setPreferredSize(new Dimension(SUMMARY_WIDTH - 40, 28));
+        card.add(caption);
+
+        return card;
+    }
+
+    /**
+     * Hàng nhãn trái – giá trị phải, chiếm full chiều ngang nội dung summary card
+     * (SUMMARY_WIDTH - padding 20*2) để không còn khoảng trắng thừa bên trái/phải.
+     */
+    private JPanel summaryRow(JLabel labelComp, JLabel valueComp, Color labelColor, Color valueColor, boolean big) {
+        final int innerWidth = SUMMARY_WIDTH - 40;
+        final int rowHeight = big ? 34 : 24;
+
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setPreferredSize(new Dimension(innerWidth, rowHeight));
+        row.setMaximumSize(new Dimension(innerWidth, rowHeight));
+        row.setMinimumSize(new Dimension(innerWidth, rowHeight));
+
+        labelComp.setFont(big ? AppFont.HEADING_MD : AppFont.BODY);
+        labelComp.setForeground(labelColor);
+
+        valueComp.setFont(big ? new Font("Segoe UI", Font.BOLD, 20) : AppFont.BODY_BOLD);
+        valueComp.setForeground(valueColor);
+        valueComp.setHorizontalAlignment(SwingConstants.RIGHT);
+
+        row.add(labelComp, BorderLayout.WEST);
+        row.add(valueComp, BorderLayout.EAST);
+        return row;
+    }
+
+    /** Divider chỉ dùng trong summary card — width cố định = inner width. */
+    private JComponent summaryDivider() {
+        JSeparator sep = new JSeparator();
+        sep.setForeground(AppColor.BORDER);
+        sep.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sep.setPreferredSize(new Dimension(SUMMARY_WIDTH - 40, 1));
+        sep.setMaximumSize(new Dimension(SUMMARY_WIDTH - 40, 1));
+        return sep;
+    }
+
+    private JButton buildCheckoutButton() {
+        JButton button = new JButton() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(isEnabled() ? AppColor.ACCENT_HOVER : AppColor.DISABLED_BTN);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        button.setText(Lang.get("cart.checkout") + "   →");
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        button.setPreferredSize(new Dimension(SUMMARY_WIDTH - 40, 48));
+        button.setMaximumSize(new Dimension(SUMMARY_WIDTH - 40, 48));
+        button.setMinimumSize(new Dimension(SUMMARY_WIDTH - 40, 48));
+        button.setFocusPainted(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setOpaque(false);
+        button.setForeground(Color.WHITE);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.addActionListener(e -> handleCheckout());
+        return button;
+    }
+
+    // ==================== Nap lai / thanh toan ====================
+
+    /** Goi lai moi khi CartService bao thay doi (them/sua/xoa) hoac khi mo trang - cap nhat so lieu + danh sach. */
+    public void loadCart() {
+        List<CartItem> items = CartService.getInstance().getItems();
+
+        if (items.isEmpty()) {
+            contentLayout.show(contentArea, "empty");
+            return;
+        }
+
+        itemsCountLabel.setText(Lang.get("cart.itemCount", items.size()));
+        rebuildItemRows(items);
+
+        long subtotal = CartService.getInstance().getTotal();
+        long total = subtotal; // he thong chua tinh phi van chuyen/khuyen mai them
+
+        if (subtotalCaptionLabel != null) {
+            subtotalCaptionLabel.setText(Lang.get("cart.summary.subtotal", items.size()));
+        }
+        subtotalValueLabel.setText(NumberUtil.formatThousands(subtotal) + " đ");
+        totalValueLabel.setText(NumberUtil.formatThousands(total) + " đ");
+        checkoutButton.setEnabled(true);
+
+        contentLayout.show(contentArea, "items");
+    }
+
+    private void handleCheckout() {
+        String name = nameField.getText() == null ? "" : nameField.getText().trim();
+        String email = emailField.getText() == null ? "" : emailField.getText().trim();
+        String address = addressField.getText() == null ? "" : addressField.getText().trim();
+
+        if (name.isEmpty() || email.isEmpty() || address.isEmpty()) {
+            BaseDialog.error(this, Lang.get("cart.shipping.validate.title"), Lang.get("cart.shipping.validate.required"));
+            return;
+        }
+        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            BaseDialog.error(this, Lang.get("cart.shipping.validate.title"), Lang.get("cart.shipping.validate.email"));
+            return;
+        }
+
+        long total = CartService.getInstance().getTotal();
+        boolean confirmed = BaseDialog.confirm(
+                this,
+                Lang.get("cart.checkout.confirm.title"),
+                Lang.get("cart.checkout.confirm.message", NumberUtil.formatThousands(total) + " đ"),
+                Lang.get("cart.checkout"),
+                AppColor.ACCENT_HOVER,
+                AppColor.ACCENT_HOVER,
+                FontAwesomeSolid.CHECK_CIRCLE
+        );
+        if (!confirmed) return;
+
+        // He thong chua co bang Orders/checkout that su - mo phong 1 buoc dat
+        // hang don gian: xac nhan -> bao thanh cong -> xoa gio hang. Khi ghep
+        // OrderService/OrderDAO that, thay doan nay bang luu don hang voi
+        // name/phone/email/address da nhap o form ben tren.
+        CartService.getInstance().clear();
+        BaseDialog.success(this, Lang.get("cart.checkout.success.title"), Lang.get("cart.checkout.success.message"));
         if (onCheckoutSuccess != null) onCheckoutSuccess.run();
+    }
+
+    // ==================== Helper: card/label style dung chung (giong ProfilePanel) ====================
+
+    private JPanel card() {
+        JPanel card = new JPanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBackground(AppColor.WHITE);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(20, 20, 20, 20)
+        ));
+        return card;
+    }
+
+    private JPanel sideCard() {
+        JPanel card = new JPanel() {
+            @Override
+            public Dimension getPreferredSize() {
+                Dimension d = super.getPreferredSize();
+                return new Dimension(SUMMARY_WIDTH, d.height);
+            }
+
+            @Override
+            public Dimension getMaximumSize() {
+                return getPreferredSize();
+            }
+
+            @Override
+            public Dimension getMinimumSize() {
+                return getPreferredSize();
+            }
+        };
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBackground(AppColor.WHITE);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(20, 20, 20, 20)
+        ));
+        return card;
+    }
+
+    private JLabel cardTitle(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        label.setForeground(AppColor.TEXT_PRIMARY);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        label.setBorder(new EmptyBorder(0, 0, AppSpacing.LG, 0));
+        return label;
+    }
+
+    private JLabel fieldLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        label.setForeground(AppColor.TEXT_MUTED);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        label.setBorder(new EmptyBorder(8, 0, 4, 0));
+        return label;
+    }
+
+    private JPanel fieldGroup(String labelText, JComponent field) {
+        JPanel group = new JPanel();
+        group.setOpaque(false);
+        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
+        group.setAlignmentX(Component.LEFT_ALIGNMENT);
+        group.add(fieldLabel(labelText.toUpperCase()));
+        group.add(field);
+        return group;
+    }
+
+    private void styleField(JTextField field) {
+        field.setAlignmentX(Component.LEFT_ALIGNMENT);
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        field.setPreferredSize(new Dimension(field.getPreferredSize().width, 40));
+        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        field.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(6, 10, 6, 10)
+        ));
+    }
+
+    private JComponent divider() {
+        JSeparator sep = new JSeparator();
+        sep.setForeground(AppColor.BORDER);
+        sep.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        return sep;
+    }
+
+    /** Anh dai dien san pham bo goc, fallback icon hop neu chua co/loi anh - dung chung style voi dropdown gio hang tren header. */
+    private ImageIcon loadRoundedThumb(String imageUrl, int size) {
+        BufferedImage raw = (imageUrl == null || imageUrl.isBlank()) ? null : ImageUtil.readSafe(imageUrl);
+        BufferedImage square = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = square.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setClip(new RoundRectangle2D.Float(0, 0, size, size, 14, 14));
+
+        if (raw != null) {
+            int side = Math.min(raw.getWidth(), raw.getHeight());
+            BufferedImage cropped = raw.getSubimage((raw.getWidth() - side) / 2, (raw.getHeight() - side) / 2, side, side);
+            g2.drawImage(cropped, 0, 0, size, size, null);
+        } else {
+            g2.setColor(AppColor.ACCENT_BG_SOFT);
+            g2.fillRect(0, 0, size, size);
+            FontIcon icon = FontIcon.of(FontAwesomeSolid.BOX, (int) (size * 0.45));
+            icon.setIconColor(AppColor.ACCENT_HOVER);
+            int ix = (size - icon.getIconWidth()) / 2;
+            int iy = (size - icon.getIconHeight()) / 2;
+            icon.paintIcon(null, g2, ix, iy);
+        }
+        g2.dispose();
+        return new ImageIcon(square);
     }
 }

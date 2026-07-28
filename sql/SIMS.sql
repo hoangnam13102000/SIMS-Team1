@@ -97,7 +97,21 @@ CREATE TABLE Customers (
         ON DELETE CASCADE                              -- xoa Users thi xoa luon ho so Customers
 );
 GO
-
+CREATE TABLE Employees (
+    UserID          INT NOT NULL PRIMARY KEY,        -- = Users.UserID (1-1, ke thua)
+    EmployeeID      CHAR(36) NOT NULL UNIQUE,        -- Ma nhan vien (UUID)
+    DateOfBirth     DATE NULL,
+    Gender          VARCHAR(10) NULL
+                        CHECK (Gender IN ('MALE', 'FEMALE', 'OTHER')),
+    Salary          DECIMAL(18,2) NULL,
+    HireDate        DATE NOT NULL DEFAULT CAST(GETDATE() AS DATE),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT FK_Employees_Users
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE
+);
+GO
 CREATE TABLE Products (
     
     ProductID       INT IDENTITY(1,1) PRIMARY KEY,

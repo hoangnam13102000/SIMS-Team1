@@ -135,8 +135,18 @@ public class ProfilePanel extends JPanel {
         nameLabel = new JLabel(" ");
         nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 17));
         nameLabel.setForeground(AppColor.TEXT_PRIMARY);
+        nameLabel.setHorizontalAlignment(SwingConstants.CENTER);
         nameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        card.add(nameLabel);
+        // Boc trong hang co glue de BoxLayout.Y_AXIS can giua chac chan
+        JPanel nameRow = new JPanel();
+        nameRow.setOpaque(false);
+        nameRow.setLayout(new BoxLayout(nameRow, BoxLayout.X_AXIS));
+        nameRow.setAlignmentX(Component.CENTER_ALIGNMENT);
+        nameRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        nameRow.add(Box.createHorizontalGlue());
+        nameRow.add(nameLabel);
+        nameRow.add(Box.createHorizontalGlue());
+        card.add(nameRow);
 
         card.add(Box.createVerticalStrut(8));
 
@@ -192,17 +202,32 @@ public class ProfilePanel extends JPanel {
         joinedLabel = new JLabel(" ");
         joinedLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         joinedLabel.setForeground(AppColor.TEXT_MUTED);
-        joinedLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.add(joinedLabel);
+        joinedLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        joinedLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JPanel joinedRow = new JPanel();
+        joinedRow.setOpaque(false);
+        joinedRow.setLayout(new BoxLayout(joinedRow, BoxLayout.X_AXIS));
+        joinedRow.setAlignmentX(Component.CENTER_ALIGNMENT);
+        joinedRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+        joinedRow.add(Box.createHorizontalGlue());
+        joinedRow.add(joinedLabel);
+        joinedRow.add(Box.createHorizontalGlue());
+        card.add(joinedRow);
 
         return card;
     }
 
     private JPanel infoRow(FontAwesomeSolid iconType, String label, JLabel value) {
+        // Dung BorderLayout + width co dinh theo SIDE_CARD de khong bi BoxLayout
+        // tao khoang trang le trai khi child khong stretch deu.
+        final int contentW = SIDE_CARD_WIDTH - 40; // tru padding trai/phai cua sideCard (20*2)
+
         JPanel row = new JPanel(new BorderLayout(10, 0));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
+        row.setPreferredSize(new Dimension(contentW, 44));
+        row.setMaximumSize(new Dimension(contentW, 44));
+        row.setMinimumSize(new Dimension(contentW, 44));
 
         JPanel iconBox = new JPanel(new GridBagLayout()) {
             @Override
@@ -216,22 +241,32 @@ public class ProfilePanel extends JPanel {
         };
         iconBox.setOpaque(false);
         iconBox.setPreferredSize(new Dimension(36, 36));
+        iconBox.setMinimumSize(new Dimension(36, 36));
+        iconBox.setMaximumSize(new Dimension(36, 36));
         FontIcon icon = FontIcon.of(iconType, 14);
         icon.setIconColor(AppColor.TEXT_MUTED);
         iconBox.add(new JLabel(icon));
         row.add(iconBox, BorderLayout.WEST);
 
-        JPanel textPanel = new JPanel();
+        JPanel textPanel = new JPanel(new BorderLayout());
         textPanel.setOpaque(false);
-        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
 
         JLabel labelText = new JLabel(label);
         labelText.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         labelText.setForeground(AppColor.TEXT_MUTED);
-        labelText.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        textPanel.add(labelText);
-        textPanel.add(value);
+        value.setHorizontalAlignment(SwingConstants.LEFT);
+
+        JPanel stacked = new JPanel();
+        stacked.setOpaque(false);
+        stacked.setLayout(new BoxLayout(stacked, BoxLayout.Y_AXIS));
+        labelText.setAlignmentX(Component.LEFT_ALIGNMENT);
+        value.setAlignmentX(Component.LEFT_ALIGNMENT);
+        stacked.add(labelText);
+        stacked.add(Box.createVerticalStrut(2));
+        stacked.add(value);
+
+        textPanel.add(stacked, BorderLayout.WEST); // WEST = sat mep trai, khong bi can giua
         row.add(textPanel, BorderLayout.CENTER);
 
         return row;

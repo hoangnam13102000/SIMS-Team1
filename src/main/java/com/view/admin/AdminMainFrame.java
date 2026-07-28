@@ -13,6 +13,7 @@ import com.view.client.ProfilePanel;
 import com.view.layouts.MainLayout;
 import com.view.admin.account.UserAccountPanel;
 import com.view.admin.customer.CustomerPanel;
+import com.view.admin.employee.EmployeePanel;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
@@ -79,6 +80,7 @@ public class AdminMainFrame extends JFrame {
         layout = new MainLayout(Lang.get("admin.mainlayout.title"));
         layout.addPage("dashboard", Lang.get("sidebar.dashboard"), FontAwesomeSolid.TACHOMETER_ALT, new DashboardPanel(), AppPermission.DASHBOARD_VIEW);
         layout.addPage("users", Lang.get("sidebar.users"), FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
+        layout.addPage("employees", Lang.get("sidebar.employees"), FontAwesomeSolid.USER_TIE, new EmployeePanel(), AppPermission.USER_MANAGE);
         layout.addPage("customers", Lang.get("sidebar.customers"), FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
 
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----

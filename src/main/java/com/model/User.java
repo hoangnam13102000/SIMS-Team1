@@ -26,7 +26,7 @@ public class User {
     }
     public java.time.LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(java.time.LocalDateTime createdAt) { this.createdAt = createdAt; }
-    
+
     public int getUserId() { return userId; }
     public void setUserId(int userId) { this.userId = userId; }
 
