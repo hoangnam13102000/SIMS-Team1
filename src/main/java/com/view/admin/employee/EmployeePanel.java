@@ -53,8 +53,17 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
         table.setBadgeColumn(7, this::lockLabel, this::lockColor);
 
-        table.setColumnWidths(45, 130, 130, 115, 170, 130, 110, 90);
-        table.setColumnMinWidths(40, 100, 95, 90, 110, 100, 90, 80);
+        // Không bật enableHorizontalScroll — bảng co giãn theo khung, không cuộn ngang.
+        // Preferred width ưu tiên cột badge (Trạng thái/Khóa) và Vai trò để StatBadge
+        // hiện đủ chữ ("Đang hoạt động", "Bình thường"). STT cố định để không bị bóp thành "...".
+        // Header dài được BaseTable wrap 2 dòng nên không cần min width quá lớn.
+        table.setColumnWidths(48, 120, 120, 120, 150, 135, 140, 115);
+        table.setColumnMinWidths(48, 80, 85, 90, 95, 100, 125, 105);
+        var sttCol = table.getTable().getColumnModel().getColumn(0);
+        sttCol.setMinWidth(48);
+        sttCol.setMaxWidth(56);
+        // Chia đều theo preferred width, luôn vừa khung nhìn (không cuộn ngang).
+        table.getTable().setAutoResizeMode(javax.swing.JTable.AUTO_RESIZE_ALL_COLUMNS);
 
         initialLoad();
     }

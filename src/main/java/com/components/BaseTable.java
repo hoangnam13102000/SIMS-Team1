@@ -171,14 +171,46 @@ public class BaseTable extends JPanel {
     }
 
     /**
-     * Icon mui ten sort cho 1 cot header (view index {@code column}):
-     *  - null                      neu cot khong sortable (action/anh/STT...)
-     *  - mui ten len+xuong MO NHAT neu cot sortable nhung chua duoc chon de
-     *    sort - day la "goi y" cho nguoi dung biet co the bam vao de sort,
-     *    luon hien thi san thay vi chi xuat hien sau khi da click 1 lan.
-     *  - mui ten RO, 1 chieu       neu cot dang la sort key hien tai (ho tro
-     *    ca multi-column sort qua Shift+click, hien them so thu tu uu tien).
+     * Tach title header thanh 2 dong (HTML) de hien du chu khi cot hep.
+     * Uu tien ngat o khoang trang gan giua chuoi; neu khong co space thi ngat
+     * theo do rong pixel.
      */
+    private static String wrapHeaderHtml(String text, FontMetrics fm, int maxWidth) {
+        String safe = text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+        int breakAt = -1;
+        int mid = text.length() / 2;
+        // Tim khoang trang gan giua nhat ma dong 1 van vua maxWidth
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isWhitespace(text.charAt(i))) {
+                String left = text.substring(0, i).trim();
+                if (fm.stringWidth(left) <= maxWidth) {
+                    if (breakAt < 0 || Math.abs(i - mid) <= Math.abs(breakAt - mid)) {
+                        breakAt = i;
+                    }
+                }
+            }
+        }
+        if (breakAt > 0) {
+            String line1 = safe.substring(0, breakAt).trim();
+            String line2 = safe.substring(breakAt).trim();
+            return "<html><body style='margin:0;padding:0;color:#ffffff'>"
+                    + line1 + "<br>" + line2 + "</body></html>";
+        }
+        // Khong co space phu hop - ngat theo ky tu vua maxWidth
+        int cut = text.length();
+        for (int i = 1; i <= text.length(); i++) {
+            if (fm.stringWidth(text.substring(0, i)) > maxWidth) {
+                cut = Math.max(1, i - 1);
+                break;
+            }
+        }
+        return "<html><body style='margin:0;padding:0;color:#ffffff'>"
+                + safe.substring(0, cut) + "<br>" + safe.substring(cut)
+                + "</body></html>";
+    }
     private static Icon sortIconFor(JTable table, int column) {
         RowSorter<?> rowSorter = table.getRowSorter();
         if (!(rowSorter instanceof TableRowSorter)) return null;
@@ -275,7 +307,7 @@ public class BaseTable extends JPanel {
         JTableHeader header = table.getTableHeader();
         header.setReorderingAllowed(false);
         header.setResizingAllowed(true);
-        header.setPreferredSize(new Dimension(header.getPreferredSize().width, 50));
+        header.setPreferredSize(new Dimension(header.getPreferredSize().width, 56));
         header.setFont(AppFont.BODY_BOLD);
         header.setBackground(AppColor.TABLE_HEADER_BG);
         header.setForeground(HEADER_FG);
@@ -294,17 +326,30 @@ public class BaseTable extends JPanel {
         // ten do dua vao RowSorter#getSortKeys() cua table.
         DefaultTableCellRenderer headerRenderer = new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable table, Object value, 
+            public Component getTableCellRendererComponent(JTable table, Object value,
                     boolean isSelected, boolean hasFocus, int row, int column) {
                 JLabel c = (JLabel) super.getTableCellRendererComponent(
                     table, value, isSelected, hasFocus, row, column);
                 c.setBackground(AppColor.TABLE_HEADER_BG);
                 c.setForeground(HEADER_FG);
-                c.setBorder(new EmptyBorder(AppSpacing.SM, AppSpacing.LG, AppSpacing.SM, AppSpacing.LG));
+                c.setBorder(new EmptyBorder(AppSpacing.SM, AppSpacing.MD, AppSpacing.SM, AppSpacing.MD));
                 c.setFont(AppFont.BODY_BOLD);
                 c.setHorizontalTextPosition(SwingConstants.LEFT);
-                c.setIcon(sortIconFor(table, column));
-                c.setIconTextGap(6);
+                c.setVerticalAlignment(SwingConstants.CENTER);
+                Icon sortIcon = sortIconFor(table, column);
+                c.setIcon(sortIcon);
+                c.setIconTextGap(4);
+
+                String text = value != null ? value.toString() : "";
+                int colWidth = table.getColumnModel().getColumn(column).getWidth();
+                int iconW = sortIcon != null ? sortIcon.getIconWidth() + 4 : 0;
+                int available = Math.max(12, colWidth - AppSpacing.MD * 2 - iconW);
+                FontMetrics fm = c.getFontMetrics(AppFont.BODY_BOLD);
+                if (!text.isEmpty() && fm.stringWidth(text) > available) {
+                    c.setText(wrapHeaderHtml(text, fm, available));
+                } else {
+                    c.setText(text);
+                }
                 return c;
             }
         };

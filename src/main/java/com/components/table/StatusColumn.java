@@ -37,7 +37,9 @@ public final class StatusColumn {
 
         return (t, value, isSelected, hasFocus, row, column) -> {
             wrapper.setBackground(colorProvider.colorFor(row, isSelected));
-            wrapper.setBorder(new EmptyBorder(AppSpacing.SM, AppSpacing.LG, AppSpacing.SM, AppSpacing.LG));
+            // Padding ngang SM (thay LG) de badge dai ("Đang hoạt động") khong bi cat
+            // khi cot co gian theo khung ma khong bat horizontal scroll.
+            wrapper.setBorder(new EmptyBorder(AppSpacing.SM, AppSpacing.SM, AppSpacing.SM, AppSpacing.SM));
             badge.setBadge(labelFn.apply(value), colorFn.apply(value));
             return wrapper;
         };

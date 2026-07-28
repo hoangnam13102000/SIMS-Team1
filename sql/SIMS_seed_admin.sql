@@ -60,3 +60,12 @@ GO
    VALUES ('manager1', '<bcrypt-hash>', N'Nguyen Van A', 'manager1@sims.local',
            (SELECT RoleID FROM Roles WHERE RoleCode = 'SALES_MANAGER'), 'ACTIVE');
 */
+
+UPDATE Users
+SET 
+    PasswordHash = '$2a$12$bu9a8NWQ5nLvEzmP9KmDbOmZxADF8e83Lrf/w60dhBTXaUyxRl4zi',
+    IsLocked = 0,
+    FailedLoginCount = 0,
+    Status = 'ACTIVE'
+WHERE Username = 'admin';
+GO
