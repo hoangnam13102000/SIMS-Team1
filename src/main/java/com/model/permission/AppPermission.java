@@ -7,5 +7,6 @@ public enum AppPermission implements Permission {
     USER_MANAGE,
     CUSTOMER_MANAGE,
     CATEGORY_MANAGE,
-    PRODUCT_MANAGE
+    PRODUCT_MANAGE,
+    SUPPLIER_MANAGE
 }

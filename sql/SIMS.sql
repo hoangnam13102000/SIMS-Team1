@@ -77,7 +77,9 @@ CREATE TABLE Suppliers (
     Address         NVARCHAR(255) NULL,
     Phone           VARCHAR(20)   NULL,
     Email           VARCHAR(100)  NULL,
-    SuppliedItems   NVARCHAR(255) NULL               -- mat hang cung cap (mo ta)
+    SuppliedItems   NVARCHAR(255) NULL,               -- mat hang cung cap (mo ta)
+    IsDeleted       BIT NOT NULL DEFAULT 0,          -- xoa mem  - khong DELETE that
+    DeletedAt       DATETIME NULL
 );
 GO
 
