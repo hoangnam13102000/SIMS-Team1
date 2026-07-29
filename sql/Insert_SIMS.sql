@@ -73,7 +73,7 @@ GO
 -- ---- 4. Users ----
 -- Da them cot AvatarUrl (anh dai dien, co the NULL neu chua upload).
 INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, RoleID) VALUES
-('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Nguyễn Văn Admin',  'admin@connectmart.vn',   '0900000001', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
+('admin',    '$2a$12$bu9a8NWQ5nLvEzmP9KmDbOmZxADF8e83Lrf/w60dhBTXaUyxRl4zi',    N'Nguyễn Văn Admin',  'admin@connectmart.vn',   '0900000001', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
 ('salesmgr', '$2a$10$examplehash.salesmgr.000000000000000000000000000', N'Trần Thị Bích',     'bich.sm@connectmart.vn', '0900000002', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_MANAGER')),
 ('invmgr',   '$2a$10$examplehash.invmgr.0000000000000000000000000000',  N'Lê Văn Kho',        'kho.im@connectmart.vn',  '0900000003', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='INVENTORY_MANAGER')),
 ('staff01',  '$2a$10$examplehash.staff01.000000000000000000000000000', N'Phạm Thị Ngân',     'ngan.staff@connectmart.vn', '0900000004', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),

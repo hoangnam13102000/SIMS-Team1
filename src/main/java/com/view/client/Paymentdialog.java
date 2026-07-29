@@ -1,3 +1,4 @@
+/*
 package com.view.client;
 
 import com.i18n.Lang;
@@ -28,10 +29,10 @@ import java.util.List;
  * {@link com.components.BaseDialog}, {@link CartPanel}) thay vi copy nguyen
  * giao dien PayPal that - he thong chua co cong thanh toan that su, day chi
  * la buoc chon phuong thuc truoc khi mo phong dat hang (xem CartPanel#handleCheckout).
- */
+ * /
 public final class PaymentDialog {
 
-    /** Phuong thuc thanh toan nguoi dung chon trong dialog. */
+    /** Phuong thuc thanh toan nguoi dung chon trong dialog. * /
     public enum Method { COD, PAYPAL }
 
     private static final int WIDTH = 440;
@@ -42,7 +43,7 @@ public final class PaymentDialog {
     /**
      * Hien thi dialog. Tra ve phuong thuc da chon neu nguoi dung bam
      * "Xác nhận thanh toán", hoac null neu bam Hủy / dong dialog (ESC, nut X).
-     */
+     * /
     public static Method show(Component parent, List<CartItem> items, long total) {
         Method[] result = {null};
         Method[] selected = {Method.COD};
@@ -260,7 +261,7 @@ public final class PaymentDialog {
         return footer;
     }
 
-    /** Ep chieu rong co dinh (khop voi WIDTH cua dialog) khi xep trong BoxLayout.Y_AXIS. */
+    /** Ep chieu rong co dinh (khop voi WIDTH cua dialog) khi xep trong BoxLayout.Y_AXIS. * /
     private static JComponent fixedWidth(JComponent comp) {
         comp.setAlignmentX(Component.LEFT_ALIGNMENT);
         int height = comp.getPreferredSize().height;
@@ -271,7 +272,7 @@ public final class PaymentDialog {
 
     // ==================== The chon phuong thuc (selectable card) ====================
 
-    /** The chon 1 phuong thuc thanh toan - bam vao bat ky diem nao tren the deu chon duoc. */
+    /** The chon 1 phuong thuc thanh toan - bam vao bat ky diem nao tren the deu chon duoc. * /
     private static final class MethodCard extends JPanel {
         private final Method method;
         private boolean selectedState;
@@ -353,7 +354,7 @@ public final class PaymentDialog {
         }
     }
 
-    /** Cham tron kieu radio button - vien khi rong, cham dac accent khi duoc chon. */
+    /** Cham tron kieu radio button - vien khi rong, cham dac accent khi duoc chon. * /
     private static final class RadioDot extends JComponent {
         private boolean selected;
 
@@ -383,3 +384,4 @@ public final class PaymentDialog {
         }
     }
 }
+*/
