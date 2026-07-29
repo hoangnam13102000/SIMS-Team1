@@ -14,12 +14,102 @@ import java.util.ArrayList;
 import java.util.List;
 
 
-public class ProductDAO {
+public class ProductDAO extends BaseDAO<Product> {
 
     private static final String BASE_SELECT =
             "SELECT p.ProductID, p.ProductName, p.CategoryID, c.CategoryName, "
                     + "p.ImportPrice, p.SellPrice, p.ImageUrl, p.Stock, p.MinStock, p.Status "
                     + "FROM Products p JOIN Categories c ON p.CategoryID = c.CategoryID ";
+
+    // ---------------------------------------------------------------
+    // BaseDAO - cho phep dung getPaged()/search()/getAll() cho trang
+    // Quan ly san pham (Admin), ben canh cac ham doc client rieng ben duoi.
+    // ---------------------------------------------------------------
+
+    @Override
+    protected Connection getConnection() throws SQLException {
+        return DBConnection.getConnection();
+    }
+
+    @Override
+    protected String getTableName() {
+        return "Products p JOIN Categories c ON p.CategoryID = c.CategoryID";
+    }
+
+    @Override
+    protected String getJoinClause() {
+        return null;
+    }
+
+    @Override
+    protected String getColumns() {
+        return "p.ProductID, p.ProductName, p.CategoryID, c.CategoryName, "
+                + "p.ImportPrice, p.SellPrice, p.ImageUrl, p.Stock, p.MinStock, p.Status";
+    }
+
+    @Override
+    protected String getOrderBy() {
+        return "p.ProductID DESC";
+    }
+
+    @Override
+    protected String[] getSearchableColumns() {
+        return new String[]{"p.ProductName", "c.CategoryName"};
+    }
+
+    @Override
+    protected Product mapResultSet(ResultSet rs) throws SQLException {
+        return mapProduct(rs);
+    }
+
+    // ---------------------------------------------------------------
+    // Quan ly san pham (danh cho Admin) - them/sua, dung chung voi
+    // ProductPanel/ProductFormDialog o view/admin/product.
+    // ---------------------------------------------------------------
+
+    /** Them 1 san pham moi. Tra ve true neu insert thanh cong. */
+    public boolean insert(Product product) {
+        String sql = "INSERT INTO Products (ProductName, CategoryID, ImportPrice, SellPrice, ImageUrl, Stock, MinStock, Status) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            bindProduct(ps, product);
+            return ps.executeUpdate() > 0;
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
+                    "ProductDAO.insert - " + product.getProductName(), e);
+            return false;
+        }
+    }
+
+    /** Cap nhat 1 san pham (gom ca Stock/MinStock - hien chua co man hinh nhap/xuat kho rieng nen ProductFormDialog la noi duy nhat chinh ton kho). Tra ve true neu co it nhat 1 dong bi anh huong. */
+    public boolean update(Product product) {
+        String sql = "UPDATE Products SET ProductName = ?, CategoryID = ?, ImportPrice = ?, SellPrice = ?, "
+                + "ImageUrl = ?, Stock = ?, MinStock = ?, Status = ? WHERE ProductID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            int nextIndex = bindProduct(ps, product);
+            ps.setInt(nextIndex, product.getProductId());
+            return ps.executeUpdate() > 0;
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                    "ProductDAO.update - productId=" + product.getProductId(), e);
+            return false;
+        }
+    }
+
+    /** Gan cac tham so chung cho insert/update, tra ve index tiep theo con trong (dung cho update noi them WHERE ProductID = ?). */
+    private int bindProduct(PreparedStatement ps, Product product) throws SQLException {
+        ps.setString(1, product.getProductName());
+        ps.setInt(2, product.getCategoryId());
+        ps.setBigDecimal(3, product.getImportPrice());
+        ps.setBigDecimal(4, product.getSellPrice());
+        ps.setString(5, product.getImageUrl());
+        ps.setInt(6, product.getStock());
+        ps.setInt(7, product.getMinStock());
+        ps.setString(8, product.getStatus());
+        return 9;
+    }
 
     /** Danh sach san pham dang ban (Status = ACTIVE), moi nhat/ten A-Z. */
     public List<Product> findAllActive() {

@@ -89,7 +89,7 @@ public class ClientMainFrame extends JFrame {
         addPage("about", Lang.get("client.nav.about"), FontAwesomeSolid.INFO_CIRCLE, aboutPanel);
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
         contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
-
+        
         // Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham, loc san theo danh muc do
         header.onCategorySelect((categoryId, categoryName) -> {
             showPage("products");

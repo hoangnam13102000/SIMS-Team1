@@ -12,8 +12,10 @@ import com.view.LoginFrame;
 import com.view.client.ProfilePanel;
 import com.view.layouts.MainLayout;
 import com.view.admin.account.UserAccountPanel;
+import com.view.admin.category.CategoryPanel;
 import com.view.admin.customer.CustomerPanel;
 import com.view.admin.employee.EmployeePanel;
+import com.view.admin.product.ProductPanel;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
@@ -21,12 +23,6 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
-/**
- * Frame quan tri MAU cua framework - chi con lai 1 trang "Tong quan"
- * (DashboardPanel rong) de minh hoa bo khung Sidebar/Header/MainLayout.
- * Khi dung cho app that, them cac trang nghiep vu cua ban bang
- * layout.addPage(key, label, icon, panel, permission) trong buildContent().
- */
 public class AdminMainFrame extends JFrame {
 
     private MainLayout layout;
@@ -82,7 +78,8 @@ public class AdminMainFrame extends JFrame {
         layout.addPage("users", Lang.get("sidebar.users"), FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
         layout.addPage("employees", Lang.get("sidebar.employees"), FontAwesomeSolid.USER_TIE, new EmployeePanel(), AppPermission.USER_MANAGE);
         layout.addPage("customers", Lang.get("sidebar.customers"), FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
-
+        layout.addPage("categories", Lang.get("sidebar.categories"), FontAwesomeSolid.TAGS, new CategoryPanel(), AppPermission.CATEGORY_MANAGE);
+        layout.addPage("products", Lang.get("sidebar.products"), FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_MANAGE);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
 

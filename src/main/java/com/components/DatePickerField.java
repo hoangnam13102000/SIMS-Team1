@@ -36,7 +36,10 @@ public class DatePickerField extends JPanel {
     private final JButton calendarButton;
     private final List<Consumer<LocalDate>> listeners = new ArrayList<>();
 
+    private static final String PLACEHOLDER = "dd/MM/yyyy";
+
     private LocalDate value;
+    private final boolean allowEmpty;
     private YearMonth viewMonth;
     private JPopupMenu popup;
 
@@ -45,7 +48,19 @@ public class DatePickerField extends JPanel {
     }
 
     public DatePickerField(LocalDate initialValue) {
-        this.value = initialValue != null ? initialValue : LocalDate.now();
+        this(initialValue, false);
+    }
+
+    /**
+     * @param allowEmpty true neu field duoc phep KHONG co ngay nao (vd Ngay sinh -
+     *                   tuy chon) - khi do value co the null, hien placeholder
+     *                   "dd/MM/yyyy" mau nhat, va popup lich co them nut "Xóa ngày".
+     *                   false thi luon co 1 ngay hop le (mac dinh hom nay), giong
+     *                   hanh vi cu (vd Ngay vao lam - luon phai co).
+     */
+    public DatePickerField(LocalDate initialValue, boolean allowEmpty) {
+        this.allowEmpty = allowEmpty;
+        this.value = initialValue != null ? initialValue : (allowEmpty ? null : LocalDate.now());
 
         setLayout(new BorderLayout());
         setBackground(AppColor.BG_LIGHT);
@@ -93,7 +108,8 @@ public class DatePickerField extends JPanel {
 
     /** Gan ngay moi (vd tu code, khong phai nguoi dung bam chon) va bao cho listener. */
     public void setValue(LocalDate newValue) {
-        if (newValue == null || newValue.equals(value)) return;
+        if (newValue == null && !allowEmpty) return;
+        if (newValue != null && newValue.equals(value)) return;
         this.value = newValue;
         updateDisplay();
         notifyListeners();
@@ -107,7 +123,13 @@ public class DatePickerField extends JPanel {
     }
 
     private void updateDisplay() {
-        displayField.setText(value.format(DISPLAY_FORMAT));
+        if (value == null) {
+            displayField.setText(PLACEHOLDER);
+            displayField.setForeground(AppColor.TEXT_MUTED);
+        } else {
+            displayField.setText(value.format(DISPLAY_FORMAT));
+            displayField.setForeground(AppColor.TEXT_PRIMARY);
+        }
     }
 
     private void togglePopup() {
@@ -116,7 +138,7 @@ public class DatePickerField extends JPanel {
             popup.setVisible(false);
             return;
         }
-        viewMonth = YearMonth.from(value);
+        viewMonth = YearMonth.from(value != null ? value : LocalDate.now());
         popup = new JPopupMenu();
         popup.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1));
         popup.add(buildCalendarPanel());
@@ -147,7 +169,26 @@ public class DatePickerField extends JPanel {
         header.add(prev, BorderLayout.WEST);
         header.add(monthLabel, BorderLayout.CENTER);
         header.add(next, BorderLayout.EAST);
-        return header;
+
+        if (!allowEmpty) {
+            return header;
+        }
+
+        JPanel wrap = new JPanel(new BorderLayout(0, 4));
+        wrap.setOpaque(false);
+        wrap.add(header, BorderLayout.NORTH);
+
+        JButton clear = new JButton("Xóa ngày");
+        clear.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        clear.setForeground(AppColor.TEXT_MUTED);
+        clear.setContentAreaFilled(false);
+        clear.setFocusPainted(false);
+        clear.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
+        clear.setHorizontalAlignment(SwingConstants.CENTER);
+        clear.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        clear.addActionListener(e -> { setValue(null); if (popup != null) popup.setVisible(false); });
+        wrap.add(clear, BorderLayout.SOUTH);
+        return wrap;
     }
 
     private JButton navButton(String text) {
@@ -199,7 +240,7 @@ public class DatePickerField extends JPanel {
         dayBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         boolean inMonth = YearMonth.from(day).equals(viewMonth);
-        boolean isSelected = day.equals(value);
+        boolean isSelected = value != null && day.equals(value);
 
         if (isSelected) {
             dayBtn.setBackground(AppColor.BLUE);
