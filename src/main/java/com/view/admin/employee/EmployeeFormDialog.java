@@ -8,6 +8,8 @@ import com.dao.EmployeeDAO;
 import com.model.Employee;
 import com.model.Role;
 import com.theme.AppColor;
+import com.utils.FileUtil;
+import com.utils.ImageUtil;
 import com.validation.FormValidator;
 import com.validation.Rules;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -16,6 +18,7 @@ import org.kordamp.ikonli.swing.FontIcon;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -33,6 +36,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Frame;
 import java.awt.GridLayout;
+import java.io.File;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -56,6 +60,8 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
 
     private static final Employee.Gender[] GENDERS = {Employee.Gender.MALE, Employee.Gender.FEMALE, Employee.Gender.OTHER};
     private static final String[] GENDER_LABELS = {"Nam", "Nữ", "Khác"};
+    private static final String UPLOAD_DIR = "uploads/avatars";
+    private static final int AVATAR_PREVIEW = 140;
 
     private final EmployeeDAO employeeDAO;
 
@@ -71,22 +77,34 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
     private JComboBox<String> roleCombo;
     private JComboBox<String> statusCombo;
 
+    private JLabel avatarPreviewLabel;
+    private JLabel avatarHintLabel;
+    private File pendingAvatarFile;
+    private String currentAvatarUrl;
+
     public EmployeeFormDialog(Frame owner, CrudMode mode, Employee editingEntity, EmployeeDAO employeeDAO) {
         super(owner, "nhân viên", mode, editingEntity);
         this.employeeDAO = employeeDAO;
+        this.currentAvatarUrl = editingEntity != null ? editingEntity.getAvatarUrl() : null;
         init();
     }
 
     @Override
     protected int getDialogWidth() {
-        return 580;
+        return 860;
     }
 
     @Override
     protected int getDialogHeight() {
-        return mode == CrudMode.ADD ? 700 : 760;
+        return mode == CrudMode.ADD ? 520 : 540;
     }
 
+    /**
+     * Layout ngang:
+     *  - (EDIT) thẻ Mã NV / Username full-width phía trên
+     *  - 3 cột: Avatar | Thông tin cá nhân | Thông tin công việc
+     *  - (ADD) banner hướng dẫn phía dưới
+     */
     @Override
     protected void buildFields(JPanel panel) {
         if (mode == CrudMode.EDIT) {
@@ -95,59 +113,161 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
             usernameField = newTextField();
             usernameField.setEnabled(false);
             panel.add(buildIdentityCard());
-            panel.add(Box.createVerticalStrut(18));
+            panel.add(Box.createVerticalStrut(16));
         }
 
-        // ----------------------- Nhóm: Thông tin cá nhân -----------------------
-        addSectionHeader(panel, FontAwesomeSolid.ID_CARD, "Thông tin cá nhân");
+        JPanel columns = new JPanel();
+        columns.setOpaque(false);
+        columns.setLayout(new BoxLayout(columns, BoxLayout.X_AXIS));
+        columns.setAlignmentX(Component.LEFT_ALIGNMENT);
+        columns.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-        fullNameField = newTextField();
-        panel.add(fieldGroupIcon(FontAwesomeSolid.USER, "Họ và tên", true, fullNameField));
-        panel.add(Box.createVerticalStrut(14));
-
-        emailField = newTextField();
-        panel.add(fieldGroupIcon(FontAwesomeSolid.ENVELOPE, "Email", true, emailField));
-        panel.add(Box.createVerticalStrut(14));
-
-        phoneField = newTextField();
-        dobPicker = new DatePickerField(null, true);
-        dobPicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
-        dobPicker.setPreferredSize(new Dimension(160, 36));
-        fieldRow(panel,
-                fieldGroupIcon(FontAwesomeSolid.PHONE_ALT, "Số điện thoại", false, phoneField),
-                fieldGroupIcon(FontAwesomeSolid.CALENDAR_ALT, "Ngày sinh", false, dobPicker));
-
-        genderCombo = newComboBox(GENDER_LABELS);
-        panel.add(fieldGroupIcon(FontAwesomeSolid.USERS, "Giới tính", false, genderCombo));
-        panel.add(Box.createVerticalStrut(22));
-
-        // ----------------------- Nhóm: Thông tin công việc -----------------------
-        addSectionHeader(panel, FontAwesomeSolid.CLIPBOARD_LIST, "Thông tin công việc");
-
-        roleCombo = newComboBox(EMP_ROLE_LABELS);
-        hireDatePicker = new DatePickerField(LocalDate.now());
-        hireDatePicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
-        hireDatePicker.setPreferredSize(new Dimension(160, 36));
-        fieldRow(panel,
-                fieldGroupIcon(FontAwesomeSolid.USER_TIE, "Vai trò", true, roleCombo),
-                fieldGroupIcon(FontAwesomeSolid.CALENDAR_ALT, "Ngày vào làm", true, hireDatePicker));
-
-        salaryField = newTextField();
-        panel.add(fieldGroupIcon(FontAwesomeSolid.MONEY_BILL_WAVE, "Lương", false, wrapWithSuffix(salaryField, "VNĐ")));
-        panel.add(Box.createVerticalStrut(14));
-
-        if (mode == CrudMode.EDIT) {
-            statusCombo = newComboBox(STATUS_LABELS);
-            panel.add(fieldGroupIcon(FontAwesomeSolid.CHECK_CIRCLE, "Trạng thái", true, statusCombo));
-            panel.add(Box.createVerticalStrut(14));
-        }
+        columns.add(buildAvatarColumn());
+        columns.add(Box.createHorizontalStrut(20));
+        columns.add(buildPersonalColumn());
+        columns.add(Box.createHorizontalStrut(20));
+        columns.add(buildWorkColumn());
+        panel.add(columns);
 
         if (mode == CrudMode.ADD) {
-            panel.add(Box.createVerticalStrut(4));
+            panel.add(Box.createVerticalStrut(14));
             panel.add(infoBanner(
                     "Mã nhân viên, tên đăng nhập và mật khẩu đăng nhập sẽ được hệ thống tự động "
                     + "tạo và gửi tới email nhân viên ở trên sau khi lưu."));
         }
+    }
+
+    /** Cột avatar: preview tròn + nút chọn ảnh. */
+    private JPanel buildAvatarColumn() {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setAlignmentY(Component.TOP_ALIGNMENT);
+
+        JLabel caption = iconFieldLabel(FontAwesomeSolid.USER_CIRCLE, "Ảnh đại diện", false);
+        caption.setAlignmentX(Component.CENTER_ALIGNMENT);
+        col.add(caption);
+        col.add(Box.createVerticalStrut(8));
+
+        avatarPreviewLabel = new JLabel();
+        avatarPreviewLabel.setHorizontalAlignment(JLabel.CENTER);
+        avatarPreviewLabel.setPreferredSize(new Dimension(AVATAR_PREVIEW, AVATAR_PREVIEW));
+        avatarPreviewLabel.setMaximumSize(new Dimension(AVATAR_PREVIEW, AVATAR_PREVIEW));
+        avatarPreviewLabel.setMinimumSize(new Dimension(AVATAR_PREVIEW, AVATAR_PREVIEW));
+        avatarPreviewLabel.setBorder(new LineBorder(AppColor.BORDER, 1, true));
+        avatarPreviewLabel.setIcon(ImageUtil.circularIcon(null, AVATAR_PREVIEW, "?"));
+        avatarPreviewLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        col.add(avatarPreviewLabel);
+        col.add(Box.createVerticalStrut(12));
+
+        JButton chooseButton = new JButton("Chọn ảnh", FontIcon.of(FontAwesomeSolid.IMAGE, 13, AppColor.ACCENT));
+        chooseButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        chooseButton.setFocusPainted(false);
+        chooseButton.setBackground(AppColor.WHITE);
+        chooseButton.setForeground(AppColor.ACCENT);
+        chooseButton.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.ACCENT, 1, true),
+                new EmptyBorder(8, 14, 8, 14)));
+        chooseButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        chooseButton.addActionListener(e -> chooseAvatar());
+        col.add(chooseButton);
+        col.add(Box.createVerticalStrut(8));
+
+        avatarHintLabel = new JLabel("Tùy chọn · tối đa 5MB");
+        avatarHintLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        avatarHintLabel.setForeground(AppColor.TEXT_MUTED);
+        avatarHintLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        col.add(avatarHintLabel);
+
+        return col;
+    }
+
+    private void chooseAvatar() {
+        File selected = FileUtil.chooseImageFile(this);
+        if (selected == null) return;
+
+        if (!FileUtil.isWithinSizeLimit(selected, 5)) {
+            showMessage("Ảnh vượt quá 5MB, vui lòng chọn ảnh khác.");
+            return;
+        }
+        if (!ImageUtil.isSupportedImage(selected)) {
+            showMessage("Định dạng ảnh không được hỗ trợ.");
+            return;
+        }
+
+        pendingAvatarFile = selected;
+        String displayName = fullNameField != null && fullNameField.getText() != null
+                && !fullNameField.getText().isBlank()
+                ? fullNameField.getText().trim() : selected.getName();
+        avatarPreviewLabel.setIcon(ImageUtil.circularIcon(selected.getPath(), AVATAR_PREVIEW, displayName));
+        avatarHintLabel.setText(selected.getName());
+        showMessage(null);
+    }
+
+    /** Cột trái — Thông tin cá nhân. */
+    private JPanel buildPersonalColumn() {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setAlignmentY(Component.TOP_ALIGNMENT);
+        col.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        addSectionHeader(col, FontAwesomeSolid.ID_CARD, "Thông tin cá nhân");
+
+        fullNameField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.USER, "Họ và tên", true, fullNameField));
+        col.add(Box.createVerticalStrut(12));
+
+        emailField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.ENVELOPE, "Email", true, emailField));
+        col.add(Box.createVerticalStrut(12));
+
+        phoneField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.PHONE_ALT, "Số điện thoại", false, phoneField));
+        col.add(Box.createVerticalStrut(12));
+
+        dobPicker = new DatePickerField(null, true);
+        dobPicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        dobPicker.setPreferredSize(new Dimension(160, 36));
+        col.add(fieldGroupIcon(FontAwesomeSolid.CALENDAR_ALT, "Ngày sinh", false, dobPicker));
+        col.add(Box.createVerticalStrut(12));
+
+        genderCombo = newComboBox(GENDER_LABELS);
+        col.add(fieldGroupIcon(FontAwesomeSolid.USERS, "Giới tính", false, genderCombo));
+
+        return col;
+    }
+
+    /** Cột phải — Thông tin công việc. */
+    private JPanel buildWorkColumn() {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setAlignmentY(Component.TOP_ALIGNMENT);
+        col.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        addSectionHeader(col, FontAwesomeSolid.CLIPBOARD_LIST, "Thông tin công việc");
+
+        roleCombo = newComboBox(EMP_ROLE_LABELS);
+        col.add(fieldGroupIcon(FontAwesomeSolid.USER_TIE, "Vai trò", true, roleCombo));
+        col.add(Box.createVerticalStrut(12));
+
+        hireDatePicker = new DatePickerField(LocalDate.now());
+        hireDatePicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        hireDatePicker.setPreferredSize(new Dimension(160, 36));
+        col.add(fieldGroupIcon(FontAwesomeSolid.CALENDAR_ALT, "Ngày vào làm", true, hireDatePicker));
+        col.add(Box.createVerticalStrut(12));
+
+        salaryField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.MONEY_BILL_WAVE, "Lương", false, wrapWithSuffix(salaryField, "VNĐ")));
+        col.add(Box.createVerticalStrut(12));
+
+        if (mode == CrudMode.EDIT) {
+            statusCombo = newComboBox(STATUS_LABELS);
+            col.add(fieldGroupIcon(FontAwesomeSolid.CHECK_CIRCLE, "Trạng thái", true, statusCombo));
+        }
+
+        return col;
     }
 
     private <E> JComboBox<E> newComboBox(E[] items) {
@@ -337,6 +457,16 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         if (statusCombo != null) {
             statusCombo.setSelectedIndex(entity.isDisabled() ? 1 : 0);
         }
+
+        currentAvatarUrl = entity.getAvatarUrl();
+        String name = entity.getFullName() != null ? entity.getFullName() : entity.getUsername();
+        if (currentAvatarUrl != null && !currentAvatarUrl.isBlank()) {
+            avatarPreviewLabel.setIcon(ImageUtil.circularIcon(currentAvatarUrl, AVATAR_PREVIEW, name));
+            avatarHintLabel.setText("Ảnh hiện tại");
+        } else {
+            avatarPreviewLabel.setIcon(ImageUtil.circularIcon(null, AVATAR_PREVIEW, name));
+            avatarHintLabel.setText("Tùy chọn · tối đa 5MB");
+        }
     }
 
     @Override
@@ -379,6 +509,13 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
             employee.setStatus(statusCombo.getSelectedIndex() == 1 ? "DISABLED" : "ACTIVE");
         } else {
             employee.setStatus("ACTIVE");
+        }
+
+        if (pendingAvatarFile != null) {
+            File saved = FileUtil.copyToDirectory(pendingAvatarFile, UPLOAD_DIR);
+            employee.setAvatarUrl(saved != null ? saved.getPath() : currentAvatarUrl);
+        } else {
+            employee.setAvatarUrl(currentAvatarUrl);
         }
         return employee;
     }

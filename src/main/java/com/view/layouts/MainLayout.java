@@ -1,6 +1,5 @@
 package com.view.layouts;
 
-
 import com.theme.AppColor;
 import com.permission.Permission;
 import com.permission.PermissionManager;
@@ -8,7 +7,6 @@ import com.permission.PermissionManager;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Color;
 import java.util.function.Consumer;
 
 public class MainLayout extends JPanel {
@@ -23,7 +21,6 @@ public class MainLayout extends JPanel {
         this("Cửa hàng điện thoại trực tuyến");
     }
 
-    
     public MainLayout(String headerSubtitle) {
         setLayout(new BorderLayout());
 
@@ -41,25 +38,33 @@ public class MainLayout extends JPanel {
         add(new Footer(), BorderLayout.SOUTH);
     }
 
-    /** Cho phep man hinh chu (vd AdminMainFrame) gan them hanh vi rieng cho Header (avatar, chuong...). */
     public Header getHeader() {
         return header;
     }
 
     public void addPage(String key, String label,
                          org.kordamp.ikonli.fontawesome5.FontAwesomeSolid icon, JPanel panel) {
-        addPage(key, label, icon, panel, null);
+        addPage(key, label, icon, panel, (Permission[]) null);
     }
 
-    /** Them 1 trang, chi hien ra neu user hien tai co quyen tuong ung (permission = null -> luon hien). */
     public void addPage(String key, String label,
             org.kordamp.ikonli.fontawesome5.FontAwesomeSolid icon, JPanel panel,
             Permission permission) {
-		if (permission != null && !PermissionManager.getInstance().can(permission)) return;
-		sidebar.addItem(key, label, icon);
-		contentPanel.add(panel, key);
-	}
-    
+        addPage(key, label, icon, panel,
+                permission == null ? null : new Permission[]{permission});
+    }
+
+    public void addPage(String key, String label,
+            org.kordamp.ikonli.fontawesome5.FontAwesomeSolid icon, JPanel panel,
+            Permission... permissions) {
+        if (permissions != null && permissions.length > 0
+                && !PermissionManager.getInstance().canAny(permissions)) {
+            return;
+        }
+        sidebar.addItem(key, label, icon);
+        contentPanel.add(panel, key);
+    }
+
     public void addHiddenPage(String key, JPanel panel) {
         contentPanel.add(panel, key);
     }
@@ -70,7 +75,6 @@ public class MainLayout extends JPanel {
         if (pageChangeListener != null) pageChangeListener.accept(key);
     }
 
-    /** Duoc goi moi khi trang hien tai doi (ca do bam sidebar lan do goi showPage() thu cong). */
     public void onPageChange(Consumer<String> listener) {
         this.pageChangeListener = listener;
     }

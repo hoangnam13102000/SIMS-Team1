@@ -3,30 +3,43 @@ package com.components.crud;
 
 import com.theme.AppColor;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonSerializer;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.awt.event.KeyEvent;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
-/**
- * Form dialog dùng chung cho add/edit/view của một entity.
- * <p>
- * Cách dùng: subclass triển khai các hook {@link #buildFields}, {@link #fillForm},
- * {@link #validateForm}, {@link #collectFormData}, {@link #persist}, rồi gọi
- * {@link #init()} ở CUỐI constructor của subclass (sau khi các field phụ trợ
- * như DAO/combo data đã sẵn sàng) — không gọi từ constructor của lớp cha vì
- * lúc đó field của subclass chưa được khởi tạo.
- */
 public abstract class BaseFormDialog<T> extends JDialog {
 
     protected final CrudMode mode;
     protected final T editingEntity;
     private final String entityLabel;
 
-    private static final Gson SNAPSHOT_GSON = new Gson();
-
+    /**
+     * Gson mac dinh dung Reflection de doc field private cua java.time.LocalDate/
+     * LocalDateTime - tu Java 9+, module java.base KHONG "opens java.time" cho
+     * unnamed module nen bi InaccessibleObjectException NGAY LUC MO DIALOG (vd
+     * EmployeeFormDialog vi Employee co dateOfBirth/hireDate/createdAt kieu
+     * java.time) - loi nay xay ra tren AWT-EventQueue-0 nen khong co popup nao
+     * hien ra, nguoi dung chi thay "bam nut Sua khong co phan ung gi ca". Dang
+     * ky rieng adapter cho 2 kieu nay de Gson KHONG dung reflection nua.
+     */
+    private static final Gson SNAPSHOT_GSON = new GsonBuilder()
+            .registerTypeAdapter(LocalDate.class,
+                    (JsonSerializer<LocalDate>) (src, typeOfSrc, context) ->
+                            src == null ? JsonNull.INSTANCE : new JsonPrimitive(src.toString()))
+            .registerTypeAdapter(LocalDateTime.class,
+                    (JsonSerializer<LocalDateTime>) (src, typeOfSrc, context) ->
+                            src == null ? JsonNull.INSTANCE : new JsonPrimitive(src.toString()))
+            .create();
+    	
     /**
      * Snapshot JSON cua editingEntity chup NGAY LUC MO DIALOG, truoc khi
      * collectFormData() ghi de len cung 1 tham chieu editingEntity. Dung lam

@@ -61,6 +61,26 @@
         <artifactId>jbcrypt</artifactId>
         <version>0.4</version>
     </dependency>
+    
+     <!--  ===== Test dependencies (JUnit 5 + Mockito) =====  -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.10.2</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-core</artifactId>
+        <version>5.11.0</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-junit-jupiter</artifactId>
+        <version>5.11.0</version>
+        <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <properties>
@@ -68,5 +88,18 @@
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
   </properties>
+  
+   <build>
+    <plugins>
+    <!--  Bat buoc phai co / cap nhat plugin nay de Maven nhan dien va chay
+                duoc test JUnit 5 (Jupiter). Ban Maven/Eclipse cu di kem plugin
+                surefire qua cu se KHONG chay duoc JUnit 5.  -->
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <version>3.2.5</version>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

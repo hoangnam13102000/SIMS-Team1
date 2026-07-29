@@ -37,7 +37,8 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
 
     private static final String UPLOAD_DIR = "uploads/products";
     private static final String[] STATUS_LABELS = {"Đang bán", "Ngừng bán"};
-    private static final int PREVIEW_SIZE = 110;
+    /** Preview ảnh lớn bên trái — đồng bộ với layout dialog chi tiết. */
+    private static final int PREVIEW_SIZE = 240;
 
     private final ProductDAO productDAO;
     private final List<Category> categories;
@@ -64,19 +65,83 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     }
 
     @Override
-    protected int getDialogWidth() { return 560; }
+    protected int getDialogWidth() { return 780; }
 
     @Override
-    protected int getDialogHeight() { return 640; }
+    protected int getDialogHeight() { return 520; }
 
+    /**
+     * Layout ngang giống ProductDetailDialog:
+     *  - Trái: ảnh lớn + nút chọn ảnh
+     *  - Phải: tên, danh mục, giá, tồn kho, trạng thái
+     */
     @Override
     protected void buildFields(JPanel panel) {
-        panel.add(fieldLabel("Hình ảnh sản phẩm"));
-        panel.add(buildImagePicker());
+        // BaseFormDialog dùng BoxLayout Y trên panel — bọc 1 hàng ngang.
+        JPanel row = new JPanel();
+        row.setOpaque(false);
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-        productNameField = addTextField(panel, "Tên sản phẩm", true);
+        row.add(buildImageColumn());
+        row.add(Box.createHorizontalStrut(24));
+        row.add(buildFieldsColumn());
 
-        categoryCombo = addComboBox(panel, "Danh mục", categories.toArray(new Category[0]));
+        panel.add(row);
+    }
+
+    private JPanel buildImageColumn() {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setAlignmentY(Component.TOP_ALIGNMENT);
+
+        JLabel caption = fieldLabel("Hình ảnh sản phẩm");
+        caption.setAlignmentX(Component.LEFT_ALIGNMENT);
+        col.add(caption);
+
+        imagePreviewLabel = new JLabel();
+        imagePreviewLabel.setHorizontalAlignment(JLabel.CENTER);
+        imagePreviewLabel.setPreferredSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
+        imagePreviewLabel.setMaximumSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
+        imagePreviewLabel.setMinimumSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
+        imagePreviewLabel.setBorder(new LineBorder(AppColor.BORDER, 1, true));
+        imagePreviewLabel.setIcon(ImageUtil.loadIcon(null, PREVIEW_SIZE, PREVIEW_SIZE));
+        imagePreviewLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        col.add(imagePreviewLabel);
+        col.add(Box.createVerticalStrut(12));
+
+        JButton chooseButton = new JButton("Chọn ảnh", FontIcon.of(FontAwesomeSolid.IMAGE, 13, AppColor.ACCENT));
+        chooseButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        chooseButton.setFocusPainted(false);
+        chooseButton.setBackground(AppColor.WHITE);
+        chooseButton.setForeground(AppColor.ACCENT);
+        chooseButton.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.ACCENT, 1, true),
+                new EmptyBorder(8, 16, 8, 16)));
+        chooseButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        chooseButton.addActionListener(e -> chooseImage());
+        col.add(chooseButton);
+        col.add(Box.createVerticalStrut(8));
+
+        imageHintLabel = hintLabel("Chưa chọn ảnh (tùy chọn)");
+        imageHintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        col.add(imageHintLabel);
+
+        return col;
+    }
+
+    private JPanel buildFieldsColumn() {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setAlignmentY(Component.TOP_ALIGNMENT);
+        col.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        productNameField = addTextField(col, "Tên sản phẩm", true);
+
+        categoryCombo = addComboBox(col, "Danh mục", categories.toArray(new Category[0]));
         categoryCombo.setRenderer((list, value, index, isSelected, cellHasFocus) -> {
             JLabel label = new JLabel(value == null ? "" : value.getCategoryName());
             label.setFont(new Font("Segoe UI", Font.PLAIN, 14));
@@ -87,68 +152,25 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
             return label;
         });
         if (categories.isEmpty()) {
-            panel.add(hintLabel("Chưa có danh mục nào - vui lòng tạo danh mục trước khi thêm sản phẩm."));
+            col.add(hintLabel("Chưa có danh mục nào - vui lòng tạo danh mục trước khi thêm sản phẩm."));
         }
 
         importPriceField = newTextField();
         sellPriceField = newTextField();
-        fieldRow(panel,
+        fieldRow(col,
                 fieldGroup("Giá nhập (VNĐ)", true, importPriceField),
                 fieldGroup("Giá bán (VNĐ)", true, sellPriceField));
-        panel.add(hintLabel("Giá bán phải lớn hơn hoặc bằng giá nhập."));
-        panel.add(Box.createVerticalStrut(10));
+        col.add(hintLabel("Giá bán phải lớn hơn hoặc bằng giá nhập."));
+        col.add(Box.createVerticalStrut(8));
 
         stockField = newTextField();
         minStockField = newTextField();
-        fieldRow(panel,
+        fieldRow(col,
                 fieldGroup("Tồn kho", true, stockField),
                 fieldGroup("Tồn kho tối thiểu", true, minStockField));
 
-        statusCombo = addComboBox(panel, "Trạng thái", STATUS_LABELS);
-    }
-
-    private JPanel buildImagePicker() {
-        JPanel row = new JPanel();
-        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, PREVIEW_SIZE));
-        row.setBorder(new EmptyBorder(0, 0, 14, 0));
-
-        imagePreviewLabel = new JLabel();
-        imagePreviewLabel.setHorizontalAlignment(JLabel.CENTER);
-        imagePreviewLabel.setPreferredSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
-        imagePreviewLabel.setMaximumSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
-        imagePreviewLabel.setMinimumSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
-        imagePreviewLabel.setBorder(new LineBorder(AppColor.BORDER, 1, true));
-        imagePreviewLabel.setIcon(ImageUtil.loadIcon(null, PREVIEW_SIZE, PREVIEW_SIZE));
-        row.add(imagePreviewLabel);
-        row.add(Box.createHorizontalStrut(16));
-
-        JPanel side = new JPanel();
-        side.setOpaque(false);
-        side.setLayout(new BoxLayout(side, BoxLayout.Y_AXIS));
-
-        JButton chooseButton = new JButton("Chọn ảnh", FontIcon.of(FontAwesomeSolid.IMAGE, 13, AppColor.ACCENT));
-        chooseButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        chooseButton.setFocusPainted(false);
-        chooseButton.setBackground(AppColor.WHITE);
-        chooseButton.setForeground(AppColor.ACCENT);
-        chooseButton.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(AppColor.ACCENT, 1, true),
-                new EmptyBorder(6, 14, 6, 14)));
-        chooseButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        chooseButton.addActionListener(e -> chooseImage());
-        side.add(chooseButton);
-
-        side.add(Box.createVerticalStrut(6));
-
-        imageHintLabel = hintLabel("Chưa chọn ảnh (tùy chọn)");
-        imageHintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        side.add(imageHintLabel);
-
-        row.add(side);
-        return row;
+        statusCombo = addComboBox(col, "Trạng thái", STATUS_LABELS);
+        return col;
     }
 
     private void chooseImage() {

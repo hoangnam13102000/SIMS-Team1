@@ -33,6 +33,8 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
 
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
+                .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+                        this::viewRowPublic)
                 .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                         this::editRowPublic)
                 .add("lock-toggle",
@@ -174,6 +176,15 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     // ---------------------------------------------------------------
     // Hành động: sửa / khóa / mở khóa
     // ---------------------------------------------------------------
+
+    private void viewRowPublic(int modelRow) {
+        User item = rowToItem(modelRow);
+        if (item == null) return;
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        UserDetailDialog dialog = new UserDetailDialog(
+                owner instanceof Frame ? (Frame) owner : null, item);
+        dialog.setVisible(true);
+    }
 
     private void editRowPublic(int modelRow) {
         User item = rowToItem(modelRow);

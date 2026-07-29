@@ -10,16 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-/**
- * DAO cho khach hang (Users JOIN Customers - xem ghi chu Class-Table
- * Inheritance trong SIMS.sql: Customers.CustomerID = Users.UserID).
- * <p>
- * Chi can JOIN voi Customers (khong can loc them r.RoleCode = 'CUSTOMER')
- * vi bang Customers CHI chua dong cho user co Role.CUSTOMER (duoc dam bao
- * boi UserDAO.register()/createByAdmin() - luon tao kem 1 dong Customers
- * trong cung transaction khi Role = CUSTOMER).
- */
-public class CustomerDAO extends BaseDAO<Customer> {
+public class CustomerDAO extends SoftDeleteDAO<Customer> {
 
     // ---------------------------------------------------------------
     // Hook bắt buộc của BaseDAO - tái dùng getPaged()/search()/getAll()
@@ -49,6 +40,21 @@ public class CustomerDAO extends BaseDAO<Customer> {
     @Override
     protected String getOrderBy() {
         return "u.UserID DESC";
+    }
+
+    // ---------------------------------------------------------------
+    // Hook bắt buộc của SoftDeleteDAO - Users la bang GOC chua IsDeleted,
+    // UserID la khoa chinh dung cho UPDATE khi soft-delete/restore.
+    // ---------------------------------------------------------------
+
+    @Override
+    protected String getBaseTableName() {
+        return "Users";
+    }
+
+    @Override
+    protected String getIdColumn() {
+        return "UserID";
     }
 
     @Override
@@ -138,7 +144,7 @@ public class CustomerDAO extends BaseDAO<Customer> {
         }
     }
 
-    /** Khoa / mo khoa 1 tai khoan khach hang (dung chung co che voi UserDAO.setLocked - cung bang Users). */
+    /** Khoa / mo khoa 1 tai khoan khach hang (dung chung co che voi UserDAO.setLocked - cung bang Users). Khong con duoc goi tu CustomerPanel (da bo icon khoa) nhung giu lai phong khi can dung lai. */
     public boolean setLocked(int customerId, boolean locked) {
         String sql = locked
                 ? "UPDATE Users SET IsLocked = 1 WHERE UserID = ?"
