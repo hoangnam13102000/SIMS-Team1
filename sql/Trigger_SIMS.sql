@@ -288,3 +288,212 @@ BEGIN
     END
 END;
 GO
+
+
+ALTER TRIGGER trg_PurchaseReceiptDetails_Insert
+ON PurchaseReceiptDetails
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO InventoryTransactions (ProductID, TransactionType, Direction, Quantity,
+                                        StockBefore, StockAfter, RefTable, RefID, CreatedBy)
+    SELECT i.ProductID, 'IMPORT', 'IN', i.Quantity,
+           p.Stock, p.Stock + i.Quantity,
+           'PurchaseReceipts', i.ReceiptID, r.CreatedBy
+    FROM inserted i
+    JOIN Products p ON p.ProductID = i.ProductID
+    JOIN PurchaseReceipts r ON r.ReceiptID = i.ReceiptID;
+
+    -- moi lan nhap = 1 lo moi
+    INSERT INTO InventoryBatch (ProductID, SupplierID, ReceiptDetailID, LotNumber,
+                                 ManufactureDate, ExpiryDate, ImportPrice, Quantity, RemainingQty)
+    SELECT i.ProductID, r.SupplierID, i.ReceiptDetailID, i.LotNumber,
+           i.ManufactureDate, i.ExpiryDate, i.ImportPrice, i.Quantity, i.Quantity
+    FROM inserted i
+    JOIN PurchaseReceipts r ON r.ReceiptID = i.ReceiptID;
+
+    UPDATE p SET p.Stock = p.Stock + i.Quantity
+    FROM Products p JOIN inserted i ON i.ProductID = p.ProductID;
+END;
+GO
+
+
+ALTER TRIGGER trg_InvoiceDetails_CheckStock
+ON InvoiceDetails
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- R1: chan neu san pham het hang (tong RemainingQty cac lo ACTIVE = 0)
+    IF EXISTS (
+        SELECT 1 FROM inserted i
+        WHERE ISNULL((SELECT SUM(b.RemainingQty) FROM InventoryBatch b
+                       WHERE b.ProductID = i.ProductID AND b.Status = 'ACTIVE'), 0) = 0
+    )
+    BEGIN
+        RAISERROR(N'San pham da het hang, khong the tao hoa don.', 16, 1);
+        RETURN;
+    END
+
+    DECLARE @InvoiceID INT, @ProductID INT, @Quantity INT, @UnitPrice DECIMAL(18,0), @CreatedBy INT;
+    DECLARE @Available INT, @QtyToSell INT, @StockBefore INT, @NewDetailID INT;
+    DECLARE @Remaining INT, @BatchID INT, @BatchRemain INT, @Take INT;
+
+    DECLARE line_cursor CURSOR LOCAL FAST_FORWARD FOR
+        SELECT i.InvoiceID, i.ProductID, i.Quantity, i.UnitPrice, inv.CreatedBy
+        FROM inserted i
+        JOIN Invoices inv ON inv.InvoiceID = i.InvoiceID;
+
+    OPEN line_cursor;
+    FETCH NEXT FROM line_cursor INTO @InvoiceID, @ProductID, @Quantity, @UnitPrice, @CreatedBy;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        SELECT @Available = ISNULL(SUM(RemainingQty), 0) FROM InventoryBatch
+        WHERE ProductID = @ProductID AND Status = 'ACTIVE';
+
+        SET @QtyToSell = CASE WHEN @Quantity > @Available THEN @Available ELSE @Quantity END;
+        SELECT @StockBefore = Stock FROM Products WHERE ProductID = @ProductID;
+
+        INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice)
+        VALUES (@InvoiceID, @ProductID, @QtyToSell, @UnitPrice);
+        SET @NewDetailID = SCOPE_IDENTITY();
+
+        -- FEFO: uu tien HSD gan nhat, hang khong HSD (NULL) ban sau cung
+        SET @Remaining = @QtyToSell;
+
+        DECLARE batch_cursor CURSOR LOCAL FAST_FORWARD FOR
+            SELECT BatchID, RemainingQty FROM InventoryBatch
+            WHERE ProductID = @ProductID AND Status = 'ACTIVE' AND RemainingQty > 0
+            ORDER BY ISNULL(ExpiryDate, '9999-12-31'), BatchID;
+
+        OPEN batch_cursor;
+        FETCH NEXT FROM batch_cursor INTO @BatchID, @BatchRemain;
+
+        WHILE @@FETCH_STATUS = 0 AND @Remaining > 0
+        BEGIN
+            SET @Take = CASE WHEN @BatchRemain > @Remaining THEN @Remaining ELSE @BatchRemain END;
+
+            UPDATE InventoryBatch
+            SET RemainingQty = RemainingQty - @Take,
+                Status = CASE WHEN RemainingQty - @Take = 0 THEN 'DEPLETED' ELSE Status END
+            WHERE BatchID = @BatchID;
+
+            INSERT INTO InvoiceDetailBatches (InvoiceDetailID, BatchID, Quantity)
+            VALUES (@NewDetailID, @BatchID, @Take);
+
+            SET @Remaining -= @Take;
+            FETCH NEXT FROM batch_cursor INTO @BatchID, @BatchRemain;
+        END
+
+        CLOSE batch_cursor;
+        DEALLOCATE batch_cursor;
+
+        UPDATE Products SET Stock = Stock - @QtyToSell WHERE ProductID = @ProductID;
+
+        INSERT INTO InventoryTransactions (ProductID, TransactionType, Direction, Quantity,
+                                            StockBefore, StockAfter, RefTable, RefID, CreatedBy)
+        VALUES (@ProductID, 'SALE', 'OUT', @QtyToSell, @StockBefore, @StockBefore - @QtyToSell,
+                'Invoices', @InvoiceID, @CreatedBy);
+
+        FETCH NEXT FROM line_cursor INTO @InvoiceID, @ProductID, @Quantity, @UnitPrice, @CreatedBy;
+    END
+
+    CLOSE line_cursor;
+    DEALLOCATE line_cursor;
+END;
+GO
+
+ALTER TRIGGER trg_Invoices_CancelSameDayOnly
+ON Invoices
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF UPDATE(Status)
+    BEGIN
+        IF EXISTS (
+            SELECT 1
+            FROM inserted i
+            JOIN deleted d ON i.InvoiceID = d.InvoiceID
+            JOIN Shifts s ON s.ShiftID = i.ShiftID
+            WHERE i.Status = 'CANCELLED' AND d.Status <> 'CANCELLED'
+              AND (
+                    CAST(i.CreatedAt AS DATE) <> CAST(GETDATE() AS DATE)
+                    OR s.Status = 'CLOSED'
+                  )
+        )
+        BEGIN
+            RAISERROR(N'Chi duoc huy hoa don trong cung ca ban hang dang mo va trong ngay tao.', 16, 1);
+            ROLLBACK TRANSACTION;
+            RETURN;
+        END
+
+        -- Cac hoa don vua chuyen sang CANCELLED trong lan UPDATE nay
+        DECLARE @CancelledNow TABLE (InvoiceID INT PRIMARY KEY);
+        INSERT INTO @CancelledNow (InvoiceID)
+        SELECT i.InvoiceID
+        FROM inserted i
+        JOIN deleted d ON d.InvoiceID = i.InvoiceID
+        WHERE i.Status = 'CANCELLED' AND d.Status <> 'CANCELLED';
+
+        IF EXISTS (SELECT 1 FROM @CancelledNow)
+        BEGIN
+            -- Hoan lai dung tung lo da tru (theo InvoiceDetailBatches), khong con o Products.Stock chung chung nua
+            DECLARE @BatchID INT, @Qty INT, @ProductID INT, @InvoiceID INT;
+
+            DECLARE restore_cursor CURSOR LOCAL FAST_FORWARD FOR
+                SELECT idb.BatchID, idb.Quantity, b.ProductID, d.InvoiceID
+                FROM InvoiceDetailBatches idb
+                JOIN InvoiceDetails d ON d.InvoiceDetailID = idb.InvoiceDetailID
+                JOIN InventoryBatch b ON b.BatchID = idb.BatchID
+                JOIN @CancelledNow c ON c.InvoiceID = d.InvoiceID;
+
+            OPEN restore_cursor;
+            FETCH NEXT FROM restore_cursor INTO @BatchID, @Qty, @ProductID, @InvoiceID;
+
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                -- cong lai vao dung lo, dua lo tu DEPLETED ve lai ACTIVE neu can
+                UPDATE InventoryBatch
+                SET RemainingQty = RemainingQty + @Qty,
+                    Status = CASE WHEN Status = 'DEPLETED' THEN 'ACTIVE' ELSE Status END
+                WHERE BatchID = @BatchID;
+
+                FETCH NEXT FROM restore_cursor INTO @BatchID, @Qty, @ProductID, @InvoiceID;
+            END
+
+            CLOSE restore_cursor;
+            DEALLOCATE restore_cursor;
+
+            -- Dong bo lai Products.Stock (cache) theo tung san pham bi anh huong
+            ;WITH Affected AS (
+                SELECT DISTINCT b.ProductID
+                FROM InvoiceDetailBatches idb
+                JOIN InvoiceDetails d ON d.InvoiceDetailID = idb.InvoiceDetailID
+                JOIN InventoryBatch b ON b.BatchID = idb.BatchID
+                JOIN @CancelledNow c ON c.InvoiceID = d.InvoiceID
+            )
+            UPDATE p
+            SET p.Stock = (SELECT ISNULL(SUM(RemainingQty), 0) FROM InventoryBatch
+                           WHERE ProductID = p.ProductID AND Status = 'ACTIVE')
+            FROM Products p
+            JOIN Affected a ON a.ProductID = p.ProductID;
+
+            -- Log SALE_CANCEL (truoc gio chua co log cho buoc nay)
+            INSERT INTO InventoryTransactions (ProductID, TransactionType, Direction, Quantity,
+                                                StockBefore, StockAfter, RefTable, RefID, CreatedBy)
+            SELECT d.ProductID, 'SALE_CANCEL', 'IN', d.Quantity,
+                   p.Stock - d.Quantity, p.Stock,
+                   'Invoices', c.InvoiceID, i.CreatedBy
+            FROM @CancelledNow c
+            JOIN Invoices i ON i.InvoiceID = c.InvoiceID
+            JOIN InvoiceDetails d ON d.InvoiceID = c.InvoiceID
+            JOIN Products p ON p.ProductID = d.ProductID;
+        END
+    END
+END;
+GO

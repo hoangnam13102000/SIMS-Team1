@@ -39,17 +39,66 @@ public final class ImageUtil {
         }
     }
 
-    /** Doc anh tu duong dan - co the la file local hoac URL http/https (vd Phone.imageUrl). */
+    /** Doc anh tu duong dan - co the la file local hoac URL http/https (vd product.imageUrl).
+     *  Duong dan tuong doi se thu lan luot theo project root / uploads / uploads/products. */
     public static BufferedImage readSafe(String pathOrUrl) {
         if (pathOrUrl == null || pathOrUrl.isBlank()) return null;
         try {
             if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
                 return ImageIO.read(new URL(pathOrUrl));
             }
-            return ImageIO.read(new File(pathOrUrl));
+            File file = resolveLocalImage(pathOrUrl);
+            if (file != null && file.isFile()) {
+                return ImageIO.read(file);
+            }
+            return null;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Tim file anh local theo path tuyet doi hoac tuong doi (uploads/...). */
+    private static File resolveLocalImage(String pathOrUrl) {
+        if (pathOrUrl == null || pathOrUrl.isBlank()) return null;
+
+        File direct = new File(pathOrUrl);
+        if (direct.isFile()) return direct;
+
+        String normalized = pathOrUrl.replace('\\', '/').trim();
+        while (normalized.startsWith("./")) normalized = normalized.substring(2);
+        if (normalized.startsWith("/")) normalized = normalized.substring(1);
+
+        String fileName = new File(normalized).getName();
+        File projectRoot = findProjectRoot();
+
+        String[] candidates = {
+            normalized,
+            projectRoot.getPath() + "/" + normalized,
+            projectRoot.getPath() + "/uploads/products/" + fileName,
+            projectRoot.getPath() + "/uploads/" + fileName,
+            System.getProperty("user.dir", ".") + "/" + normalized,
+            System.getProperty("user.dir", ".") + "/uploads/products/" + fileName,
+            projectRoot.getPath() + "/../" + normalized
+        };
+        for (String c : candidates) {
+            File f = new File(c);
+            try {
+                f = f.getCanonicalFile();
+            } catch (Exception ignored) {}
+            if (f.isFile()) return f;
+        }
+        return null;
+    }
+
+    /** Tim thu muc project chua folder uploads (di len toi da 6 cap tu user.dir). */
+    private static File findProjectRoot() {
+        File dir = new File(System.getProperty("user.dir", "."));
+        for (int i = 0; i < 6 && dir != null; i++) {
+            if (new File(dir, "uploads").isDirectory()) return dir;
+            if (new File(dir, "pom.xml").isFile()) return dir;
+            dir = dir.getParentFile();
+        }
+        return new File(System.getProperty("user.dir", "."));
     }
 
     /**

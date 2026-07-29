@@ -75,14 +75,22 @@ public class AdminMainFrame extends JFrame {
         getContentPane().setBackground(AppColor.PAGE_BG);
 
         layout = new MainLayout(Lang.get("admin.mainlayout.title"));
+
+        // --- Tổng quan ---
         layout.addPage("dashboard", Lang.get("sidebar.dashboard"), FontAwesomeSolid.TACHOMETER_ALT, new DashboardPanel(), AppPermission.DASHBOARD_VIEW);
-        layout.addPage("users", Lang.get("sidebar.users"), FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
-        layout.addPage("employees", Lang.get("sidebar.employees"), FontAwesomeSolid.USER_TIE, new EmployeePanel(), AppPermission.USER_MANAGE);
-        layout.addPage("customers", Lang.get("sidebar.customers"), FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
-        layout.addPage("categories", Lang.get("sidebar.categories"), FontAwesomeSolid.TAGS, new CategoryPanel(), AppPermission.CATEGORY_MANAGE);
-        layout.addPage("products", Lang.get("sidebar.products"), FontAwesomeSolid.BOX, new ProductPanel(),
+
+        // --- Nhóm Người dùng ---
+        layout.addSection(Lang.get("sidebar.section.users"));
+        layout.addPage("users", Lang.get("sidebar.users.short"), FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
+        layout.addPage("employees", Lang.get("sidebar.employees.short"), FontAwesomeSolid.USER_TIE, new EmployeePanel(), AppPermission.USER_MANAGE);
+        layout.addPage("customers", Lang.get("sidebar.customers.short"), FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
+
+        // --- Nhóm Hàng hóa ---
+        layout.addSection(Lang.get("sidebar.section.catalog"));
+        layout.addPage("categories", Lang.get("sidebar.categories.short"), FontAwesomeSolid.TAGS, new CategoryPanel(), AppPermission.CATEGORY_MANAGE);
+        layout.addPage("products", Lang.get("sidebar.products.short"), FontAwesomeSolid.BOX, new ProductPanel(),
                 AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_VIEW);
-        layout.addPage("suppliers", Lang.get("sidebar.suppliers"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
+        layout.addPage("suppliers", Lang.get("sidebar.suppliers.short"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
 

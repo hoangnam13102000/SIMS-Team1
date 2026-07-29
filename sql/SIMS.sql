@@ -256,7 +256,10 @@ CREATE TABLE PurchaseReceiptDetails (
     ReceiptID       INT NOT NULL FOREIGN KEY REFERENCES PurchaseReceipts(ReceiptID),
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
     Quantity        INT NOT NULL CHECK (Quantity > 0),
-    ImportPrice     DECIMAL(18,0) NOT NULL
+    ImportPrice     DECIMAL(18,0) NOT NULL,
+    LotNumber       NVARCHAR(50) NULL,     -- so lo tren bao bi (co the trung giua cac lan nhap khac nhau)
+    ManufactureDate DATE NULL,
+    ExpiryDate      DATE NULL
 );
 GO
 
@@ -310,6 +313,39 @@ GO
 CREATE INDEX IX_InvTrans_Product_Date ON InventoryTransactions(ProductID, CreatedAt);
 GO
 
+CREATE TABLE InventoryBatch (
+    BatchID         INT IDENTITY(1,1) PRIMARY KEY,
+    BatchCode       AS ('LOT_' + RIGHT('000000' + CAST(BatchID AS VARCHAR(10)), 6)) PERSISTED UNIQUE,
+    LotNumber       NVARCHAR(50) NULL,
+    ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
+    SupplierID      INT NOT NULL FOREIGN KEY REFERENCES Suppliers(SupplierID),
+    ReceiptDetailID INT NULL FOREIGN KEY REFERENCES PurchaseReceiptDetails(ReceiptDetailID),
+    ManufactureDate DATE NULL,
+    ExpiryDate      DATE NULL,
+    ImportDate      DATETIME NOT NULL DEFAULT GETDATE(),
+    ImportPrice     DECIMAL(18,0) NOT NULL CHECK (ImportPrice >= 0),
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    RemainingQty    INT NOT NULL CHECK (RemainingQty >= 0),
+    Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+                        CHECK (Status IN ('ACTIVE','EXPIRED','DEPLETED')),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT CK_Batch_RemainingLEQty CHECK (RemainingQty <= Quantity),
+    CONSTRAINT CK_Batch_Dates CHECK (ManufactureDate IS NULL OR ExpiryDate IS NULL OR ExpiryDate > ManufactureDate)
+);
+GO
+CREATE INDEX IX_InventoryBatch_FEFO ON InventoryBatch(ProductID, ExpiryDate)
+    INCLUDE (RemainingQty, Status);
+GO
+
+
+CREATE TABLE InvoiceDetailBatches (
+    InvoiceDetailID INT NOT NULL FOREIGN KEY REFERENCES InvoiceDetails(InvoiceDetailID),
+    BatchID         INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    PRIMARY KEY (InvoiceDetailID, BatchID)
+);
+GO
+
 /* ============================================================
    IX. NHAT KY HE THONG (AUDIT LOG)
    ============================================================ */
@@ -329,6 +365,8 @@ CREATE TABLE AuditLogs (
 GO
 CREATE INDEX IX_AuditLogs_User_Date ON AuditLogs(UserID, CreatedAt);
 GO
+
+
 
 /* ============================================================
    X. DOI CHIEU KHO CUOI NGAY

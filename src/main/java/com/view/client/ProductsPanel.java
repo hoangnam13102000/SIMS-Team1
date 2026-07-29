@@ -37,6 +37,7 @@ public class ProductsPanel extends JPanel {
 
     private List<Category> categories = List.of();
     private int selectedCategoryId = ALL_CATEGORIES;
+    private Consumer<Product> onProductClickListener;
 
     public ProductsPanel() {
         setLayout(new BorderLayout());
@@ -245,8 +246,12 @@ public class ProductsPanel extends JPanel {
         contentArea.repaint();
     }
 
+    /** Goi tu ClientMainFrame de dieu huong sang trang chi tiet khi bam the san pham. */
+    public void onProductClick(Consumer<Product> listener) {
+        this.onProductClickListener = listener;
+    }
+
     private void onProductSelected(Product product) {
-        // San pham hien chua co trang chi tiet/gio hang - de trong cho tinh
-        // nang nghiep vu sau (xem gio hang, dat hang...), giong HomePanel.
+        if (onProductClickListener != null) onProductClickListener.accept(product);
     }
 }

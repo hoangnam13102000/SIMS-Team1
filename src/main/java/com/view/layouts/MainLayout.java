@@ -17,6 +17,12 @@ public class MainLayout extends JPanel {
     private final CardLayout cardLayout;
     private Consumer<String> pageChangeListener;
 
+    /**
+     * Section đang chờ — chỉ ghi thật vào sidebar khi có ít nhất 1 page
+     * được add thành công (tránh hiện tiêu đề nhóm trống vì filter quyền).
+     */
+    private String pendingSection;
+
     public MainLayout() {
         this("Cửa hàng điện thoại trực tuyến");
     }
@@ -42,6 +48,14 @@ public class MainLayout extends JPanel {
         return header;
     }
 
+    /**
+     * Đánh dấu tiêu đề nhóm menu sẽ được thêm trước page kế tiếp
+     * (nếu page đó vượt qua kiểm tra quyền).
+     */
+    public void addSection(String label) {
+        this.pendingSection = label;
+    }
+
     public void addPage(String key, String label,
                          org.kordamp.ikonli.fontawesome5.FontAwesomeSolid icon, JPanel panel) {
         addPage(key, label, icon, panel, (Permission[]) null);
@@ -61,8 +75,16 @@ public class MainLayout extends JPanel {
                 && !PermissionManager.getInstance().canAny(permissions)) {
             return;
         }
+        flushPendingSection();
         sidebar.addItem(key, label, icon);
         contentPanel.add(panel, key);
+    }
+
+    private void flushPendingSection() {
+        if (pendingSection != null) {
+            sidebar.addSection(pendingSection);
+            pendingSection = null;
+        }
     }
 
     public void addHiddenPage(String key, JPanel panel) {

@@ -4,6 +4,7 @@ import com.components.BaseDialog;
 import com.components.SettingsButton;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
+import com.model.Product;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
@@ -74,12 +75,27 @@ public class ClientMainFrame extends JFrame {
 
         HomePanel homePanel = new HomePanel();
         ProductsPanel productsPanel = new ProductsPanel();
+        ProductDetailPanel productDetailPanel = new ProductDetailPanel();
 
         CartPanel cartPanel = new CartPanel();
         cartPanel.onCheckoutSuccess(() -> showPage("home"));
         cartPanel.onContinueShopping(() -> {
             showPage("products");
             productsPanel.showAll();
+        });
+
+        // Bam the san pham (Home / Products / Related) -> mo trang chi tiet
+        java.util.function.Consumer<Product> openProductDetail = product -> {
+            productDetailPanel.showProduct(product);
+            showPage("productDetail");
+        };
+        homePanel.onProductClick(openProductDetail);
+        productsPanel.onProductClick(openProductDetail);
+        productDetailPanel.onRelatedProductClick(openProductDetail);
+        productDetailPanel.onBack(() -> showPage("products"));
+        productDetailPanel.onBuyNow(() -> {
+            showPage("cart");
+            cartPanel.loadCart();
         });
 
         addPage("home", Lang.get("client.nav.home"), FontAwesomeSolid.HOME, homePanel);
@@ -89,6 +105,7 @@ public class ClientMainFrame extends JFrame {
         addPage("contact", Lang.get("client.nav.contact"), FontAwesomeSolid.ENVELOPE, new ContactPanel());
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
         contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
+        contentPanel.add(productDetailPanel, "productDetail"); // an trong nav, chi mo khi bam the SP
         
         // Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham, loc san theo danh muc do
         header.onCategorySelect((categoryId, categoryName) -> {

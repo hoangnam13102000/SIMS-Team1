@@ -19,6 +19,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class HomePanel extends JPanel {
 
@@ -29,6 +30,7 @@ public class HomePanel extends JPanel {
     private final LoadingOverlay loadingOverlay;
 
     private String currentKeyword = "";
+    private java.util.function.Consumer<Product> onProductClickListener;
 
     public HomePanel() {
         setLayout(new BorderLayout());
@@ -161,8 +163,12 @@ public class HomePanel extends JPanel {
         contentArea.repaint();
     }
 
+    /** Goi tu ClientMainFrame de dieu huong sang trang chi tiet khi bam vao 1 the san pham. */
+    public void onProductClick(java.util.function.Consumer<Product> listener) {
+        this.onProductClickListener = listener;
+    }
+
     private void onProductSelected(Product product) {
-        // San pham hien chua co trang chi tiet/gio hang - de trong cho tinh nang
-        // nghiep vu sau (xem gio hang, dat hang...). Tam thoi khong lam gi ca.
+        if (onProductClickListener != null) onProductClickListener.accept(product);
     }
 }
