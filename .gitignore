@@ -2,7 +2,20 @@
 /target/
 
 # Eclipse
-/bin/
+.settings/
 .classpath
 .project
-.settings/
+
+# Git
+.git/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Java
+*.class
+
+# Logs
+*.log
