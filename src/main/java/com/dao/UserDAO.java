@@ -30,6 +30,13 @@ public class UserDAO extends BaseDAO<User> {
 
     private static final int MAX_FAILED_LOGIN = 5;
 
+    public enum PasswordResetUpdateResult {
+        SUCCESS,
+        SAME_AS_OLD_PASSWORD,
+        ACCOUNT_UNAVAILABLE,
+        UPDATE_FAILED
+    }
+
     @Override
     protected Connection getConnection() throws SQLException {
         return DBConnection.getConnection();
@@ -131,6 +138,28 @@ public class UserDAO extends BaseDAO<User> {
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "UserDAO.findByUsername - " + username, e);
             return null;
+        }
+    }
+
+    /**
+     * Tim tai khoan hop le cho luong khoi phuc mat khau. Username va email
+     * phai cung khop mot dong; khong cho phep tai khoan disabled/soft-deleted.
+     * Method nay khong select PasswordHash de tranh dua hash ra khoi DAO.
+     */
+    public User findForPasswordReset(String username, String email) throws SQLException {
+        String sql = "SELECT u.UserID, u.Username, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
+                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode "
+                + "FROM Users u JOIN Roles r ON u.RoleID = r.RoleID "
+                + "WHERE u.Username = ? AND LOWER(u.Email) = LOWER(?) "
+                + "AND u.Email IS NOT NULL AND u.IsDeleted = 0 AND u.Status = 'ACTIVE'";
+
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, username == null ? "" : username.trim());
+            ps.setString(2, email == null ? "" : email.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? mapUser(rs) : null;
+            }
         }
     }
 
@@ -250,6 +279,94 @@ public class UserDAO extends BaseDAO<User> {
             AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "UserDAO.changePassword - userId=" + userId, e);
             return false;
         }
+    }
+
+    /**
+     * Cap nhat mat khau sau khi PasswordResetService da xac minh challenge.
+     * Transaction giu row lock trong luc so sanh mat khau cu va ghi BCrypt
+     * hash moi, tranh hai reset dong thoi cung thanh cong.
+     */
+    public PasswordResetUpdateResult resetPasswordFromRecovery(int userId, String newRawPassword) {
+        String selectSql = "SELECT PasswordHash, IsLocked, FailedLoginCount, Status, IsDeleted "
+                + "FROM Users WITH (UPDLOCK, ROWLOCK) WHERE UserID = ?";
+        String updateSql = "UPDATE Users SET PasswordHash = ?, "
+                + "IsLocked = CASE WHEN IsLocked = 1 AND FailedLoginCount >= ? THEN 0 ELSE IsLocked END, "
+                + "FailedLoginCount = 0 "
+                + "WHERE UserID = ? AND IsDeleted = 0 AND Status = 'ACTIVE'";
+
+        Connection con = null;
+        try {
+            con = DBConnection.getConnection();
+            con.setAutoCommit(false);
+
+            String storedHash;
+            try (PreparedStatement ps = con.prepareStatement(selectSql)) {
+                ps.setInt(1, userId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()
+                            || rs.getBoolean("IsDeleted")
+                            || !"ACTIVE".equalsIgnoreCase(rs.getString("Status"))) {
+                        con.rollback();
+                        return PasswordResetUpdateResult.ACCOUNT_UNAVAILABLE;
+                    }
+                    storedHash = rs.getString("PasswordHash");
+                }
+            }
+
+            if (matchesStoredPassword(newRawPassword, storedHash)) {
+                con.rollback();
+                return PasswordResetUpdateResult.SAME_AS_OLD_PASSWORD;
+            }
+
+            try (PreparedStatement ps = con.prepareStatement(updateSql)) {
+                ps.setString(1, PasswordUtils.hash(newRawPassword));
+                ps.setInt(2, MAX_FAILED_LOGIN);
+                ps.setInt(3, userId);
+                if (ps.executeUpdate() != 1) {
+                    con.rollback();
+                    return PasswordResetUpdateResult.ACCOUNT_UNAVAILABLE;
+                }
+            }
+
+            con.commit();
+            return PasswordResetUpdateResult.SUCCESS;
+        } catch (Exception e) {
+            if (con != null) {
+                try {
+                    con.rollback();
+                } catch (SQLException rollbackError) {
+                    AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                            "UserDAO.resetPasswordFromRecovery rollback", rollbackError);
+                }
+            }
+            AppLogger.getInstance().error(ErrorCode.AUTH_PASSWORD_RESET_FAIL,
+                    "UserDAO.resetPasswordFromRecovery", e);
+            return PasswordResetUpdateResult.UPDATE_FAILED;
+        } finally {
+            if (con != null) {
+                try {
+                    con.setAutoCommit(true);
+                    con.close();
+                } catch (SQLException closeError) {
+                    AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                            "UserDAO.resetPasswordFromRecovery close", closeError);
+                }
+            }
+        }
+    }
+
+    private boolean matchesStoredPassword(String rawPassword, String storedHash) {
+        if (rawPassword == null || storedHash == null || storedHash.isBlank()) {
+            return false;
+        }
+        if (PasswordUtils.isBCryptHash(storedHash)) {
+            try {
+                return PasswordUtils.verify(rawPassword, storedHash);
+            } catch (IllegalArgumentException invalidStoredHash) {
+                return false;
+            }
+        }
+        return storedHash.equalsIgnoreCase(PasswordUtils.legacySha256Hash(rawPassword));
     }
 
     /**

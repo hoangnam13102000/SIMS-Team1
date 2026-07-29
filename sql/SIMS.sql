@@ -117,10 +117,20 @@ CREATE TABLE Employees (
 );
 GO
 CREATE TABLE Products (
-    
+
     ProductID       INT IDENTITY(1,1) PRIMARY KEY,
+    -- Ma san pham hien thi/tim kiem: "SP_" + ProductID dem 4 so (vd SP_0001).
+    -- Dung COMPUTED PERSISTED (giong VATAmount/LineTotal/Discrepancy o duoi)
+    -- thay vi tu sinh ben Java: SQL Server tu tinh ngay khi biet ProductID
+    -- (IDENTITY), luon nhat quan, khong can insert/update rieng, van UNIQUE
+    -- duoc vi la PERSISTED.
+    ProductCode     AS ('SP_' + RIGHT('0000' + CAST(ProductID AS VARCHAR(10)), 4)) PERSISTED UNIQUE,
     ProductName     NVARCHAR(150) NOT NULL,
     CategoryID      INT NOT NULL FOREIGN KEY REFERENCES Categories(CategoryID),
+    Brand           NVARCHAR(100) NULL,               -- Thuong hieu: Vinamilk, TH True Milk...
+    Unit            NVARCHAR(30)  NULL,                -- Don vi tinh: Kg, Hop, Chai, Goi...
+    WeightVolume    NVARCHAR(50)  NULL,                -- Khoi luong/dung tich: 180ml, 500g, 1kg...
+    Description     NVARCHAR(1000) NULL,
     ImportPrice     DECIMAL(18,0) NOT NULL CHECK (ImportPrice >= 0),
     SellPrice       DECIMAL(18,0) NOT NULL,
     ImageUrl        NVARCHAR(500) NULL,
@@ -128,6 +138,8 @@ CREATE TABLE Products (
     MinStock        INT NOT NULL DEFAULT 5 CHECK (MinStock >= 0),
     Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                         CHECK (Status IN ('ACTIVE', 'DISABLED')),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    UpdatedAt       DATETIME NULL,                     -- app tu set = GETDATE() moi lan UPDATE (xem ProductDAO.update())
     CONSTRAINT CK_Product_SellPrice CHECK (SellPrice >= ImportPrice)  -- R2
 );
 GO

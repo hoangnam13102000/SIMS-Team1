@@ -130,9 +130,11 @@ public class LoginFrame extends JFrame {
         forgot.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                JOptionPane.showMessageDialog(LoginFrame.this,
-                        Lang.get("login.forgotPassword.dialog.message"),
-                        Lang.get("login.forgotPassword.dialog.title"), JOptionPane.INFORMATION_MESSAGE);
+                ForgotPasswordDialog dialog = new ForgotPasswordDialog(
+                        LoginFrame.this,
+                        usernameField.getText()
+                );
+                dialog.setVisible(true);
             }
         });
 
@@ -239,7 +241,7 @@ public class LoginFrame extends JFrame {
             
             @Override
             public void mouseClicked(MouseEvent e) {
-                // ✅ Lấy trực tiếp từ RoundedPasswordField, không cần cast
+               
                 JPasswordField pf = passwordField.getPasswordField();
                 isShowing = !isShowing;
                 
@@ -338,5 +340,15 @@ public class LoginFrame extends JFrame {
             }
         };
         worker.execute();
+    }
+
+    void prepareAfterPasswordReset(String username) {
+        usernameField.setText(username == null ? "" : username);
+        passwordField.setText("");
+        errorLabel.setText(" ");
+        setVisible(true);
+        toFront();
+        SwingUtilities.invokeLater(
+                () -> passwordField.getPasswordField().requestFocusInWindow());
     }
 }

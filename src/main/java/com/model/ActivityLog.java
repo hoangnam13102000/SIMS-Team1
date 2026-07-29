@@ -11,6 +11,7 @@ public class ActivityLog {
     public static final String ACTION_LOGIN_FAILED = "LOGIN_FAILED";
     public static final String ACTION_LOGOUT = "LOGOUT";
     public static final String ACTION_STATUS_CHANGE = "STATUS_CHANGE";
+    public static final String ACTION_PASSWORD_RESET = "PASSWORD_RESET";
 
     public static final String ENTITY_PHONE = "PHONE";
     public static final String ENTITY_CATEGORY = "CATEGORY";

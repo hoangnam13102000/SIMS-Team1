@@ -7,8 +7,6 @@ import com.components.table.ActionColumn;
 import com.components.table.AutoRowNumber;
 import com.dao.ProductDAO;
 import com.model.Product;
-import com.model.permission.AppPermission;
-import com.permission.PermissionManager;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
@@ -31,64 +29,47 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     public ProductPanel() {
         super();
 
-        ActionColumn actions = new ActionColumn()
+        table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
-                .add("view", FontAwesomeSolid.EYE, AppColor.TEXT_MUTED, "Xem chi tiết",
-                        this::viewRowDetail);
-        if (canManageProducts()) {
-            actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
-                            this::editRowPublic)
-                    .add("status-toggle",
-                            this::statusToggleIcon,
-                            this::statusToggleColor,
-                            this::statusToggleTooltip,
-                            this::toggleStatusRow,
-                            null);
-        }
-        table.setActionColumn(actions);
+                .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+                        this::viewRowPublic)
+                .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
+                        this::editRowPublic)
+                .add("status-toggle",
+                        this::statusToggleIcon,
+                        this::statusToggleColor,
+                        this::statusToggleTooltip,
+                        this::toggleStatusRow,
+                        null));
 
         stt = table.setAutoRowNumberColumn(0);
         table.setImageColumn(1, 40);
-        table.setBadgeColumn(7, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(8, this::statusLabel, this::statusColor);
 
-        table.setColumnWidths(45, 55, 180, 120, 100, 100, 80, 115);
-        table.setColumnMinWidths(40, 50, 120, 90, 85, 85, 65, 105);
+        // Preferred theo tỷ lệ; minWidth đủ badge "Đang bán"/"Ngừng bán" không bị clip.
+        // Không enableHorizontalScroll → cột co giãn theo khung, không scrollbar ngang.
+        // Text dài (tên SP, danh mục...) nếu tràn sẽ hiện "..." + tooltip full khi hover.
+        table.setColumnWidths(45, 52, 85, 160, 110, 95, 95, 70, 105);
+        table.setColumnMinWidths(40, 48, 70, 100, 85, 75, 75, 55, 95);
 
         initialLoad();
-    }
-
-    private static boolean canManageProducts() {
-        return PermissionManager.getInstance().can(AppPermission.PRODUCT_MANAGE);
     }
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.BOX; }
 
     @Override
-    protected String getPageTitle() {
-        return canManageProducts() ? "Quản lý sản phẩm" : "Danh sách sản phẩm";
-    }
+    protected String getPageTitle() { return "Quản lý sản phẩm"; }
 
     @Override
-    protected String getPageSubtitle() {
-        return canManageProducts()
-                ? "Quản lý danh sách sản phẩm, giá và tồn kho trong hệ thống"
-                : "Xem và tìm kiếm sản phẩm trong hệ thống";
-    }
+    protected String getPageSubtitle() { return "Quản lý danh sách sản phẩm, giá và tồn kho trong hệ thống"; }
 
     @Override
-    protected String getAddButtonLabel() {
-        return canManageProducts() ? "Thêm sản phẩm" : null;
-    }
-
-    @Override
-    protected boolean supportsEdit() {
-        return canManageProducts();
-    }
+    protected String getAddButtonLabel() { return "Thêm sản phẩm"; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Ảnh", "Tên sản phẩm", "Danh mục", "Giá nhập", "Giá bán", "Tồn kho", "Trạng thái"};
+        return new String[]{"STT", "Ảnh", "Mã SP", "Tên sản phẩm", "Danh mục", "Giá nhập", "Giá bán", "Tồn kho", "Trạng thái"};
     }
 
     @Override
@@ -96,6 +77,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         return new Object[]{
                 "",
                 item.getImageUrl(),
+                item.getProductCode(),
                 item.getProductName(),
                 item.getCategoryName(),
                 NumberUtil.formatThousands(item.getImportPrice().longValue()),
@@ -106,7 +88,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{4, 5, 6}; }
+    protected int[] numericColumns() { return new int[]{5, 6, 7}; }
 
     @Override
     protected String getEntityLabel() { return "sản phẩm"; }
@@ -139,7 +121,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
     @Override
     protected void openForm(Product item) {
-        if (!canManageProducts()) return;
         CrudMode mode = item == null ? CrudMode.ADD : CrudMode.EDIT;
         Window owner = SwingUtilities.getWindowAncestor(this);
         ProductFormDialog dialog = new ProductFormDialog(
@@ -148,6 +129,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         dialog.setVisible(true);
     }
 
+    /** Không hỗ trợ xóa cứng - dùng "Ngừng bán" trong cột Thao tác hoặc form Sửa thay thế. */
     @Override
     protected boolean supportsDelete() { return false; }
 
@@ -173,20 +155,17 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         reload();
     }
 
-    private void viewRowDetail(int modelRow) {
+    private void viewRowPublic(int modelRow) {
         Product item = rowToItem(modelRow);
         if (item == null) return;
         Window owner = SwingUtilities.getWindowAncestor(this);
         ProductDetailDialog dialog = new ProductDetailDialog(
                 owner instanceof Frame ? (Frame) owner : null, item);
-        if (canManageProducts()) {
-            dialog.onEditRequested(() -> openForm(item));
-        }
+        dialog.onEditRequested(() -> openForm(item));
         dialog.setVisible(true);
     }
 
     private void editRowPublic(int modelRow) {
-        if (!canManageProducts()) return;
         Product item = rowToItem(modelRow);
         if (item != null) openForm(item);
     }
@@ -209,7 +188,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     }
 
     private void toggleStatusRow(int modelRow) {
-        if (!canManageProducts()) return;
         Product item = rowToItem(modelRow);
         if (item == null) return;
 
@@ -228,9 +206,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         item.setStatus(willDisable ? "DISABLED" : "ACTIVE");
         if (productDAO.update(item)) {
             BaseDialog.success(this, "Thành công",
-                    willDisable
-                            ? "Đã ngừng bán \"" + item.getProductName() + "\"."
-                            : "Đã mở bán lại \"" + item.getProductName() + "\".");
+                    willDisable ? "Đã ngừng bán \"" + item.getProductName() + "\"." : "Đã mở bán lại \"" + item.getProductName() + "\".");
             onDataChanged();
         } else {
             BaseDialog.error(this, "Không thể cập nhật", "Cập nhật trạng thái thất bại. Vui lòng thử lại.");

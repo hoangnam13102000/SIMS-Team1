@@ -17,8 +17,10 @@ import java.util.List;
 public class ProductDAO extends BaseDAO<Product> {
 
     private static final String BASE_SELECT =
-            "SELECT p.ProductID, p.ProductName, p.CategoryID, c.CategoryName, "
-                    + "p.ImportPrice, p.SellPrice, p.ImageUrl, p.Stock, p.MinStock, p.Status "
+            "SELECT p.ProductID, p.ProductCode, p.ProductName, p.CategoryID, c.CategoryName, "
+                    + "p.Brand, p.Unit, p.WeightVolume, p.Description, "
+                    + "p.ImportPrice, p.SellPrice, p.ImageUrl, p.Stock, p.MinStock, p.Status, "
+                    + "p.CreatedAt, p.UpdatedAt "
                     + "FROM Products p JOIN Categories c ON p.CategoryID = c.CategoryID ";
 
     // ---------------------------------------------------------------
@@ -43,8 +45,10 @@ public class ProductDAO extends BaseDAO<Product> {
 
     @Override
     protected String getColumns() {
-        return "p.ProductID, p.ProductName, p.CategoryID, c.CategoryName, "
-                + "p.ImportPrice, p.SellPrice, p.ImageUrl, p.Stock, p.MinStock, p.Status";
+        return "p.ProductID, p.ProductCode, p.ProductName, p.CategoryID, c.CategoryName, "
+                + "p.Brand, p.Unit, p.WeightVolume, p.Description, "
+                + "p.ImportPrice, p.SellPrice, p.ImageUrl, p.Stock, p.MinStock, p.Status, "
+                + "p.CreatedAt, p.UpdatedAt";
     }
 
     @Override
@@ -54,7 +58,7 @@ public class ProductDAO extends BaseDAO<Product> {
 
     @Override
     protected String[] getSearchableColumns() {
-        return new String[]{"p.ProductName", "c.CategoryName"};
+        return new String[]{"p.ProductName", "c.CategoryName", "p.ProductCode", "p.Brand"};
     }
 
     @Override
@@ -67,14 +71,27 @@ public class ProductDAO extends BaseDAO<Product> {
     // ProductPanel/ProductFormDialog o view/admin/product.
     // ---------------------------------------------------------------
 
-    /** Them 1 san pham moi. Tra ve true neu insert thanh cong. */
+    /** Them 1 san pham moi. Tra ve true neu insert thanh cong; product.productId/productCode duoc set lai tu key sinh ra. */
     public boolean insert(Product product) {
-        String sql = "INSERT INTO Products (ProductName, CategoryID, ImportPrice, SellPrice, ImageUrl, Stock, MinStock, Status) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO Products (ProductName, CategoryID, Brand, Unit, WeightVolume, Description, "
+                + "ImportPrice, SellPrice, ImageUrl, Stock, MinStock, Status) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        // KHONG dua ProductCode vao day: no la cot COMPUTED PERSISTED (xem
+        // SIMS.sql), SQL Server tu tinh tu ProductID ngay sau khi insert -
+        // khong duoc phep (va khong can) ghi gia tri tay cho cot nay.
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement ps = con.prepareStatement(sql)) {
+             PreparedStatement ps = con.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
             bindProduct(ps, product);
-            return ps.executeUpdate() > 0;
+            if (ps.executeUpdate() == 0) return false;
+
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (keys.next()) {
+                    int productId = keys.getInt(1);
+                    product.setProductId(productId);
+                    product.setProductCode(generateProductCode(productId));
+                }
+            }
+            return true;
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
                     "ProductDAO.insert - " + product.getProductName(), e);
@@ -82,10 +99,21 @@ public class ProductDAO extends BaseDAO<Product> {
         }
     }
 
+    /**
+     * "SP_" + ProductID dem 4 so (vd ProductID=7 -> "SP_0007") - PHAI khop
+     * chinh xac cong thuc cot COMPUTED trong SIMS.sql
+     * (ProductCode AS ('SP_' + RIGHT('0000' + CAST(ProductID AS VARCHAR(10)), 4))),
+     * dung de gan ngay vao object sau insert() ma khong can truy van lai.
+     */
+    private String generateProductCode(int productId) {
+        return "SP_" + String.format("%04d", productId);
+    }
+
     /** Cap nhat 1 san pham (gom ca Stock/MinStock - hien chua co man hinh nhap/xuat kho rieng nen ProductFormDialog la noi duy nhat chinh ton kho). Tra ve true neu co it nhat 1 dong bi anh huong. */
     public boolean update(Product product) {
-        String sql = "UPDATE Products SET ProductName = ?, CategoryID = ?, ImportPrice = ?, SellPrice = ?, "
-                + "ImageUrl = ?, Stock = ?, MinStock = ?, Status = ? WHERE ProductID = ?";
+        String sql = "UPDATE Products SET ProductName = ?, CategoryID = ?, Brand = ?, Unit = ?, WeightVolume = ?, Description = ?, "
+                + "ImportPrice = ?, SellPrice = ?, ImageUrl = ?, Stock = ?, MinStock = ?, Status = ?, UpdatedAt = GETDATE() "
+                + "WHERE ProductID = ?";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             int nextIndex = bindProduct(ps, product);
@@ -102,13 +130,17 @@ public class ProductDAO extends BaseDAO<Product> {
     private int bindProduct(PreparedStatement ps, Product product) throws SQLException {
         ps.setString(1, product.getProductName());
         ps.setInt(2, product.getCategoryId());
-        ps.setBigDecimal(3, product.getImportPrice());
-        ps.setBigDecimal(4, product.getSellPrice());
-        ps.setString(5, product.getImageUrl());
-        ps.setInt(6, product.getStock());
-        ps.setInt(7, product.getMinStock());
-        ps.setString(8, product.getStatus());
-        return 9;
+        ps.setString(3, product.getBrand());
+        ps.setString(4, product.getUnit());
+        ps.setString(5, product.getWeightVolume());
+        ps.setString(6, product.getDescription());
+        ps.setBigDecimal(7, product.getImportPrice());
+        ps.setBigDecimal(8, product.getSellPrice());
+        ps.setString(9, product.getImageUrl());
+        ps.setInt(10, product.getStock());
+        ps.setInt(11, product.getMinStock());
+        ps.setString(12, product.getStatus());
+        return 13;
     }
 
     /** Danh sach san pham dang ban (Status = ACTIVE), moi nhat/ten A-Z. */
@@ -179,15 +211,26 @@ public class ProductDAO extends BaseDAO<Product> {
     private Product mapProduct(ResultSet rs) throws SQLException {
         Product product = new Product();
         product.setProductId(rs.getInt("ProductID"));
+        product.setProductCode(rs.getString("ProductCode"));
         product.setProductName(rs.getString("ProductName"));
         product.setCategoryId(rs.getInt("CategoryID"));
         product.setCategoryName(rs.getString("CategoryName"));
+        product.setBrand(rs.getString("Brand"));
+        product.setUnit(rs.getString("Unit"));
+        product.setWeightVolume(rs.getString("WeightVolume"));
+        product.setDescription(rs.getString("Description"));
         product.setImportPrice(nullSafe(rs.getBigDecimal("ImportPrice")));
         product.setSellPrice(nullSafe(rs.getBigDecimal("SellPrice")));
         product.setImageUrl(rs.getString("ImageUrl"));
         product.setStock(rs.getInt("Stock"));
         product.setMinStock(rs.getInt("MinStock"));
         product.setStatus(rs.getString("Status"));
+
+        java.sql.Timestamp createdAt = rs.getTimestamp("CreatedAt");
+        if (createdAt != null) product.setCreatedAt(createdAt.toLocalDateTime());
+        java.sql.Timestamp updatedAt = rs.getTimestamp("UpdatedAt");
+        if (updatedAt != null) product.setUpdatedAt(updatedAt.toLocalDateTime());
+
         return product;
     }
 

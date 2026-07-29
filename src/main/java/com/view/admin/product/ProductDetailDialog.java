@@ -21,6 +21,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
+import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
@@ -35,26 +36,19 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
- * Dialog xem nhanh (chỉ đọc) thông tin 1 sản phẩm, mở từ nút "Xem chi tiết"
- * (icon mắt) trong {@link ProductPanel}. Cùng bố cục "thẻ thông tin" với
- * {@link com.view.admin.customer.CustomerDetailDialog}, nhưng thêm ảnh banner
- * lớn + thẻ giá/lợi nhuận + badge trạng thái tồn kho để bắt mắt hơn, phù hợp
- * đặc thù sản phẩm (thay vì avatar tròn của khách hàng).
+ * Dialog xem nhanh (chỉ đọc) thông tin 1 sản phẩm — layout ngang:
+ * ảnh trái + cột phải (tên, badge, thẻ giá, lưới thông tin, mô tả).
  */
 public class ProductDetailDialog extends JDialog {
 
-    /** Chiều cao ảnh bên trái (layout ngang). */
-    private static final int IMAGE_H = 280;
-    /** Chiều rộng cố định cột ảnh. */
-    private static final int IMAGE_W = 300;
+    private static final int IMAGE_H = 320;
+    private static final int IMAGE_W = 280;
     private static final int ICON_BOX_SIZE = 40;
 
     private Runnable onEditRequested;
@@ -72,18 +66,17 @@ public class ProductDetailDialog extends JDialog {
         getRootPane().registerKeyboardAction(e -> dispose(),
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
 
-        // Layout ngang: ảnh trái + info phải → rộng hơn, thấp hơn, ít phải cuộn.
-        setSize(780, 520);
+        // Layout ngang rộng hơn, cao vừa đủ cho lưới info + mô tả.
+        setSize(860, 600);
         setLocationRelativeTo(owner);
     }
 
-    /** Dang ky callback khi bam nut "Chỉnh sửa" o footer - dialog tu dispose() TRUOC khi goi callback, dung de ProductPanel mo tiep ProductFormDialog. */
     public void onEditRequested(Runnable callback) {
         this.onEditRequested = callback;
     }
 
     // ---------------------------------------------------------------
-    // Header: chỉ tiêu đề (không nút X — footer đã có "Đóng")
+    // Header
     // ---------------------------------------------------------------
 
     private JPanel buildHeader() {
@@ -101,7 +94,7 @@ public class ProductDetailDialog extends JDialog {
     }
 
     // ---------------------------------------------------------------
-    // Body (layout ngang): ảnh trái | tên + badge + giá + info phải
+    // Body: ảnh trái | info phải
     // ---------------------------------------------------------------
 
     private JComponent buildBody(Product product) {
@@ -112,7 +105,6 @@ public class ProductDetailDialog extends JDialog {
         root.add(buildProductImage(product), BorderLayout.WEST);
         root.add(buildInfoColumn(product), BorderLayout.CENTER);
 
-        // Giữ scroll phòng trường hợp font/DPI lớn, nhưng layout ngang thường đủ 1 màn.
         JScrollPane scroll = new JScrollPane(root);
         scroll.setBorder(null);
         scroll.getViewport().setBackground(AppColor.WHITE);
@@ -121,7 +113,6 @@ public class ProductDetailDialog extends JDialog {
         return scroll;
     }
 
-    /** Ảnh sản phẩm cố định bên trái, bo góc, crop-to-fill. */
     private JComponent buildProductImage(Product product) {
         JLabel image = new JLabel();
         image.setHorizontalAlignment(SwingConstants.CENTER);
@@ -132,7 +123,6 @@ public class ProductDetailDialog extends JDialog {
         return image;
     }
 
-    /** Cột phải: tên, badge, thẻ giá, các dòng thông tin (2 cột). */
     private JComponent buildInfoColumn(Product product) {
         JPanel col = new JPanel();
         col.setOpaque(false);
@@ -140,29 +130,110 @@ public class ProductDetailDialog extends JDialog {
         col.setBorder(new EmptyBorder(0, 4, 0, 0));
 
         col.add(buildTitleSection(product));
-        col.add(Box.createVerticalStrut(14));
+        col.add(Box.createVerticalStrut(12));
         col.add(buildPriceCard(product));
-        col.add(Box.createVerticalStrut(16));
-        col.add(buildDivider());
         col.add(Box.createVerticalStrut(14));
+        col.add(buildDivider());
+        col.add(Box.createVerticalStrut(12));
         col.add(buildInfoGrid(product));
+        col.add(Box.createVerticalStrut(14));
+        col.add(buildDescriptionSection(product));
 
         return col;
     }
 
-    /** Lưới 2 cột: Danh mục | Mã SP, Tồn kho | Tồn tối thiểu — gọn theo chiều ngang. */
+    /**
+     * Lưới 3 hàng × 2 cột:
+     *  Danh mục          | Mã sản phẩm
+     *  Thương hiệu       | Đơn vị tính
+     *  Khối lượng/Dung tích | Tồn kho tối thiểu
+     * + hàng tồn kho full-width bên dưới
+     */
     private JComponent buildInfoGrid(Product product) {
-        JPanel grid = new JPanel(new java.awt.GridLayout(2, 2, 16, 14));
+        JPanel wrapper = new JPanel();
+        wrapper.setOpaque(false);
+        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+
+        JPanel grid = new JPanel(new java.awt.GridLayout(3, 2, 16, 12));
         grid.setOpaque(false);
         grid.setAlignmentX(Component.LEFT_ALIGNMENT);
-        grid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+        grid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180));
+
+        String code = product.getProductCode() != null && !product.getProductCode().isBlank()
+                ? product.getProductCode()
+                : "SP" + String.format("%05d", product.getProductId());
 
         grid.add(infoRow(FontAwesomeSolid.LAYER_GROUP, "Danh mục", emptyDash(product.getCategoryName())));
-        grid.add(infoRow(FontAwesomeSolid.HASHTAG, "Mã sản phẩm", "SP" + String.format("%05d", product.getProductId())));
-        grid.add(buildStockRow(product));
+        grid.add(infoRow(FontAwesomeSolid.HASHTAG, "Mã sản phẩm", code));
+        grid.add(infoRow(FontAwesomeSolid.COPYRIGHT, "Thương hiệu", emptyDash(product.getBrand())));
+        grid.add(infoRow(FontAwesomeSolid.RULER, "Đơn vị tính", emptyDash(product.getUnit())));
+        grid.add(infoRow(FontAwesomeSolid.BALANCE_SCALE, "Khối lượng / Dung tích", emptyDash(product.getWeightVolume())));
         grid.add(infoRow(FontAwesomeSolid.ARROW_DOWN, "Tồn kho tối thiểu", product.getMinStock() + " sản phẩm"));
 
-        return grid;
+        wrapper.add(grid);
+        wrapper.add(Box.createVerticalStrut(12));
+        wrapper.add(buildStockRow(product));
+        return wrapper;
+    }
+
+    /** Khối mô tả sản phẩm — full width dưới lưới info. */
+    private JComponent buildDescriptionSection(Product product) {
+        JPanel section = new JPanel();
+        section.setOpaque(false);
+        section.setLayout(new BoxLayout(section, BoxLayout.Y_AXIS));
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
+        section.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+
+        JPanel header = new JPanel();
+        header.setLayout(new BoxLayout(header, BoxLayout.X_AXIS));
+        header.setOpaque(false);
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.ALIGN_LEFT, 13);
+        icon.setIconColor(AppColor.ACCENT);
+        header.add(new JLabel(icon));
+
+        JLabel title = new JLabel("  MÔ TẢ SẢN PHẨM");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        title.setForeground(AppColor.ACCENT);
+        header.add(title);
+        header.add(Box.createHorizontalStrut(10));
+
+        JSeparator sep = new JSeparator(SwingConstants.HORIZONTAL);
+        sep.setForeground(AppColor.BORDER);
+        sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        sep.setAlignmentY(Component.CENTER_ALIGNMENT);
+        header.add(sep);
+
+        section.add(header);
+        section.add(Box.createVerticalStrut(8));
+
+        String desc = product.getDescription();
+        if (desc == null || desc.isBlank()) {
+            JLabel empty = new JLabel("Chưa có mô tả.");
+            empty.setFont(AppFont.BODY);
+            empty.setForeground(AppColor.TEXT_MUTED);
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            section.add(empty);
+        } else {
+            JTextArea area = new JTextArea(desc);
+            area.setFont(AppFont.BODY);
+            area.setForeground(AppColor.TEXT_PRIMARY);
+            area.setOpaque(false);
+            area.setEditable(false);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            area.setBorder(null);
+            area.setAlignmentX(Component.LEFT_ALIGNMENT);
+            // Giới hạn chiều cao hợp lý; scroll pane cha sẽ cuộn nếu cần.
+            area.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
+            section.add(area);
+        }
+
+        return section;
     }
 
     private ImageIcon coverIcon(String path, int w, int h, Component context) {
@@ -183,13 +254,14 @@ public class ProductDetailDialog extends JDialog {
             g2.fillRect(0, 0, w, h);
             FontIcon placeholderIcon = FontIcon.of(FontAwesomeSolid.IMAGE, 44);
             placeholderIcon.setIconColor(AppColor.BORDER);
-            placeholderIcon.paintIcon(context, g2, (w - placeholderIcon.getIconWidth()) / 2, (h - placeholderIcon.getIconHeight()) / 2);
+            placeholderIcon.paintIcon(context, g2,
+                    (w - placeholderIcon.getIconWidth()) / 2,
+                    (h - placeholderIcon.getIconHeight()) / 2);
         }
         g2.dispose();
         return new ImageIcon(canvas);
     }
 
-    /** Ten san pham (to, dam) + hang badge: danh muc / trang thai ban / trang thai ton kho. */
     private JPanel buildTitleSection(Product product) {
         JPanel section = new JPanel();
         section.setOpaque(false);
@@ -217,7 +289,6 @@ public class ProductDetailDialog extends JDialog {
         return section;
     }
 
-    /** The gia nhap/gia ban 2 cot + dong loi nhuan/bien loi nhuan noi bat ben duoi, nen mem bo goc. */
     private JComponent buildPriceCard(Product product) {
         JPanel card = new JPanel() {
             @Override
@@ -233,19 +304,19 @@ public class ProductDetailDialog extends JDialog {
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setAlignmentX(Component.LEFT_ALIGNMENT);
         card.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-        card.setBorder(new EmptyBorder(16, 18, 16, 18));
+        card.setBorder(new EmptyBorder(14, 16, 14, 16));
 
         JPanel priceRow = new JPanel(new java.awt.GridLayout(1, 2, 20, 0));
         priceRow.setOpaque(false);
         priceRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        priceRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+        priceRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
         priceRow.add(priceColumn("Giá nhập", product.getImportPrice(), AppColor.TEXT_PRIMARY, AppFont.bold(16)));
         priceRow.add(priceColumn("Giá bán", product.getSellPrice(), AppColor.ACCENT, AppFont.getLargeBold()));
         card.add(priceRow);
 
-        card.add(Box.createVerticalStrut(14));
-        card.add(buildDivider());
         card.add(Box.createVerticalStrut(12));
+        card.add(buildDivider());
+        card.add(Box.createVerticalStrut(10));
         card.add(buildProfitRow(product));
 
         return card;
@@ -306,7 +377,6 @@ public class ProductDetailDialog extends JDialog {
         return row;
     }
 
-    /** Dong "Ton kho" rieng (khac infoRow thuong): them 1 StatBadge nho canh gia tri so de bao trang thai (Con hang/Sap het/Het hang) - net "bat mat" chinh cua dialog. */
     private JPanel buildStockRow(Product product) {
         JPanel row = new JPanel(new BorderLayout(14, 0));
         row.setOpaque(false);
@@ -330,7 +400,10 @@ public class ProductDetailDialog extends JDialog {
         valueRow.setBorder(null);
         valueRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel valueLabel = new JLabel(product.getStock() + " sản phẩm");
+        String unitSuffix = (product.getUnit() != null && !product.getUnit().isBlank())
+                ? " " + product.getUnit()
+                : " sản phẩm";
+        JLabel valueLabel = new JLabel(product.getStock() + unitSuffix);
         valueLabel.setFont(AppFont.BODY_BOLD.deriveFont(14f));
         valueLabel.setForeground(stockStatusColor(product));
         valueRow.add(valueLabel);
@@ -343,7 +416,6 @@ public class ProductDetailDialog extends JDialog {
         return row;
     }
 
-    /** 1 dòng thông tin: icon vuông bo góc bên trái, nhãn nhỏ + giá trị đậm bên phải. */
     private JPanel infoRow(FontAwesomeSolid iconType, String label, String value) {
         JPanel row = new JPanel(new BorderLayout(14, 0));
         row.setOpaque(false);
@@ -373,7 +445,6 @@ public class ProductDetailDialog extends JDialog {
         return row;
     }
 
-    /** O vuong bo goc nen nhat, chua icon - dung chung cho tat ca dong thong tin. */
     private JComponent iconBox(FontAwesomeSolid iconType) {
         JPanel box = new JPanel(new java.awt.GridBagLayout()) {
             @Override
@@ -417,7 +488,6 @@ public class ProductDetailDialog extends JDialog {
         return NumberUtil.formatThousands(value) + " đ";
     }
 
-    /** "Hết hàng" (đỏ) neu Stock = 0, "Sắp hết" (cam) neu Stock <= MinStock, "Còn hàng" (xanh) con lai. */
     private String stockStatusLabel(Product product) {
         if (product.isOutOfStock()) return "Hết hàng";
         if (product.isLowStock()) return "Sắp hết";
@@ -431,7 +501,7 @@ public class ProductDetailDialog extends JDialog {
     }
 
     // ---------------------------------------------------------------
-    // Footer: nút Đóng + Chỉnh sửa
+    // Footer
     // ---------------------------------------------------------------
 
     private JPanel buildFooter() {

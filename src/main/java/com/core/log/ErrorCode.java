@@ -24,6 +24,7 @@ public enum ErrorCode {
     AUTH_LOGIN_FAIL("ERR-AUTH-001", "Đăng nhập thất bại"),
     AUTH_REMEMBER_ME_FAIL("ERR-AUTH-002", "Xử lý Remember-Me thất bại"),
     AUTH_ACCOUNT_LOCKED("ERR-AUTH-003", "Tài khoản bị tạm khoá do đăng nhập sai quá số lần cho phép"),
+    AUTH_PASSWORD_RESET_FAIL("ERR-AUTH-004", "Đặt lại mật khẩu thất bại"),
 
     // ==== Đơn hàng ====
     ORDER_CREATE_FAIL("ERR-ORD-001", "Tạo đơn hàng thất bại"),
