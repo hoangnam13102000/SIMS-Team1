@@ -40,6 +40,8 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
+                .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+                        this::viewRowPublic)
                 .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                         this::editRowPublic)
                 .add("lock-toggle",
@@ -53,17 +55,12 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
         table.setBadgeColumn(7, this::lockLabel, this::lockColor);
 
-        // Không bật enableHorizontalScroll — bảng co giãn theo khung, không cuộn ngang.
-        // Preferred width ưu tiên cột badge (Trạng thái/Khóa) và Vai trò để StatBadge
-        // hiện đủ chữ ("Đang hoạt động", "Bình thường"). STT cố định để không bị bóp thành "...".
-        // Header dài được BaseTable wrap 2 dòng nên không cần min width quá lớn.
-        table.setColumnWidths(48, 120, 120, 120, 150, 135, 140, 115);
-        table.setColumnMinWidths(48, 80, 85, 90, 95, 100, 125, 105);
-        var sttCol = table.getTable().getColumnModel().getColumn(0);
-        sttCol.setMinWidth(48);
-        sttCol.setMaxWidth(56);
-        // Chia đều theo preferred width, luôn vừa khung nhìn (không cuộn ngang).
-        table.getTable().setAutoResizeMode(javax.swing.JTable.AUTO_RESIZE_ALL_COLUMNS);
+        // Preferred theo tỷ lệ; minWidth đủ cho badge "Đang hoạt động" / "Bình thường"
+        // không bị clip. Không enableHorizontalScroll → cột co giãn theo khung,
+        // không scrollbar ngang. Text dài (mã NV, email...) nếu vẫn tràn sẽ hiện
+        // "..." + tooltip full khi hover (BaseTable striped renderer).
+        table.setColumnWidths(45, 110, 110, 110, 150, 120, 145, 115);
+        table.setColumnMinWidths(40, 85, 85, 90, 110, 95, 140, 110);
 
         initialLoad();
     }
@@ -175,6 +172,15 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     // ---------------------------------------------------------------
     // Hành động: sửa / khóa / mở khóa
     // ---------------------------------------------------------------
+
+    private void viewRowPublic(int modelRow) {
+        Employee item = rowToItem(modelRow);
+        if (item == null) return;
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        EmployeeDetailDialog dialog = new EmployeeDetailDialog(
+                owner instanceof Frame ? (Frame) owner : null, item);
+        dialog.setVisible(true);
+    }
 
     private void editRowPublic(int modelRow) {
         Employee item = rowToItem(modelRow);

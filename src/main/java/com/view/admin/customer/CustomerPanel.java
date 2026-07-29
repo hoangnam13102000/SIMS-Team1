@@ -3,6 +3,7 @@ package com.view.admin.customer;
 import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
+import com.components.crud.TrashConfig;
 import com.components.table.ActionColumn;
 import com.components.table.AutoRowNumber;
 import com.dao.CustomerDAO;
@@ -36,18 +37,8 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
                         this::viewRowPublic)
                 .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                         this::editRowPublic)
-                // Khoa/Mo khoa gop chung 1 slot, giong UserAccountPanel - icon/mau/
-                // tooltip doi theo trang thai IsLocked cua tung dong. Overload nay
-                // (icon/mau/tooltip la ham theo modelRow) BAT BUOC 6 tham so, tham
-                // so cuoi (enabledPredicate) truyen null => luon cho phep bam
-                // (khac UserAccountPanel dung canManage() de tu-chan-khoa-chinh-minh,
-                // khong can o day vi Admin khong nam trong danh sach Customer).
-                .add("lock-toggle",
-                        this::lockToggleIcon,
-                        this::lockToggleColor,
-                        this::lockToggleTooltip,
-                        this::toggleLockRow,
-                        null));
+                .add("delete", FontAwesomeSolid.TRASH_ALT, AppColor.ERROR, "Xóa khách hàng",
+                        this::deleteRowPublic));
 
         stt = table.setAutoRowNumberColumn(0);
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
@@ -145,12 +136,35 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
         dialog.setVisible(true);
     }
 
-    /** Khong ho tro xoa cung - dung "Vo hieu hoa" trong form Sua thay the (giong UserAccountPanel). */
+    /**
+     * Cot Thao tac o day la ActionColumn tu bien soan rieng (xem constructor) -
+     * nut "Xoa" that su nam trong slot "delete" o do va goi thang
+     * deleteRowPublic(), khong di qua co che view/edit/delete mac dinh cua
+     * BaseCrudPanel. Tra ve false o day chi de an cot xoa mac dinh (rong,
+     * khong dung toi); deleteItem() van duoc trien khai day du (xoa MEM qua
+     * CustomerDAO.softDelete) de dung chung logic voi deleteRowPublic().
+     */
     @Override
     protected boolean supportsDelete() { return false; }
 
     @Override
-    protected boolean deleteItem(Customer item) { return false; }
+    protected boolean deleteItem(Customer item) {
+        return customerDAO.softDelete(item.getCustomerId());
+    }
+
+    /**
+     * Bat tinh nang "Thung rac" (xoa mem/khoi phuc) cho khach hang - khong
+     * cho xoa vinh vien (tham so hardDelete = null) vi Users.UserID con duoc
+     * nhieu bang khac tham chieu (Orders, ActivityLogs...) khong CASCADE,
+     * xoa that co the vi pham khoa ngoai. Nut "Thung rac" tu dong xuat hien
+     * tren header (xem BaseCrudPanel.maybeAddTrashButton()).
+     */
+    @Override
+    protected TrashConfig<Customer> getTrashConfig() {
+        return new TrashConfig<>(
+                customerDAO::getDeletedItems,
+                item -> customerDAO.restore(item.getCustomerId()));
+    }
 
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo tên đăng nhập, họ tên, email..."; }
@@ -172,7 +186,8 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     /**
      * Chua co noi nao trong app publish DataChangedEvent cho Customers, nen
      * override truc tiep goi reload() de bang phan anh ngay du lieu moi sau
-     * khi Sua/Khoa/Mo khoa thanh cong (giong UserAccountPanel).
+     * khi Sua/Xoa thanh cong (giong UserAccountPanel). Rieng Khoi phuc trong
+     * Thung rac da tu goi onChanged() -> reload() qua TrashDialog/openTrash().
      */
     @Override
     protected void onDataChanged() {
@@ -180,7 +195,7 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     }
 
     // ---------------------------------------------------------------
-    // Hành động: sửa / khóa / mở khóa
+    // Hành động: xem / sửa / xóa mềm
     // ---------------------------------------------------------------
 
     private void viewRowPublic(int modelRow) {
@@ -197,57 +212,19 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
         if (item != null) openForm(item);
     }
 
-    private boolean isLockedRow(int modelRow) {
-        Customer item = rowToItem(modelRow);
-        return item != null && item.isLocked();
-    }
-
-    private FontAwesomeSolid lockToggleIcon(int modelRow) {
-        return isLockedRow(modelRow) ? FontAwesomeSolid.UNLOCK_ALT : FontAwesomeSolid.LOCK;
-    }
-
-    private Color lockToggleColor(int modelRow) {
-        return isLockedRow(modelRow) ? AppColor.SUCCESS : AppColor.WARNING;
-    }
-
-    private String lockToggleTooltip(int modelRow) {
-        return isLockedRow(modelRow) ? "Mở khóa tài khoản" : "Khóa tài khoản";
-    }
-
-    private void toggleLockRow(int modelRow) {
-        if (isLockedRow(modelRow)) {
-            unlockRow(modelRow);
-        } else {
-            lockRow(modelRow);
-        }
-    }
-
-    private void lockRow(int modelRow) {
+    private void deleteRowPublic(int modelRow) {
         Customer item = rowToItem(modelRow);
         if (item == null) return;
 
-        boolean confirmed = BaseDialog.confirm(this, "Khóa tài khoản",
-                "Khóa tài khoản \"" + getItemDisplayName(item) + "\"? Khách hàng này sẽ không thể đăng nhập cho tới khi được mở khóa lại.",
-                "Khóa tài khoản", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.LOCK);
+        boolean confirmed = BaseDialog.confirmDelete(this, getEntityLabel(), getItemDisplayName(item));
         if (!confirmed) return;
 
-        if (customerDAO.setLocked(item.getCustomerId(), true)) {
-            BaseDialog.success(this, "Thành công", "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\".");
+        if (deleteItem(item)) {
+            BaseDialog.success(this, "Thành công",
+                    "Đã xóa " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\". Có thể khôi phục trong Thùng rác.");
             onDataChanged();
         } else {
-            BaseDialog.error(this, "Không thể khóa", "Khóa tài khoản thất bại. Vui lòng thử lại.");
-        }
-    }
-
-    private void unlockRow(int modelRow) {
-        Customer item = rowToItem(modelRow);
-        if (item == null) return;
-
-        if (customerDAO.setLocked(item.getCustomerId(), false)) {
-            BaseDialog.success(this, "Thành công", "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\".");
-            onDataChanged();
-        } else {
-            BaseDialog.error(this, "Không thể mở khóa", "Mở khóa tài khoản thất bại. Vui lòng thử lại.");
+            BaseDialog.error(this, "Không thể xóa", "Xóa thất bại. Vui lòng thử lại.");
         }
     }
 

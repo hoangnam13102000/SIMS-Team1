@@ -76,9 +76,9 @@ public class ActionColumn {
         return this;
     }
 
-    /** Do rong goi y cho cot, dua tren so luong nut. */
+    /** Do rong goi y cho cot, dua tren so luong nut (icon + gap du de click). */
     public int preferredWidth() {
-        return 30 + Math.max(1, items.size()) * 38;
+        return 36 + Math.max(1, items.size()) * 42;
     }
 
     /** Renderer ve cac icon canh nhau, mau nen striped-row lay tu colorProvider. */

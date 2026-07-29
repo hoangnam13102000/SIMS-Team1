@@ -560,16 +560,8 @@ public class CartPanel extends JPanel {
         }
 
         long total = CartService.getInstance().getTotal();
-        boolean confirmed = BaseDialog.confirm(
-                this,
-                Lang.get("cart.checkout.confirm.title"),
-                Lang.get("cart.checkout.confirm.message", NumberUtil.formatThousands(total) + " đ"),
-                Lang.get("cart.checkout"),
-                AppColor.ACCENT_HOVER,
-                AppColor.ACCENT_HOVER,
-                FontAwesomeSolid.CHECK_CIRCLE
-        );
-        if (!confirmed) return;
+        PaymentDialog.Method method = PaymentDialog.show(this, CartService.getInstance().getItems(), total);
+        if (method == null) return;
 
         // He thong chua co bang Orders/checkout that su - mo phong 1 buoc dat
         // hang don gian: xac nhan -> bao thanh cong -> xoa gio hang. Khi ghep

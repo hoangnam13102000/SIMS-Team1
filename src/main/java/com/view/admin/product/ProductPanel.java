@@ -31,6 +31,8 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
+                .add("view", FontAwesomeSolid.EYE, AppColor.TEXT_MUTED, "Xem chi tiết",
+                        this::viewRowDetail)
                 .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                         this::editRowPublic)
                 .add("status-toggle",
@@ -44,9 +46,11 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         table.setImageColumn(1, 40);
         table.setBadgeColumn(7, this::statusLabel, this::statusColor);
 
-        table.setColumnWidths(60, 60, 220, 140, 120, 120, 90, 120);
-        table.setColumnMinWidths(55, 55, 160, 110, 100, 100, 80, 105);
-        table.enableHorizontalScroll();
+        // Không enableHorizontalScroll → cột co giãn theo khung, không scrollbar ngang.
+        // minWidth đủ cho badge "Đang bán"/"Ngừng bán"; cột Thao tác do BaseTable
+        // tự khóa minWidth theo số icon + header nên không bị cắt "Tha...".
+        table.setColumnWidths(45, 55, 180, 120, 100, 100, 80, 115);
+        table.setColumnMinWidths(40, 50, 120, 90, 85, 85, 65, 105);
 
         initialLoad();
     }
@@ -149,7 +153,18 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     protected void onDataChanged() {
         reload();
     }
+    
+    private void viewRowDetail(int modelRow) {
+        Product item = rowToItem(modelRow);
+        if (item == null) return;
 
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        ProductDetailDialog dialog = new ProductDetailDialog(
+                owner instanceof Frame ? (Frame) owner : null, item);
+        dialog.onEditRequested(() -> openForm(item));
+        dialog.setVisible(true);
+    }
+    
     private void editRowPublic(int modelRow) {
         Product item = rowToItem(modelRow);
         if (item != null) openForm(item);

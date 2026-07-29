@@ -21,20 +21,6 @@ import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.UUID;
 
-/**
- * DAO cho nhan vien (Users JOIN Employees JOIN Roles - xem ghi chu
- * Class-Table Inheritance trong SIMS.sql: Employees.UserID = Users.UserID),
- * cung mo hinh voi CustomerDAO.
- * <p>
- * Khac voi dang ky/tao tai khoan thong thuong (UserDAO.register()/createByAdmin()):
- * Username, EmployeeID (ma nhan vien - UUID) va mat khau ban dau deu do HE
- * THONG tu sinh, KHONG do Admin nhap tay; mat khau chi gui 1 lan qua email
- * nhan vien, KHONG bao gio luu plain-text.
- * <p>
- * Khong can loc them "RoleCode <> CUSTOMER" o cac cau SELECT: bang Employees
- * CHI chua dong cho tai khoan duoc tao qua {@link #createEmployee}, von
- * khong bao gio gan Role.CUSTOMER (xem EMP_ROLES o EmployeeFormDialog).
- */
 public class EmployeeDAO extends BaseDAO<Employee> {
 
     /** Dung lai cac ham kiem tra trung Username/Email da co san trong UserDAO thay vi viet lai. */
@@ -107,11 +93,11 @@ public class EmployeeDAO extends BaseDAO<Employee> {
     /**
      * Admin thêm 1 nhân viên mới. Trong CÙNG 1 transaction:
      * <ol>
-     *   <li>Sinh EmployeeID (UUID) - "mã nhân viên".</li>
-     *   <li>Sinh Username từ họ tên + hậu tố lấy từ EmployeeID (không dùng
-     *       nguyên UUID 36 ký tự vì quá dài để đăng nhập).</li>
+     *   <li>Sinh Username tu ho ten + hau to hex ngau nhien (KHONG phu thuoc EmployeeID).</li>
      *   <li>Sinh mật khẩu ngẫu nhiên (KHÔNG do Admin nhập).</li>
-     *   <li>INSERT Users (Username/PasswordHash/RoleID/Status).</li>
+     *   <li>INSERT Users (Username/PasswordHash/RoleID/Status), lay UserID (IDENTITY) sinh ra.</li>
+     *   <li>Sinh EmployeeID = "EMP_" + UserID dem 4 so (vd "EMP_0007") - luon
+     *       duy nhat vi dua tren UserID.</li>
      *   <li>INSERT Employees (UserID, EmployeeID, DateOfBirth, Gender, Salary, HireDate).</li>
      * </ol>
      * Sau khi commit, gửi email chứa Username + mật khẩu cho nhân viên
@@ -128,16 +114,16 @@ public class EmployeeDAO extends BaseDAO<Employee> {
             return result;
         }
 
-        String employeeId = UUID.randomUUID().toString();
-        String username = generateUniqueUsername(employee.getFullName(), employeeId);
+        String username = generateUniqueUsername(employee.getFullName());
         String rawPassword = RandomPasswordGenerator.generate();
 
-        String insertUserSql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID, Status) "
-                + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?), 'ACTIVE')";
+        String insertUserSql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, RoleID, Status) "
+                + "VALUES (?, ?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?), 'ACTIVE')";
         String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID, DateOfBirth, Gender, Salary, HireDate) "
                 + "VALUES (?, ?, ?, ?, ?, ?)";
 
         Connection con = null;
+        String employeeId = null;
         try {
             con = DBConnection.getConnection();
             con.setAutoCommit(false);
@@ -149,7 +135,8 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                 ps.setString(3, employee.getFullName());
                 ps.setString(4, employee.getEmail());
                 ps.setString(5, employee.getPhone());
-                ps.setString(6, employee.getRole().name());
+                ps.setString(6, employee.getAvatarUrl());
+                ps.setString(7, employee.getRole().name());
 
                 if (ps.executeUpdate() == 0) {
                     con.rollback();
@@ -163,6 +150,11 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                     userId = keys.getInt(1);
                 }
             }
+
+            // Ma nhan vien sinh SAU KHI co UserID (IDENTITY, chi biet duoc sau INSERT
+            // Users o tren) - dung chinh UserID lam nen tang nen luon duy nhat tu
+            // nhien, khong can vong lap kiem tra trung nhu truoc (xem generateEmployeeCode()).
+            employeeId = generateEmployeeCode(userId);
 
             try (PreparedStatement ps = con.prepareStatement(insertEmployeeSql)) {
                 ps.setInt(1, userId);
@@ -234,7 +226,7 @@ public class EmployeeDAO extends BaseDAO<Employee> {
      * transaction. Không đổi Username/EmployeeID/mật khẩu ở đây.
      */
     public boolean updateByAdmin(Employee employee) {
-        String updateUserSql = "UPDATE Users SET FullName = ?, Email = ?, Phone = ?, "
+        String updateUserSql = "UPDATE Users SET FullName = ?, Email = ?, Phone = ?, AvatarUrl = ?, "
                 + "RoleID = (SELECT RoleID FROM Roles WHERE RoleCode = ?), Status = ? WHERE UserID = ?";
         String updateEmployeeSql = "UPDATE Employees SET DateOfBirth = ?, Gender = ?, Salary = ?, HireDate = ? WHERE UserID = ?";
 
@@ -247,9 +239,10 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                 ps.setString(1, employee.getFullName());
                 ps.setString(2, employee.getEmail());
                 ps.setString(3, employee.getPhone());
-                ps.setString(4, employee.getRole().name());
-                ps.setString(5, employee.getStatus());
-                ps.setInt(6, employee.getUserId());
+                ps.setString(4, employee.getAvatarUrl());
+                ps.setString(5, employee.getRole().name());
+                ps.setString(6, employee.getStatus());
+                ps.setInt(7, employee.getUserId());
                 if (ps.executeUpdate() == 0) {
                     con.rollback();
                     return false;
@@ -320,24 +313,39 @@ public class EmployeeDAO extends BaseDAO<Employee> {
     }
 
     /**
-     * Ghep username tu ho ten (bo dau, chu thuong, khong khoang trang) +
-     * 8 ky tu dau (bo dau '-') cua EmployeeID - vua du duy nhat, vua ngan
-     * gon de nhan vien de dang nhap, thay vi dung nguyen UUID 36 ky tu.
-     * Kiem tra trung (xac suat cuc thap voi UUID nhung van phong thu) va
-     * sinh lai hau to moi neu trung, toi da vai lan thu.
+     * Sinh EmployeeID dang "EMP_" + UserID dem 4 so (vd UserID=7 -> "EMP_0007").
+     * Ngan gon, de doc va de tim kiem (khac ban UUID/hex truoc day) - va vi
+     * UserID la IDENTITY duy nhat cua Users nen EmployeeID sinh ra CHAC CHAN
+     * duy nhat, khong can vong lap kiem tra trung nhu voi UUID. %04d chi la
+     * DO RONG TOI THIEU - UserID > 9999 van in day du (vd "EMP_10023"), khong
+     * bi cat bot.
      */
-    private String generateUniqueUsername(String fullName, String employeeId) {
+    private String generateEmployeeCode(int userId) {
+        return "EMP_" + String.format("%04d", userId);
+    }
+
+    /**
+     * Ghep username tu ho ten (bo dau, chu thuong, khong khoang trang) + 8 ky
+     * tu hex ngau nhien - vua du duy nhat, vua ngan gon de nhan vien de dang
+     * nhap. Kiem tra trung (xac suat cuc thap nhung van phong thu) va sinh
+     * lai hau to moi neu trung, toi da vai lan thu.
+     */
+    private String generateUniqueUsername(String fullName) {
         String base = slugify(fullName);
-        String suffix = employeeId.replace("-", "").substring(0, 8);
+        String suffix = randomHexSuffix();
         String candidate = base + suffix;
 
         int attempt = 0;
         while (userDAO.usernameExists(candidate) && attempt < 5) {
-            suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            suffix = randomHexSuffix();
             candidate = base + suffix;
             attempt++;
         }
         return candidate;
+    }
+
+    private String randomHexSuffix() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toLowerCase();
     }
 
     /** Bo dau tieng Viet, chuyen chu thuong, chi giu a-z0-9, gioi han 20 ky tu. */

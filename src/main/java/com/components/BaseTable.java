@@ -373,6 +373,18 @@ public class BaseTable extends JPanel {
                 
                 c.setBackground(rowColorProvider.colorFor(row, isSelected));
                 c.setForeground(isSelected ? AppColor.TEXT_PRIMARY : AppColor.TABLE_ROW_TEXT);
+
+                // Khi text dai hon cot, Swing ve dau "..." (ellipsis). Gan tooltip
+                // = full text de hover van doc duoc toan bo (ma NV, email, vai tro...).
+                String full = value != null ? value.toString() : "";
+                if (!full.isEmpty()) {
+                    FontMetrics fm = c.getFontMetrics(c.getFont());
+                    int colW = t.getColumnModel().getColumn(column).getWidth();
+                    int available = Math.max(0, colW - AppSpacing.LG * 2);
+                    c.setToolTipText(fm.stringWidth(full) > available ? full : null);
+                } else {
+                    c.setToolTipText(null);
+                }
                 
                 return c;
             }
@@ -509,10 +521,14 @@ public class BaseTable extends JPanel {
 
     private void applyActionColumnRenderer() {
         int width = actionColumnWidth();
-        table.getColumnModel().getColumn(actionColumnIndex).setCellRenderer(actionColumn.renderer(rowColorProvider));
-        table.getColumnModel().getColumn(actionColumnIndex).setPreferredWidth(width);
-        table.getColumnModel().getColumn(actionColumnIndex).setMaxWidth(width + 16);
-        table.getColumnModel().getColumn(actionColumnIndex).setResizable(false);
+        var col = table.getColumnModel().getColumn(actionColumnIndex);
+        col.setCellRenderer(actionColumn.renderer(rowColorProvider));
+        // Min = preferred de AUTO_RESIZE khong co cot Thao tac xuong duoi muc
+        // can de hien du icon + header "Thao tác" (tranh bi cat "Tha...").
+        col.setMinWidth(width);
+        col.setPreferredWidth(width);
+        col.setMaxWidth(width + 24);
+        col.setResizable(false);
     }
 
     /**

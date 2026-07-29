@@ -74,7 +74,7 @@ public class UserDAO extends BaseDAO<User> {
         String sql = "SELECT u.UserID, u.Username, u.PasswordHash, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
                 + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode "
                 + "FROM Users u JOIN Roles r ON u.RoleID = r.RoleID "
-                + "WHERE u.Username = ?";
+                + "WHERE u.Username = ? AND u.IsDeleted = 0";
 
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {

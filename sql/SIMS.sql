@@ -53,6 +53,8 @@ CREATE TABLE Users (
     FailedLoginCount INT NOT NULL DEFAULT 0,
     Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                         CHECK (Status IN ('ACTIVE', 'DISABLED')),
+    IsDeleted       BIT NOT NULL DEFAULT 0,          -- xoa mem (vd tu trang Quan ly khach hang) - khong DELETE that
+    DeletedAt       DATETIME NULL,
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
 );
 GO
@@ -99,7 +101,7 @@ CREATE TABLE Customers (
 GO
 CREATE TABLE Employees (
     UserID          INT NOT NULL PRIMARY KEY,        -- = Users.UserID (1-1, ke thua)
-    EmployeeID      CHAR(36) NOT NULL UNIQUE,        -- Ma nhan vien (UUID)
+    EmployeeID      VARCHAR(20) NOT NULL UNIQUE,     -- Ma nhan vien: "EMP_" + UserID dem 4 so (vd EMP_0001)
     DateOfBirth     DATE NULL,
     Gender          VARCHAR(10) NULL
                         CHECK (Gender IN ('MALE', 'FEMALE', 'OTHER')),

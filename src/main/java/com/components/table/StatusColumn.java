@@ -11,18 +11,7 @@ import java.awt.*;
 import java.awt.Color;
 import java.util.function.Function;
 
-/**
- * Cot hien thi gia tri dang "badge" (pill bo tron) thay vi text thuong - dung
- * cho trang thai don hang, ton kho, vai tro user, loai hanh dong log... Nhan
- * vao 1 gia tri goc cua o va tra ve (nhan hien thi, mau) tuong ung, khong gan
- * cung logic domain nao nen tai su dung duoc cho bat ky topic khac.
- *
- * Cach dung:
- *   table.getColumnModel().getColumn(4).setCellRenderer(
- *       StatusColumn.renderer(v -> OrderStatusUtil.label((String) v),
- *                              v -> OrderStatusUtil.color((String) v),
- *                              rowColorProvider));
- */
+
 public final class StatusColumn {
 
     private StatusColumn() {}
@@ -40,7 +29,11 @@ public final class StatusColumn {
             // Padding ngang SM (thay LG) de badge dai ("Đang hoạt động") khong bi cat
             // khi cot co gian theo khung ma khong bat horizontal scroll.
             wrapper.setBorder(new EmptyBorder(AppSpacing.SM, AppSpacing.SM, AppSpacing.SM, AppSpacing.SM));
-            badge.setBadge(labelFn.apply(value), colorFn.apply(value));
+            String label = labelFn.apply(value);
+            badge.setBadge(label, colorFn.apply(value));
+            // Tooltip full label khi cot bi be qua muc, badge bi clip.
+            badge.setToolTipText(label);
+            wrapper.setToolTipText(label);
             return wrapper;
         };
     }
