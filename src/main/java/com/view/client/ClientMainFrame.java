@@ -75,6 +75,7 @@ public class ClientMainFrame extends JFrame {
         HomePanel homePanel = new HomePanel();
         ProductsPanel productsPanel = new ProductsPanel();
         AboutPanel aboutPanel = new AboutPanel();
+        ContactPanel contactPanel = new ContactPanel();
 
         CartPanel cartPanel = new CartPanel();
         cartPanel.onCheckoutSuccess(() -> showPage("home"));
@@ -87,6 +88,7 @@ public class ClientMainFrame extends JFrame {
         header.addCategoriesDropdown(Lang.get("client.nav.categories"), FontAwesomeSolid.TAGS);
         addPage("products", Lang.get("client.nav.products"), FontAwesomeSolid.STORE, productsPanel);
         addPage("about", Lang.get("client.nav.about"), FontAwesomeSolid.INFO_CIRCLE, aboutPanel);
+        addPage("contact", Lang.get("client.nav.contact"), FontAwesomeSolid.ENVELOPE, contactPanel);
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
         contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
         
