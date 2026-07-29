@@ -13,15 +13,23 @@ public final class RolePermissions {
     static {
         // ADMIN: toan quyen.
         MAP.put(Role.ADMIN, PermissionSet.of(AppPermission.values()));
+        // Quan ly ban hang: xem dashboard + xem/tim san pham.
+        MAP.put(Role.SALES_MANAGER, PermissionSet.of(
+                AppPermission.DASHBOARD_VIEW,
+                AppPermission.PRODUCT_VIEW
+        ));
 
-        // 3 vai tro nghiep vu con lai: hien tai dang nhap vao ClientMainFrame
-        // (chua co Sidebar/permission-gated page nao rieng), nen chua can
-        // gan quyen gi. Khi ban tach rieng man hinh cho tung vai tro (vd
-        // Sales Staff -> trang Tao hoa don, Inventory Manager -> trang Nhap
-        // kho...), them dong MAP.put(Role.X, PermissionSet.of(...)) tuong ung.
-        MAP.put(Role.SALES_MANAGER, PermissionSet.EMPTY);
-        MAP.put(Role.INVENTORY_MANAGER, PermissionSet.EMPTY);
-        MAP.put(Role.SALES_STAFF, PermissionSet.EMPTY);
+        // Quan ly kho: xem dashboard + xem/tim san pham.
+        MAP.put(Role.INVENTORY_MANAGER, PermissionSet.of(
+                AppPermission.DASHBOARD_VIEW,
+                AppPermission.PRODUCT_VIEW
+        ));
+     // Nhan vien ban hang: xem dashboard, quan ly khach hang, xem/tim san pham.
+        MAP.put(Role.SALES_STAFF, PermissionSet.of(
+                AppPermission.DASHBOARD_VIEW,
+                AppPermission.CUSTOMER_MANAGE,
+                AppPermission.PRODUCT_VIEW
+        ));
 
         // CUSTOMER: khach hang tu dang ky o RegisterFrame, chi dung ClientMainFrame
         // (xem san pham, trang ca nhan) - khong co quyen nghiep vu/quan tri nao.

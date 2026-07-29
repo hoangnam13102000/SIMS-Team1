@@ -80,7 +80,8 @@ public class AdminMainFrame extends JFrame {
         layout.addPage("employees", Lang.get("sidebar.employees"), FontAwesomeSolid.USER_TIE, new EmployeePanel(), AppPermission.USER_MANAGE);
         layout.addPage("customers", Lang.get("sidebar.customers"), FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
         layout.addPage("categories", Lang.get("sidebar.categories"), FontAwesomeSolid.TAGS, new CategoryPanel(), AppPermission.CATEGORY_MANAGE);
-        layout.addPage("products", Lang.get("sidebar.products"), FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_MANAGE);
+        layout.addPage("products", Lang.get("sidebar.products"), FontAwesomeSolid.BOX, new ProductPanel(),
+                AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_VIEW);
         layout.addPage("suppliers", Lang.get("sidebar.suppliers"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);

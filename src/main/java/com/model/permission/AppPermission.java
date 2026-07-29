@@ -8,5 +8,9 @@ public enum AppPermission implements Permission {
     CUSTOMER_MANAGE,
     CATEGORY_MANAGE,
     PRODUCT_MANAGE,
+    /** Chi xem / tim kiem san pham (khong them/sua/xoa). */
+    PRODUCT_VIEW,
     SUPPLIER_MANAGE
+    
+    
 }
