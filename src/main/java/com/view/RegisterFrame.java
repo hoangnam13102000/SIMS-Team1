@@ -403,7 +403,19 @@ public class RegisterFrame extends JFrame {
 
         boolean ok = userDAO.register(newUser, password);
         if (ok) {
-            showMessage(Lang.get("register.success"), AppColor.SUCCESS);
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    Lang.get("register.success"),
+                    Lang.get("register.title"),
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+
+            dispose();
+
+            LoginFrame login = new LoginFrame(username);
+            login.setVisible(true);
+
         } else {
             showMessage(Lang.get("register.failed"), AppColor.ERROR);
         }

@@ -40,7 +40,16 @@ public class LoginFrame extends JFrame {
     private PrimaryButton loginButton;
 
     private final UserDAO userDAO = new UserDAO();
+    
+    public LoginFrame(String username) {
+        this();
+        usernameField.setText(username == null ? "" : username);
+        passwordField.setText("");
 
+        SwingUtilities.invokeLater(() ->
+                passwordField.getPasswordField().requestFocusInWindow());
+    }
+    
     public LoginFrame() {
         setTitle(AppConstant.APP_TITLE_LOGIN);
         setSize(1000, 620);

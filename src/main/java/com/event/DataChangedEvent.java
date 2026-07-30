@@ -6,6 +6,7 @@ public final class DataChangedEvent {
     public static final String ORDER = "ORDER";
     public static final String PHONE = "PHONE";
     public static final String PURCHASE_RECEIPT = "PURCHASE_RECEIPT";
+    public static final String INVOICE = "INVOICE";
 
     public final String entity;
 

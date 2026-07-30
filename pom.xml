@@ -4,18 +4,6 @@
   <artifactId>sims</artifactId>
   <version>0.0.1-SNAPSHOT</version>
 
-  <!--
-    Khung Swing dung chung, tach ra tu myShop. Gom:
-      - Dang nhap / Dang ky (+ xac thuc OTP qua Gmail)
-      - Frame Admin (Sidebar + MainLayout) voi 1 trang "Tong quan" mau
-      - Frame Client (Header + CardLayout) voi 1 trang "Trang chu" mau +
-        "Trang ca nhan" (sua thong tin / doi mat khau, tinh nang that)
-      - He thong theme Light/Dark, permission, validation, config ma hoa
-        (AES-256-GCM), CRUD framework (BaseCrudPanel/BaseFormDialog), BaseTable...
-    Cac tinh nang nghiep vu rieng cua myShop (Phone/Cart/Order/Revenue/Backup/
-    Chat/Payment...) van con nguyen trong project myShop, KHONG bi anh huong.
-  -->
-
   <dependencies>
     <dependency>
         <groupId>com.formdev</groupId>
@@ -54,6 +42,13 @@
         <artifactId>jakarta.mail</artifactId>
         <version>2.0.1</version>
     </dependency>
+    
+    <!-- WebSocket don gian, dung de chat ho tro khach hang real-time (com.ws) -->
+	<dependency>
+	    <groupId>org.java-websocket</groupId>
+	    <artifactId>Java-WebSocket</artifactId>
+	    <version>1.6.0</version>
+	</dependency>
 
     <!-- BCrypt hash mat khau: tu sinh salt ngau nhien + co cost factor -->
     <dependency>

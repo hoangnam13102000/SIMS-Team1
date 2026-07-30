@@ -10,6 +10,7 @@ import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
 import com.view.layouts.Footer;
+import com.ws.ChatClient;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -40,6 +41,7 @@ public class ClientMainFrame extends JFrame {
         buildContent();
 
         SettingsButton.attach(this, 76, false);
+        ChatWidget.install(this);
 
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
         LanguageManager.getInstance().addRebuildListener(onLangChanged);
@@ -49,6 +51,7 @@ public class ClientMainFrame extends JFrame {
             public void windowClosed(WindowEvent e) {
                 ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
+                ChatClient.getInstance().disconnect();
                 AuthService.getInstance().logout();
                 new LoginFrame();
             }
@@ -90,6 +93,10 @@ public class ClientMainFrame extends JFrame {
             showPage("productDetail");
         };
         homePanel.onProductClick(openProductDetail);
+        homePanel.onShopNow(() -> {
+            showPage("products");
+            productsPanel.showAll();
+        });
         productsPanel.onProductClick(openProductDetail);
         productDetailPanel.onRelatedProductClick(openProductDetail);
         productDetailPanel.onBack(() -> showPage("products"));
@@ -106,7 +113,7 @@ public class ClientMainFrame extends JFrame {
         contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
         contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
         contentPanel.add(productDetailPanel, "productDetail"); // an trong nav, chi mo khi bam the SP
-        
+
         // Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham, loc san theo danh muc do
         header.onCategorySelect((categoryId, categoryName) -> {
             showPage("products");

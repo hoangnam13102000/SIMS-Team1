@@ -19,6 +19,8 @@ import com.view.admin.product.ProductPanel;
 import com.view.admin.supplier.SupplierPanel;
 import com.view.admin.inventory.InventoryBatchPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
+import com.view.admin.invoice.InvoicePanel;
+import com.ws.ChatServer;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
@@ -42,6 +44,9 @@ public class AdminMainFrame extends JFrame {
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.PAGE_BG);
 
+        // Server WebSocket cho chat ho tro khach hang real-time (xem com.ws.ChatServer).
+        ChatServer.getInstance().start();
+
         buildContent();
 
         // Nut cai dat (Sang/Toi, Ngon ngu) noi goc phai duoi man hinh.
@@ -60,6 +65,7 @@ public class AdminMainFrame extends JFrame {
             public void windowClosed(WindowEvent e) {
                 ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
+                ChatServer.getInstance().stopServer();
                 AuthService.getInstance().logout();
                 new LoginFrame();
             }
@@ -98,7 +104,17 @@ public class AdminMainFrame extends JFrame {
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
+     // --- Nhóm Bán hàng ---
+        layout.addSection(Lang.get("sidebar.section.sales"));
+        layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
+                AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
+
+        // --- Chat hỗ trợ khách hàng (real-time qua WebSocket, xem com.ws) ---
+        layout.addSection(Lang.get("sidebar.section.support"));
+        ChatPanel chatPanel = new ChatPanel();
+        chatPanel.setOnUnreadCountChanged(count -> layout.setBadge("chat", count));
+        layout.addPage("chat", Lang.get("sidebar.chat"), FontAwesomeSolid.COMMENT_DOTS, chatPanel);
 
         ProfilePanel profilePanel = new ProfilePanel();
         profilePanel.onSaved(this::rebuildContent);

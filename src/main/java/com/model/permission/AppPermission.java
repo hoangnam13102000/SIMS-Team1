@@ -14,6 +14,11 @@ public enum AppPermission implements Permission {
     /** Xem trang thai ton kho / danh sach lo hang. */
     STOCK_VIEW,
     /** Nhap hang vao kho - tao lo hang moi. */
-    STOCK_IMPORT
+    STOCK_IMPORT,
+    /** Tao hoa don ban hang. */
+    INVOICE_CREATE,     
+    /** Huy hoa don. */
+    INVOICE_CANCEL      
+    
     
 }
