@@ -114,14 +114,31 @@ public class LoginFrame extends JFrame {
         });
 
         // Remember me
-        rememberCheckBox = new JCheckBox(Lang.get("login.rememberMe"));
+        rememberCheckBox = new JCheckBox();
         rememberCheckBox.setSelected(rememberedUsername != null);
         rememberCheckBox.setOpaque(false);
-        rememberCheckBox.setFont(AppFont.SMALL);
-        rememberCheckBox.setForeground(AppColor.TEXT_MUTED);
         rememberCheckBox.setFocusPainted(false);
-        rememberCheckBox.setIconTextGap(8);
+        rememberCheckBox.setBorderPainted(false);
+        rememberCheckBox.setContentAreaFilled(false);
         rememberCheckBox.setIcon(new SquareCheckIcon());
+        rememberCheckBox.setMargin(new Insets(0, 0, 0, 0));
+        rememberCheckBox.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        Dimension checkBoxSize = new Dimension(20, 20);
+        rememberCheckBox.setPreferredSize(checkBoxSize);
+        rememberCheckBox.setMinimumSize(checkBoxSize);
+        rememberCheckBox.setMaximumSize(checkBoxSize);
+
+        JLabel rememberLabel = new JLabel(Lang.get("login.rememberMe"));
+        rememberLabel.setFont(AppFont.SMALL);
+        rememberLabel.setForeground(AppColor.TEXT_MUTED);
+        rememberLabel.setCursor(Cursor.getDefaultCursor());
+
+        JPanel rememberGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        rememberGroup.setOpaque(false);
+        rememberGroup.add(rememberCheckBox);
+        rememberGroup.add(Box.createHorizontalStrut(8));
+        rememberGroup.add(rememberLabel);
 
         JLabel forgot = new JLabel(Lang.get("login.forgotPassword"));
         forgot.setFont(AppFont.SMALL);
@@ -143,7 +160,7 @@ public class LoginFrame extends JFrame {
         optionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         optionsRow.setMaximumSize(new Dimension(AppConstant.FIELD_WIDTH, Integer.MAX_VALUE));
         optionsRow.setBorder(new EmptyBorder(10, 0, 6, 0));
-        optionsRow.add(rememberCheckBox, BorderLayout.WEST);
+        optionsRow.add(rememberGroup, BorderLayout.WEST);
         optionsRow.add(forgot, BorderLayout.EAST);
 
         // Error label
