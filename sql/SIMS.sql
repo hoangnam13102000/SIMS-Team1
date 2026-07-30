@@ -2,6 +2,8 @@
    SIMS - Sales and Inventory Management System (Connect Mart)
    Schema hoan chinh, T-SQL (SQL Server)
    ============================================================ */
+USE master;
+GO
 
 IF DB_ID('SIMS_DB') IS NOT NULL
 BEGIN
@@ -382,6 +384,41 @@ CREATE TABLE StockReconciliation (
     Note            NVARCHAR(255) NULL,
     CreatedBy       INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+);
+GO
+
+
+CREATE TABLE Orders (
+    OrderID         INT IDENTITY(1,1) PRIMARY KEY,
+    OrderCode       AS ('DH' + RIGHT('0000' + CAST(OrderID AS VARCHAR(10)), 4)) PERSISTED,
+    CustomerID      INT NULL FOREIGN KEY REFERENCES Customers(CustomerID),  -- NULL = khach dat khong dang nhap
+    CustomerName    NVARCHAR(150) NOT NULL,
+    CustomerEmail   VARCHAR(150) NOT NULL,
+    CustomerPhone   VARCHAR(20)  NULL,
+    ShippingAddress NVARCHAR(255) NOT NULL,
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    SubTotal        DECIMAL(18,0) NOT NULL DEFAULT 0,
+    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,
+    PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'COD'
+                        CHECK (PaymentMethod IN ('COD', 'PAYPAL')),
+    PaymentStatus   VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                        CHECK (PaymentStatus IN ('PENDING', 'PAID', 'FAILED')),
+    PayPalOrderID   VARCHAR(50) NULL,     -- id don PayPal (Orders v2 API)
+    PayPalCaptureID VARCHAR(50) NULL,     -- id giao dich sau khi capture thanh cong
+    OrderStatus     VARCHAR(20) NOT NULL DEFAULT 'NEW'
+                        CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'CANCELLED')),
+    SeenByAdmin     BIT NOT NULL DEFAULT 0   -- admin da xem/danh dau doc thong bao chuong hay chua
+);
+GO
+
+CREATE TABLE OrderDetails (
+    OrderDetailID   INT IDENTITY(1,1) PRIMARY KEY,
+    OrderID         INT NOT NULL FOREIGN KEY REFERENCES Orders(OrderID),
+    ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
+    ProductName     NVARCHAR(150) NOT NULL,   -- luu lai ten tai thoi diem dat (phong khi san pham doi ten/xoa sau nay)
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    UnitPrice       DECIMAL(18,0) NOT NULL,
+    LineTotal       AS (Quantity * UnitPrice) PERSISTED
 );
 GO
 

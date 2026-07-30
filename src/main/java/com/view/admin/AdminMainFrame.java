@@ -19,6 +19,7 @@ import com.view.admin.product.ProductPanel;
 import com.view.admin.supplier.SupplierPanel;
 import com.view.admin.inventory.InventoryBatchPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
+import com.view.admin.order.OrderPanel;
 import com.view.admin.invoice.InvoicePanel;
 import com.ws.ChatServer;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -108,6 +109,9 @@ public class AdminMainFrame extends JFrame {
         layout.addSection(Lang.get("sidebar.section.sales"));
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
+        
+        layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
+                AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
 
         // --- Chat hỗ trợ khách hàng (real-time qua WebSocket, xem com.ws) ---

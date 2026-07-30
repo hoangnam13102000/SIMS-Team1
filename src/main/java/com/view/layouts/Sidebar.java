@@ -20,6 +20,7 @@ import java.util.function.Consumer;
  * Sidebar admin — nhóm menu dropdown.
  * Section header cùng cấp / cùng căn trái với mục độc lập (Tổng quan).
  * Item con thụt nhẹ, thẳng hàng dọc dưới section.
+ * Section mặc định đóng; menu dài có scroll dọc.
  */
 public class Sidebar extends JPanel {
 
@@ -61,13 +62,24 @@ public class Sidebar extends JPanel {
 
         initHeader();
 
-        JPanel top = new JPanel(new BorderLayout());
-        top.setOpaque(false);
-        top.setBorder(new EmptyBorder(4, 0, 0, 0));
-        top.add(headerPanel, BorderLayout.NORTH);
-        top.add(itemsContainer, BorderLayout.CENTER);
+        // Scroll dọc khi menu dài
+        JScrollPane scroll = new JScrollPane(itemsContainer);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.getVerticalScrollBar().setOpaque(false);
+        scroll.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 
-        add(top, BorderLayout.NORTH);
+        JPanel headerWrap = new JPanel(new BorderLayout());
+        headerWrap.setOpaque(false);
+        headerWrap.setBorder(new EmptyBorder(4, 0, 0, 0));
+        headerWrap.add(headerPanel, BorderLayout.NORTH);
+
+        add(headerWrap, BorderLayout.NORTH);
+        add(scroll, BorderLayout.CENTER);
         add(buildLogoutSection(), BorderLayout.SOUTH);
     }
 
@@ -144,7 +156,6 @@ public class Sidebar extends JPanel {
             currentSection.addItem(item);
             itemToSection.put(key, currentSection);
         } else {
-            // Mục độc lập (Tổng quan) — full width, không thụt
             item.setAlignmentX(Component.LEFT_ALIGNMENT);
             itemsContainer.add(item);
         }
@@ -203,7 +214,7 @@ public class Sidebar extends JPanel {
         final JPanel root;
         final SectionHeader header;
         final JPanel children;
-        boolean expanded = true;
+        boolean expanded = false; // mặc định đóng
 
         SectionGroup(String label) {
             root = new JPanel() {
@@ -247,10 +258,12 @@ public class Sidebar extends JPanel {
 
             root.add(header);
             root.add(children);
+            // Đóng section lúc khởi tạo
+            children.setVisible(false);
+            header.setChevronExpanded(false);
         }
 
         void addItem(SidebarItem item) {
-            // Item con: cùng full-width row, thẳng hàng dọc
             item.setAlignmentX(Component.LEFT_ALIGNMENT);
             children.add(item);
         }
@@ -267,8 +280,7 @@ public class Sidebar extends JPanel {
     }
 
     /**
-     * Section header — cùng cấp với SidebarItem / Tổng quan:
-     * full width, height 44, padding trái 20, chữ trái + chevron phải.
+     * Section header — cùng cấp với SidebarItem / Tổng quan.
      */
     private static final class SectionHeader extends JPanel {
         private final JLabel titleLabel;
@@ -279,7 +291,6 @@ public class Sidebar extends JPanel {
             setLayout(new BorderLayout());
             setOpaque(false);
             setCursor(new Cursor(Cursor.HAND_CURSOR));
-            // Cùng padding với SidebarItem
             setBorder(new EmptyBorder(0, 20, 0, 12));
             setAlignmentX(Component.LEFT_ALIGNMENT);
 

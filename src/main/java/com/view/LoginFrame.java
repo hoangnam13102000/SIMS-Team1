@@ -30,9 +30,9 @@ import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.i18n.Lang;
 import com.model.ActivityLog;
+
 public class LoginFrame extends JFrame {
 
-   
     private RoundedField usernameField;
     private RoundedPasswordField passwordField;
     private JCheckBox rememberCheckBox;
@@ -40,17 +40,16 @@ public class LoginFrame extends JFrame {
     private PrimaryButton loginButton;
 
     private final UserDAO userDAO = new UserDAO();
-    
-    public LoginFrame(String username) {
-        this();
-        usernameField.setText(username == null ? "" : username);
-        passwordField.setText("");
 
-        SwingUtilities.invokeLater(() ->
-                passwordField.getPasswordField().requestFocusInWindow());
-    }
-    
     public LoginFrame() {
+        this(null);
+    }
+
+    /**
+     * @param prefillUsername nếu khác null/blank thì điền sẵn vào ô username
+     *                        (dùng sau đăng ký thành công hoặc reset mật khẩu).
+     */
+    public LoginFrame(String prefillUsername) {
         setTitle(AppConstant.APP_TITLE_LOGIN);
         setSize(1000, 620);
         setMinimumSize(new Dimension(860, 560));
@@ -80,6 +79,12 @@ public class LoginFrame extends JFrame {
         gbc.gridx = 1;
         gbc.weightx = 0.58;
         add(buildLoginForm(), gbc);
+
+        if (prefillUsername != null && !prefillUsername.isBlank()) {
+            usernameField.setText(prefillUsername.trim());
+            SwingUtilities.invokeLater(
+                    () -> passwordField.getPasswordField().requestFocusInWindow());
+        }
 
         setVisible(true);
     }
@@ -123,14 +128,31 @@ public class LoginFrame extends JFrame {
         });
 
         // Remember me
-        rememberCheckBox = new JCheckBox(Lang.get("login.rememberMe"));
+        rememberCheckBox = new JCheckBox();
         rememberCheckBox.setSelected(rememberedUsername != null);
         rememberCheckBox.setOpaque(false);
-        rememberCheckBox.setFont(AppFont.SMALL);
-        rememberCheckBox.setForeground(AppColor.TEXT_MUTED);
         rememberCheckBox.setFocusPainted(false);
-        rememberCheckBox.setIconTextGap(8);
+        rememberCheckBox.setBorderPainted(false);
+        rememberCheckBox.setContentAreaFilled(false);
         rememberCheckBox.setIcon(new SquareCheckIcon());
+        rememberCheckBox.setMargin(new Insets(0, 0, 0, 0));
+        rememberCheckBox.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        Dimension checkBoxSize = new Dimension(20, 20);
+        rememberCheckBox.setPreferredSize(checkBoxSize);
+        rememberCheckBox.setMinimumSize(checkBoxSize);
+        rememberCheckBox.setMaximumSize(checkBoxSize);
+
+        JLabel rememberLabel = new JLabel(Lang.get("login.rememberMe"));
+        rememberLabel.setFont(AppFont.SMALL);
+        rememberLabel.setForeground(AppColor.TEXT_MUTED);
+        rememberLabel.setCursor(Cursor.getDefaultCursor());
+
+        JPanel rememberGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        rememberGroup.setOpaque(false);
+        rememberGroup.add(rememberCheckBox);
+        rememberGroup.add(Box.createHorizontalStrut(8));
+        rememberGroup.add(rememberLabel);
 
         JLabel forgot = new JLabel(Lang.get("login.forgotPassword"));
         forgot.setFont(AppFont.SMALL);
@@ -152,7 +174,7 @@ public class LoginFrame extends JFrame {
         optionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         optionsRow.setMaximumSize(new Dimension(AppConstant.FIELD_WIDTH, Integer.MAX_VALUE));
         optionsRow.setBorder(new EmptyBorder(10, 0, 6, 0));
-        optionsRow.add(rememberCheckBox, BorderLayout.WEST);
+        optionsRow.add(rememberGroup, BorderLayout.WEST);
         optionsRow.add(forgot, BorderLayout.EAST);
 
         // Error label
@@ -195,7 +217,7 @@ public class LoginFrame extends JFrame {
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.CENTER;
         panel.add(form, gbc);
-        
+
         return panel;
     }
 
@@ -240,20 +262,19 @@ public class LoginFrame extends JFrame {
     private JComponent createEyeToggle() {
         final Icon eyeOpenIcon = createEyeIcon(FontAwesomeSolid.EYE);
         final Icon eyeClosedIcon = createEyeIcon(FontAwesomeSolid.EYE_SLASH);
-        
+
         JLabel toggle = new JLabel(eyeOpenIcon);
         toggle.setVerticalAlignment(SwingConstants.CENTER);
         toggle.setToolTipText(Lang.get("login.password.show"));
         toggle.setCursor(new Cursor(Cursor.HAND_CURSOR));
         toggle.addMouseListener(new MouseAdapter() {
             private boolean isShowing = false;
-            
+
             @Override
             public void mouseClicked(MouseEvent e) {
-               
                 JPasswordField pf = passwordField.getPasswordField();
                 isShowing = !isShowing;
-                
+
                 if (isShowing) {
                     pf.setEchoChar((char) 0);
                     toggle.setIcon(eyeClosedIcon);
@@ -300,20 +321,20 @@ public class LoginFrame extends JFrame {
             protected void done() {
                 loginButton.setEnabled(true);
                 try {
-                	User user = get();
-                	if (user == null) {
-                	    User existing = userDAO.findByUsername(username);
-                	    if (existing != null && existing.isLocked()) {
-                	        errorLabel.setText(Lang.get("login.error.locked"));
-                	    } else if (existing != null && existing.isDisabled()) {
-                	        errorLabel.setText(Lang.get("login.error.disabled"));
-                	    } else {
-                	        errorLabel.setText(Lang.get("login.error.wrongCredentials"));
-                	    }
-                	    AppLogger.getInstance().log(username, ActivityLog.ACTION_LOGIN_FAILED,
-                	            ActivityLog.ENTITY_USER, "Đăng nhập thất bại với tên đăng nhập \"" + username + "\"");
-                	    return;
-                	}
+                    User user = get();
+                    if (user == null) {
+                        User existing = userDAO.findByUsername(username);
+                        if (existing != null && existing.isLocked()) {
+                            errorLabel.setText(Lang.get("login.error.locked"));
+                        } else if (existing != null && existing.isDisabled()) {
+                            errorLabel.setText(Lang.get("login.error.disabled"));
+                        } else {
+                            errorLabel.setText(Lang.get("login.error.wrongCredentials"));
+                        }
+                        AppLogger.getInstance().log(username, ActivityLog.ACTION_LOGIN_FAILED,
+                                ActivityLog.ENTITY_USER, "Đăng nhập thất bại với tên đăng nhập \"" + username + "\"");
+                        return;
+                    }
                     AuthService.getInstance().setCurrentUser(user);
                     AppLogger.getInstance().log(user.getUsername(), ActivityLog.ACTION_LOGIN,
                             ActivityLog.ENTITY_USER, user.getFullName() + " đã đăng nhập");

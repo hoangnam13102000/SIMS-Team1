@@ -148,7 +148,7 @@ public class HomePanel extends JPanel {
         HeroBannerPanel hero = new HeroBannerPanel();
         hero.setLayout(new BorderLayout(AppSpacing.XL, 0));
         hero.setBorder(new EmptyBorder(36, 40, 36, 32));
-        hero.setPreferredSize(new Dimension(10, 300));
+        hero.setPreferredSize(new Dimension(10, 370));
 
         hero.add(buildHeroText(), BorderLayout.CENTER);
         hero.add(buildHeroCollage(), BorderLayout.EAST);

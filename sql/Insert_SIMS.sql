@@ -318,3 +318,32 @@ WHERE ProductName = N'Nước suối 500ml';
 UPDATE Products
 SET ImageUrl = 'uploads/products/ca-phe-bot.jpg'
 WHERE ProductName = N'Cà phê bột 500g';
+
+-- ---- Quyen han moi ----
+INSERT INTO Permissions (PermissionCode, Description) VALUES
+('ORDER_VIEW',   N'Xem đơn hàng online từ khách'),
+('ORDER_MANAGE', N'Xác nhận / hủy đơn hàng online từ khách');
+GO
+
+-- ADMIN da co san TAT CA quyen qua cau insert blanket trong Insert_SIMS.sql
+-- (SELECT ... FROM Permissions) - chi can cap them cho ADMIN neu bang da
+-- duoc seed truoc do (script nay co the chay sau khi da co du lieu):
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode IN ('ORDER_VIEW', 'ORDER_MANAGE')
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+
+-- Nhan vien ban hang cung duoc xem + xac nhan don online
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'SALES_STAFF' AND p.PermissionCode IN ('ORDER_VIEW', 'ORDER_MANAGE')
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO

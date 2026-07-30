@@ -16,8 +16,8 @@ public class ChatWidget extends JPanel {
 
     private static final int MARGIN = 24;
     private static final int BUBBLE_SIZE = 60;
-    private static final int WINDOW_WIDTH = 340;
-    private static final int WINDOW_HEIGHT = 460;
+    private static final int WINDOW_WIDTH = 380;
+    private static final int WINDOW_HEIGHT = 520;
     private static final int GAP = 12;
 
     private final BubbleButton bubbleButton = new BubbleButton();

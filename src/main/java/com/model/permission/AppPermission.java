@@ -18,7 +18,10 @@ public enum AppPermission implements Permission {
     /** Tao hoa don ban hang. */
     INVOICE_CREATE,     
     /** Huy hoa don. */
-    INVOICE_CANCEL      
-    
+    INVOICE_CANCEL,      
+    /** Xem don hang online tu khach. */
+    ORDER_VIEW,
+    /** Xac nhan / huy don hang online tu khach. */
+    ORDER_MANAGE
     
 }

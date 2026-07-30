@@ -82,6 +82,7 @@ public class ChatPanel extends JPanel {
 
         scrollPane = new JScrollPane(messagesContainer);
         scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.getViewport().setBackground(AppColor.WHITE);
 
@@ -279,8 +280,14 @@ public class ChatPanel extends JPanel {
     }
 
     private void addBubbleSilently(String text, boolean isMine, String time) {
+        int viewportW = scrollPane.getViewport().getWidth();
+        if (viewportW <= 0) viewportW = 480;
+        int maxBubbleW = Math.max(200, Math.min(360, viewportW - 48));
+        int htmlW = Math.max(140, maxBubbleW - 40);
+
         JPanel row = new JPanel(new FlowLayout(isMine ? FlowLayout.RIGHT : FlowLayout.LEFT, 0, 6));
         row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel bubble = new JPanel(new BorderLayout()) {
             @Override
@@ -295,9 +302,10 @@ public class ChatPanel extends JPanel {
         };
         bubble.setOpaque(false);
         bubble.setBorder(new EmptyBorder(10, 14, 10, 14));
-        bubble.setMaximumSize(new Dimension(360, Integer.MAX_VALUE));
+        bubble.setMaximumSize(new Dimension(maxBubbleW, Integer.MAX_VALUE));
 
-        JLabel textLabel = new JLabel("<html><body style='width: 240px'>" + escapeHtml(text) + "</body></html>");
+        JLabel textLabel = new JLabel("<html><body style='width: " + htmlW + "px'>"
+                + escapeHtml(text) + "</body></html>");
         textLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         textLabel.setForeground(isMine ? Color.WHITE : AppColor.TEXT_PRIMARY);
 
@@ -305,6 +313,7 @@ public class ChatPanel extends JPanel {
         timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         timeLabel.setForeground(isMine ? AppColor.ACCENT_SELECTION_BG : AppColor.TEXT_MUTED);
         timeLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+        timeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel textWrap = new JPanel();
         textWrap.setOpaque(false);
@@ -314,6 +323,11 @@ public class ChatPanel extends JPanel {
 
         bubble.add(textWrap, BorderLayout.CENTER);
         row.add(bubble);
+
+        // Measure AFTER children are attached so multi-line bubbles are not clipped by BoxLayout.
+        Dimension pref = row.getPreferredSize();
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
+
         messagesContainer.add(row);
     }
 
