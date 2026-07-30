@@ -17,6 +17,8 @@ import com.view.admin.customer.CustomerPanel;
 import com.view.admin.employee.EmployeePanel;
 import com.view.admin.product.ProductPanel;
 import com.view.admin.supplier.SupplierPanel;
+import com.view.admin.inventory.InventoryBatchPanel;
+import com.view.admin.inventory.PurchaseReceiptPanel;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
@@ -91,6 +93,10 @@ public class AdminMainFrame extends JFrame {
         layout.addPage("products", Lang.get("sidebar.products.short"), FontAwesomeSolid.BOX, new ProductPanel(),
                 AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_VIEW);
         layout.addPage("suppliers", Lang.get("sidebar.suppliers.short"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
+        layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),
+                AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+        layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
+                AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
 

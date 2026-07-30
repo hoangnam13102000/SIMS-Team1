@@ -319,7 +319,7 @@ CREATE TABLE InventoryBatch (
     LotNumber       NVARCHAR(50) NULL,
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
     SupplierID      INT NOT NULL FOREIGN KEY REFERENCES Suppliers(SupplierID),
-    ReceiptDetailID INT NULL FOREIGN KEY REFERENCES PurchaseReceiptDetails(ReceiptDetailID),
+    ReceiptDetailID INT NULL UNIQUE FOREIGN KEY REFERENCES PurchaseReceiptDetails(ReceiptDetailID),
     ManufactureDate DATE NULL,
     ExpiryDate      DATE NULL,
     ImportDate      DATETIME NOT NULL DEFAULT GETDATE(),
@@ -330,6 +330,7 @@ CREATE TABLE InventoryBatch (
                         CHECK (Status IN ('ACTIVE','EXPIRED','DEPLETED')),
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     CONSTRAINT CK_Batch_RemainingLEQty CHECK (RemainingQty <= Quantity),
+
     CONSTRAINT CK_Batch_Dates CHECK (ManufactureDate IS NULL OR ExpiryDate IS NULL OR ExpiryDate > ManufactureDate)
 );
 GO

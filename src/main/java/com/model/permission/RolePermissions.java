@@ -22,7 +22,9 @@ public final class RolePermissions {
         // Quan ly kho: xem dashboard + xem/tim san pham.
         MAP.put(Role.INVENTORY_MANAGER, PermissionSet.of(
                 AppPermission.DASHBOARD_VIEW,
-                AppPermission.PRODUCT_VIEW
+                AppPermission.PRODUCT_VIEW,
+                AppPermission.STOCK_VIEW,
+                AppPermission.STOCK_IMPORT
         ));
      // Nhan vien ban hang: xem dashboard, quan ly khach hang, xem/tim san pham.
         MAP.put(Role.SALES_STAFF, PermissionSet.of(

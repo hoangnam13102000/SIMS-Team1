@@ -10,7 +10,10 @@ public enum AppPermission implements Permission {
     PRODUCT_MANAGE,
     /** Chi xem / tim kiem san pham (khong them/sua/xoa). */
     PRODUCT_VIEW,
-    SUPPLIER_MANAGE
-    
+    SUPPLIER_MANAGE,
+    /** Xem trang thai ton kho / danh sach lo hang. */
+    STOCK_VIEW,
+    /** Nhap hang vao kho - tao lo hang moi. */
+    STOCK_IMPORT
     
 }
