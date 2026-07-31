@@ -13,8 +13,8 @@ public final class AppColor {
     // 5 mau nay LUON toi bat ke theme dang chon - dung cho panel trang tri
     // (vd AuthLeftPanel/RegisterLeftPanel o man hinh dang nhap/dang ky),
     // khong tham gia vao viec doi Light/Dark cua app.
-    public static final Color DARK_TOP = new Color(18, 18, 21);
-    public static final Color DARK_BOTTOM = new Color(9, 9, 11);
+    public static final Color DARK_TOP = new Color(11, 78, 47);
+    public static final Color DARK_BOTTOM = new Color(23, 117, 66);
     public static final Color DARK_TEXT_MUTED = new Color(198, 198, 210);
     public static final Color DARK_FOOTER = new Color(140, 140, 152);
     public static final Color DARK_FEATURE_TEXT = new Color(226, 232, 240);
@@ -109,11 +109,11 @@ public final class AppColor {
         TEXT_MUTED_ALT = dark ? new Color(190, 199, 214) : new Color(148, 163, 184);
         ICON_MUTED = dark ? new Color(176, 183, 195) : new Color(156, 163, 175);
 
-        ACCENT = dark ? new Color(129, 140, 248) : new Color(99, 102, 241);
-        ACCENT_HOVER = dark ? new Color(99, 102, 241) : new Color(79, 70, 229);
-        ACCENT_SOFT = dark ? new Color(129, 140, 248, 50) : new Color(99, 102, 241, 40);
-        ACCENT_SELECTION_BG = dark ? new Color(49, 46, 110) : new Color(224, 231, 255);
-        ACCENT_BG_SOFT = dark ? new Color(40, 38, 74) : new Color(238, 237, 253);
+        ACCENT = dark ? new Color(52, 211, 153) : new Color(5, 150, 105);
+        ACCENT_HOVER = dark ? new Color(16, 185, 129) : new Color(4, 120, 87);
+        ACCENT_SOFT = dark ? new Color(52, 211, 153, 50) : new Color(5, 150, 105, 40);
+        ACCENT_SELECTION_BG = dark ? new Color(6, 78, 59) : new Color(209, 250, 229);
+        ACCENT_BG_SOFT = dark ? new Color(6, 60, 47) : new Color(236, 253, 245);
 
         SUCCESS = dark ? new Color(74, 222, 128) : new Color(21, 128, 61);
         SUCCESS_BG = dark ? new Color(20, 44, 34) : new Color(236, 253, 245);

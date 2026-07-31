@@ -406,7 +406,7 @@ CREATE TABLE Orders (
     PayPalOrderID   VARCHAR(50) NULL,     -- id don PayPal (Orders v2 API)
     PayPalCaptureID VARCHAR(50) NULL,     -- id giao dich sau khi capture thanh cong
     OrderStatus     VARCHAR(20) NOT NULL DEFAULT 'NEW'
-                        CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'CANCELLED')),
+                    CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED')),
     SeenByAdmin     BIT NOT NULL DEFAULT 0   -- admin da xem/danh dau doc thong bao chuong hay chua
 );
 GO
@@ -420,6 +420,10 @@ CREATE TABLE OrderDetails (
     UnitPrice       DECIMAL(18,0) NOT NULL,
     LineTotal       AS (Quantity * UnitPrice) PERSISTED
 );
+GO
+
+
+CREATE INDEX IX_Orders_SeenByAdmin ON Orders(SeenByAdmin, CreatedAt);
 GO
 
 /* ============================================================

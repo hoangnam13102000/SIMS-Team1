@@ -25,9 +25,11 @@ import javax.swing.SwingUtilities;
  * vì Orders không gắn ca làm việc/nhân viên lập như Invoices - xem javadoc
  * {@link Order}.
  * <p>
- * Chỉ TRA CỨU + XÁC NHẬN/HỦY (thực hiện trong {@link OrderDetailDialog}),
- * không tạo/sửa/xóa tại đây: đơn hàng chỉ được tạo từ luồng đặt hàng online
- * của khách, và không cho sửa/xóa vật lý để giữ đúng lịch sử đơn hàng.
+ * Chỉ TRA CỨU + XÁC NHẬN/GIAO HÀNG/HOÀN THÀNH/HỦY (thực hiện trong
+ * {@link OrderDetailDialog}, đi qua flow NEW -> CONFIRMED -> SHIPPING ->
+ * COMPLETED, hủy được ở NEW/CONFIRMED), không tạo/sửa/xóa tại đây: đơn hàng
+ * chỉ được tạo từ luồng đặt hàng online của khách, và không cho sửa/xóa vật
+ * lý để giữ đúng lịch sử đơn hàng.
  */
 public class OrderPanel extends BaseCrudPanel<Order> {
 
@@ -179,9 +181,11 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     private Color orderStatusColor(Object value) {
         String v = String.valueOf(value);
-        if (orderStatusLabel("CONFIRMED").equals(v)) return AppColor.SUCCESS;
+        if (orderStatusLabel("COMPLETED").equals(v)) return AppColor.SUCCESS;
+        if (orderStatusLabel("CONFIRMED").equals(v)) return AppColor.INFO;
+        if (orderStatusLabel("SHIPPING").equals(v)) return AppColor.ACCENT;
         if (orderStatusLabel("CANCELLED").equals(v)) return AppColor.ERROR;
-        return AppColor.WARNING;
+        return AppColor.WARNING; // NEW - Cho xac nhan
     }
 
     static String paymentMethodLabel(String method) {
@@ -208,6 +212,8 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         switch (status) {
             case "NEW": return "Chờ xác nhận";
             case "CONFIRMED": return "Đã xác nhận";
+            case "SHIPPING": return "Đang giao";
+            case "COMPLETED": return "Hoàn thành";
             case "CANCELLED": return "Đã hủy";
             default: return status;
         }

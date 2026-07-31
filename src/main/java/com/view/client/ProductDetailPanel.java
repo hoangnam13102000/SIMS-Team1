@@ -32,6 +32,15 @@ import java.util.function.Consumer;
 public class ProductDetailPanel extends JPanel {
 
     private static final int IMAGE_SIZE = 420;
+    
+    private static final Color SHOP_GREEN =
+            new Color(34, 166, 94);
+
+    private static final Color SHOP_GREEN_DARK =
+            new Color(22, 128, 72);
+
+    private static final Color SHOP_GREEN_SOFT =
+            new Color(232, 248, 238);
 
     private final ProductDAO productDAO = new ProductDAO();
 
@@ -83,8 +92,13 @@ public class ProductDetailPanel extends JPanel {
         descriptionArea.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         qtyLabel = new JLabel("1", SwingConstants.CENTER);
-        addToCartButton = buildPrimaryButton(Lang.get("productDetail.addToCart"), FontAwesomeSolid.SHOPPING_CART,
-                AppColor.ACCENT, AppColor.ACCENT_HOVER, Color.WHITE);
+        addToCartButton = buildPrimaryButton(
+                Lang.get("productDetail.addToCart"),
+                FontAwesomeSolid.SHOPPING_CART,
+                SHOP_GREEN,
+                SHOP_GREEN_DARK,
+                Color.WHITE
+        );
         buyNowButton = buildPrimaryButton(Lang.get("productDetail.buyNow"), FontAwesomeSolid.BOLT,
                 AppColor.ORANGE, AppColor.WARNING, AppColor.TEXT_TITLE);
 
@@ -265,7 +279,7 @@ public class ProductDetailPanel extends JPanel {
         nameLabel.setBorder(new EmptyBorder(AppSpacing.SM, 0, 0, 0));
 
         priceLabel.setFont(AppFont.getXXL_Bold());
-        priceLabel.setForeground(AppColor.ACCENT_HOVER);
+        priceLabel.setForeground(SHOP_GREEN_DARK);
         priceLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         priceLabel.setBorder(new EmptyBorder(AppSpacing.SM, 0, 2, 0));
 
@@ -339,14 +353,83 @@ public class ProductDetailPanel extends JPanel {
     // ==================== Bo dem so luong + nut hanh dong ====================
 
     private JPanel buildQtyAndActionsRow() {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.MD, 0));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setBorder(new EmptyBorder(AppSpacing.SM, 0, 0, 0));
-        row.add(buildQtyStepper());
-        row.add(addToCartButton);
-        row.add(buyNowButton);
-        return row;
+        JPanel wrapper = new JPanel();
+        wrapper.setOpaque(false);
+        wrapper.setLayout(
+                new BoxLayout(wrapper, BoxLayout.Y_AXIS)
+        );
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        wrapper.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        105
+                )
+        );
+
+        wrapper.setBorder(
+                new EmptyBorder(
+                        AppSpacing.SM,
+                        0,
+                        0,
+                        0
+                )
+        );
+
+        // Hàng chọn số lượng
+        JPanel quantityRow = new JPanel(
+                new FlowLayout(
+                        FlowLayout.LEFT,
+                        AppSpacing.SM,
+                        0
+                )
+        );
+
+        quantityRow.setOpaque(false);
+        quantityRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel quantityTitle = new JLabel("Số lượng:");
+        quantityTitle.setFont(AppFont.SMALL_BOLD);
+        quantityTitle.setForeground(AppColor.TEXT_PRIMARY);
+
+        quantityRow.add(quantityTitle);
+        quantityRow.add(buildQtyStepper());
+
+        // Hàng chứa hai nút hành động
+        JPanel buttonRow = new JPanel(
+                new GridLayout(
+                        1,
+                        2,
+                        AppSpacing.MD,
+                        0
+                )
+        );
+
+        buttonRow.setOpaque(false);
+        buttonRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        buttonRow.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        44
+                )
+        );
+
+        buttonRow.setPreferredSize(
+                new Dimension(
+                        380,
+                        44
+                )
+        );
+
+        buttonRow.add(addToCartButton);
+        buttonRow.add(buyNowButton);
+
+        wrapper.add(quantityRow);
+        wrapper.add(Box.createVerticalStrut(AppSpacing.SM));
+        wrapper.add(buttonRow);
+
+        return wrapper;
     }
 
     private JPanel buildQtyStepper() {
@@ -421,9 +504,9 @@ public class ProductDetailPanel extends JPanel {
         button.setContentAreaFilled(false);
         button.setBorderPainted(false);
         button.setFocusPainted(false);
-        button.setBorder(new EmptyBorder(11, 26, 11, 26));
+        button.setBorder(new EmptyBorder(11, 16, 11, 16));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(button.getPreferredSize().width, 40));
+        button.setPreferredSize(new Dimension(button.getPreferredSize().width, 44));
         return button;
     }
 
@@ -513,7 +596,12 @@ public class ProductDetailPanel extends JPanel {
         } else {
             styleBadge(stockBadge, Lang.get("productDetail.status.inStock"), AppColor.SUCCESS_BG, AppColor.SUCCESS);
         }
-        styleBadge(categoryPill, categoryPill.getText(), AppColor.ACCENT_BG_SOFT, AppColor.ACCENT_HOVER);
+        styleBadge(
+                categoryPill,
+                categoryPill.getText(),
+                SHOP_GREEN_SOFT,
+                SHOP_GREEN_DARK
+        );
     }
 
     private String stockHintText(Product product) {

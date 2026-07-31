@@ -32,6 +32,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dialog;
 import java.awt.Dimension;
@@ -49,7 +50,10 @@ import java.util.List;
 /**
  * Dialog xem chi tiết 1 đơn hàng online: thông tin khách (lưới 2 cột),
  * địa chỉ giao hàng, bảng sản phẩm có ảnh. Mở dialog sẽ đánh dấu đã xem
- * (OrderDAO.markSeen). Có nút Xác nhận / Hủy đơn theo quyền ORDER_MANAGE.
+ * (OrderDAO.markSeen). Nút thao tác theo quyền ORDER_MANAGE thay đổi theo
+ * trạng thái hiện tại: NEW -&gt; "Xác nhận đơn"; CONFIRMED -&gt; "Bắt đầu giao";
+ * SHIPPING -&gt; "Hoàn thành". Nút "Hủy đơn" chỉ hiện ở NEW/CONFIRMED (đã giao
+ * cho đơn vị vận chuyển thì không hủy được nữa).
  */
 public class OrderDetailDialog extends JDialog {
 
@@ -99,14 +103,17 @@ public class OrderDetailDialog extends JDialog {
                 new EmptyBorder(18, 24, 18, 24)));
 
         boolean cancelled = order.isCancelled();
+        boolean completed = order.isCompleted();
+        Color statusIconColor = cancelled ? AppColor.ERROR : completed ? AppColor.SUCCESS : AppColor.ACCENT;
+        Color statusIconBg = cancelled ? AppColor.ERROR_BG : completed ? AppColor.SUCCESS_BG : AppColor.ACCENT_BG_SOFT;
         FontIcon icon = FontIcon.of(FontAwesomeSolid.SHOPPING_CART, 18);
-        icon.setIconColor(cancelled ? AppColor.ERROR : AppColor.ACCENT);
+        icon.setIconColor(statusIconColor);
         JLabel iconBadge = new JLabel(icon, SwingConstants.CENTER) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(cancelled ? AppColor.ERROR_BG : AppColor.ACCENT_BG_SOFT);
+                g2.setColor(statusIconBg);
                 g2.fillOval(0, 0, getWidth(), getHeight());
                 g2.dispose();
                 super.paintComponent(g);
@@ -383,7 +390,9 @@ public class OrderDetailDialog extends JDialog {
         boolean canManage = PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
         boolean isNew = "NEW".equalsIgnoreCase(order.getOrderStatus());
         boolean isConfirmed = order.isConfirmed();
+        boolean isShipping = order.isShipping();
 
+        // Huy don chi cho phep o NEW/CONFIRMED - da giao cho DVVC (SHIPPING) thi khong huy duoc nua.
         if (canManage && (isNew || isConfirmed)) {
             JButton cancelButton = new JButton("Hủy đơn");
             cancelButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
@@ -404,6 +413,28 @@ public class OrderDetailDialog extends JDialog {
             confirmButton.setBorder(new EmptyBorder(8, 18, 8, 18));
             confirmButton.addActionListener(e -> handleConfirm());
             footer.add(confirmButton);
+        }
+
+        if (canManage && isConfirmed) {
+            JButton shipButton = new JButton("Bắt đầu giao");
+            shipButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            shipButton.setFocusPainted(false);
+            shipButton.setBackground(AppColor.ACCENT_BG_SOFT);
+            shipButton.setForeground(AppColor.ACCENT);
+            shipButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+            shipButton.addActionListener(e -> handleShip());
+            footer.add(shipButton);
+        }
+
+        if (canManage && isShipping) {
+            JButton completeButton = new JButton("Hoàn thành");
+            completeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            completeButton.setFocusPainted(false);
+            completeButton.setBackground(AppColor.SUCCESS_BG);
+            completeButton.setForeground(AppColor.SUCCESS);
+            completeButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+            completeButton.addActionListener(e -> handleComplete());
+            footer.add(completeButton);
         }
 
         JButton closeButton = new JButton("Đóng");
@@ -433,6 +464,40 @@ public class OrderDetailDialog extends JDialog {
 
         BaseDialog.success(this, "Thành công",
                 "Đã xác nhận đơn hàng " + order.getOrderCode() + ".");
+        dispose();
+    }
+
+    private void handleShip() {
+        boolean confirmed = BaseDialog.confirm(this, "Bắt đầu giao hàng",
+                "Chuyển đơn hàng " + order.getOrderCode() + " sang trạng thái đang giao?");
+        if (!confirmed) return;
+
+        boolean ok = orderDAO.updateOrderStatus(order.getOrderId(), "SHIPPING");
+        if (!ok) {
+            BaseDialog.error(this, "Không thể cập nhật",
+                    "Cập nhật trạng thái đang giao thất bại. Vui lòng thử lại.");
+            return;
+        }
+
+        BaseDialog.success(this, "Thành công",
+                "Đơn hàng " + order.getOrderCode() + " đang được giao.");
+        dispose();
+    }
+
+    private void handleComplete() {
+        boolean confirmed = BaseDialog.confirm(this, "Hoàn thành đơn hàng",
+                "Xác nhận đơn hàng " + order.getOrderCode() + " đã giao thành công?");
+        if (!confirmed) return;
+
+        boolean ok = orderDAO.updateOrderStatus(order.getOrderId(), "COMPLETED");
+        if (!ok) {
+            BaseDialog.error(this, "Không thể cập nhật",
+                    "Cập nhật trạng thái hoàn thành thất bại. Vui lòng thử lại.");
+            return;
+        }
+
+        BaseDialog.success(this, "Thành công",
+                "Đơn hàng " + order.getOrderCode() + " đã hoàn thành.");
         dispose();
     }
 

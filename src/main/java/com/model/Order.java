@@ -29,7 +29,7 @@ public class Order {
     private String payPalOrderId;
     private String payPalCaptureId;
 
-    private String orderStatus; // NEW | CONFIRMED | CANCELLED
+    private String orderStatus; // NEW | CONFIRMED | SHIPPING | COMPLETED | CANCELLED
     private boolean seenByAdmin;
 
     private int itemCount;
@@ -87,5 +87,7 @@ public class Order {
 
     public boolean isCancelled() { return "CANCELLED".equalsIgnoreCase(orderStatus); }
     public boolean isConfirmed() { return "CONFIRMED".equalsIgnoreCase(orderStatus); }
+    public boolean isShipping() { return "SHIPPING".equalsIgnoreCase(orderStatus); }
+    public boolean isCompleted() { return "COMPLETED".equalsIgnoreCase(orderStatus); }
     public boolean isPaid() { return "PAID".equalsIgnoreCase(paymentStatus); }
 }

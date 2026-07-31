@@ -191,11 +191,88 @@ public class OrderDAO extends BaseDAO<Order> {
         }
     }
 
-    /** Xác nhận đơn (NEW -> CONFIRMED) hoặc hủy (-> CANCELLED). */
+    /**
+     * Xác nhận / chuyển trạng thái đơn: NEW -&gt; CONFIRMED -&gt; SHIPPING -&gt; COMPLETED,
+     * hủy (-&gt; CANCELLED) chỉ được phép ở NEW hoặc CONFIRMED (đơn đã giao cho ĐVVC
+     * thì không hủy được nữa). Chuyển trạng thái không nằm trong
+     * {@link #isValidTransition} bị từ chối ngay, không đụng DB.
+     * <p>
+     * Kho CHỈ thực sự bị trừ tại thời điểm xác nhận (không trừ lúc khách đặt
+     * hàng ở {@link #createOrder}, vì đơn NEW có thể bị hủy) - khi chuyển
+     * NEW -> CONFIRMED, trừ Products.Stock theo từng dòng OrderDetails. Nếu
+     * 1 đơn ĐÃ CONFIRMED sau đó bị hủy, hoàn lại đúng số lượng đã trừ. SHIPPING
+     * và COMPLETED không đụng tới kho (đã trừ xong từ bước CONFIRMED). Toàn
+     * bộ nằm trong 1 transaction để tránh lệch kho nếu update giữa chừng lỗi.
+     */
     public boolean updateOrderStatus(int orderId, String newStatus) {
-        boolean ok = executeUpdate("UPDATE Orders SET OrderStatus = ? WHERE OrderID = ?", newStatus, orderId);
-        if (ok) AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
-        return ok;
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                String oldStatus = getOrderStatusForUpdate(con, orderId);
+                if (oldStatus == null || !isValidTransition(oldStatus, newStatus)) {
+                    con.rollback();
+                    return false;
+                }
+
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE Orders SET OrderStatus = ? WHERE OrderID = ?")) {
+                    ps.setString(1, newStatus);
+                    ps.setInt(2, orderId);
+                    ps.executeUpdate();
+                }
+
+                if ("NEW".equals(oldStatus) && "CONFIRMED".equals(newStatus)) {
+                    adjustProductStock(con, orderId, -1);
+                } else if ("CONFIRMED".equals(oldStatus) && "CANCELLED".equals(newStatus)) {
+                    adjustProductStock(con, orderId, +1);
+                }
+
+                con.commit();
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
+                return true;
+            } catch (SQLException e) {
+                con.rollback();
+                throw e;
+            } finally {
+                con.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.ORDER_STATUS_UPDATE_FAIL, "OrderDAO.updateOrderStatus - " + orderId, e);
+            return false;
+        }
+    }
+
+    /** Các bước chuyển trạng thái hợp lệ - hủy chỉ cho phép ở NEW/CONFIRMED, SHIPPING/COMPLETED là 1 chiều. */
+    private boolean isValidTransition(String oldStatus, String newStatus) {
+        switch (oldStatus) {
+            case "NEW":       return "CONFIRMED".equals(newStatus) || "CANCELLED".equals(newStatus);
+            case "CONFIRMED": return "SHIPPING".equals(newStatus) || "CANCELLED".equals(newStatus);
+            case "SHIPPING":  return "COMPLETED".equals(newStatus);
+            default:          return false; // COMPLETED, CANCELLED la trang thai cuoi
+        }
+    }
+
+    /** Đọc OrderStatus hiện tại, khóa dòng (FOR UPDATE kiểu SQL Server: UPDLOCK, ROWLOCK) để tránh 2 admin cùng xác nhận 1 lúc gây trừ kho 2 lần. */
+    private String getOrderStatusForUpdate(Connection con, int orderId) throws SQLException {
+        String sql = "SELECT OrderStatus FROM Orders WITH (UPDLOCK, ROWLOCK) WHERE OrderID = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
+    /** direction = -1 khi trừ kho (xác nhận đơn), +1 khi hoàn kho (hủy đơn đã xác nhận). */
+    private void adjustProductStock(Connection con, int orderId, int direction) throws SQLException {
+        String sql = "UPDATE p SET p.Stock = p.Stock + (? * od.Quantity) "
+                + "FROM Products p INNER JOIN OrderDetails od ON od.ProductID = p.ProductID "
+                + "WHERE od.OrderID = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, direction);
+            ps.setInt(2, orderId);
+            ps.executeUpdate();
+        }
     }
 
     public List<OrderDetail> getDetailsByOrderId(int orderId) {

@@ -23,7 +23,7 @@ public class Header extends JPanel {
     // ===== MAU SAC (dong bo phong cach dark voi Sidebar) =====
     private static final Color BG_COLOR = new Color(15, 23, 42);      // slate-900
     private static final Color BORDER_BOTTOM = new Color(30, 41, 59); // slate-800
-    private static final Color ACCENT_COLOR = new Color(99, 102, 241);
+    private static final Color ACCENT_COLOR = new Color(5, 150, 105);
     private static final Color SUBTITLE_COLOR = new Color(148, 163, 184);
 
     private static final Color DROPDOWN_BG = new Color(24, 31, 46);       // the tron toi

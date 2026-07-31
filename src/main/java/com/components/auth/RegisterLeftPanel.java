@@ -26,7 +26,7 @@ public class RegisterLeftPanel extends JPanel {
         JComponent logo = buildLogoBadge();
         logo.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel brand = new JLabel("Phone Store");
+        JLabel brand = new JLabel("Connect Smart");
         brand.setFont(AppFont.BRAND);
         brand.setForeground(Color.WHITE);
         brand.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -168,9 +168,9 @@ public class RegisterLeftPanel extends JPanel {
         GradientPaint gp = new GradientPaint(0, 0, AppColor.DARK_TOP, getWidth(), getHeight(), AppColor.DARK_BOTTOM);
         g2.setPaint(gp);
         g2.fillRect(0, 0, getWidth(), getHeight());
-        g2.setColor(new Color(99, 102, 241, 35));
+        g2.setColor(new Color(255, 255, 255, 30));
         g2.fillOval(getWidth() - 260, -140, 420, 420);
-        g2.setColor(new Color(99, 102, 241, 18));
+        g2.setColor(new Color(255, 255, 255, 16));
         g2.fillOval(-180, getHeight() - 220, 380, 380);
         g2.dispose();
     }
