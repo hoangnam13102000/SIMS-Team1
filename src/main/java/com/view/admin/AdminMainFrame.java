@@ -21,6 +21,7 @@ import com.view.admin.inventory.InventoryBatchPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
 import com.view.admin.order.OrderPanel;
 import com.view.admin.invoice.InvoicePanel;
+import com.view.admin.pos.PosPanel;
 import com.ws.ChatServer;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -107,6 +108,8 @@ public class AdminMainFrame extends JFrame {
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
      // --- Nhóm Bán hàng ---
         layout.addSection(Lang.get("sidebar.section.sales"));
+        layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
+                AppPermission.INVOICE_CREATE);
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
         

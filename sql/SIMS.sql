@@ -187,7 +187,9 @@ CREATE TABLE Invoices (
     VATAmount       AS (SubTotal * VATRate / 100) PERSISTED,
     TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,   -- SubTotal + VATAmount, duy tri qua trigger/app
     PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'CASH'
-                        CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','MOMO','CARD')),
+                        CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','PAYPAL','CARD')),
+    PayPalOrderID   VARCHAR(50) NULL,     -- id don PayPal (Orders v2 API), chi co khi PaymentMethod = PAYPAL
+    PayPalCaptureID VARCHAR(50) NULL,     -- id giao dich sau khi capture thanh cong
     Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'          -- R3: soft-delete
                         CHECK (Status IN ('ACTIVE', 'CANCELLED')),
     CancelReason    NVARCHAR(255) NULL,

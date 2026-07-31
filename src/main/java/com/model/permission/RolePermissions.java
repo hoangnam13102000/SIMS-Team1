@@ -30,7 +30,8 @@ public final class RolePermissions {
         MAP.put(Role.SALES_STAFF, PermissionSet.of(
                 AppPermission.DASHBOARD_VIEW,
                 AppPermission.CUSTOMER_MANAGE,
-                AppPermission.PRODUCT_VIEW
+                AppPermission.PRODUCT_VIEW,
+                AppPermission.INVOICE_CREATE
         ));
 
         // CUSTOMER: khach hang tu dang ky o RegisterFrame, chi dung ClientMainFrame

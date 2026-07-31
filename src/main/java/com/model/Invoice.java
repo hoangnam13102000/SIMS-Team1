@@ -8,6 +8,7 @@ public class Invoice {
     private int invoiceId;
     private String invoiceCode;   // "ORD_" + InvoiceID dem 4 so (vd ORD_0001)
 
+    private int shiftId;          // Ca ban hang dang mo luc lap hoa don (xem ShiftDAO)
     private int createdBy;
     private String createdByName;
 
@@ -20,10 +21,15 @@ public class Invoice {
     private BigDecimal vatAmount;
     private BigDecimal totalAmount;
 
-    private String paymentMethod; // CASH | BANK_TRANSFER | MOMO | CARD
+    private String paymentMethod; // CASH | BANK_TRANSFER | PAYPAL | CARD
     private String status;        // ACTIVE | CANCELLED
     private String cancelReason;
     private LocalDateTime cancelledAt;
+
+    // Chi duoc set khi paymentMethod = PAYPAL (xem PosPanel#payWithPayPalThenCreateInvoice) -
+    // luu lai de doi soat/tra cuu giao dich tren PayPal Dashboard (sandbox) khi can.
+    private String payPalOrderId;
+    private String payPalCaptureId;
 
     private int itemCount; // so dong san pham khac nhau trong hoa don
 
@@ -31,6 +37,8 @@ public class Invoice {
     }
 
     public int getInvoiceId() { return invoiceId; }
+    public int getShiftId() { return shiftId; }
+    public void setShiftId(int shiftId) { this.shiftId = shiftId; }
     public void setInvoiceId(int invoiceId) { this.invoiceId = invoiceId; }
 
     public String getInvoiceCode() { return invoiceCode; }
@@ -65,6 +73,12 @@ public class Invoice {
 
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public String getPayPalOrderId() { return payPalOrderId; }
+    public void setPayPalOrderId(String payPalOrderId) { this.payPalOrderId = payPalOrderId; }
+
+    public String getPayPalCaptureId() { return payPalCaptureId; }
+    public void setPayPalCaptureId(String payPalCaptureId) { this.payPalCaptureId = payPalCaptureId; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }

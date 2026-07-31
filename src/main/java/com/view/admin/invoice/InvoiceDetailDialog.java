@@ -1,6 +1,8 @@
 package com.view.admin.invoice;
 
 import com.components.BaseDialog;
+import com.components.table.ImageColumn;
+import com.components.table.RowColorProvider;
 import com.dao.InvoiceDAO;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
@@ -16,15 +18,21 @@ import org.kordamp.ikonli.swing.FontIcon;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
-import javax.swing.table.DefaultTableModel;
+import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dialog;
 import java.awt.Dimension;
@@ -33,27 +41,21 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.KeyStroke;
-import javax.swing.WindowConstants;
 
 /**
- * Dialog xem chi tiet 1 hoa don ban hang: thong tin chung (ma hoa don, khach
- * hang, nguoi tao, ngay tao, PT thanh toan, VAT, trang thai) + bang cac dong
- * san pham da ban. Neu hoa don con ACTIVE va nguoi dung co quyen
- * INVOICE_CANCEL thi hien them nut "Hủy hóa đơn" (yeu cau nhap ly do) -
- * dieu kien duoc phep huy that su (cung ngay, ca dang mo...) van do trigger
- * trg_Invoices_CancelSameDayOnly duoi DB quyet dinh, dialog chi hien thi lai
- * dung thong diep loi neu bi tu choi.
+ * Dialog xem chi tiet 1 hoa don ban hang — thiet ke dong bo voi OrderDetailDialog:
+ * header (icon + ma + trang thai), card thong tin luoi 2 cot, bang san pham co anh.
+ * Neu hoa don con ACTIVE + trong ngay + co quyen INVOICE_CANCEL thi hien nut "Huy hoa don".
  */
 public class InvoiceDetailDialog extends JDialog {
 
-    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter DATE_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final InvoiceDAO invoiceDAO;
     private Invoice invoice;
@@ -64,8 +66,8 @@ public class InvoiceDetailDialog extends JDialog {
         this.invoiceDAO = invoiceDAO;
         List<InvoiceDetail> details = invoiceDAO.getDetails(invoice.getInvoiceId());
 
-        setSize(700, 620);
-        setMinimumSize(new Dimension(560, 460));
+        setSize(780, 680);
+        setMinimumSize(new Dimension(640, 520));
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
@@ -82,7 +84,7 @@ public class InvoiceDetailDialog extends JDialog {
     }
 
     // ---------------------------------------------------------------
-    // Header: icon + ma hoa don + trang thai
+    // Header
     // ---------------------------------------------------------------
 
     private JPanel buildHeader() {
@@ -93,14 +95,16 @@ public class InvoiceDetailDialog extends JDialog {
                 new EmptyBorder(18, 24, 18, 24)));
 
         boolean cancelled = invoice.isCancelled();
+        Color statusIconColor = cancelled ? AppColor.ERROR : AppColor.SUCCESS;
+        Color statusIconBg = cancelled ? AppColor.ERROR_BG : AppColor.SUCCESS_BG;
         FontIcon icon = FontIcon.of(FontAwesomeSolid.RECEIPT, 18);
-        icon.setIconColor(cancelled ? AppColor.ERROR : AppColor.ACCENT);
+        icon.setIconColor(statusIconColor);
         JLabel iconBadge = new JLabel(icon, SwingConstants.CENTER) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(cancelled ? AppColor.ERROR_BG : AppColor.ACCENT_BG_SOFT);
+                g2.setColor(statusIconBg);
                 g2.fillOval(0, 0, getWidth(), getHeight());
                 g2.dispose();
                 super.paintComponent(g);
@@ -117,15 +121,15 @@ public class InvoiceDetailDialog extends JDialog {
         titleLabel.setForeground(AppColor.TEXT_PRIMARY);
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel subtitleLabel = new JLabel(
-                (invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ")
-                        + "  \u00b7  " + (cancelled ? "Đã hủy" : "Hoàn tất"));
+        String customer = invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ";
+        String statusText = cancelled ? "Đã hủy" : "Hoàn tất";
+        JLabel subtitleLabel = new JLabel(customer + "  ·  " + statusText);
         subtitleLabel.setFont(AppFont.BODY);
         subtitleLabel.setForeground(cancelled ? AppColor.ERROR : AppColor.TEXT_MUTED);
         subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         titleBox.add(titleLabel);
-        titleBox.add(Box.createVerticalStrut(2));
+        titleBox.add(Box.createVerticalStrut(4));
         titleBox.add(subtitleLabel);
 
         header.add(iconBadge, BorderLayout.WEST);
@@ -134,7 +138,7 @@ public class InvoiceDetailDialog extends JDialog {
     }
 
     // ---------------------------------------------------------------
-    // Body: thong tin chung (dang luoi) + bang dong san pham
+    // Body: card thông tin 2 cột + bảng SP có hình
     // ---------------------------------------------------------------
 
     private JScrollPane buildBody(List<InvoiceDetail> details) {
@@ -143,84 +147,147 @@ public class InvoiceDetailDialog extends JDialog {
         content.setBackground(AppColor.WHITE);
         content.setBorder(new EmptyBorder(18, 24, 18, 24));
 
-        content.add(infoRow("Khách hàng", invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ"));
-        content.add(Box.createVerticalStrut(8));
-        content.add(infoRow("Người tạo hóa đơn", invoice.getCreatedByName()));
-        content.add(Box.createVerticalStrut(8));
-        content.add(infoRow("Ngày tạo",
+        // Card thông tin
+        JPanel infoCard = new JPanel(new BorderLayout());
+        infoCard.setOpaque(true);
+        infoCard.setBackground(AppColor.BG_LIGHT);
+        infoCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(16, 16, 16, 16)));
+        infoCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 360));
+
+        JPanel cardInner = new JPanel();
+        cardInner.setOpaque(false);
+        cardInner.setLayout(new BoxLayout(cardInner, BoxLayout.Y_AXIS));
+
+        JPanel infoGrid = new JPanel(new GridLayout(0, 2, 28, 14));
+        infoGrid.setOpaque(false);
+        infoGrid.add(infoCell("Khách hàng",
+                invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ"));
+        infoGrid.add(infoCell("Người tạo",
+                invoice.getCreatedByName() != null ? invoice.getCreatedByName() : "-"));
+        infoGrid.add(infoCell("Ngày tạo",
                 invoice.getCreatedAt() != null ? invoice.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
-        content.add(Box.createVerticalStrut(8));
-        content.add(infoRow("Phương thức thanh toán", InvoicePanel.paymentMethodLabel(invoice.getPaymentMethod())));
-        content.add(Box.createVerticalStrut(8));
-        content.add(infoRow("Tạm tính", NumberUtil.formatThousands(invoice.getSubTotal().longValue()) + " đ"));
-        content.add(Box.createVerticalStrut(8));
-        content.add(infoRow("VAT (" + invoice.getVatRate().stripTrailingZeros().toPlainString() + "%)",
-                NumberUtil.formatThousands(invoice.getVatAmount().longValue()) + " đ"));
-        content.add(Box.createVerticalStrut(8));
-        content.add(infoRow("Tổng tiền hóa đơn",
+        infoGrid.add(infoCell("Phương thức thanh toán",
+                InvoicePanel.paymentMethodLabel(invoice.getPaymentMethod())));
+        infoGrid.add(infoCell("Tạm tính",
+                NumberUtil.formatThousands(invoice.getSubTotal().longValue()) + " đ"));
+        String vatLabel = "VAT";
+        if (invoice.getVatRate() != null) {
+            vatLabel = "VAT (" + invoice.getVatRate().stripTrailingZeros().toPlainString() + "%)";
+        }
+        infoGrid.add(infoCell(vatLabel,
+                NumberUtil.formatThousands(
+                        invoice.getVatAmount() != null ? invoice.getVatAmount().longValue() : 0) + " đ"));
+        infoGrid.add(infoCell("Trạng thái",
+                invoice.isCancelled() ? "Đã hủy" : "Hoàn tất"));
+        infoGrid.add(infoCellTotal("Tổng tiền hóa đơn",
                 NumberUtil.formatThousands(invoice.getTotalAmount().longValue()) + " đ"));
+        cardInner.add(infoGrid);
 
         if (invoice.isCancelled()) {
-            content.add(Box.createVerticalStrut(8));
-            content.add(infoRow("Lý do hủy", invoice.getCancelReason()));
-            content.add(Box.createVerticalStrut(8));
-            content.add(infoRow("Thời điểm hủy",
-                    invoice.getCancelledAt() != null ? invoice.getCancelledAt().format(DATE_TIME_FORMAT) : "-"));
+            JPanel cancelRow = new JPanel(new GridLayout(0, 2, 28, 14));
+            cancelRow.setOpaque(false);
+            cancelRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+            cancelRow.add(infoCell("Lý do hủy",
+                    invoice.getCancelReason() != null ? invoice.getCancelReason() : "-"));
+            cancelRow.add(infoCell("Thời điểm hủy",
+                    invoice.getCancelledAt() != null
+                            ? invoice.getCancelledAt().format(DATE_TIME_FORMAT) : "-"));
+            cardInner.add(cancelRow);
         }
 
-        content.add(Box.createVerticalStrut(18));
+        infoCard.add(cardInner, BorderLayout.CENTER);
+        content.add(infoCard);
+        content.add(Box.createVerticalStrut(20));
 
         JLabel sectionLabel = new JLabel("Danh sách sản phẩm (" + details.size() + ")");
         sectionLabel.setFont(AppFont.BODY_BOLD);
         sectionLabel.setForeground(AppColor.TEXT_PRIMARY);
         sectionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(sectionLabel);
-        content.add(Box.createVerticalStrut(8));
+        content.add(Box.createVerticalStrut(10));
 
         JTable table = buildDetailTable(details);
         JScrollPane tableScroll = new JScrollPane(table);
         tableScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        tableScroll.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
-        tableScroll.setPreferredSize(new Dimension(640, 220));
-        tableScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 260));
+        int tableH = Math.max(100, Math.min(240, 44 + details.size() * 56));
+        tableScroll.setPreferredSize(new Dimension(700, tableH));
+        tableScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, tableH + 20));
+        tableScroll.getViewport().setBackground(AppColor.WHITE);
+        tableScroll.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                BorderFactory.createEmptyBorder(0, 0, 0, 0)));
+        tableScroll.setOpaque(false);
         content.add(tableScroll);
 
-        JScrollPane outerScroll = new JScrollPane(content);
-        outerScroll.setBorder(null);
-        outerScroll.getViewport().setBackground(AppColor.WHITE);
-        outerScroll.getVerticalScrollBar().setUnitIncrement(16);
-        return outerScroll;
+        JScrollPane scroll = new JScrollPane(content);
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.getViewport().setBackground(AppColor.WHITE);
+        return scroll;
     }
 
-    private JPanel infoRow(String label, String value) {
-        JPanel row = new JPanel(new BorderLayout());
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+    private JPanel infoCell(String label, String value) {
+        JPanel cell = new JPanel();
+        cell.setOpaque(false);
+        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
 
         JLabel labelComp = new JLabel(label);
         labelComp.setFont(AppFont.SMALL_BOLD);
         labelComp.setForeground(AppColor.TEXT_MUTED);
-        labelComp.setPreferredSize(new Dimension(160, 20));
+        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
         valueComp.setFont(AppFont.BODY);
         valueComp.setForeground(AppColor.TEXT_PRIMARY);
+        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        row.add(labelComp, BorderLayout.WEST);
-        row.add(valueComp, BorderLayout.CENTER);
-        return row;
+        cell.add(labelComp);
+        cell.add(Box.createVerticalStrut(2));
+        cell.add(valueComp);
+        return cell;
+    }
+
+    private JPanel infoCellTotal(String label, String value) {
+        JPanel cell = new JPanel();
+        cell.setOpaque(false);
+        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+
+        JLabel labelComp = new JLabel(label);
+        labelComp.setFont(AppFont.SMALL_BOLD);
+        labelComp.setForeground(AppColor.TEXT_MUTED);
+        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
+        valueComp.setFont(AppFont.BODY_BOLD);
+        valueComp.setForeground(AppColor.ACCENT);
+        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        cell.add(labelComp);
+        cell.add(Box.createVerticalStrut(2));
+        cell.add(valueComp);
+        return cell;
     }
 
     private JTable buildDetailTable(List<InvoiceDetail> details) {
-        String[] columns = {"Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
+        String[] columns = {"Hình", "Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
-            public boolean isCellEditable(int row, int column) { return false; }
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+
+            @Override
+            public Class<?> getColumnClass(int columnIndex) {
+                return columnIndex == 0 ? String.class : Object.class;
+            }
         };
 
         for (InvoiceDetail d : details) {
             model.addRow(new Object[]{
+                    d.getProductImageUrl() != null ? d.getProductImageUrl() : "",
                     d.getProductName(),
                     d.getQuantity(),
                     NumberUtil.formatThousands(d.getUnitPrice().longValue()),
@@ -230,19 +297,83 @@ public class InvoiceDetailDialog extends JDialog {
 
         JTable table = new JTable(model);
         table.setFont(AppFont.BODY);
-        table.setRowHeight(28);
+        table.setRowHeight(56);
+        table.setBackground(AppColor.WHITE);
+        table.setForeground(AppColor.TEXT_PRIMARY);
+        table.setSelectionBackground(AppColor.ACCENT_BG_SOFT);
         table.getTableHeader().setFont(AppFont.SMALL_BOLD);
         table.getTableHeader().setBackground(AppColor.BG_LIGHT);
-        table.getTableHeader().setForeground(AppColor.TEXT_MUTED);
+        table.getTableHeader().setForeground(AppColor.TEXT_PRIMARY);
+        table.getTableHeader().setPreferredSize(new Dimension(0, 38));
+        table.getTableHeader().setReorderingAllowed(false);
         table.setGridColor(AppColor.BORDER);
         table.setShowVerticalLines(false);
-        table.setFillsViewportHeight(true);
+        table.setShowHorizontalLines(true);
+        table.setFillsViewportHeight(false);
         table.setRowSelectionAllowed(false);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        table.setIntercellSpacing(new Dimension(0, 0));
+
+        ImageColumn imageColumn = new ImageColumn(44, 10);
+        RowColorProvider colors = (row, selected) -> AppColor.WHITE;
+        table.getColumnModel().getColumn(0).setCellRenderer(imageColumn.renderer(colors));
+        table.getColumnModel().getColumn(0).setPreferredWidth(64);
+        table.getColumnModel().getColumn(0).setMinWidth(60);
+        table.getColumnModel().getColumn(0).setMaxWidth(72);
+        table.getColumnModel().getColumn(1).setPreferredWidth(260);
+        table.getColumnModel().getColumn(2).setPreferredWidth(56);
+        table.getColumnModel().getColumn(2).setMaxWidth(72);
+        table.getColumnModel().getColumn(3).setPreferredWidth(110);
+        table.getColumnModel().getColumn(4).setPreferredWidth(120);
+
+        DefaultTableCellRenderer nameRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                          boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setFont(AppFont.BODY_BOLD);
+                setForeground(AppColor.TEXT_PRIMARY);
+                setBackground(AppColor.WHITE);
+                setBorder(new EmptyBorder(0, 8, 0, 4));
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(1).setCellRenderer(nameRenderer);
+
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                          boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                setBackground(AppColor.WHITE);
+                setForeground(AppColor.TEXT_PRIMARY);
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(2).setCellRenderer(center);
+
+        DefaultTableCellRenderer money = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                          boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.RIGHT);
+                setBackground(AppColor.WHITE);
+                setForeground(column == 4 ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
+                setFont(column == 4 ? AppFont.BODY_BOLD : AppFont.BODY);
+                setBorder(new EmptyBorder(0, 4, 0, 12));
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(3).setCellRenderer(money);
+        table.getColumnModel().getColumn(4).setCellRenderer(money);
+
         return table;
     }
 
     // ---------------------------------------------------------------
-    // Footer: nut Huy hoa don (neu du dieu kien + du quyen) + nut Dong
+    // Footer
     // ---------------------------------------------------------------
 
     private JPanel buildFooter() {
@@ -282,7 +413,7 @@ public class InvoiceDetailDialog extends JDialog {
     private void handleCancel() {
         String reason = BaseDialog.inputText(this, "Hủy hóa đơn",
                 "Lý do hủy hóa đơn " + invoice.getInvoiceCode() + ":", "", "Hủy hóa đơn");
-        if (reason == null) return; // nguoi dung bam Huy tren dialog nhap ly do
+        if (reason == null) return;
 
         String error = invoiceDAO.cancelInvoice(invoice.getInvoiceId(), reason);
         if (error != null) {

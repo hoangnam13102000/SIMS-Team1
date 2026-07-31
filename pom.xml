@@ -49,12 +49,36 @@
 	    <artifactId>Java-WebSocket</artifactId>
 	    <version>1.6.0</version>
 	</dependency>
+	
+	<!-- Webcam Capture: truy cap webcam PC/USB truc tiep tu Java, dung de
+         hien thi hinh anh truc tiep khi quet ma vach tai POS (xem
+         com.components.barcode.BarcodeScannerDialog). -->
+    <dependency>
+        <groupId>com.github.sarxos</groupId>
+        <artifactId>webcam-capture</artifactId>
+        <version>0.3.12</version>
+    </dependency>
 
     <!-- BCrypt hash mat khau: tu sinh salt ngau nhien + co cost factor -->
     <dependency>
         <groupId>org.mindrot</groupId>
         <artifactId>jbcrypt</artifactId>
         <version>0.4</version>
+    </dependency>
+    
+     <!-- ZXing ("Zebra Crossing"): giai ma ma vach/QR tu anh chup duoc boi
+         webcam. "core" la thuat toan giai ma, "javase" cung cap
+         BufferedImageLuminanceSource de doc truc tiep tu BufferedImage
+         cua webcam ma khong can tu viet lai. -->
+    <dependency>
+        <groupId>com.google.zxing</groupId>
+        <artifactId>core</artifactId>
+        <version>3.5.3</version>
+    </dependency>
+    <dependency>
+        <groupId>com.google.zxing</groupId>
+        <artifactId>javase</artifactId>
+        <version>3.5.3</version>
     </dependency>
     
      <!--  ===== Test dependencies (JUnit 5 + Mockito) =====  -->

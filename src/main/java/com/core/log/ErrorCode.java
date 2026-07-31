@@ -32,6 +32,9 @@ public enum ErrorCode {
     ORDER_STATUS_UPDATE_FAIL("ERR-ORD-003", "Cập nhật trạng thái đơn hàng thất bại"),
     ORDER_CHECKOUT_FAIL("ERR-ORD-004", "Thanh toán/hoàn tất đơn hàng thất bại"),
 
+ // ==== Hóa đơn bán hàng (POS) ====
+    INVOICE_CREATE_FAIL("ERR-INV-001", "Lập hóa đơn bán hàng thất bại"),
+    
     // ==== WebSocket / thời gian thực ====
     WS_CONNECTION_FAIL("ERR-WS-001", "Kết nối WebSocket thất bại"),
     WS_MESSAGE_FAIL("ERR-WS-002", "Gửi/nhận thông điệp WebSocket thất bại"),

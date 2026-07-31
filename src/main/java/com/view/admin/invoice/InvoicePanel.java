@@ -182,7 +182,7 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         switch (method) {
             case "CASH": return "Tiền mặt";
             case "BANK_TRANSFER": return "Chuyển khoản";
-            case "MOMO": return "MoMo";
+            case "PAYPAL": return "PayPal";
             case "CARD": return "Thẻ";
             default: return method;
         }

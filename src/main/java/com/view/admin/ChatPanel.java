@@ -2,6 +2,7 @@ package com.view.admin;
 
 import com.theme.AppColor;
 import com.service.AuthService;
+import com.utils.NotificationSound;
 import com.ws.ChatMessage;
 import com.ws.ChatServer;
 
@@ -223,7 +224,9 @@ public class ChatPanel extends JPanel {
         } else if (message.isChat() && !message.fromAdmin) {
             conversations.computeIfAbsent(message.userId, k -> new ArrayList<>()).add(message);
 
-            Toolkit.getDefaultToolkit().beep();
+            // Tieng chuong tong hop kieu myShop (2 not len, giai dieu rieng cho
+            // tin nhan) thay vi Toolkit.beep(); tu kiem tra isSoundEnabled() ben trong.
+            NotificationSound.playMessageSound();
 
             boolean viewingRightNow = isShowing() && selectedUserId != null && selectedUserId == message.userId;
             if (viewingRightNow) {

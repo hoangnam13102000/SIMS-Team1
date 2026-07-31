@@ -3,26 +3,15 @@ package com.service;
 import com.dao.OrderDAO;
 import com.model.Order;
 import com.settings.NotificationSettings;
+import com.utils.NotificationSound;
 import com.utils.NumberUtil;
 
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
-import java.awt.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 
-/**
- * Thông báo đơn hàng mới cho phía admin bằng cách POLLING định kỳ xuống DB
- * (thay vì WebSocket/push) - đơn giản và đáng tin cậy hơn nhiều cho 1 app
- * desktop nhiều tiến trình độc lập (client đặt hàng và admin xem đơn có thể
- * chạy trên 2 máy/2 tiến trình khác nhau, chỉ chia sẻ chung DB), không cần
- * mở thêm cổng/server nào. Độ trễ tối đa = {@link #POLL_INTERVAL_MS}, đủ
- * nhanh cho nghiệp vụ bán hàng thông thường.
- * <p>
- * Mỗi lần poll chạy trên background thread (SwingWorker) để KHÔNG chặn EDT,
- * kết quả (số đơn chưa xem + preview) được đưa lên callback trên chính EDT.
- */
 public final class OrderNotifyPoller {
 
     private static final int POLL_INTERVAL_MS = 5000;
@@ -74,8 +63,11 @@ public final class OrderNotifyPoller {
                 lastKnownUnseenCount = actualCount;
 
                 boolean muted = NotificationSettings.getInstance().isOrdersMuted();
-                if (increased && !muted && NotificationSettings.getInstance().isSoundEnabled()) {
-                    Toolkit.getDefaultToolkit().beep();
+                if (increased && !muted) {
+                    // NotificationSound.playDing() tu kiem tra isSoundEnabled() ben trong,
+                    // dung tieng chuong tong hop (ChimePlayer) giong myShop thay vi
+                    // Toolkit.beep() (tieng "beep" mac dinh cua he dieu hanh).
+                    NotificationSound.playDing();
                 }
 
                 if (onUnseenChanged == null) return;

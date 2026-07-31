@@ -13,23 +13,13 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * DAO CHI DOC + HUY (khong tao moi) cho hoa don ban hang (Invoices). Viec
- * tao hoa don that su dien ra o luong ban hang (gio hang/thanh toan) - hien
- * tai luong do van la mock (xem PaymentDialog), chua ghi xuong DB, nen DAO
- * nay chi phuc vu trang "Quan ly hoa don": tra cuu + huy hoa don trong ngay.
- * <p>
- * Huy hoa don CHI can UPDATE Status='CANCELLED' - toan bo nghiep vu (chi cho
- * huy trong cung ngay + ca dang mo, hoan lai dung tung lo da tru) da duoc
- * trigger trg_Invoices_CancelSameDayOnly xu ly duoi DB. Neu vi pham dieu
- * kien, trigger RAISERROR + ROLLBACK va thong diep loi (tieng Viet, da than
- * thien) duoc nem len qua SQLException.getMessage().
- */
+
 public class InvoiceDAO extends BaseDAO<Invoice> {
 
     private static final String BASE_TABLE =
@@ -58,7 +48,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
         return "inv.InvoiceID, inv.InvoiceCode, inv.CreatedBy, u.FullName AS CreatedByName, "
                 + "inv.CustomerID, cu.FullName AS CustomerName, inv.CreatedAt, "
                 + "inv.SubTotal, inv.VATRate, inv.VATAmount, inv.TotalAmount, "
-                + "inv.PaymentMethod, inv.Status, inv.CancelReason, inv.CancelledAt, "
+                + "inv.PaymentMethod, inv.PayPalOrderID, inv.PayPalCaptureID, inv.Status, inv.CancelReason, inv.CancelledAt, "
                 + "(SELECT COUNT(*) FROM InvoiceDetails d WHERE d.InvoiceID = inv.InvoiceID) AS ItemCount";
     }
 
@@ -92,6 +82,8 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
         invoice.setVatAmount(rs.getBigDecimal("VATAmount"));
         invoice.setTotalAmount(rs.getBigDecimal("TotalAmount"));
         invoice.setPaymentMethod(rs.getString("PaymentMethod"));
+        invoice.setPayPalOrderId(rs.getString("PayPalOrderID"));
+        invoice.setPayPalCaptureId(rs.getString("PayPalCaptureID"));
         invoice.setStatus(rs.getString("Status"));
         invoice.setCancelReason(rs.getString("CancelReason"));
 
@@ -102,10 +94,137 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
         return invoice;
     }
 
+    /**
+     * Lap 1 hoa don ban hang THAT SU (dung cho trang POS - ban hang tai
+     * quay). Day la nguoc lai voi javadoc cu o dau class: DAO nay tu do
+     * khong con "chi doc + huy" nua.
+     * <p>
+     * Trinh tu bat buoc (dung 1 transaction, dung y trigger duoi DB):
+     * <ol>
+     *   <li>INSERT Invoices voi InvoiceCode tam (se cap nhat lai ngay sau
+     *   khi co InvoiceID, vi cot nay KHONG phai computed column nhu
+     *   ProductCode/OrderCode).</li>
+     *   <li>INSERT tung dong InvoiceDetails - trigger INSTEAD OF INSERT
+     *   trg_InvoiceDetails_CheckStock se tu tru kho theo FEFO, co the CAT
+     *   BOT so luong neu vuot ton kho con lai (xem javadoc trigger), va tu
+     *   chan hoan toan neu san pham da het hang.</li>
+     *   <li>Doc lai LineTotal thuc te (sau khi trigger co the da cat bot so
+     *   luong) de tinh dung SubTotal/TotalAmount, roi UPDATE lai Invoices -
+     *   2 cot nay KHONG tu tinh, "duy tri qua trigger/app" (xem SIMS.sql).</li>
+     * </ol>
+     * Tra ve true + gan lai invoiceId/invoiceCode/subTotal/totalAmount vao
+     * {@code invoice} neu thanh cong; false neu that bai (het hang, loi
+     * DB...) - chi tiet loi da duoc log qua AppLogger.
+     */
+    public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
+        if (items == null || items.isEmpty()) return false;
+
+        String insertInvoiceSql = "INSERT INTO Invoices "
+                + "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, VATRate, SubTotal, TotalAmount) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)";
+        String insertDetailSql = "INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES (?, ?, ?, ?)";
+        String sumLineTotalSql = "SELECT ISNULL(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
+        String updateTotalsSql = "UPDATE Invoices SET InvoiceCode = ?, SubTotal = ?, "
+                + "TotalAmount = ? WHERE InvoiceID = ?";
+
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                int invoiceId;
+                try (PreparedStatement ps = con.prepareStatement(insertInvoiceSql, Statement.RETURN_GENERATED_KEYS)) {
+                    // Ma tam thoi duy nhat (chi ton tai trong pham vi transaction nay,
+                    // se bi ghi de ngay ben duoi) - tranh vi pham UNIQUE(InvoiceCode).
+                    ps.setString(1, "TMP-" + System.nanoTime());
+                    ps.setInt(2, invoice.getShiftId());
+                    ps.setInt(3, invoice.getCreatedBy());
+                    if (invoice.getCustomerId() != null) {
+                        ps.setInt(4, invoice.getCustomerId());
+                    } else {
+                        ps.setNull(4, Types.INTEGER);
+                    }
+                    ps.setString(5, invoice.getPaymentMethod());
+                    if (invoice.getPayPalOrderId() != null) {
+                        ps.setString(6, invoice.getPayPalOrderId());
+                    } else {
+                        ps.setNull(6, Types.VARCHAR);
+                    }
+                    if (invoice.getPayPalCaptureId() != null) {
+                        ps.setString(7, invoice.getPayPalCaptureId());
+                    } else {
+                        ps.setNull(7, Types.VARCHAR);
+                    }
+                    ps.setBigDecimal(8, invoice.getVatRate());
+                    ps.executeUpdate();
+
+                    try (ResultSet keys = ps.getGeneratedKeys()) {
+                        if (!keys.next()) throw new SQLException("Khong lay duoc InvoiceID vua tao.");
+                        invoiceId = keys.getInt(1);
+                    }
+                }
+
+                try (PreparedStatement ps = con.prepareStatement(insertDetailSql)) {
+                    for (InvoiceDetail item : items) {
+                        ps.setInt(1, invoiceId);
+                        ps.setInt(2, item.getProductId());
+                        ps.setInt(3, item.getQuantity());
+                        ps.setBigDecimal(4, item.getUnitPrice());
+                        ps.executeUpdate(); // tung dong 1 - de trigger (INSTEAD OF) xu ly dung tung san pham
+                    }
+                }
+
+                BigDecimal subTotal;
+                try (PreparedStatement ps = con.prepareStatement(sumLineTotalSql)) {
+                    ps.setInt(1, invoiceId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        subTotal = rs.next() ? rs.getBigDecimal(1) : BigDecimal.ZERO;
+                    }
+                }
+                if (subTotal == null || subTotal.signum() == 0) {
+                    // Khong co dong nao duoc tao that su (vd tat ca san pham da het
+                    // hang khi trigger chay) - huy toan bo, khong lap hoa don rong.
+                    con.rollback();
+                    return false;
+                }
+
+                BigDecimal vatRate = invoice.getVatRate() != null ? invoice.getVatRate() : BigDecimal.ZERO;
+                BigDecimal totalAmount = subTotal.add(subTotal.multiply(vatRate)
+                        .divide(new BigDecimal(100)));
+                String invoiceCode = "HD-" + java.time.LocalDate.now().format(
+                        java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))
+                        + "-" + String.format("%04d", invoiceId);
+
+                try (PreparedStatement ps = con.prepareStatement(updateTotalsSql)) {
+                    ps.setString(1, invoiceCode);
+                    ps.setBigDecimal(2, subTotal);
+                    ps.setBigDecimal(3, totalAmount);
+                    ps.setInt(4, invoiceId);
+                    ps.executeUpdate();
+                }
+
+                con.commit();
+                invoice.setInvoiceId(invoiceId);
+                invoice.setInvoiceCode(invoiceCode);
+                invoice.setSubTotal(subTotal);
+                invoice.setTotalAmount(totalAmount);
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.INVOICE));
+                return true;
+            } catch (SQLException e) {
+                con.rollback();
+                throw e;
+            } finally {
+                con.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.INVOICE_CREATE_FAIL,
+                    "InvoiceDAO.createInvoice - createdBy=" + invoice.getCreatedBy(), e);
+            return false;
+        }
+    }
+
     /** Danh sach dong san pham (InvoiceDetails) cua 1 hoa don, dung khi xem chi tiet. */
     public List<InvoiceDetail> getDetails(int invoiceId) {
         String sql = "SELECT d.InvoiceDetailID, d.InvoiceID, d.ProductID, p.ProductName, p.ProductCode, "
-                + "d.Quantity, d.UnitPrice, d.LineTotal "
+                + "p.ImageUrl, d.Quantity, d.UnitPrice, d.LineTotal "
                 + "FROM InvoiceDetails d "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
                 + "WHERE d.InvoiceID = ? "
@@ -123,6 +242,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     detail.setProductId(rs.getInt("ProductID"));
                     detail.setProductName(rs.getString("ProductName"));
                     detail.setProductCode(rs.getString("ProductCode"));
+                    detail.setProductImageUrl(rs.getString("ImageUrl"));
                     detail.setQuantity(rs.getInt("Quantity"));
                     detail.setUnitPrice(rs.getBigDecimal("UnitPrice"));
                     detail.setLineTotal(rs.getBigDecimal("LineTotal"));

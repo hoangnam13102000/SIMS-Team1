@@ -200,6 +200,34 @@ public class ProductDAO extends BaseDAO<Product> {
         return result;
     }
 
+    /**
+     * Tim 1 san pham DANG BAN theo ma san pham (ProductCode, vd "SP_0007") -
+     * dung cho luong quet ma vach tai POS (xem BarcodeScannerDialog): may
+     * quet tra ve chuoi text giai ma duoc, app tim dung san pham co
+     * ProductCode khop chuoi do. So sanh khong phan biet hoa/thuong va bo
+     * khoang trang thua o 2 dau de khoan dung sai nho tu qua trinh quet.
+     * <p>
+     * LUU Y: DB hien CHUA co cot Barcode rieng - cua hang can tu in nhan ma
+     * vach ma NOI DUNG la ProductCode (vd in ma vach cho chuoi "SP_0007")
+     * roi dan len san pham/ke hang thi tinh nang nay moi hoat dong dung.
+     * Tra ve null neu khong tim thay hoac san pham da ngung ban (DISABLED).
+     */
+    public Product findActiveByCode(String code) {
+        if (code == null || code.isBlank()) return null;
+        String sql = BASE_SELECT + "WHERE p.Status = 'ACTIVE' AND UPPER(p.ProductCode) = UPPER(?)";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, code.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? mapProduct(rs) : null;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "ProductDAO.findActiveByCode - code=" + code, e);
+            return null;
+        }
+    }
+
     /** Escape cac ky tu dac biet cua LIKE (%, _, [) truoc khi noi vao tham so tim kiem. */
     private String escapeLike(String raw) {
         return raw.replace("\\", "\\\\")

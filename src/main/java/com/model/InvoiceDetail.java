@@ -9,6 +9,8 @@ public class InvoiceDetail {
     private int productId;
     private String productName;
     private String productCode;
+    /** Duong dan anh san pham (tu Products.ImageUrl) - co the null. */
+    private String productImageUrl;
     private int quantity;
     private BigDecimal unitPrice;
     private BigDecimal lineTotal; // cot computed (Quantity * UnitPrice) tu DB
@@ -30,6 +32,9 @@ public class InvoiceDetail {
 
     public String getProductCode() { return productCode; }
     public void setProductCode(String productCode) { this.productCode = productCode; }
+
+    public String getProductImageUrl() { return productImageUrl; }
+    public void setProductImageUrl(String productImageUrl) { this.productImageUrl = productImageUrl; }
 
     public int getQuantity() { return quantity; }
     public void setQuantity(int quantity) { this.quantity = quantity; }
