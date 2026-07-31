@@ -148,7 +148,7 @@ public class RegisterLeftPanel extends JPanel {
                 g2.setColor(Color.WHITE);
                 g2.setFont(AppFont.HEADING_LG);
                 FontMetrics fm = g2.getFontMetrics();
-                String s = "P";
+                String s = "CS";
                 int x = (44 - fm.stringWidth(s)) / 2;
                 int y = (44 - fm.getHeight()) / 2 + fm.getAscent();
                 g2.drawString(s, x, y);

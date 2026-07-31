@@ -6,6 +6,8 @@ import com.i18n.Lang;
 import com.i18n.LanguageManager;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
+import com.service.OrderNotifyPoller;
+import com.settings.NotificationSettings;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
@@ -36,6 +38,8 @@ public class AdminMainFrame extends JFrame {
     private String currentPageKey = "dashboard";
     private final Runnable onThemeChanged = this::rebuildContent;
     private final Runnable onLangChanged = this::rebuildContent;
+    private OrderNotifyPoller orderNotifyPoller;
+    private final Runnable onNotifSettingsChanged = this::refreshOrderNotifications;
 
     public AdminMainFrame() {
         setTitle(Lang.get("admin.frame.title"));
@@ -54,6 +58,10 @@ public class AdminMainFrame extends JFrame {
         // Nut cai dat (Sang/Toi, Ngon ngu) noi goc phai duoi man hinh.
         SettingsButton.attach(this);
 
+        // Poll don hang online moi -> chuong + am thanh (xem OrderNotifyPoller).
+        startOrderNotifyPoller();
+        NotificationSettings.getInstance().addListener(onNotifSettingsChanged);
+
         // Moi khi ThemeManager doi theme (Light/Dark), xay lai toan bo noi
         // dung de tat ca component doc lai dung mau + FlatLaf UI moi nhat.
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
@@ -67,6 +75,11 @@ public class AdminMainFrame extends JFrame {
             public void windowClosed(WindowEvent e) {
                 ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
+                NotificationSettings.getInstance().removeListener(onNotifSettingsChanged);
+                if (orderNotifyPoller != null) {
+                    orderNotifyPoller.stop();
+                    orderNotifyPoller = null;
+                }
                 ChatServer.getInstance().stopServer();
                 AuthService.getInstance().logout();
                 new LoginFrame();
@@ -99,25 +112,23 @@ public class AdminMainFrame extends JFrame {
         layout.addSection(Lang.get("sidebar.section.catalog"));
         layout.addPage("categories", Lang.get("sidebar.categories.short"), FontAwesomeSolid.TAGS, new CategoryPanel(), AppPermission.CATEGORY_MANAGE);
         layout.addPage("products", Lang.get("sidebar.products.short"), FontAwesomeSolid.BOX, new ProductPanel(),
-                AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_VIEW);
+                AppPermission.PRODUCT_VIEW, AppPermission.PRODUCT_MANAGE);
         layout.addPage("suppliers", Lang.get("sidebar.suppliers.short"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
         layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
-        // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
-     // --- Nhóm Bán hàng ---
+
+        // --- Nhóm Bán hàng ---
         layout.addSection(Lang.get("sidebar.section.sales"));
         layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
                 AppPermission.INVOICE_CREATE);
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
-        
         layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
                 AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
-        // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
 
-        // --- Chat hỗ trợ khách hàng (real-time qua WebSocket, xem com.ws) ---
+        // --- Chat hỗ trợ khách hàng ---
         layout.addSection(Lang.get("sidebar.section.support"));
         ChatPanel chatPanel = new ChatPanel();
         chatPanel.setOnUnreadCountChanged(count -> layout.setBadge("chat", count));
@@ -131,10 +142,36 @@ public class AdminMainFrame extends JFrame {
         layout.onPageChange(key -> currentPageKey = key);
         layout.showPage(currentPageKey);
         layout.onLogout(this::doLogout);
+
+        // Bam chuong -> mo trang Don hang online; gan lai moi lan rebuild.
+        layout.getHeader().onBellClick(() -> layout.showPage("orders"));
+        // Neu poller dang chay, day lai preview/badge len header moi sau rebuild.
+        refreshOrderNotifications();
+
         add(layout, BorderLayout.CENTER);
 
         revalidate();
         repaint();
+    }
+
+    /** Khoi dong poller 1 lan (khong start lai khi rebuild theme/lang). */
+    private void startOrderNotifyPoller() {
+        if (orderNotifyPoller != null) return;
+        orderNotifyPoller = new OrderNotifyPoller();
+        orderNotifyPoller.onUnseenChanged((count, preview) -> {
+            if (layout == null) return;
+            layout.getHeader().setNotifications(preview);
+            layout.getHeader().setNotificationBadge(count > 0);
+            layout.setBadge("orders", count);
+        });
+        orderNotifyPoller.start();
+    }
+
+    /** Goi lai poll ngay khi doi cai dat am thanh / an thong bao don hang. */
+    private void refreshOrderNotifications() {
+        if (orderNotifyPoller != null) {
+            orderNotifyPoller.start(); // start() goi poll() roi dam bao timer dang chay
+        }
     }
 
     private void rebuildContent() {
