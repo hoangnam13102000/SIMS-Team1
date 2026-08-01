@@ -26,6 +26,12 @@ public class ProductCard extends JPanel {
     private static final int IMAGE_HEIGHT = 150;
     private static final int IMAGE_ICON_SIZE = 46;
     private static final int HEART_SIZE = 30;
+    
+    private static final Color SHOP_GREEN =
+            new Color(34, 166, 94);
+
+    private static final Color SHOP_GREEN_DARK =
+            new Color(22, 128, 72);
 
     private boolean hover = false;
     private boolean favorite = false;
@@ -262,7 +268,7 @@ public class ProductCard extends JPanel {
 
         JLabel priceLabel = new JLabel(formatPrice(product));
         priceLabel.setFont(AppFont.getLargeBold());
-        priceLabel.setForeground(AppColor.TEXT_TITLE);
+        priceLabel.setForeground(SHOP_GREEN_DARK);
         priceLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         priceLabel.setBorder(new EmptyBorder(4, 0, 10, 0));
 
@@ -292,9 +298,17 @@ public class ProductCard extends JPanel {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                Color bg = !isEnabled() ? AppColor.BG_LIGHTER : (btnHover ? AppColor.ACCENT : AppColor.WHITE);
-                Color border = !isEnabled() ? AppColor.BORDER : AppColor.ACCENT;
-                Color fg = !isEnabled() ? AppColor.TEXT_DISABLED : (btnHover ? Color.WHITE : AppColor.ACCENT_HOVER);
+                Color bg = !isEnabled()
+                        ? AppColor.BG_LIGHTER
+                        : (btnHover ? SHOP_GREEN_DARK : SHOP_GREEN);
+
+                Color border = !isEnabled()
+                        ? AppColor.BORDER
+                        : SHOP_GREEN;
+
+                Color fg = !isEnabled()
+                        ? AppColor.TEXT_DISABLED
+                        : Color.WHITE;
 
                 g2.setColor(bg);
                 g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, getHeight(), getHeight());
@@ -308,7 +322,13 @@ public class ProductCard extends JPanel {
             }
         };
         button.setText(text);
-        button.setIcon(cartIcon(disabled ? AppColor.TEXT_DISABLED : AppColor.ACCENT_HOVER));
+        button.setIcon(
+                cartIcon(
+                        disabled
+                                ? AppColor.TEXT_DISABLED
+                                : Color.WHITE
+                )
+        );
         button.setFont(AppFont.SMALL_BOLD);
         button.setIconTextGap(8);
         button.setHorizontalAlignment(SwingConstants.CENTER);
