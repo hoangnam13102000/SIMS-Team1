@@ -49,6 +49,7 @@ public abstract class BaseCrudPanel<T> extends JPanel {
     protected List<T> currentPageData;
 
     private JPanel dataContainer;
+    private JPanel toolbarLeft;
     private CardLayout dataCardLayout;
     private EmptyState emptyState;
 
@@ -308,6 +309,9 @@ public abstract class BaseCrudPanel<T> extends JPanel {
         toolbar.setOpaque(false);
         toolbar.setBorder(new EmptyBorder(14, 16, 14, 16));
 
+        toolbarLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        toolbarLeft.setOpaque(false);
+
         if (getSearchPlaceholder() != null) {
             searchBar = new BaseSearch(getSearchPlaceholder());
             if (useClientSideFilter()) {
@@ -315,14 +319,37 @@ public abstract class BaseCrudPanel<T> extends JPanel {
             } else {
                 searchBar.onSearch(this::searchItem);
             }
-            toolbar.add(searchBar, BorderLayout.WEST);
+            toolbarLeft.add(searchBar);
         }
+        toolbar.add(toolbarLeft, BorderLayout.WEST);
 
         countLabel = new JLabel();
         countLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         countLabel.setForeground(AppColor.TEXT_MUTED);
         toolbar.add(countLabel, BorderLayout.EAST);
         return toolbar;
+    }
+
+    /**
+     * Thêm control lọc bên cạnh ô tìm kiếm. Gọi từ constructor của subclass
+     * sau super() và trước initialLoad().
+     */
+    protected void addToolbarFilter(Component component) {
+        if (toolbarLeft != null && component != null) {
+            toolbarLeft.add(component);
+            toolbarLeft.revalidate();
+            toolbarLeft.repaint();
+        }
+    }
+
+    /** Áp dụng lại search + các bộ lọc của subclass và quay về trang đầu. */
+    protected void applyFilters() {
+        String keyword = searchBar != null && searchBar.getText() != null ? searchBar.getText().trim() : "";
+        if (!keyword.isEmpty()) {
+            searchItem(keyword);
+        } else {
+            loadData(1, showPagination() ? pagination.getPageSize() : Integer.MAX_VALUE);
+        }
     }
 
     private JPanel buildTableCard(JPanel toolbar) {

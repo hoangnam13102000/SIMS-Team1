@@ -17,10 +17,13 @@ import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
+import java.awt.Dimension;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
+import javax.swing.JComboBox;
+import javax.swing.BorderFactory;
 
 /**
  * Trang Quản lý nhân viên - dựa trên bảng Employees (kế thừa Users, xem
@@ -34,6 +37,8 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     private final EmployeeDAO employeeDAO = new EmployeeDAO();
     private AutoRowNumber stt;
+    private JComboBox<String> roleFilter;
+    private Role selectedRole;
 
     public EmployeePanel() {
         super();
@@ -62,6 +67,7 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         table.setColumnWidths(45, 110, 110, 110, 150, 120, 145, 115);
         table.setColumnMinWidths(40, 85, 85, 90, 110, 95, 140, 110);
 
+        setupRoleFilter();
         initialLoad();
     }
 
@@ -116,12 +122,13 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected PaginationHelper.PaginationResult<Employee> fetchPage(int page, int pageSize) {
-        return employeeDAO.getPaged(page, pageSize);
+        String keyword = searchBar != null && searchBar.getText() != null ? searchBar.getText().trim() : "";
+        return employeeDAO.filterByRole(keyword, selectedRole, page, pageSize);
     }
 
     @Override
     protected PaginationHelper.PaginationResult<Employee> searchPage(String keyword, int page, int pageSize) {
-        return employeeDAO.search(keyword, page, pageSize);
+        return employeeDAO.filterByRole(keyword, selectedRole, page, pageSize);
     }
 
     @Override
@@ -148,6 +155,34 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo mã NV, tên đăng nhập, họ tên, email..."; }
+
+    private void setupRoleFilter() {
+        roleFilter = new JComboBox<>(new String[]{"Tất cả vai trò", "Quản trị viên", "Quản lý bán hàng", "Quản lý kho", "Nhân viên bán hàng"});
+        roleFilter.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 13));
+        roleFilter.setBackground(AppColor.WHITE);
+        roleFilter.setForeground(AppColor.TEXT_PRIMARY);
+        roleFilter.setPreferredSize(new Dimension(190, 38));
+        roleFilter.setFocusable(false);
+        roleFilter.setToolTipText("Lọc danh sách theo vai trò");
+        roleFilter.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
+
+        roleFilter.addActionListener(e -> {
+            selectedRole = roleFromFilterIndex(roleFilter.getSelectedIndex());
+            applyFilters();
+        });
+        addToolbarFilter(roleFilter);
+    }
+
+    private Role roleFromFilterIndex(int index) {
+        switch (index) {
+            case 1: return Role.ADMIN;
+            case 2: return Role.SALES_MANAGER;
+            case 3: return Role.INVENTORY_MANAGER;
+            case 4: return Role.SALES_STAFF;
+            
+            default: return null;
+        }
+    }
 
     @Override
     protected List<String> fetchAutocompleteSuggestions() {

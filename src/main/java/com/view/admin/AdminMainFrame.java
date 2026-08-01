@@ -6,8 +6,6 @@ import com.i18n.Lang;
 import com.i18n.LanguageManager;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
-import com.service.OrderNotifyPoller;
-import com.settings.NotificationSettings;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
@@ -24,6 +22,9 @@ import com.view.admin.inventory.PurchaseReceiptPanel;
 import com.view.admin.order.OrderPanel;
 import com.view.admin.invoice.InvoicePanel;
 import com.view.admin.pos.PosPanel;
+import com.view.admin.stockalert.StockAlertPanel;
+import com.service.OrderNotifyPoller;
+import com.service.StockAlertNotifyPoller;
 import com.ws.ChatServer;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -38,8 +39,15 @@ public class AdminMainFrame extends JFrame {
     private String currentPageKey = "dashboard";
     private final Runnable onThemeChanged = this::rebuildContent;
     private final Runnable onLangChanged = this::rebuildContent;
-    private OrderNotifyPoller orderNotifyPoller;
-    private final Runnable onNotifSettingsChanged = this::refreshOrderNotifications;
+    // Polling dinh ky xuong DB de phat hien don hang online moi (xem
+    // com.service.OrderNotifyPoller) - truoc day class nay ton tai san
+    // nhung chua bao gio duoc start() o dau ca nen KHONG co chuong/thong
+    // bao nao khi co hoa don/don hang online moi.
+    private final OrderNotifyPoller orderNotifyPoller = new OrderNotifyPoller();
+    // Polling tuong tu cho bao cao het/sap het hang cua NV ban hang (xem
+    // com.service.StockAlertNotifyPoller) - cap nhat badge rieng o muc
+    // "stockAlerts" tren Sidebar, khong dung chung chuong voi don hang.
+    private final StockAlertNotifyPoller stockAlertNotifyPoller = new StockAlertNotifyPoller();
 
     public AdminMainFrame() {
         setTitle(Lang.get("admin.frame.title"));
@@ -58,9 +66,23 @@ public class AdminMainFrame extends JFrame {
         // Nut cai dat (Sang/Toi, Ngon ngu) noi goc phai duoi man hinh.
         SettingsButton.attach(this);
 
-        // Poll don hang online moi -> chuong + am thanh (xem OrderNotifyPoller).
-        startOrderNotifyPoller();
-        NotificationSettings.getInstance().addListener(onNotifSettingsChanged);
+        // Moi khi co don hang online moi (SeenByAdmin=0 tang len): cap nhat
+        // dropdown thong bao + cham do o chuong tren Header, va so badge o
+        // muc "orders" tren Sidebar. Dang ky 1 lan duy nhat o day - vi lambda
+        // doc truc tiep field "layout" (khong phai bien local), no van luon
+        // tro dung MainLayout/Header MOI NHAT sau moi lan rebuildContent().
+        orderNotifyPoller.onUnseenChanged((count, preview) -> {
+            layout.setBadge("orders", count);
+            layout.getHeader().setNotifications(preview);
+            layout.getHeader().setNotificationBadge(count > 0);
+        });
+        orderNotifyPoller.start();
+
+        // Moi khi co bao cao het/sap het hang moi tu NV ban hang: cap nhat
+        // so badge o muc "stockAlerts" tren Sidebar (rieng, khong dung
+        // chung chuong Header voi don hang online).
+        stockAlertNotifyPoller.onUnseenChanged((count, preview) -> layout.setBadge("stockAlerts", count));
+        stockAlertNotifyPoller.start();
 
         // Moi khi ThemeManager doi theme (Light/Dark), xay lai toan bo noi
         // dung de tat ca component doc lai dung mau + FlatLaf UI moi nhat.
@@ -75,11 +97,8 @@ public class AdminMainFrame extends JFrame {
             public void windowClosed(WindowEvent e) {
                 ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
-                NotificationSettings.getInstance().removeListener(onNotifSettingsChanged);
-                if (orderNotifyPoller != null) {
-                    orderNotifyPoller.stop();
-                    orderNotifyPoller = null;
-                }
+                orderNotifyPoller.stop();
+                stockAlertNotifyPoller.stop();
                 ChatServer.getInstance().stopServer();
                 AuthService.getInstance().logout();
                 new LoginFrame();
@@ -112,27 +131,36 @@ public class AdminMainFrame extends JFrame {
         layout.addSection(Lang.get("sidebar.section.catalog"));
         layout.addPage("categories", Lang.get("sidebar.categories.short"), FontAwesomeSolid.TAGS, new CategoryPanel(), AppPermission.CATEGORY_MANAGE);
         layout.addPage("products", Lang.get("sidebar.products.short"), FontAwesomeSolid.BOX, new ProductPanel(),
-                AppPermission.PRODUCT_VIEW, AppPermission.PRODUCT_MANAGE);
+                AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_VIEW);
         layout.addPage("suppliers", Lang.get("sidebar.suppliers.short"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
         layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
-
-        // --- Nhóm Bán hàng ---
+        layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new StockAlertPanel(),
+                AppPermission.STOCK_ALERT_VIEW);
+        // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
+     // --- Nhóm Bán hàng ---
         layout.addSection(Lang.get("sidebar.section.sales"));
         layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
                 AppPermission.INVOICE_CREATE);
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
+        
         layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
                 AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
+        // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
 
-        // --- Chat hỗ trợ khách hàng ---
+        // --- Chat hỗ trợ khách hàng (real-time qua WebSocket, xem com.ws) ---
         layout.addSection(Lang.get("sidebar.section.support"));
         ChatPanel chatPanel = new ChatPanel();
         chatPanel.setOnUnreadCountChanged(count -> layout.setBadge("chat", count));
         layout.addPage("chat", Lang.get("sidebar.chat"), FontAwesomeSolid.COMMENT_DOTS, chatPanel);
+
+        // --- Nhóm Hệ thống ---
+        layout.addSection(Lang.get("sidebar.section.system"));
+        layout.addPage("backup", Lang.get("sidebar.backup"), FontAwesomeSolid.SHIELD_ALT, new BackupRecoveryPanel(),
+                AppPermission.BACKUP_MANAGE);
 
         ProfilePanel profilePanel = new ProfilePanel();
         profilePanel.onSaved(this::rebuildContent);
@@ -142,36 +170,13 @@ public class AdminMainFrame extends JFrame {
         layout.onPageChange(key -> currentPageKey = key);
         layout.showPage(currentPageKey);
         layout.onLogout(this::doLogout);
-
-        // Bam chuong -> mo trang Don hang online; gan lai moi lan rebuild.
+        // Bam vao chuong thong bao -> nhay thang sang trang "Don hang" de xem
+        // ngay don/hoa don online moi (giong myShop: bell click = xem don hang).
         layout.getHeader().onBellClick(() -> layout.showPage("orders"));
-        // Neu poller dang chay, day lai preview/badge len header moi sau rebuild.
-        refreshOrderNotifications();
-
         add(layout, BorderLayout.CENTER);
 
         revalidate();
         repaint();
-    }
-
-    /** Khoi dong poller 1 lan (khong start lai khi rebuild theme/lang). */
-    private void startOrderNotifyPoller() {
-        if (orderNotifyPoller != null) return;
-        orderNotifyPoller = new OrderNotifyPoller();
-        orderNotifyPoller.onUnseenChanged((count, preview) -> {
-            if (layout == null) return;
-            layout.getHeader().setNotifications(preview);
-            layout.getHeader().setNotificationBadge(count > 0);
-            layout.setBadge("orders", count);
-        });
-        orderNotifyPoller.start();
-    }
-
-    /** Goi lai poll ngay khi doi cai dat am thanh / an thong bao don hang. */
-    private void refreshOrderNotifications() {
-        if (orderNotifyPoller != null) {
-            orderNotifyPoller.start(); // start() goi poll() roi dam bao timer dang chay
-        }
     }
 
     private void rebuildContent() {

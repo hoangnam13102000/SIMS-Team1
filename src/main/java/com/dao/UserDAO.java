@@ -670,4 +670,36 @@ public class UserDAO extends BaseDAO<User> {
     public boolean resetPassword(int userId, String newRawPassword) {
         return changePassword(userId, newRawPassword);
     }
+
+    /** Lọc theo vai trò, đồng thời hỗ trợ từ khóa tìm kiếm hiện tại. */
+    public com.utils.PaginationHelper.PaginationResult<User> filterByRole(
+            String keyword, Role role, int pageNumber, int pageSize) {
+        StringBuilder where = new StringBuilder();
+        java.util.List<Object> params = new java.util.ArrayList<>();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String escaped = keyword.trim()
+                    .replace("[", "[[]")
+                    .replace("%", "[%]")
+                    .replace("_", "[_]");
+            String like = "%" + escaped + "%";
+            String[] columns = getSearchableColumns();
+            where.append("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) where.append(" OR ");
+                where.append(columns[i]).append(" LIKE ?");
+                params.add(like);
+            }
+            where.append(")");
+        }
+
+        if (role != null) {
+            if (where.length() > 0) where.append(" AND ");
+            where.append("r.RoleCode = ?");
+            params.add(role.name());
+        }
+
+        if (where.length() == 0) return getPaged(pageNumber, pageSize);
+        return getPaged(pageNumber, pageSize, where.toString(), params.toArray());
+    }
 }

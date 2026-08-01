@@ -283,14 +283,31 @@ CREATE TABLE ExceptionReports (
 );
 GO
 
+-- NV ban hang bao cao cho Quan ly kho khi phat hien SP het hang (Stock = 0)
+-- hoac sap het (Stock <= MinStock). Quan ly kho xem o trang "Canh bao ton kho"
+-- (StockAlertPanel) de len ke hoach nhap hang bo sung.
 CREATE TABLE StockAlerts (
     AlertID         INT IDENTITY(1,1) PRIMARY KEY,
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
-    Message         NVARCHAR(255) NOT NULL,
-    RecipientRoleID INT NOT NULL FOREIGN KEY REFERENCES Roles(RoleID),
-    IsRead          BIT NOT NULL DEFAULT 0,
-    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+    AlertType       VARCHAR(20) NOT NULL
+                        CHECK (AlertType IN ('LOW_STOCK', 'OUT_OF_STOCK')),
+    StockAtReport   INT NOT NULL,           -- ton kho tai thoi diem bao cao (luu lai de doi chieu sau)
+    Note            NVARCHAR(255) NULL,     -- ghi chu tuy chon cua NV bao cao
+    ReportedBy      INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    Status          VARCHAR(20) NOT NULL DEFAULT 'NEW'
+                        CHECK (Status IN ('NEW', 'PLANNED', 'RESOLVED')),
+                        -- NEW: moi bao cao, chua xu ly
+                        -- PLANNED: quan ly kho da len ke hoach nhap hang bo sung
+                        -- RESOLVED: da nhap hang xong / het van de
+    SeenByInventoryManager BIT NOT NULL DEFAULT 0,  -- da xem/danh dau doc chuong hay chua
+    ResolvedBy      INT NULL FOREIGN KEY REFERENCES Users(UserID),
+    ResolvedAt      DATETIME NULL
 );
+GO
+CREATE INDEX IX_StockAlerts_Seen ON StockAlerts(SeenByInventoryManager, CreatedAt);
+GO
+CREATE INDEX IX_StockAlerts_Product_Status ON StockAlerts(ProductID, Status);
 GO
 
 /* ============================================================

@@ -347,3 +347,18 @@ WHERE r.RoleCode = 'SALES_STAFF' AND p.PermissionCode IN ('ORDER_VIEW', 'ORDER_M
         WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
       );
 GO
+
+-- ---- Quyen "Sao luu & Khoi phuc" - chi ADMIN ----
+INSERT INTO Permissions (PermissionCode, Description) VALUES
+('BACKUP_MANAGE', N'Xem trang Sao lưu & Khôi phục, tự sao lưu / khôi phục DB từ file backup');
+GO
+ 
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'BACKUP_MANAGE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO

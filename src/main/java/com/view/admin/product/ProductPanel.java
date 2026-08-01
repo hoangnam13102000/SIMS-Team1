@@ -6,7 +6,11 @@ import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
 import com.components.table.AutoRowNumber;
 import com.dao.ProductDAO;
+import com.dao.StockAlertDAO;
 import com.model.Product;
+import com.model.StockAlert;
+import com.model.permission.AppPermission;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
@@ -24,12 +28,13 @@ import javax.swing.SwingUtilities;
 public class ProductPanel extends BaseCrudPanel<Product> {
 
     private final ProductDAO productDAO = new ProductDAO();
+    private final StockAlertDAO stockAlertDAO = new StockAlertDAO();
     private AutoRowNumber stt;
 
     public ProductPanel() {
         super();
 
-        table.setActionColumn(new ActionColumn()
+        ActionColumn actions = new ActionColumn()
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
                         this::viewRowPublic)
@@ -40,7 +45,18 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                         this::statusToggleColor,
                         this::statusToggleTooltip,
                         this::toggleStatusRow,
-                        null));
+                        null);
+
+        // Chi NV ban hang (quyen STOCK_ALERT_REPORT) moi thay nut bao het
+        // hang - Quan ly kho/Admin xem trang nay khong can bao lai cho
+        // chinh minh. Nut bi "khoa xam" (enabledPredicate) o cac SP con du
+        // ton, tranh bao trung/bao sai.
+        if (AuthService.getInstance().can(AppPermission.STOCK_ALERT_REPORT)) {
+            actions.add("report-alert", FontAwesomeSolid.BELL, AppColor.WARNING, "Báo hết/sắp hết hàng",
+                    this::reportAlertRow, this::canReportAlert);
+        }
+
+        table.setActionColumn(actions);
 
         stt = table.setAutoRowNumberColumn(0);
         table.setImageColumn(1, 40);
@@ -210,6 +226,41 @@ public class ProductPanel extends BaseCrudPanel<Product> {
             onDataChanged();
         } else {
             BaseDialog.error(this, "Không thể cập nhật", "Cập nhật trạng thái thất bại. Vui lòng thử lại.");
+        }
+    }
+
+    /** Chỉ cho báo khi SP còn hàng để bán (ACTIVE) và đang hết/sắp hết hàng. */
+    private boolean canReportAlert(int modelRow) {
+        Product item = rowToItem(modelRow);
+        return item != null && item.isActive() && (item.isOutOfStock() || item.isLowStock());
+    }
+
+    private void reportAlertRow(int modelRow) {
+        Product item = rowToItem(modelRow);
+        if (item == null) return;
+
+        String alertType = item.isOutOfStock() ? "OUT_OF_STOCK" : "LOW_STOCK";
+        boolean confirmed = BaseDialog.confirm(this,
+                "Báo hết/sắp hết hàng",
+                (item.isOutOfStock()
+                        ? "Báo cho Quản lý kho \"" + item.getProductName() + "\" đã HẾT hàng?"
+                        : "Báo cho Quản lý kho \"" + item.getProductName() + "\" SẮP hết hàng (còn "
+                                + item.getStock() + "/" + item.getMinStock() + ")?"),
+                "Gửi báo cáo", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.BELL);
+        if (!confirmed) return;
+
+        StockAlert alert = new StockAlert();
+        alert.setProductId(item.getProductId());
+        alert.setAlertType(alertType);
+        alert.setStockAtReport(item.getStock());
+        alert.setReportedBy(AuthService.getInstance().getCurrentUser().getUserId());
+
+        if (stockAlertDAO.create(alert)) {
+            BaseDialog.success(this, "Đã gửi báo cáo",
+                    "Quản lý kho sẽ nhận được thông báo về \"" + item.getProductName() + "\".");
+        } else {
+            BaseDialog.error(this, "Không thể gửi báo cáo",
+                    "Sản phẩm này đã có báo cáo đang chờ xử lý, hoặc có lỗi hệ thống. Vui lòng thử lại.");
         }
     }
 
