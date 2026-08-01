@@ -19,163 +19,176 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
-
 public class ClientMainFrame extends JFrame {
 
-    private CardLayout cardLayout;
-    private JPanel contentPanel;
-    private ClientHeader header;
-    private String currentPageKey = "home";
-    private final Runnable onThemeChanged = this::rebuildContent;
-    private final Runnable onLangChanged = this::rebuildContent;
+	private CardLayout cardLayout;
+	private JPanel contentPanel;
+	private ClientHeader header;
+	private String currentPageKey = "home";
+	private final Runnable onThemeChanged = this::rebuildContent;
+	private final Runnable onLangChanged = this::rebuildContent;
 
-    public ClientMainFrame() {
-        setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
-        setSize(1280, 760);
-        setMinimumSize(new Dimension(1024, 600));
-        setLocationRelativeTo(null);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setLayout(new BorderLayout());
-        getContentPane().setBackground(AppColor.PAGE_BG);
+	public ClientMainFrame() {
+		setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
+		setSize(1280, 760);
+		setMinimumSize(new Dimension(720, 560));
+		setLocationRelativeTo(null);
+		setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+		setLayout(new BorderLayout());
+		getContentPane().setBackground(AppColor.PAGE_BG);
 
-        buildContent();
+		buildContent();
 
-        SettingsButton.attach(this, 76, false);
-        ChatWidget.install(this);
+		SettingsButton.attach(this, 76, false);
+		ChatWidget.install(this);
 
-        ThemeManager.getInstance().addRebuildListener(onThemeChanged);
-        LanguageManager.getInstance().addRebuildListener(onLangChanged);
+		ThemeManager.getInstance().addRebuildListener(onThemeChanged);
+		LanguageManager.getInstance().addRebuildListener(onLangChanged);
 
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosed(WindowEvent e) {
-                ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
-                LanguageManager.getInstance().removeRebuildListener(onLangChanged);
-                ChatClient.getInstance().disconnect();
-                AuthService.getInstance().logout();
-                new LoginFrame();
-            }
-        });
+		addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosed(WindowEvent e) {
+				ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
+				LanguageManager.getInstance().removeRebuildListener(onLangChanged);
+				ChatClient.getInstance().disconnect();
+				AuthService.getInstance().logout();
+				new LoginFrame();
+			}
+		});
 
-        setVisible(true);
-    }
+		setVisible(true);
+	}
 
-    /** Xay (hoac xay lai) toan bo noi dung ben trong frame - header + cac trang + footer. */
-    private void buildContent() {
-        getContentPane().removeAll();
-        getContentPane().setBackground(AppColor.PAGE_BG);
+	/**
+	 * Xay (hoac xay lai) toan bo noi dung ben trong frame - header + cac trang +
+	 * footer.
+	 */
+	private void buildContent() {
+		getContentPane().removeAll();
+		getContentPane().setBackground(AppColor.PAGE_BG);
 
-        cardLayout = new CardLayout();
-        contentPanel = new JPanel(cardLayout);
-        contentPanel.setBackground(AppColor.PAGE_BG);
-        header = new ClientHeader();
+		cardLayout = new CardLayout();
+		contentPanel = new JPanel(cardLayout);
+		contentPanel.setBackground(AppColor.PAGE_BG);
+		header = new ClientHeader();
 
-        ProfilePanel profilePanel = new ProfilePanel();
-        profilePanel.onSaved(() -> {
-            header.refreshAccountLabel();
-            setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
-        });
+		ProfilePanel profilePanel = new ProfilePanel();
+		profilePanel.onSaved(() -> {
+			header.refreshAccountLabel();
+			setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
+		});
 
-        HomePanel homePanel = new HomePanel();
-        ProductsPanel productsPanel = new ProductsPanel();
-        ProductDetailPanel productDetailPanel = new ProductDetailPanel();
+		HomePanel homePanel = new HomePanel();
+		ProductsPanel productsPanel = new ProductsPanel();
+		ProductDetailPanel productDetailPanel = new ProductDetailPanel();
+		OrdersPanel ordersPanel = new OrdersPanel();
 
-        CartPanel cartPanel = new CartPanel();
-        cartPanel.onCheckoutSuccess(() -> showPage("home"));
-        cartPanel.onContinueShopping(() -> {
-            showPage("products");
-            productsPanel.showAll();
-        });
+		CartPanel cartPanel = new CartPanel();
 
-        // Bam the san pham (Home / Products / Related) -> mo trang chi tiet
-        java.util.function.Consumer<Product> openProductDetail = product -> {
-            productDetailPanel.showProduct(product);
-            showPage("productDetail");
-        };
-        homePanel.onProductClick(openProductDetail);
-        homePanel.onShopNow(() -> {
-            showPage("products");
-            productsPanel.showAll();
-        });
-        productsPanel.onProductClick(openProductDetail);
-        productDetailPanel.onRelatedProductClick(openProductDetail);
-        productDetailPanel.onBack(() -> showPage("products"));
-        productDetailPanel.onBuyNow(() -> {
-            showPage("cart");
-            cartPanel.loadCart();
-        });
+		cartPanel.onCheckoutSuccess(() -> {
+		    ordersPanel.loadOrders();
+		    showPage("orders");
+		});
+		cartPanel.onContinueShopping(() -> {
+			showPage("products");
+			productsPanel.showAll();
+		});
 
-        addPage("home", Lang.get("client.nav.home"), FontAwesomeSolid.HOME, homePanel);
-        header.addCategoriesDropdown(Lang.get("client.nav.categories"), FontAwesomeSolid.TAGS);
-        addPage("products", Lang.get("client.nav.products"), FontAwesomeSolid.STORE, productsPanel);
-        addPage("about", Lang.get("client.nav.about"), FontAwesomeSolid.INFO_CIRCLE, new AboutPanel());
-        addPage("contact", Lang.get("client.nav.contact"), FontAwesomeSolid.ENVELOPE, new ContactPanel());
-        contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
-        contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
-        contentPanel.add(productDetailPanel, "productDetail"); // an trong nav, chi mo khi bam the SP
+		// Bam the san pham (Home / Products / Related) -> mo trang chi tiet
+		java.util.function.Consumer<Product> openProductDetail = product -> {
+			productDetailPanel.showProduct(product);
+			showPage("productDetail");
+		};
+		homePanel.onProductClick(openProductDetail);
+		homePanel.onShopNow(() -> {
+			showPage("products");
+			productsPanel.showAll();
+		});
+		productsPanel.onProductClick(openProductDetail);
+		productDetailPanel.onRelatedProductClick(openProductDetail);
+		productDetailPanel.onBack(() -> showPage("products"));
+		productDetailPanel.onBuyNow(() -> {
+			showPage("cart");
+			cartPanel.loadCart();
+		});
 
-        // Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham, loc san theo danh muc do
-        header.onCategorySelect((categoryId, categoryName) -> {
-            showPage("products");
-            productsPanel.filterByCategory(categoryId, categoryName);
-        });
+		addPage("home", Lang.get("client.nav.home"), FontAwesomeSolid.HOME, homePanel);
+		header.addCategoriesDropdown(Lang.get("client.nav.categories"), FontAwesomeSolid.TAGS);
+		addPage("products", Lang.get("client.nav.products"), FontAwesomeSolid.STORE, productsPanel);
+		addPage(
+			    "orders",
+			    "Đơn hàng",
+			    FontAwesomeSolid.RECEIPT,
+			    ordersPanel
+			);
+		addPage("about", Lang.get("client.nav.about"), FontAwesomeSolid.INFO_CIRCLE, new AboutPanel());
+		addPage("contact", Lang.get("client.nav.contact"), FontAwesomeSolid.ENVELOPE, new ContactPanel());
+		contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
+		contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
+		contentPanel.add(productDetailPanel, "productDetail"); // an trong nav, chi mo khi bam the SP
 
-        header.onNavigate(key -> {
-            showPage(key);
-            if ("products".equals(key)) {
-                productsPanel.showAll();
-            }
-        });
-        header.onSearch(keyword -> {
-            showPage("home");
-            homePanel.search(keyword);
-        });
-        header.onProfile(() -> showPage("profile"));
-        header.onCartClick(() -> {
-            showPage("cart");
-            cartPanel.loadCart();
-        });
-        header.onLogout(this::doLogout);
+		// Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham,
+		// loc san theo danh muc do
+		header.onCategorySelect((categoryId, categoryName) -> {
+			showPage("products");
+			productsPanel.filterByCategory(categoryId, categoryName);
+		});
 
-        add(header, BorderLayout.NORTH);
-        add(contentPanel, BorderLayout.CENTER);
-        add(new Footer(), BorderLayout.SOUTH);
+		header.onNavigate(key -> {
+		    showPage(key);
 
-        showPage(currentPageKey);
+		    if ("products".equals(key)) {
+		        productsPanel.showAll();
+		    }
 
-        revalidate();
-        repaint();
-    }
+		    if ("orders".equals(key)) {
+		        ordersPanel.loadOrders();
+		    }
+		});
+		header.onSearch(keyword -> {
+			showPage("home");
+			homePanel.search(keyword);
+		});
+		header.onProfile(() -> showPage("profile"));
+		header.onCartClick(() -> {
+			showPage("cart");
+			cartPanel.loadCart();
+		});
+		header.onLogout(this::doLogout);
 
-    private void rebuildContent() {
-        buildContent();
-        getLayeredPane().repaint();
-    }
+		add(header, BorderLayout.NORTH);
+		add(contentPanel, BorderLayout.CENTER);
+		add(new Footer(), BorderLayout.SOUTH);
 
-    private void addPage(String key, String label, FontAwesomeSolid icon, JPanel panel) {
-        header.addPage(key, label, icon);
-        contentPanel.add(panel, key);
-    }
+		showPage(currentPageKey);
 
-    private void showPage(String key) {
-        currentPageKey = key;
-        cardLayout.show(contentPanel, key);
-        header.setActive(key);
-    }
+		revalidate();
+		repaint();
+	}
 
-    private void doLogout() {
-        boolean confirmed = BaseDialog.confirm(
-            this,
-            Lang.get("client.logout.confirm.title"),
-            Lang.get("client.logout.confirm.message"),
-            Lang.get("client.logout.confirm.button"),
-            AppColor.ERROR,
-            AppColor.ERROR_HOVER,
-            FontAwesomeSolid.SIGN_OUT_ALT
-        );
+	private void rebuildContent() {
+		buildContent();
+		getLayeredPane().repaint();
+	}
 
-        if (confirmed) {
-            dispose();
-        }
-    }
+	private void addPage(String key, String label, FontAwesomeSolid icon, JPanel panel) {
+		header.addPage(key, label, icon);
+		contentPanel.add(panel, key);
+	}
+
+	private void showPage(String key) {
+		currentPageKey = key;
+		cardLayout.show(contentPanel, key);
+		header.setActive(key);
+	}
+
+	private void doLogout() {
+		boolean confirmed = BaseDialog.confirm(this, Lang.get("client.logout.confirm.title"),
+				Lang.get("client.logout.confirm.message"), Lang.get("client.logout.confirm.button"), AppColor.ERROR,
+				AppColor.ERROR_HOVER, FontAwesomeSolid.SIGN_OUT_ALT);
+
+		if (confirmed) {
+			dispose();
+		}
+	}
 }

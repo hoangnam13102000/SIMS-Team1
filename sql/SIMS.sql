@@ -176,7 +176,7 @@ GO
 CREATE TABLE Invoices (
     InvoiceID       INT IDENTITY(1,1) PRIMARY KEY,
     InvoiceCode     VARCHAR(30) NOT NULL UNIQUE,
-    ShiftID         INT NOT NULL FOREIGN KEY REFERENCES Shifts(ShiftID),
+    ShiftID INT NULL FOREIGN KEY REFERENCES Shifts(ShiftID),
     CreatedBy       INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
     CustomerID      INT NULL FOREIGN KEY REFERENCES Customers(CustomerID),
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),

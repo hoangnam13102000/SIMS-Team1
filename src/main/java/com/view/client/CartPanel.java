@@ -1,9 +1,54 @@
 package com.view.client;
 
+import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.GridLayout;
+import java.awt.Insets;
+import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
+import javax.swing.JTextField;
+import javax.swing.SwingConstants;
+import javax.swing.SwingWorker;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.LineBorder;
+
+import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
+
 import com.components.BaseDialog;
 import com.components.EmptyState;
+import com.dao.OrderDAO;
 import com.i18n.Lang;
 import com.model.CartItem;
+import com.model.Order;
+import com.model.OrderDetail;
+import com.model.Product;
+import com.model.User;
 import com.service.AuthService;
 import com.service.CartService;
 import com.theme.AppColor;
@@ -11,18 +56,6 @@ import com.theme.AppFont;
 import com.theme.AppSpacing;
 import com.utils.ImageUtil;
 import com.utils.NumberUtil;
-import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
-import org.kordamp.ikonli.swing.FontIcon;
-
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import javax.swing.border.LineBorder;
-import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.awt.geom.RoundRectangle2D;
-import java.awt.image.BufferedImage;
-import java.util.List;
 
 public class CartPanel extends JPanel {
 
@@ -546,30 +579,263 @@ public class CartPanel extends JPanel {
     }
 
     private void handleCheckout() {
-        String name = nameField.getText() == null ? "" : nameField.getText().trim();
-        String email = emailField.getText() == null ? "" : emailField.getText().trim();
-        String address = addressField.getText() == null ? "" : addressField.getText().trim();
 
-        if (name.isEmpty() || email.isEmpty() || address.isEmpty()) {
-            BaseDialog.error(this, Lang.get("cart.shipping.validate.title"), Lang.get("cart.shipping.validate.required"));
+        CartService cartService = CartService.getInstance();
+
+        /*
+         * Sao chép giỏ hàng hiện tại.
+         * Không sử dụng trực tiếp danh sách mutable của CartService
+         * trong lúc đang ghi dữ liệu xuống database.
+         */
+        List<CartItem> cartItems =
+                new ArrayList<>(cartService.getItems());
+
+        if (cartItems.isEmpty()) {
+            BaseDialog.error(
+                    this,
+                    "Không thể đặt hàng",
+                    "Giỏ hàng đang trống."
+            );
             return;
         }
-        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
-            BaseDialog.error(this, Lang.get("cart.shipping.validate.title"), Lang.get("cart.shipping.validate.email"));
+
+        String name =
+                nameField.getText() == null
+                        ? ""
+                        : nameField.getText().trim();
+
+        String phone =
+                phoneField.getText() == null
+                        ? ""
+                        : phoneField.getText().trim();
+
+        String email =
+                emailField.getText() == null
+                        ? ""
+                        : emailField.getText().trim();
+
+        String address =
+                addressField.getText() == null
+                        ? ""
+                        : addressField.getText().trim();
+
+        /*
+         * ReceiverPhone trong database là NOT NULL,
+         * vì vậy cần kiểm tra cả số điện thoại.
+         */
+        if (name.isEmpty()
+                || phone.isEmpty()
+                || email.isEmpty()
+                || address.isEmpty()) {
+
+            BaseDialog.error(
+                    this,
+                    "Thông tin giao hàng",
+                    "Vui lòng nhập đầy đủ họ tên, số điện thoại, "
+                  + "email và địa chỉ giao hàng."
+            );
             return;
         }
 
-        long total = CartService.getInstance().getTotal();
-        PaymentDialog.Method method = PaymentDialog.show(this, CartService.getInstance().getItems(), total);
-        if (method == null) return;
+        if (!email.matches(
+                "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
 
-        // He thong chua co bang Orders/checkout that su - mo phong 1 buoc dat
-        // hang don gian: xac nhan -> bao thanh cong -> xoa gio hang. Khi ghep
-        // OrderService/OrderDAO that, thay doan nay bang luu don hang voi
-        // name/phone/email/address da nhap o form ben tren.
-        CartService.getInstance().clear();
-        BaseDialog.success(this, Lang.get("cart.checkout.success.title"), Lang.get("cart.checkout.success.message"));
-        if (onCheckoutSuccess != null) onCheckoutSuccess.run();
+            BaseDialog.error(
+                    this,
+                    "Thông tin giao hàng",
+                    "Địa chỉ email không đúng định dạng."
+            );
+            return;
+        }
+
+        /*
+         * Cho phép số điện thoại gồm chữ số, dấu +, khoảng trắng,
+         * dấu chấm và dấu gạch ngang.
+         */
+        if (!phone.matches(
+                "^[0-9+][0-9\\s.\\-]{7,19}$")) {
+
+            BaseDialog.error(
+                    this,
+                    "Thông tin giao hàng",
+                    "Số điện thoại không đúng định dạng."
+            );
+            return;
+        }
+
+        AuthService authService =
+                AuthService.getInstance();
+
+        if (!authService.isLoggedIn()
+                || authService.getCurrentUser() == null) {
+
+            BaseDialog.error(
+                    this,
+                    "Chưa đăng nhập",
+                    "Bạn cần đăng nhập trước khi đặt hàng."
+            );
+            return;
+        }
+
+        User currentUser =
+                authService.getCurrentUser();
+
+        long displayedTotal =
+                cartService.getTotal();
+
+        PaymentDialog.Method selectedMethod =
+                PaymentDialog.show(
+                        this,
+                        cartItems,
+                        displayedTotal
+                );
+
+        /*
+         * Người dùng đóng dialog hoặc bấm Hủy.
+         */
+        if (selectedMethod == null) {
+            return;
+        }
+
+        Order order = new Order();
+
+        order.setCustomerId(
+                currentUser.getUserId()
+        );
+
+        order.setReceiverName(name);
+        order.setReceiverPhone(phone);
+        order.setReceiverEmail(email);
+        order.setShippingAddress(address);
+
+        /*
+         * Method.name() trả về COD hoặc PAYPAL,
+         * đúng với CHECK constraint trong Orders.
+         */
+        order.setPaymentMethod(
+                selectedMethod.name()
+        );
+
+        List<OrderDetail> orderDetails =
+                new ArrayList<>();
+
+        for (CartItem cartItem : cartItems) {
+
+            Product product =
+                    cartItem.getProduct();
+
+            if (product == null) {
+                BaseDialog.error(
+                        this,
+                        "Không thể đặt hàng",
+                        "Giỏ hàng chứa sản phẩm không hợp lệ."
+                );
+                return;
+            }
+
+            OrderDetail detail =
+                    new OrderDetail();
+
+            detail.setProductId(
+                    product.getProductId()
+            );
+
+            detail.setQuantity(
+                    cartItem.getQuantity()
+            );
+
+            /*
+             * Không cần truyền giá, mã và tên.
+             * OrderDAO sẽ đọc lại dữ liệu mới nhất từ database.
+             */
+            orderDetails.add(detail);
+        }
+
+        order.setDetails(orderDetails);
+
+        /*
+         * Ngăn người dùng nhấn nút thanh toán nhiều lần
+         * trong lúc transaction đang chạy.
+         */
+        checkoutButton.setEnabled(false);
+        checkoutButton.setText("Đang xử lý...");
+
+        /*
+         * Chạy thao tác database ở background để giao diện Swing
+         * không bị đứng trong lúc kết nối SQL Server.
+         */
+        SwingWorker<String, Void> worker =
+                new SwingWorker<>() {
+
+            @Override
+            protected String doInBackground() {
+                OrderDAO orderDAO = new OrderDAO();
+                return orderDAO.createOnlineOrder(order);
+            }
+
+            @Override
+            protected void done() {
+
+                try {
+                    String error = get();
+
+                    if (error != null) {
+                        BaseDialog.error(
+                                CartPanel.this,
+                                "Đặt hàng thất bại",
+                                error
+                        );
+                        return;
+                    }
+
+                    /*
+                     * Chỉ xóa giỏ hàng sau khi transaction thành công.
+                     */
+                    cartService.clear();
+
+                    BaseDialog.success(
+                            CartPanel.this,
+                            "Đặt hàng thành công",
+                            "Mã đơn hàng của bạn là "
+                                    + order.getOrderCode()
+                                    + "."
+                    );
+
+                    if (onCheckoutSuccess != null) {
+                        onCheckoutSuccess.run();
+                    }
+
+                } catch (Exception ex) {
+
+                    String message =
+                            ex.getCause() != null
+                                    ? ex.getCause().getMessage()
+                                    : ex.getMessage();
+
+                    if (message == null
+                            || message.isBlank()) {
+                        message =
+                                "Không thể hoàn tất đơn hàng.";
+                    }
+
+                    BaseDialog.error(
+                            CartPanel.this,
+                            "Đặt hàng thất bại",
+                            message
+                    );
+
+                } finally {
+
+                    checkoutButton.setEnabled(true);
+
+                    checkoutButton.setText(
+                            Lang.get("cart.checkout") + "   →"
+                    );
+                }
+            }
+        };
+
+        worker.execute();
     }
 
     // ==================== Helper: card/label style dung chung (giong ProfilePanel) ====================
