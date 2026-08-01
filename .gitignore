@@ -19,3 +19,8 @@
 
 # Logs
 *.log
+
+# Database backups (file lớn, không đưa lên Git)
+/backups/
+*.bak
+*.bak.enc

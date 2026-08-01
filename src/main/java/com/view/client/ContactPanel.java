@@ -27,12 +27,17 @@ import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 
 /**
- * Trang liên hệ của khu vực khách hàng.
- * SMTP luôn chạy trong SwingWorker để không chặn Event Dispatch Thread.
+ * Trang lien he cua khu vuc khach hang.
+ * SMTP luon chay trong SwingWorker de khong chan Event Dispatch Thread.
+ *
+ * Bo cuc duoc lam mem hon so voi ban dau: hero dang gradient co icon tron,
+ * 3 the ho tro voi mau accent rieng biet, va khu vuc form duoc tach thanh
+ * 2 cot (form ben trai + sidebar thong tin nhanh ben phai) thay vi 1 khoi
+ * trang phang duy nhat.
  */
 public class ContactPanel extends JPanel {
 
-    private static final int CARD_RADIUS = 18;
+    private static final int CARD_RADIUS = 20;
     private static final int MESSAGE_LIMIT = 2000;
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("^[\\w.+-]+@[\\w-]+\\.[a-zA-Z]{2,}$");
@@ -88,34 +93,38 @@ public class ContactPanel extends JPanel {
         return content;
     }
 
+    // ===================== HERO =====================
+
     private JComponent buildHeroSection() {
-        RoundedCard card = new RoundedCard(AppColor.ACCENT_BG_SOFT, false);
+        GradientCard card = new GradientCard(AppColor.ACCENT, AppColor.ACCENT_HOVER);
         card.setLayout(new BorderLayout(AppSpacing.XL, 0));
         card.setBorder(new EmptyBorder(
                 AppSpacing.XL, AppSpacing.XXL, AppSpacing.XL, AppSpacing.XXL));
         card.setAlignmentX(Component.LEFT_ALIGNMENT);
         card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 220));
 
-        JLabel heroIcon = createIconBox(FontAwesomeSolid.HEADPHONES, 34);
-        heroIcon.setPreferredSize(new Dimension(72, 72));
-        card.add(heroIcon, BorderLayout.WEST);
+        JPanel iconWrap = new JPanel(new GridBagLayout());
+        iconWrap.setOpaque(false);
+        iconWrap.add(new IconBadge(FontAwesomeSolid.HEADPHONES, 32, Color.WHITE,
+                new Color(255, 255, 255, 55), 88));
+        card.add(iconWrap, BorderLayout.WEST);
 
         JPanel text = transparentColumn();
         JLabel title = new JLabel(Lang.get("contact.hero.title"));
         title.setFont(AppFont.TITLE);
-        title.setForeground(AppColor.TEXT_TITLE);
+        title.setForeground(Color.WHITE);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JTextArea subtitle = createReadOnlyText(
-                Lang.get("contact.hero.subtitle"), AppFont.BODY, AppColor.TEXT_SECONDARY, 2);
+                Lang.get("contact.hero.subtitle"), AppFont.BODY, new Color(255, 255, 255, 225), 2);
         subtitle.setBorder(new EmptyBorder(AppSpacing.SM, 0, 0, 0));
 
-        RoundedCard badge = new RoundedCard(AppColor.WHITE, false);
+        RoundedCard badge = new RoundedCard(new Color(255, 255, 255, 235), false);
         badge.setLayout(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, AppSpacing.XS));
         badge.setBorder(new EmptyBorder(2, AppSpacing.SM, 2, AppSpacing.SM));
         badge.setAlignmentX(Component.LEFT_ALIGNMENT);
         badge.setMaximumSize(new Dimension(260, 34));
-        badge.add(createIconLabel(FontAwesomeSolid.HEART, 12, AppColor.ACCENT));
+        badge.add(createIconLabel(FontAwesomeSolid.HEART, 12, AppColor.ACCENT_HOVER));
         JLabel badgeText = new JLabel(Lang.get("contact.hero.badge"));
         badgeText.setFont(AppFont.SMALL_BOLD);
         badgeText.setForeground(AppColor.TEXT_PRIMARY);
@@ -129,32 +138,74 @@ public class ContactPanel extends JPanel {
         return card;
     }
 
+    // ===================== 3 THE HO TRO (mau sac rieng) =====================
+
     private JComponent buildSupportChannelsSection() {
         JPanel cards = new JPanel(new GridLayout(1, 3, AppSpacing.LG, 0));
         cards.setOpaque(false);
         cards.add(createSupportCard(
-                FontAwesomeSolid.ENVELOPE,
-                "contact.channel.email.title",
-                "contact.channel.email.description"));
+                FontAwesomeSolid.ENVELOPE, AppColor.ACCENT, AppColor.ACCENT_BG_SOFT,
+                "contact.channel.email.title", "contact.channel.email.description"));
         cards.add(createSupportCard(
-                FontAwesomeSolid.COMMENTS,
-                "contact.channel.response.title",
-                "contact.channel.response.description"));
+                FontAwesomeSolid.COMMENTS, AppColor.BLUE, AppColor.INFO_BG,
+                "contact.channel.response.title", "contact.channel.response.description"));
         cards.add(createSupportCard(
-                FontAwesomeSolid.SHIELD_ALT,
-                "contact.channel.security.title",
-                "contact.channel.security.description"));
+                FontAwesomeSolid.SHIELD_ALT, AppColor.SUCCESS, AppColor.SUCCESS_BG,
+                "contact.channel.security.title", "contact.channel.security.description"));
         cards.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cards.setMaximumSize(new Dimension(Integer.MAX_VALUE, 175));
         return cards;
     }
 
+    private JComponent createSupportCard(
+            FontAwesomeSolid icon, Color accent, Color tint, String titleKey, String descriptionKey) {
+        RoundedCard card = new RoundedCard(AppColor.WHITE, true);
+        card.setLayout(new BorderLayout());
+        card.setBorder(new EmptyBorder(
+                AppSpacing.LG, AppSpacing.LG, AppSpacing.LG, AppSpacing.LG));
+        card.setPreferredSize(new Dimension(260, 165));
+
+        JPanel badgeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        badgeRow.setOpaque(false);
+        badgeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        badgeRow.add(new IconBadge(icon, 18, accent, tint, 50));
+
+        JPanel text = transparentColumn();
+        text.setBorder(new EmptyBorder(AppSpacing.MD, 0, 0, 0));
+        JLabel title = new JLabel(Lang.get(titleKey));
+        title.setFont(AppFont.HEADING_MD);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        text.add(title);
+        text.add(Box.createVerticalStrut(AppSpacing.SM));
+        text.add(createReadOnlyText(
+                Lang.get(descriptionKey), AppFont.BODY, AppColor.TEXT_SECONDARY, 3));
+
+        JPanel column = transparentColumn();
+        column.add(badgeRow);
+        column.add(text);
+        card.add(column, BorderLayout.CENTER);
+        return card;
+    }
+
+    // ===================== FORM + SIDEBAR =====================
+
     private JComponent buildContactFormSection() {
+        JPanel wrapper = new JPanel(new BorderLayout(AppSpacing.LG, 0));
+        wrapper.setOpaque(false);
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 820));
+
+        wrapper.add(buildContactFormCard(), BorderLayout.CENTER);
+        wrapper.add(buildContactSidebar(), BorderLayout.EAST);
+        return wrapper;
+    }
+
+    private JComponent buildContactFormCard() {
         RoundedCard card = new RoundedCard(AppColor.WHITE, false);
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(
                 AppSpacing.XL, AppSpacing.XL, AppSpacing.XL, AppSpacing.XL));
-        card.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 760));
 
         JPanel form = transparentColumn();
 
@@ -216,15 +267,7 @@ public class ContactPanel extends JPanel {
         messageCounter.setHorizontalAlignment(SwingConstants.RIGHT);
         messageGroup.add(messageCounter, BorderLayout.SOUTH);
         form.add(messageGroup);
-
-        JLabel privacyNote = new JLabel(Lang.get("contact.privacy.note"));
-        privacyNote.setFont(AppFont.SMALL);
-        privacyNote.setForeground(AppColor.TEXT_MUTED);
-        privacyNote.setIcon(createFontIcon(FontAwesomeSolid.LOCK, 12, AppColor.TEXT_MUTED));
-        privacyNote.setIconTextGap(AppSpacing.SM);
-        privacyNote.setAlignmentX(Component.LEFT_ALIGNMENT);
-        privacyNote.setBorder(new EmptyBorder(AppSpacing.MD, 0, AppSpacing.MD, 0));
-        form.add(privacyNote);
+        form.add(Box.createVerticalStrut(AppSpacing.LG));
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, AppSpacing.SM, 0));
         actions.setOpaque(false);
@@ -247,27 +290,68 @@ public class ContactPanel extends JPanel {
         return card;
     }
 
-    private JComponent createSupportCard(
-            FontAwesomeSolid icon, String titleKey, String descriptionKey) {
-        RoundedCard card = new RoundedCard(AppColor.WHITE, true);
-        card.setLayout(new BorderLayout(AppSpacing.MD, 0));
+    private JComponent buildContactSidebar() {
+        RoundedCard card = new RoundedCard(AppColor.ACCENT_BG_SOFT, false);
+        card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(
-                AppSpacing.LG, AppSpacing.LG, AppSpacing.LG, AppSpacing.LG));
-        card.setPreferredSize(new Dimension(260, 145));
-        card.add(createIconBox(icon, 20), BorderLayout.WEST);
+                AppSpacing.XL, AppSpacing.LG, AppSpacing.XL, AppSpacing.LG));
+        card.setPreferredSize(new Dimension(250, 10));
 
-        JPanel text = transparentColumn();
-        JLabel title = new JLabel(Lang.get(titleKey));
+        JPanel column = transparentColumn();
+
+        JPanel badgeWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        badgeWrap.setOpaque(false);
+        badgeWrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+        badgeWrap.add(new IconBadge(FontAwesomeSolid.PAPER_PLANE, 20, Color.WHITE, AppColor.ACCENT, 56));
+        column.add(badgeWrap);
+        column.add(Box.createVerticalStrut(AppSpacing.MD));
+
+        JLabel title = new JLabel(Lang.get("contact.hero.badge"));
         title.setFont(AppFont.HEADING_MD);
         title.setForeground(AppColor.TEXT_TITLE);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        text.add(title);
-        text.add(Box.createVerticalStrut(AppSpacing.SM));
-        text.add(createReadOnlyText(
-                Lang.get(descriptionKey), AppFont.BODY, AppColor.TEXT_SECONDARY, 3));
-        card.add(text, BorderLayout.CENTER);
+        column.add(title);
+        column.add(Box.createVerticalStrut(AppSpacing.LG));
+
+        column.add(buildSidebarRow(FontAwesomeSolid.ENVELOPE, AppColor.ACCENT, "contact.channel.email.title"));
+        column.add(Box.createVerticalStrut(AppSpacing.MD));
+        column.add(buildSidebarRow(FontAwesomeSolid.COMMENTS, AppColor.BLUE, "contact.channel.response.title"));
+        column.add(Box.createVerticalStrut(AppSpacing.MD));
+        column.add(buildSidebarRow(FontAwesomeSolid.SHIELD_ALT, AppColor.SUCCESS, "contact.channel.security.title"));
+        column.add(Box.createVerticalStrut(AppSpacing.XL));
+
+        JSeparator separator = new JSeparator();
+        separator.setForeground(AppColor.BORDER);
+        separator.setAlignmentX(Component.LEFT_ALIGNMENT);
+        separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        column.add(separator);
+        column.add(Box.createVerticalStrut(AppSpacing.LG));
+
+        JTextArea privacyNote = createReadOnlyText(
+                Lang.get("contact.privacy.note"), AppFont.SMALL, AppColor.TEXT_MUTED, 3);
+        JLabel privacyIcon = createIconLabel(FontAwesomeSolid.LOCK, 12, AppColor.TEXT_MUTED);
+        privacyIcon.setAlignmentX(Component.LEFT_ALIGNMENT);
+        column.add(privacyIcon);
+        column.add(Box.createVerticalStrut(AppSpacing.XS));
+        column.add(privacyNote);
+
+        card.add(column, BorderLayout.NORTH);
         return card;
     }
+
+    private JComponent buildSidebarRow(FontAwesomeSolid icon, Color accent, String textKey) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.add(createIconLabel(icon, 14, accent));
+        JLabel text = new JLabel(Lang.get(textKey));
+        text.setFont(AppFont.BODY_BOLD);
+        text.setForeground(AppColor.TEXT_PRIMARY);
+        row.add(text);
+        return row;
+    }
+
+    // ===================== FORM FIELD HELPERS (khong doi) =====================
 
     private JPanel createTwoColumnRow(JComponent left, JComponent right) {
         JPanel row = new JPanel(new GridLayout(1, 2, AppSpacing.LG, 0));
@@ -332,6 +416,8 @@ public class ContactPanel extends JPanel {
         area.setWrapStyleWord(true);
         area.setBorder(new EmptyBorder(AppSpacing.SM, AppSpacing.MD, AppSpacing.SM, AppSpacing.MD));
     }
+
+    // ===================== NGHIEP VU (khong doi) =====================
 
     private void prefillCurrentUser() {
         User user = AuthService.getInstance().getCurrentUser();
@@ -524,6 +610,8 @@ public class ContactPanel extends JPanel {
         return value == null ? "" : value.trim();
     }
 
+    // ===================== TIEN ICH UI =====================
+
     private JTextArea createReadOnlyText(String value, Font font, Color color, int rows) {
         JTextArea text = new JTextArea(value, rows, 1);
         text.setEditable(false);
@@ -544,14 +632,6 @@ public class ContactPanel extends JPanel {
         panel.setOpaque(false);
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         return panel;
-    }
-
-    private JLabel createIconBox(FontAwesomeSolid iconType, int size) {
-        JLabel label = createIconLabel(iconType, size, AppColor.ACCENT);
-        label.setHorizontalAlignment(SwingConstants.CENTER);
-        label.setVerticalAlignment(SwingConstants.TOP);
-        label.setPreferredSize(new Dimension(44, 44));
-        return label;
     }
 
     private JLabel createIconLabel(FontAwesomeSolid iconType, int size, Color color) {
@@ -597,6 +677,7 @@ public class ContactPanel extends JPanel {
         }
     }
 
+    /** The bo tron, nen phang (mau don), co the bat hover doi sang mau accent nhat. */
     private static final class RoundedCard extends JPanel {
         private final Color fillColor;
         private final boolean hoverEnabled;
@@ -631,6 +712,63 @@ public class ContactPanel extends JPanel {
             g2.fillRoundRect(0, 0, getWidth(), getHeight(), CARD_RADIUS, CARD_RADIUS);
             g2.setColor(AppColor.BORDER);
             g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, CARD_RADIUS, CARD_RADIUS);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /**
+     * The bo tron voi nen gradient cheo tu mau from -> to, kem 2 vong tron mo
+     * trang trai o goc de tao cam giac huu co (blob), mo phong cac banner
+     * mau sac trong thiet ke web tham khao.
+     */
+    private static final class GradientCard extends JPanel {
+        private final Color from;
+        private final Color to;
+
+        private GradientCard(Color from, Color to) {
+            this.from = from;
+            this.to = to;
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setPaint(new GradientPaint(0, 0, from, getWidth(), getHeight(), to));
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), CARD_RADIUS, CARD_RADIUS);
+            g2.setColor(new Color(255, 255, 255, 35));
+            g2.fillOval(getWidth() - 150, -70, 220, 220);
+            g2.setColor(new Color(255, 255, 255, 22));
+            g2.fillOval(-50, getHeight() - 90, 150, 150);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /** Vong tron mau lam nen cho icon, tao cam giac "badge" thay vi icon tho. */
+    private static final class IconBadge extends JPanel {
+        private final Color background;
+
+        private IconBadge(FontAwesomeSolid iconType, int iconSize, Color iconColor, Color background, int diameter) {
+            this.background = background;
+            setOpaque(false);
+            setLayout(new GridBagLayout());
+            setPreferredSize(new Dimension(diameter, diameter));
+            setMinimumSize(new Dimension(diameter, diameter));
+            setMaximumSize(new Dimension(diameter, diameter));
+            FontIcon icon = FontIcon.of(iconType, iconSize);
+            icon.setIconColor(iconColor);
+            add(new JLabel(icon));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(background);
+            g2.fillOval(0, 0, getWidth(), getHeight());
             g2.dispose();
             super.paintComponent(g);
         }
