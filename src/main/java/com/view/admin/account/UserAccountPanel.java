@@ -272,6 +272,8 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         if (!confirmed) return;
 
         if (userDAO.setLocked(item.getUserId(), true)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\"");
             BaseDialog.success(this, "Thành công", "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {
@@ -284,6 +286,8 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         if (item == null) return;
 
         if (userDAO.setLocked(item.getUserId(), false)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\"");
             BaseDialog.success(this, "Thành công", "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {

@@ -21,8 +21,10 @@ import com.view.admin.inventory.InventoryBatchPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
 import com.view.admin.order.OrderPanel;
 import com.view.admin.invoice.InvoicePanel;
+import com.view.admin.report.RevenueReportPanel;
 import com.view.admin.pos.PosPanel;
 import com.view.admin.stockalert.StockAlertPanel;
+import com.view.admin.auditlog.AuditLogPanel;
 import com.service.OrderNotifyPoller;
 import com.service.StockAlertNotifyPoller;
 import com.ws.ChatServer;
@@ -146,6 +148,8 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.INVOICE_CREATE);
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
+        layout.addPage("revenueReport", Lang.get("sidebar.revenueReport"), FontAwesomeSolid.CHART_LINE, new RevenueReportPanel(),
+                AppPermission.REVENUE_REPORT_VIEW);
         
         layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
                 AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
@@ -161,6 +165,8 @@ public class AdminMainFrame extends JFrame {
         layout.addSection(Lang.get("sidebar.section.system"));
         layout.addPage("backup", Lang.get("sidebar.backup"), FontAwesomeSolid.SHIELD_ALT, new BackupRecoveryPanel(),
                 AppPermission.BACKUP_MANAGE);
+        layout.addPage("auditLogs", Lang.get("sidebar.auditLogs"), FontAwesomeSolid.HISTORY, new AuditLogPanel(),
+                AppPermission.AUDIT_LOG_VIEW);
 
         ProfilePanel profilePanel = new ProfilePanel();
         profilePanel.onSaved(this::rebuildContent);

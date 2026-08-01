@@ -28,6 +28,10 @@ public enum AppPermission implements Permission {
     /** Quan ly kho xem va xu ly cac bao cao het/sap het hang (len ke hoach nhap bo sung). */
     STOCK_ALERT_VIEW,
     /** Xem trang "Sao luu & Khoi phuc", tu sao luu thu cong hoac khoi phuc DB tu file backup. */
-    BACKUP_MANAGE
+    BACKUP_MANAGE,
+    /** Xem trang "Nhat ky audit" - lich su thao tac (them/sua/xoa/dang nhap...) cua nguoi dung. */
+    AUDIT_LOG_VIEW,
+    /** Xem trang "Bao cao doanh thu" - thong ke doanh thu theo thoi gian/san pham/PT thanh toan. */
+    REVENUE_REPORT_VIEW
     
 }

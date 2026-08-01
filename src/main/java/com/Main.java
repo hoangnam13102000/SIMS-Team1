@@ -34,6 +34,13 @@ public class Main {
             return;
         }
 
+        // Noi AppLogger voi bang AuditLogs that su - TRUOC DAY setSink() CHUA
+        // TUNG duoc goi o dau ca nen moi log audit (CREATE/UPDATE/DELETE/
+        // LOGIN...) bi am tham "roi mat", khong luu vao DB. Phai goi SAU khi
+        // AppConfig san sang (can DB_URL/DB_USER/DB_PASSWORD) va TRUOC
+        // LoginFrame de log LOGIN/LOGIN_FAILED dau tien cung duoc ghi.
+        AppLogger.getInstance().setSink(new com.core.log.DbAuditLogSink());
+
         // Khoi dong subsystem sao luu/khoi phuc (xem com.disaster.DisasterRecoveryBootstrap).
         // Loi o day KHONG duoc phep chan toan bo app - chi ghi log + luu lai
         // ly do de BackupRecoveryPanel hien thi ro rang khi nguoi dung mo trang.

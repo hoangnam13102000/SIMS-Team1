@@ -2,19 +2,14 @@ package com.components.crud;
 
 
 import com.theme.AppColor;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonNull;
-import com.google.gson.JsonPrimitive;
-import com.google.gson.JsonSerializer;
+import com.core.log.ActivityLogHelper;
+import com.core.log.AuditSnapshot;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.awt.event.KeyEvent;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 public abstract class BaseFormDialog<T> extends JDialog {
 
@@ -23,29 +18,13 @@ public abstract class BaseFormDialog<T> extends JDialog {
     private final String entityLabel;
 
     /**
-     * Gson mac dinh dung Reflection de doc field private cua java.time.LocalDate/
-     * LocalDateTime - tu Java 9+, module java.base KHONG "opens java.time" cho
-     * unnamed module nen bi InaccessibleObjectException NGAY LUC MO DIALOG (vd
-     * EmployeeFormDialog vi Employee co dateOfBirth/hireDate/createdAt kieu
-     * java.time) - loi nay xay ra tren AWT-EventQueue-0 nen khong co popup nao
-     * hien ra, nguoi dung chi thay "bam nut Sua khong co phan ung gi ca". Dang
-     * ky rieng adapter cho 2 kieu nay de Gson KHONG dung reflection nua.
-     */
-    private static final Gson SNAPSHOT_GSON = new GsonBuilder()
-            .registerTypeAdapter(LocalDate.class,
-                    (JsonSerializer<LocalDate>) (src, typeOfSrc, context) ->
-                            src == null ? JsonNull.INSTANCE : new JsonPrimitive(src.toString()))
-            .registerTypeAdapter(LocalDateTime.class,
-                    (JsonSerializer<LocalDateTime>) (src, typeOfSrc, context) ->
-                            src == null ? JsonNull.INSTANCE : new JsonPrimitive(src.toString()))
-            .create();
-    	
-    /**
      * Snapshot JSON cua editingEntity chup NGAY LUC MO DIALOG, truoc khi
      * collectFormData() ghi de len cung 1 tham chieu editingEntity. Dung lam
      * "oldValue" cho audit log khi EDIT - neu chup sau save() se bi mat du
      * lieu goc vi collectFormData() sua truc tiep tren editingEntity.
-     * Null neu ADD (chua co entity goc).
+     * Null neu ADD (chua co entity goc). Gson dung chung xem AuditSnapshot
+     * (co adapter LocalDate/LocalDateTime, tranh InaccessibleObjectException
+     * tren Java 9+ khi entity co field kieu java.time - vd Employee).
      */
     protected final String originalSnapshotJson;
 
@@ -68,7 +47,7 @@ public abstract class BaseFormDialog<T> extends JDialog {
         this.entityLabel = entityLabel;
         this.mode = mode;
         this.editingEntity = editingEntity;
-        this.originalSnapshotJson = editingEntity != null ? SNAPSHOT_GSON.toJson(editingEntity) : null;
+        this.originalSnapshotJson = AuditSnapshot.toJson(editingEntity);
     }
 
     // ---------------------------------------------------------------
@@ -219,12 +198,35 @@ public abstract class BaseFormDialog<T> extends JDialog {
         if (ok) {
             this.result = data;
             this.saved = true;
+            logAudit(data);
             if (callback != null) {
                 callback.onSaved(data, mode);
             }
             dispose();
         } else {
             showMessage("Không thể lưu " + entityLabel + ". Vui lòng thử lại.");
+        }
+    }
+
+    /**
+     * Ghi audit log CREATE/UPDATE ngay sau khi persist() thanh cong - dung
+     * chung cho MOI *FormDialog (Category/Customer/Supplier/User/Employee/
+     * InventoryBatch/Product...) vi day la diem duy nhat moi luong luu du
+     * lieu deu di qua, khong can sua tung dialog rieng le. RecordID duoc
+     * DbAuditLogSink tu suy ra tu newValue JSON (xem javadoc o do).
+     */
+    private void logAudit(T savedEntity) {
+        String action = mode == CrudMode.EDIT ? com.model.ActivityLog.ACTION_UPDATE : com.model.ActivityLog.ACTION_CREATE;
+        String description = (mode == CrudMode.EDIT ? "Đã cập nhật " : "Đã thêm mới ") + entityLabel;
+        String newSnapshotJson = AuditSnapshot.toJson(savedEntity);
+        String oldSnapshotJson = mode == CrudMode.EDIT ? originalSnapshotJson : null;
+        try {
+            com.core.log.AppLogger.getInstance().log(
+                    ActivityLogHelper.currentUsername(), action,
+                    com.core.log.AuditEntityTypes.resolve(entityLabel), description,
+                    oldSnapshotJson, newSnapshotJson);
+        } catch (Exception ignore) {
+            // Audit log khong duoc phep lam vo hieu luong luu du lieu chinh neu that bai.
         }
     }
 
