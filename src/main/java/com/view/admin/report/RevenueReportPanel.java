@@ -7,6 +7,7 @@ import com.components.SectionHeader;
 import com.components.StatCard;
 import com.components.dashboard.DashboardCard;
 import com.components.report.RevenueChartPanel;
+import com.components.report.RevenuePieChartPanel;
 import com.dao.RevenueReportDAO;
 import com.dao.RevenueReportDAO.DailyPoint;
 import com.dao.RevenueReportDAO.PaymentSlice;
@@ -31,6 +32,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
+import java.awt.Rectangle;
 import java.io.File;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
@@ -66,8 +68,10 @@ public class RevenueReportPanel extends JPanel {
     private StatCard itemsCard;
 
     private RevenueChartPanel chartPanel;
+    private RevenuePieChartPanel pieChartPanel;
     private JPanel paymentListPanel;
     private JPanel topProductsListPanel;
+    private final List<JPanel> paymentLegendRows = new ArrayList<>();
 
     private List<DailyPoint> lastDailyRevenue = new ArrayList<>();
 
@@ -76,16 +80,25 @@ public class RevenueReportPanel extends JPanel {
         setBackground(AppColor.PAGE_BG);
         setBorder(new EmptyBorder(20, 24, 20, 24));
 
-        JPanel topSection = new JPanel();
-        topSection.setLayout(new BoxLayout(topSection, BoxLayout.Y_AXIS));
+        JPanel topSection = new JPanel(new GridBagLayout());
         topSection.setOpaque(false);
-        topSection.add(buildHeader());
-        topSection.add(Box.createVerticalStrut(AppSpacing.MD));
-        topSection.add(buildFilterBar());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+
+        gbc.gridy = 0;
+        gbc.insets = new Insets(0, 0, AppSpacing.MD, 0);
+        topSection.add(buildHeader(), gbc);
+
+        gbc.gridy = 1;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        topSection.add(buildFilterBar(), gbc);
 
         JPanel dynamicContent = buildDynamicContent();
         JScrollPane scroll = new JScrollPane(dynamicContent);
-        scroll.setBorder(null);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
@@ -186,9 +199,7 @@ public class RevenueReportPanel extends JPanel {
     // ---------------------------------------------------------------
 
     private JPanel buildDynamicContent() {
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setOpaque(false);
+        JPanel content = new ScrollableColumn();
 
         content.add(buildStatsRow());
         content.add(Box.createVerticalStrut(AppSpacing.LG));
@@ -244,24 +255,46 @@ public class RevenueReportPanel extends JPanel {
 
     private DashboardCard buildPaymentMethodCard() {
         DashboardCard card = new DashboardCard("Doanh thu theo phương thức thanh toán",
-                FontAwesomeSolid.CREDIT_CARD, AppColor.INFO);
+                "Di chuột vào từng phần để xem chi tiết",
+                FontAwesomeSolid.CHART_PIE, AppColor.INFO);
 
-        paymentListPanel = new JPanel();
-        paymentListPanel.setLayout(new BoxLayout(paymentListPanel, BoxLayout.Y_AXIS));
-        paymentListPanel.setOpaque(false);
+        pieChartPanel = new RevenuePieChartPanel();
+        pieChartPanel.setPreferredSize(new Dimension(168, 168));
+        pieChartPanel.setOnHoverChange(this::highlightPaymentLegendRow);
+
+        JPanel chartWrap = new JPanel(new GridBagLayout());
+        chartWrap.setOpaque(false);
+        chartWrap.add(pieChartPanel);
+
+        paymentListPanel = new ScrollableColumn();
 
         JScrollPane scroll = plainScroll(paymentListPanel);
-        card.getContentPanel().add(scroll, BorderLayout.CENTER);
+
+        JPanel body = new JPanel(new BorderLayout(AppSpacing.LG, 0));
+        body.setOpaque(false);
+        body.add(chartWrap, BorderLayout.WEST);
+        body.add(scroll, BorderLayout.CENTER);
+
+        card.getContentPanel().add(body, BorderLayout.CENTER);
         return card;
+    }
+
+    /** Highlight hang chu thich khop voi mieng dang hover tren bieu do tron (va nguoc lai). */
+    private void highlightPaymentLegendRow(int index) {
+        for (int i = 0; i < paymentLegendRows.size(); i++) {
+            JPanel row = paymentLegendRows.get(i);
+            boolean active = i == index;
+            row.setOpaque(active);
+            row.setBackground(AppColor.ACCENT_SOFT);
+            row.repaint();
+        }
     }
 
     private DashboardCard buildTopProductsCard() {
         DashboardCard card = new DashboardCard("Top sản phẩm bán chạy",
                 FontAwesomeSolid.TROPHY, AppColor.WARNING);
 
-        topProductsListPanel = new JPanel();
-        topProductsListPanel.setLayout(new BoxLayout(topProductsListPanel, BoxLayout.Y_AXIS));
-        topProductsListPanel.setOpaque(false);
+        topProductsListPanel = new ScrollableColumn();
 
         JScrollPane scroll = plainScroll(topProductsListPanel);
         card.getContentPanel().add(scroll, BorderLayout.CENTER);
@@ -272,9 +305,26 @@ public class RevenueReportPanel extends JPanel {
         JScrollPane scroll = new JScrollPane(view);
         scroll.setBorder(null);
         scroll.setOpaque(false);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getViewport().setOpaque(false);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         return scroll;
+    }
+
+    /** JPanel cot doc (BoxLayout Y_AXIS) luon "tracks" chieu rong vung nhin cua
+     *  JScrollPane cha, de khong bao gio phat sinh thanh cuon ngang du noi
+     *  dung ben trong (vd ten san pham dai) co muon rong hon vung hien thi. */
+    private static class ScrollableColumn extends JPanel implements Scrollable {
+        ScrollableColumn() {
+            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+            setOpaque(false);
+        }
+
+        @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+        @Override public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) { return 16; }
+        @Override public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) { return 120; }
+        @Override public boolean getScrollableTracksViewportWidth() { return true; }
+        @Override public boolean getScrollableTracksViewportHeight() { return false; }
     }
 
     // ---------------------------------------------------------------
@@ -357,19 +407,51 @@ public class RevenueReportPanel extends JPanel {
         renderTopProducts(data.topProducts);
     }
 
+    /** Doc lai mau tu AppColor moi lan ve (khong cache static) de van dung neu app doi Light/Dark theme. */
+    private static Color paymentColor(int index) {
+        Color[] palette = {
+                AppColor.ACCENT, AppColor.INFO, AppColor.WARNING, AppColor.TEAL,
+                AppColor.RED_ALT, AppColor.BLUE, AppColor.ORANGE, AppColor.YELLOW
+        };
+        return palette[index % palette.length];
+    }
+
     private void renderPaymentMethods(List<PaymentSlice> slices) {
         paymentListPanel.removeAll();
+        paymentLegendRows.clear();
+
         if (slices.isEmpty()) {
             paymentListPanel.add(emptyRow("Không có dữ liệu trong khoảng thời gian này"));
+            pieChartPanel.setData(new ArrayList<>(), "Tổng", "0 đ");
         } else {
             BigDecimal total = BigDecimal.ZERO;
             for (PaymentSlice s : slices) total = total.add(s.revenue);
 
-            for (PaymentSlice s : slices) {
+            List<RevenuePieChartPanel.Slice> pieSlices = new ArrayList<>();
+
+            for (int i = 0; i < slices.size(); i++) {
+                PaymentSlice s = slices.get(i);
                 double ratio = total.signum() == 0 ? 0 : s.revenue.doubleValue() / total.doubleValue();
-                paymentListPanel.add(buildPaymentRow(paymentMethodLabel(s.method), s.revenue, s.invoiceCount, ratio));
-                paymentListPanel.add(Box.createVerticalStrut(AppSpacing.SM));
+                Color color = paymentColor(i);
+                String label = paymentMethodLabel(s.method);
+                String valueText = NumberUtil.formatThousands(s.revenue.longValue()) + " đ";
+                String countText = s.invoiceCount + " hóa đơn";
+
+                pieSlices.add(new RevenuePieChartPanel.Slice(label, s.revenue.doubleValue(), valueText, countText, color));
+
+                JPanel row = buildPaymentLegendRow(label, valueText, countText, ratio, color);
+                int index = i;
+                row.addMouseListener(new MouseAdapter() {
+                    @Override public void mouseEntered(MouseEvent e) { pieChartPanel.setHoverIndex(index); }
+                    @Override public void mouseExited(MouseEvent e) { pieChartPanel.setHoverIndex(-1); }
+                });
+                paymentLegendRows.add(row);
+
+                paymentListPanel.add(row);
+                paymentListPanel.add(Box.createVerticalStrut(AppSpacing.XS));
             }
+
+            pieChartPanel.setData(pieSlices, "Tổng", NumberUtil.formatThousands(total.longValue()) + " đ");
         }
         paymentListPanel.revalidate();
         paymentListPanel.repaint();
@@ -399,36 +481,51 @@ public class RevenueReportPanel extends JPanel {
         return label;
     }
 
-    private JPanel buildPaymentRow(String label, BigDecimal revenue, int invoiceCount, double ratio) {
-        JPanel row = new JPanel();
+    /** Hang chu thich cho 1 phuong thuc thanh toan: cham mau khop voi mieng bieu do tron
+     *  + ten ben trai, doanh thu/so hoa don/ty le ben phai. Di chuot vao se highlight
+     *  dong bo voi mieng tuong ung tren bieu do (xem highlightPaymentLegendRow). */
+    private JPanel buildPaymentLegendRow(String label, String valueText, String countText, double ratio, Color color) {
+        JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
         row.setOpaque(false);
-        row.setLayout(new BoxLayout(row, BoxLayout.Y_AXIS));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 46));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
+        row.setBorder(new EmptyBorder(6, 8, 6, 8));
+        row.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
-        JPanel textRow = new JPanel(new BorderLayout());
-        textRow.setOpaque(false);
-        textRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel dot = new JLabel("\u25CF");
+        dot.setForeground(color);
+        dot.setFont(AppFont.BODY_BOLD);
 
         JLabel nameLabel = new JLabel(label);
         nameLabel.setFont(AppFont.BODY_BOLD);
         nameLabel.setForeground(AppColor.TEXT_PRIMARY);
 
-        JLabel valueLabel = new JLabel(NumberUtil.formatThousands(revenue.longValue()) + " đ  ·  " + invoiceCount + " hóa đơn");
-        valueLabel.setFont(AppFont.SMALL);
-        valueLabel.setForeground(AppColor.TEXT_MUTED);
+        JPanel left = new JPanel(new BorderLayout(8, 0));
+        left.setOpaque(false);
+        left.add(dot, BorderLayout.WEST);
+        left.add(nameLabel, BorderLayout.CENTER);
 
-        textRow.add(nameLabel, BorderLayout.WEST);
-        textRow.add(valueLabel, BorderLayout.EAST);
+        JPanel right = new JPanel();
+        right.setOpaque(false);
+        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
 
-        RatioBar bar = new RatioBar(ratio, AppColor.ACCENT);
-        bar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 8));
-        bar.setPreferredSize(new Dimension(10, 8));
+        JLabel valueLabel = new JLabel(valueText);
+        valueLabel.setFont(AppFont.SMALL_BOLD);
+        valueLabel.setForeground(AppColor.TEXT_PRIMARY);
+        valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        valueLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
 
-        row.add(textRow);
-        row.add(Box.createVerticalStrut(4));
-        row.add(bar);
+        JLabel countLabel = new JLabel(countText + "  ·  " + NumberUtil.formatDecimal(ratio * 100, 1) + "%");
+        countLabel.setFont(AppFont.FOOTER);
+        countLabel.setForeground(AppColor.TEXT_MUTED);
+        countLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        countLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
+
+        right.add(valueLabel);
+        right.add(countLabel);
+
+        row.add(left, BorderLayout.CENTER);
+        row.add(right, BorderLayout.EAST);
         return row;
     }
 
@@ -645,33 +742,6 @@ public class RevenueReportPanel extends JPanel {
             g2.draw(shape);
             g2.dispose();
             super.paintComponent(g);
-        }
-    }
-
-    /** Thanh ty le ngang (0..1), dung cho danh sach doanh thu theo phuong thuc thanh toan. */
-    private static class RatioBar extends JPanel {
-        private final double ratio;
-        private final Color color;
-
-        RatioBar(double ratio, Color color) {
-            this.ratio = Math.max(0, Math.min(1, ratio));
-            this.color = color;
-            setOpaque(false);
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int h = getHeight();
-            g2.setColor(AppColor.TABLE_GRID);
-            g2.fillRoundRect(0, 0, getWidth(), h, h, h);
-            int fillW = (int) Math.round(getWidth() * ratio);
-            if (fillW > 0) {
-                g2.setColor(color);
-                g2.fillRoundRect(0, 0, fillW, h, h, h);
-            }
-            g2.dispose();
         }
     }
 }
