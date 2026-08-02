@@ -1,6 +1,8 @@
 package com.service;
 
 import com.dao.OrderDAO;
+import com.event.AppEventBus;
+import com.event.DataChangedEvent;
 import com.model.Order;
 import com.settings.NotificationSettings;
 import com.utils.NotificationSound;
@@ -61,6 +63,16 @@ public final class OrderNotifyPoller {
                 int actualCount = unseen.size();
                 boolean increased = lastKnownUnseenCount >= 0 && actualCount > lastKnownUnseenCount;
                 lastKnownUnseenCount = actualCount;
+
+                if (increased) {
+                    // Co don hang online moi: bao cho toan app (OrderPanel,
+                    // InvoicePanel, Dashboard...) tu lam moi qua AutoRefresher -
+                    // truoc day chi cap nhat chuong/badge tren Header (xem
+                    // AdminMainFrame) ma khong publish DataChangedEvent nen
+                    // cac trang dang mo khong tu dong hien don hang moi, phai
+                    // F5/chuyen tab qua lai moi thay.
+                    AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
+                }
 
                 boolean muted = NotificationSettings.getInstance().isOrdersMuted();
                 if (increased && !muted) {

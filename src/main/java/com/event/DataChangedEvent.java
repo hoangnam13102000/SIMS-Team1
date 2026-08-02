@@ -8,6 +8,8 @@ public final class DataChangedEvent {
     public static final String PURCHASE_RECEIPT = "PURCHASE_RECEIPT";
     public static final String INVOICE = "INVOICE";
     public static final String STOCK_ALERT = "STOCK_ALERT";
+    public static final String STOCK_RECONCILIATION = "STOCK_RECONCILIATION";
+    public static final String RETURN_EXCHANGE = "RETURN_EXCHANGE";
     
     /** Dùng khi restore / thao tác ghi đè toàn bộ DB — mọi panel đều reload. */
     public static final String ALL = "ALL";

@@ -19,6 +19,7 @@ import com.view.admin.product.ProductPanel;
 import com.view.admin.supplier.SupplierPanel;
 import com.view.admin.inventory.InventoryBatchPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
+import com.view.admin.inventory.StockReconciliationPanel;
 import com.view.admin.order.OrderPanel;
 import com.view.admin.invoice.InvoicePanel;
 import com.view.admin.report.RevenueReportPanel;
@@ -139,6 +140,8 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+        layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE, new StockReconciliationPanel(),
+                AppPermission.STOCK_RECONCILE);
         layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new StockAlertPanel(),
                 AppPermission.STOCK_ALERT_VIEW);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----

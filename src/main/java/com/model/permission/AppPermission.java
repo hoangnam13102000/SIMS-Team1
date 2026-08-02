@@ -15,10 +15,17 @@ public enum AppPermission implements Permission {
     STOCK_VIEW,
     /** Nhap hang vao kho - tao lo hang moi. */
     STOCK_IMPORT,
+    /** Doi chieu / kiem ke kho cuoi ngay - so sanh ton he thong voi ton dem thuc te. */
+    STOCK_RECONCILE,
     /** Tao hoa don ban hang. */
+    
     INVOICE_CREATE,     
     /** Huy hoa don. */
     INVOICE_CANCEL,      
+    /** Tao yeu cau doi/tra hang cho 1 hoa don (R4: bat buoc ghi ro ly do). */
+    RETURN_EXCHANGE_CREATE,
+    /** Duyet/tu choi yeu cau doi/tra hang gia tri lon (R4). */
+    RETURN_EXCHANGE_APPROVE,
     /** Xem don hang online tu khach. */
     ORDER_VIEW,
     /** Xac nhan / huy don hang online tu khach. */
@@ -32,6 +39,7 @@ public enum AppPermission implements Permission {
     /** Xem trang "Nhat ky audit" - lich su thao tac (them/sua/xoa/dang nhap...) cua nguoi dung. */
     AUDIT_LOG_VIEW,
     /** Xem trang "Bao cao doanh thu" - thong ke doanh thu theo thoi gian/san pham/PT thanh toan. */
-    REVENUE_REPORT_VIEW
+    REVENUE_REPORT_VIEW,
+    
     
 }

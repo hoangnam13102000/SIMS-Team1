@@ -25,6 +25,7 @@ public final class RolePermissions {
                 AppPermission.PRODUCT_VIEW,
                 AppPermission.STOCK_VIEW,
                 AppPermission.STOCK_IMPORT,
+                AppPermission.STOCK_RECONCILE,
                 AppPermission.STOCK_ALERT_VIEW
         ));
      // Nhan vien ban hang: xem dashboard, quan ly khach hang, xem/tim san pham.

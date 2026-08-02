@@ -358,3 +358,84 @@ BEGIN
     END
 END;
 GO
+
+
+/* ============================================================
+   X. DOI CHIEU / KIEM KE KHO CUOI NGAY (StockReconciliation)
+   ============================================================ */
+
+-- ---------------------------------------------------------------
+-- Ap dung 1 dong doi chieu kho: SystemStock LUON duoc tinh lai tu
+-- Products.Stock TAI THOI DIEM GHI (bo qua gia tri app gui len, neu
+-- co) de tranh sai lech do phien kiem ke keo dai (nhieu nguoi/nhieu
+-- thoi diem doc cung 1 luc). Neu ActualStock khac SystemStock thi
+-- cap nhat lai Products.Stock theo so dem thuc te VA ghi nhan 1 dong
+-- InventoryTransactions (TransactionType='RECONCILE_ADJUST') de truy
+-- vet - giong tinh than cac trigger IMPORT/SALE/RETURN o tren.
+-- ---------------------------------------------------------------
+CREATE TRIGGER trg_StockReconciliation_Apply
+ON StockReconciliation
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ProductID INT, @ActualStock INT, @Note NVARCHAR(255), @CreatedBy INT;
+    DECLARE @SystemStock INT, @NewReconciliationID INT, @Diff INT;
+
+    DECLARE recon_cursor CURSOR LOCAL FAST_FORWARD FOR
+        SELECT ProductID, ActualStock, Note, CreatedBy FROM inserted;
+
+    OPEN recon_cursor;
+    FETCH NEXT FROM recon_cursor INTO @ProductID, @ActualStock, @Note, @CreatedBy;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        SELECT @SystemStock = Stock FROM Products WHERE ProductID = @ProductID;
+
+        IF @SystemStock IS NULL
+        BEGIN
+            RAISERROR(N'San pham khong ton tai, khong the doi chieu kho.', 16, 1);
+        END
+        ELSE
+        BEGIN
+            INSERT INTO StockReconciliation (ProductID, SystemStock, ActualStock, Note, CreatedBy)
+            VALUES (@ProductID, @SystemStock, @ActualStock, @Note, @CreatedBy);
+            SET @NewReconciliationID = SCOPE_IDENTITY();
+
+            SET @Diff = @ActualStock - @SystemStock;
+
+            IF @Diff <> 0
+            BEGIN
+                UPDATE Products SET Stock = @ActualStock WHERE ProductID = @ProductID;
+
+                INSERT INTO InventoryTransactions (ProductID, TransactionType, Direction, Quantity,
+                                                    StockBefore, StockAfter, RefTable, RefID, CreatedBy, Note)
+                VALUES (@ProductID, 'RECONCILE_ADJUST',
+                        CASE WHEN @Diff > 0 THEN 'IN' ELSE 'OUT' END,
+                        ABS(@Diff), @SystemStock, @ActualStock,
+                        'StockReconciliation', @NewReconciliationID, @CreatedBy, @Note);
+            END
+        END
+
+        FETCH NEXT FROM recon_cursor INTO @ProductID, @ActualStock, @Note, @CreatedBy;
+    END
+
+    CLOSE recon_cursor;
+    DEALLOCATE recon_cursor;
+END;
+GO
+
+
+-- ---------------------------------------------------------------
+-- R3: lich su doi chieu kho la chung tu doi soat/kiem toan - khong
+-- duoc xoa vinh vien, giong nguyen tac ap dung cho Invoices/PurchaseReceipts.
+-- ---------------------------------------------------------------
+CREATE TRIGGER trg_StockReconciliation_BlockDelete
+ON StockReconciliation
+INSTEAD OF DELETE
+AS
+BEGIN
+    RAISERROR(N'Khong duoc xoa vinh vien lich su doi chieu kho.', 16, 1);
+END;
+GO

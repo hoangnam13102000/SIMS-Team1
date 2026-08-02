@@ -1,14 +1,12 @@
-package com.view.admin.invoice;
+package com.view.admin.returnexchange;
 
 import com.components.BaseDialog;
-import com.components.table.ImageColumn;
-import com.components.table.RowColorProvider;
-import com.dao.InvoiceDAO;
 import com.dao.ReturnExchangeDAO;
-import com.model.Invoice;
-import com.model.InvoiceDetail;
+import com.model.ReturnExchange;
+import com.model.ReturnExchangeDetail;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.NumberUtil;
@@ -49,34 +47,37 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Dialog xem chi tiet 1 hoa don ban hang — thiet ke dong bo voi OrderDetailDialog:
- * header (icon + ma + trang thai), card thong tin luoi 2 cot, bang san pham co anh.
- * Neu hoa don con ACTIVE + trong ngay + co quyen INVOICE_CANCEL thi hien nut "Huy hoa don".
+ * Dialog xem chi tiet 1 yeu cau doi/tra hang - thiet ke dong bo voi
+ * {@link com.view.admin.invoice.InvoiceDetailDialog}: header (icon + ma HD
+ * + trang thai), card thong tin luoi 2 cot, bang cac dong san pham (IN =
+ * hang khach tra, OUT = hang doi moi giao). Neu yeu cau con PENDING va
+ * dang nhap co quyen RETURN_EXCHANGE_APPROVE thi hien 2 nut "Duyet"/"Tu
+ * choi" - viec cong/tru kho that su do trigger
+ * trg_ReturnExchange_ApprovedStock (sql/Trigger_SIMS.sql) dam nhiem ngay
+ * khi trang thai chuyen sang APPROVED.
  */
-public class InvoiceDetailDialog extends JDialog {
+public class ReturnExchangeDetailDialog extends JDialog {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-    private final InvoiceDAO invoiceDAO;
-    private final ReturnExchangeDAO returnExchangeDAO = new ReturnExchangeDAO();
-    private Invoice invoice;
-    private final List<InvoiceDetail> details;
+    private final ReturnExchangeDAO returnExchangeDAO;
+    private final ReturnExchange item;
 
-    public InvoiceDetailDialog(Frame owner, Invoice invoice, InvoiceDAO invoiceDAO) {
-        super(owner, "Chi tiết hóa đơn", Dialog.ModalityType.APPLICATION_MODAL);
-        this.invoice = invoice;
-        this.invoiceDAO = invoiceDAO;
-        this.details = invoiceDAO.getDetails(invoice.getInvoiceId());
+    public ReturnExchangeDetailDialog(Frame owner, ReturnExchange item, ReturnExchangeDAO returnExchangeDAO) {
+        super(owner, "Chi tiết đổi/trả hàng", Dialog.ModalityType.APPLICATION_MODAL);
+        this.item = item;
+        this.returnExchangeDAO = returnExchangeDAO;
+        List<ReturnExchangeDetail> details = returnExchangeDAO.getDetails(item.getReturnId());
 
-        setSize(780, 680);
-        setMinimumSize(new Dimension(640, 520));
+        setSize(760, 660);
+        setMinimumSize(new Dimension(620, 500));
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
 
         add(buildHeader(), BorderLayout.NORTH);
-        add(buildBody(this.details), BorderLayout.CENTER);
+        add(buildBody(details), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
         getRootPane().registerKeyboardAction(e -> dispose(),
@@ -97,10 +98,9 @@ public class InvoiceDetailDialog extends JDialog {
                 BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
                 new EmptyBorder(18, 24, 18, 24)));
 
-        boolean cancelled = invoice.isCancelled();
-        Color statusIconColor = cancelled ? AppColor.ERROR : AppColor.SUCCESS;
-        Color statusIconBg = cancelled ? AppColor.ERROR_BG : AppColor.SUCCESS_BG;
-        FontIcon icon = FontIcon.of(FontAwesomeSolid.RECEIPT, 18);
+        Color statusIconColor = statusColor();
+        Color statusIconBg = statusBgColor();
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.EXCHANGE_ALT, 18);
         icon.setIconColor(statusIconColor);
         JLabel iconBadge = new JLabel(icon, SwingConstants.CENTER) {
             @Override
@@ -119,16 +119,14 @@ public class InvoiceDetailDialog extends JDialog {
         titleBox.setOpaque(false);
         titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
 
-        JLabel titleLabel = new JLabel(invoice.getInvoiceCode());
+        JLabel titleLabel = new JLabel((item.isExchange() ? "Đổi hàng - " : "Trả hàng - ") + item.getInvoiceCode());
         titleLabel.setFont(AppFont.DIALOG_TITLE);
         titleLabel.setForeground(AppColor.TEXT_PRIMARY);
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        String customer = invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ";
-        String statusText = cancelled ? "Đã hủy" : "Hoàn tất";
-        JLabel subtitleLabel = new JLabel(customer + "  ·  " + statusText);
+        JLabel subtitleLabel = new JLabel(statusLabel());
         subtitleLabel.setFont(AppFont.BODY);
-        subtitleLabel.setForeground(cancelled ? AppColor.ERROR : AppColor.TEXT_MUTED);
+        subtitleLabel.setForeground(statusIconColor);
         subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         titleBox.add(titleLabel);
@@ -141,16 +139,15 @@ public class InvoiceDetailDialog extends JDialog {
     }
 
     // ---------------------------------------------------------------
-    // Body: card thông tin 2 cột + bảng SP có hình
+    // Body: card thông tin 2 cột + bảng SP
     // ---------------------------------------------------------------
 
-    private JScrollPane buildBody(List<InvoiceDetail> details) {
+    private JScrollPane buildBody(List<ReturnExchangeDetail> details) {
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBackground(AppColor.WHITE);
         content.setBorder(new EmptyBorder(18, 24, 18, 24));
 
-        // Card thông tin
         JPanel infoCard = new JPanel(new BorderLayout());
         infoCard.setOpaque(true);
         infoCard.setBackground(AppColor.BG_LIGHT);
@@ -166,39 +163,31 @@ public class InvoiceDetailDialog extends JDialog {
 
         JPanel infoGrid = new JPanel(new GridLayout(0, 2, 28, 14));
         infoGrid.setOpaque(false);
-        infoGrid.add(infoCell("Khách hàng",
-                invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ"));
-        infoGrid.add(infoCell("Người tạo",
-                invoice.getCreatedByName() != null ? invoice.getCreatedByName() : "-"));
+        infoGrid.add(infoCell("Hóa đơn gốc", item.getInvoiceCode()));
+        infoGrid.add(infoCell("Loại", item.isExchange() ? "Đổi hàng" : "Trả hàng"));
+        infoGrid.add(infoCell("Người tạo", item.getCreatedByName() != null ? item.getCreatedByName() : "-"));
         infoGrid.add(infoCell("Ngày tạo",
-                invoice.getCreatedAt() != null ? invoice.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
-        infoGrid.add(infoCell("Phương thức thanh toán",
-                InvoicePanel.paymentMethodLabel(invoice.getPaymentMethod())));
-        infoGrid.add(infoCell("Tạm tính",
-                NumberUtil.formatThousands(invoice.getSubTotal().longValue()) + " đ"));
-        String vatLabel = "VAT";
-        if (invoice.getVatRate() != null) {
-            vatLabel = "VAT (" + invoice.getVatRate().stripTrailingZeros().toPlainString() + "%)";
-        }
-        infoGrid.add(infoCell(vatLabel,
-                NumberUtil.formatThousands(
-                        invoice.getVatAmount() != null ? invoice.getVatAmount().longValue() : 0) + " đ"));
-        infoGrid.add(infoCell("Trạng thái",
-                invoice.isCancelled() ? "Đã hủy" : "Hoàn tất"));
-        infoGrid.add(infoCellTotal("Tổng tiền hóa đơn",
-                NumberUtil.formatThousands(invoice.getTotalAmount().longValue()) + " đ"));
+                item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
+        infoGrid.add(infoCell("Cần duyệt", item.isRequiresApproval() ? "Có (giá trị lớn)" : "Không"));
+        infoGrid.add(infoCellTotal("Giá trị hàng trả",
+                NumberUtil.formatThousands(item.getTotalValue() != null ? item.getTotalValue().longValue() : 0) + " đ"));
         cardInner.add(infoGrid);
 
-        if (invoice.isCancelled()) {
-            JPanel cancelRow = new JPanel(new GridLayout(0, 2, 28, 14));
-            cancelRow.setOpaque(false);
-            cancelRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-            cancelRow.add(infoCell("Lý do hủy",
-                    invoice.getCancelReason() != null ? invoice.getCancelReason() : "-"));
-            cancelRow.add(infoCell("Thời điểm hủy",
-                    invoice.getCancelledAt() != null
-                            ? invoice.getCancelledAt().format(DATE_TIME_FORMAT) : "-"));
-            cardInner.add(cancelRow);
+        JPanel reasonRow = new JPanel(new GridLayout(0, 1, 0, 4));
+        reasonRow.setOpaque(false);
+        reasonRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+        reasonRow.add(infoCell("Lý do đổi/trả", item.getReason()));
+        cardInner.add(reasonRow);
+
+        if (!item.isPending()) {
+            JPanel approveRow = new JPanel(new GridLayout(0, 2, 28, 14));
+            approveRow.setOpaque(false);
+            approveRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+            approveRow.add(infoCell(item.isApproved() ? "Người duyệt" : "Người từ chối",
+                    item.getApprovedByName() != null ? item.getApprovedByName() : "-"));
+            approveRow.add(infoCell("Thời điểm xử lý",
+                    item.getApprovedAt() != null ? item.getApprovedAt().format(DATE_TIME_FORMAT) : "-"));
+            cardInner.add(approveRow);
         }
 
         infoCard.add(cardInner, BorderLayout.CENTER);
@@ -215,7 +204,7 @@ public class InvoiceDetailDialog extends JDialog {
         JTable table = buildDetailTable(details);
         JScrollPane tableScroll = new JScrollPane(table);
         tableScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        int tableH = Math.max(100, Math.min(240, 44 + details.size() * 56));
+        int tableH = Math.max(100, Math.min(240, 44 + details.size() * 44));
         tableScroll.setPreferredSize(new Dimension(700, tableH));
         tableScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, tableH + 20));
         tableScroll.getViewport().setBackground(AppColor.WHITE);
@@ -274,23 +263,16 @@ public class InvoiceDetailDialog extends JDialog {
         return cell;
     }
 
-    private JTable buildDetailTable(List<InvoiceDetail> details) {
-        String[] columns = {"Hình", "Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
+    private JTable buildDetailTable(List<ReturnExchangeDetail> details) {
+        String[] columns = {"Chiều", "Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-
-            @Override
-            public Class<?> getColumnClass(int columnIndex) {
-                return columnIndex == 0 ? String.class : Object.class;
-            }
+            public boolean isCellEditable(int row, int column) { return false; }
         };
 
-        for (InvoiceDetail d : details) {
+        for (ReturnExchangeDetail d : details) {
             model.addRow(new Object[]{
-                    d.getProductImageUrl() != null ? d.getProductImageUrl() : "",
+                    d.isIn() ? "Khách trả" : "Đổi lấy",
                     d.getProductName(),
                     d.getQuantity(),
                     NumberUtil.formatThousands(d.getUnitPrice().longValue()),
@@ -300,7 +282,7 @@ public class InvoiceDetailDialog extends JDialog {
 
         JTable table = new JTable(model);
         table.setFont(AppFont.BODY);
-        table.setRowHeight(56);
+        table.setRowHeight(40);
         table.setBackground(AppColor.WHITE);
         table.setForeground(AppColor.TEXT_PRIMARY);
         table.setSelectionBackground(AppColor.ACCENT_BG_SOFT);
@@ -312,22 +294,31 @@ public class InvoiceDetailDialog extends JDialog {
         table.setGridColor(AppColor.BORDER);
         table.setShowVerticalLines(false);
         table.setShowHorizontalLines(true);
-        table.setFillsViewportHeight(false);
         table.setRowSelectionAllowed(false);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         table.setIntercellSpacing(new Dimension(0, 0));
 
-        ImageColumn imageColumn = new ImageColumn(44, 10);
-        RowColorProvider colors = (row, selected) -> AppColor.WHITE;
-        table.getColumnModel().getColumn(0).setCellRenderer(imageColumn.renderer(colors));
-        table.getColumnModel().getColumn(0).setPreferredWidth(64);
-        table.getColumnModel().getColumn(0).setMinWidth(60);
-        table.getColumnModel().getColumn(0).setMaxWidth(72);
-        table.getColumnModel().getColumn(1).setPreferredWidth(260);
-        table.getColumnModel().getColumn(2).setPreferredWidth(56);
-        table.getColumnModel().getColumn(2).setMaxWidth(72);
+        table.getColumnModel().getColumn(0).setPreferredWidth(90);
+        table.getColumnModel().getColumn(0).setMaxWidth(100);
+        table.getColumnModel().getColumn(1).setPreferredWidth(240);
+        table.getColumnModel().getColumn(2).setPreferredWidth(50);
+        table.getColumnModel().getColumn(2).setMaxWidth(60);
         table.getColumnModel().getColumn(3).setPreferredWidth(110);
         table.getColumnModel().getColumn(4).setPreferredWidth(120);
+
+        DefaultTableCellRenderer directionRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                          boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setFont(AppFont.SMALL_BOLD);
+                setForeground("Khách trả".equals(value) ? AppColor.INFO : AppColor.ACCENT);
+                setBackground(AppColor.WHITE);
+                setBorder(new EmptyBorder(0, 8, 0, 4));
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(0).setCellRenderer(directionRenderer);
 
         DefaultTableCellRenderer nameRenderer = new DefaultTableCellRenderer() {
             @Override
@@ -386,32 +377,27 @@ public class InvoiceDetailDialog extends JDialog {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
                 new EmptyBorder(12, 24, 12, 24)));
 
-        boolean canCancel = invoice.isCancellableToday()
-                && PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL);
+        boolean canApprove = item.isPending()
+                && PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_APPROVE);
 
-        if (canCancel) {
-            JButton cancelButton = new JButton("Hủy hóa đơn");
-            cancelButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            cancelButton.setFocusPainted(false);
-            cancelButton.setBackground(AppColor.ERROR_BG);
-            cancelButton.setForeground(AppColor.ERROR);
-            cancelButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-            cancelButton.addActionListener(e -> handleCancel());
-            footer.add(cancelButton);
-        }
+        if (canApprove) {
+            JButton rejectButton = new JButton("Từ chối");
+            rejectButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            rejectButton.setFocusPainted(false);
+            rejectButton.setBackground(AppColor.ERROR_BG);
+            rejectButton.setForeground(AppColor.ERROR);
+            rejectButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+            rejectButton.addActionListener(e -> handleReject());
+            footer.add(rejectButton);
 
-        boolean canReturnExchange = !invoice.isCancelled()
-                && PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_CREATE);
-
-        if (canReturnExchange) {
-            JButton returnButton = new JButton("Đổi / trả hàng");
-            returnButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            returnButton.setFocusPainted(false);
-            returnButton.setBackground(AppColor.ACCENT_BG_SOFT);
-            returnButton.setForeground(AppColor.ACCENT);
-            returnButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-            returnButton.addActionListener(e -> handleReturnExchange());
-            footer.add(returnButton);
+            JButton approveButton = new JButton("Duyệt yêu cầu");
+            approveButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            approveButton.setFocusPainted(false);
+            approveButton.setBackground(AppColor.SUCCESS_BG);
+            approveButton.setForeground(AppColor.SUCCESS);
+            approveButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+            approveButton.addActionListener(e -> handleApprove());
+            footer.add(approveButton);
         }
 
         JButton closeButton = new JButton("Đóng");
@@ -427,27 +413,54 @@ public class InvoiceDetailDialog extends JDialog {
         return footer;
     }
 
-    private void handleCancel() {
-        String reason = BaseDialog.inputText(this, "Hủy hóa đơn",
-                "Lý do hủy hóa đơn " + invoice.getInvoiceCode() + ":", "", "Hủy hóa đơn");
-        if (reason == null) return;
+    private void handleApprove() {
+        boolean confirmed = BaseDialog.confirm(this, "Duyệt yêu cầu đổi/trả",
+                "Duyệt yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode()
+                        + "? Kho và hóa đơn gốc sẽ được điều chỉnh ngay sau khi duyệt.",
+                "Duyệt", AppColor.SUCCESS, AppColor.SUCCESS, FontAwesomeSolid.CHECK_CIRCLE);
+        if (!confirmed) return;
 
-        String error = invoiceDAO.cancelInvoice(invoice.getInvoiceId(), reason);
+        int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+        String error = returnExchangeDAO.approve(item.getReturnId(), currentUserId);
         if (error != null) {
-            BaseDialog.error(this, "Không thể hủy hóa đơn", error);
+            BaseDialog.error(this, "Không thể duyệt", error);
             return;
         }
-
-        BaseDialog.success(this, "Thành công", "Đã hủy hóa đơn " + invoice.getInvoiceCode() + ".");
+        BaseDialog.success(this, "Thành công", "Đã duyệt yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode() + ".");
         dispose();
     }
 
-    private void handleReturnExchange() {
-        ReturnExchangeDialog dialog = new ReturnExchangeDialog(
-                (Frame) getOwner(), invoice, details, returnExchangeDAO);
-        dialog.setVisible(true);
-        if (dialog.isCreated()) {
-            dispose(); // dong dialog nay de nguoi dung mo lai tu InvoicePanel, thay tong tien/SL da duoc trigger dieu chinh
+    private void handleReject() {
+        boolean confirmed = BaseDialog.confirm(this, "Từ chối yêu cầu đổi/trả",
+                "Từ chối yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode() + "?",
+                "Từ chối", AppColor.ERROR, AppColor.ERROR, FontAwesomeSolid.TIMES_CIRCLE);
+        if (!confirmed) return;
+
+        int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+        String error = returnExchangeDAO.reject(item.getReturnId(), currentUserId);
+        if (error != null) {
+            BaseDialog.error(this, "Không thể từ chối", error);
+            return;
         }
+        BaseDialog.success(this, "Thành công", "Đã từ chối yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode() + ".");
+        dispose();
+    }
+
+    private String statusLabel() {
+        if (item.isApproved()) return "Đã duyệt";
+        if (item.isRejected()) return "Đã từ chối";
+        return "Chờ duyệt";
+    }
+
+    private Color statusColor() {
+        if (item.isApproved()) return AppColor.SUCCESS;
+        if (item.isRejected()) return AppColor.ERROR;
+        return AppColor.WARNING;
+    }
+
+    private Color statusBgColor() {
+        if (item.isApproved()) return AppColor.SUCCESS_BG;
+        if (item.isRejected()) return AppColor.ERROR_BG;
+        return AppColor.WARNING_BG;
     }
 }
