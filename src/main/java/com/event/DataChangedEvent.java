@@ -10,6 +10,7 @@ public final class DataChangedEvent {
     public static final String STOCK_ALERT = "STOCK_ALERT";
     public static final String STOCK_RECONCILIATION = "STOCK_RECONCILIATION";
     public static final String RETURN_EXCHANGE = "RETURN_EXCHANGE";
+    public static final String EXCEPTION_REPORT = "EXCEPTION_REPORT";
     
     /** Dùng khi restore / thao tác ghi đè toàn bộ DB — mọi panel đều reload. */
     public static final String ALL = "ALL";

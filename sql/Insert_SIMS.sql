@@ -362,3 +362,53 @@ WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'BACKUP_MANAGE'
         WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
       );
 GO
+
+-- ---- Quyen "Doi/tra hang" (R4) ----
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'RETURN_EXCHANGE_CREATE', N'Tạo yêu cầu đổi/trả hàng cho hóa đơn'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'RETURN_EXCHANGE_CREATE');
+
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'RETURN_EXCHANGE_APPROVE', N'Duyệt / từ chối yêu cầu đổi/trả hàng giá trị lớn'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'RETURN_EXCHANGE_APPROVE');
+GO
+
+-- ---- Quyen "Bao cao ngoai le" (NVBH gui -> QL Ban hang xu ly) ----
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'EXCEPTION_REPORT_CREATE', N'Gửi báo cáo ngoại lệ cho Quản lý bán hàng'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'EXCEPTION_REPORT_CREATE');
+
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'EXCEPTION_REPORT_HANDLE', N'Xem và xử lý báo cáo ngoại lệ từ nhân viên bán hàng'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'EXCEPTION_REPORT_HANDLE');
+GO
+
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode IN ('EXCEPTION_REPORT_CREATE', 'EXCEPTION_REPORT_HANDLE')
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+
+-- Nhan vien ban hang: gui bao cao ngoai le
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'SALES_STAFF' AND p.PermissionCode = 'EXCEPTION_REPORT_CREATE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+
+-- Quan ly ban hang: xem va xu ly bao cao ngoai le
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'SALES_MANAGER' AND p.PermissionCode = 'EXCEPTION_REPORT_HANDLE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO

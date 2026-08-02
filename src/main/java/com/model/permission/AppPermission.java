@@ -40,6 +40,10 @@ public enum AppPermission implements Permission {
     AUDIT_LOG_VIEW,
     /** Xem trang "Bao cao doanh thu" - thong ke doanh thu theo thoi gian/san pham/PT thanh toan. */
     REVENUE_REPORT_VIEW,
+    /** NV ban hang gui bao cao ngoai le (SP chua co trong he thong, tinh huong bat thuong) cho Quan ly ban hang. */
+    EXCEPTION_REPORT_CREATE,
+    /** Quan ly ban hang xem va xu ly cac bao cao ngoai le tu NV ban hang. */
+    EXCEPTION_REPORT_HANDLE,
     
     
 }

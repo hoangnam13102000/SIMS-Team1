@@ -28,6 +28,8 @@ import com.view.admin.stockalert.StockAlertPanel;
 import com.view.admin.auditlog.AuditLogPanel;
 import com.service.OrderNotifyPoller;
 import com.service.StockAlertNotifyPoller;
+import com.view.admin.returnexchange.ReturnExchangePanel;
+import com.view.admin.exceptionreport.ExceptionReportPanel;
 import com.ws.ChatServer;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -144,16 +146,24 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.STOCK_RECONCILE);
         layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new StockAlertPanel(),
                 AppPermission.STOCK_ALERT_VIEW);
+        layout.addPage("exceptionReport", Lang.get("sidebar.exceptionReport"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new ExceptionReportPanel(),
+                AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
-     // --- Nhóm Bán hàng ---
+
+        // --- Nhóm Bán hàng ---
         layout.addSection(Lang.get("sidebar.section.sales"));
         layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
                 AppPermission.INVOICE_CREATE);
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
+        // Doi/tra hang gan lien voi hoa don (tao boi NV ban hang, duyet boi
+        // Quan ly ban hang theo R4) - thuoc nghiep vu Ban hang, khong phai
+        // Hang hoa/Kho, nen chuyen ve day thay vi de chung voi danh muc/kho.
+        layout.addPage("returnExchange", Lang.get("sidebar.returnExchange"), FontAwesomeSolid.EXCHANGE_ALT, new ReturnExchangePanel(),
+                AppPermission.RETURN_EXCHANGE_CREATE, AppPermission.RETURN_EXCHANGE_APPROVE);
         layout.addPage("revenueReport", Lang.get("sidebar.revenueReport"), FontAwesomeSolid.CHART_LINE, new RevenueReportPanel(),
                 AppPermission.REVENUE_REPORT_VIEW);
-        
+
         layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
                 AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
         // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);

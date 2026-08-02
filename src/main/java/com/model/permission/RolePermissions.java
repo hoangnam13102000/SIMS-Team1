@@ -26,7 +26,8 @@ public final class RolePermissions {
                 AppPermission.STOCK_VIEW,
                 AppPermission.STOCK_IMPORT,
                 AppPermission.STOCK_RECONCILE,
-                AppPermission.STOCK_ALERT_VIEW
+                AppPermission.STOCK_ALERT_VIEW,
+                AppPermission.EXCEPTION_REPORT_HANDLE
         ));
      // Nhan vien ban hang: xem dashboard, quan ly khach hang, xem/tim san pham.
         MAP.put(Role.SALES_STAFF, PermissionSet.of(
@@ -34,7 +35,8 @@ public final class RolePermissions {
                 AppPermission.CUSTOMER_MANAGE,
                 AppPermission.PRODUCT_VIEW,
                 AppPermission.INVOICE_CREATE,
-                AppPermission.STOCK_ALERT_REPORT
+                AppPermission.STOCK_ALERT_REPORT,
+                AppPermission.EXCEPTION_REPORT_HANDLE
         ));
 
         // CUSTOMER: khach hang tu dang ky o RegisterFrame, chi dung ClientMainFrame

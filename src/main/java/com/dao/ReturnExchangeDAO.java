@@ -355,21 +355,82 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
      * Quan ly ban hang duyet 1 yeu cau dang PENDING (R4). Trigger
      * trg_ReturnExchange_ApprovedStock se tu dong cong/tru kho va dieu
      * chinh lai hoa don goc ngay khi UPDATE nay thanh cong.
+     * <p>
+     * QUAN TRONG: ton kho co the da thay doi ke tu luc yeu cau duoc TAO (vd
+     * san pham dinh doi da ban het cho khach khac trong luc cho duyet) - nen
+     * phai RE-CHECK ton kho (voi UPDLOCK/ROWLOCK, giong createReturnExchange())
+     * ngay truoc khi duyet, thay vi de trigger tu dong tru va dam vao
+     * CHECK (Stock >= 0) cua bang Products -> loi SQLException tho, khong
+     * than thien, lai con khong biet dich chinh xac san pham nao thieu.
      */
     public String approve(int returnId, int approverId) {
-        String sql = "UPDATE ReturnExchanges SET Status = 'APPROVED', ApprovedBy = ?, ApprovedAt = GETDATE() "
+        String lockRequestSql = "SELECT Status FROM ReturnExchanges WITH (UPDLOCK, ROWLOCK) WHERE ReturnID = ?";
+        String outDetailSql = "SELECT d.Quantity, p.Stock, p.ProductName "
+                + "FROM ReturnExchangeDetails d "
+                + "JOIN Products p WITH (UPDLOCK, ROWLOCK) ON p.ProductID = d.ProductID "
+                + "WHERE d.ReturnID = ? AND d.Direction = 'OUT'";
+        String updateSql = "UPDATE ReturnExchanges SET Status = 'APPROVED', ApprovedBy = ?, ApprovedAt = GETDATE() "
                 + "WHERE ReturnID = ? AND Status = 'PENDING'";
-        try (Connection con = DBConnection.getConnection();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, approverId);
-            ps.setInt(2, returnId);
-            int affected = ps.executeUpdate();
-            if (affected == 0) {
-                return "Yêu cầu này không còn ở trạng thái chờ duyệt.";
+
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                // 1) khoa dong yeu cau, kiem tra van con PENDING (tranh duyet 2 lan dong thoi)
+                String status;
+                try (PreparedStatement ps = con.prepareStatement(lockRequestSql)) {
+                    ps.setInt(1, returnId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) {
+                            con.rollback();
+                            return "Không tìm thấy yêu cầu đổi/trả.";
+                        }
+                        status = rs.getString("Status");
+                    }
+                }
+                if (!"PENDING".equals(status)) {
+                    con.rollback();
+                    return "Yêu cầu này không còn ở trạng thái chờ duyệt.";
+                }
+
+                // 2) re-check ton kho HIEN TAI cho tung dong "doi moi giao" (OUT) -
+                // ton kho co the da giam ke tu luc tao yeu cau.
+                try (PreparedStatement ps = con.prepareStatement(outDetailSql)) {
+                    ps.setInt(1, returnId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            int quantity = rs.getInt("Quantity");
+                            int stock = rs.getInt("Stock");
+                            if (quantity > stock) {
+                                con.rollback();
+                                return "Sản phẩm \"" + rs.getString("ProductName")
+                                        + "\" không đủ tồn kho để duyệt đổi (còn " + stock
+                                        + ", cần " + quantity + ").";
+                            }
+                        }
+                    }
+                }
+
+                // 3) duyet - trigger trg_ReturnExchange_ApprovedStock se tu cong/tru kho
+                try (PreparedStatement ps = con.prepareStatement(updateSql)) {
+                    ps.setInt(1, approverId);
+                    ps.setInt(2, returnId);
+                    int affected = ps.executeUpdate();
+                    if (affected == 0) {
+                        con.rollback();
+                        return "Yêu cầu này không còn ở trạng thái chờ duyệt.";
+                    }
+                }
+
+                con.commit();
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.RETURN_EXCHANGE));
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.INVOICE));
+                return null;
+            } catch (SQLException e) {
+                con.rollback();
+                throw e;
+            } finally {
+                con.setAutoCommit(true);
             }
-            AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.RETURN_EXCHANGE));
-            AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.INVOICE));
-            return null;
         } catch (SQLException e) {
             AppLogger.getInstance().error(ErrorCode.RETURN_STATUS_UPDATE_FAIL,
                     "ReturnExchangeDAO.approve - returnId=" + returnId, e);

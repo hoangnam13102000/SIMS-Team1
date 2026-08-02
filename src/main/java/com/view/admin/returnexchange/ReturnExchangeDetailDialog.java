@@ -2,6 +2,7 @@ package com.view.admin.returnexchange;
 
 import com.components.BaseDialog;
 import com.dao.ReturnExchangeDAO;
+import com.i18n.Lang;
 import com.model.ReturnExchange;
 import com.model.ReturnExchangeDetail;
 import com.model.permission.AppPermission;
@@ -65,7 +66,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
     private final ReturnExchange item;
 
     public ReturnExchangeDetailDialog(Frame owner, ReturnExchange item, ReturnExchangeDAO returnExchangeDAO) {
-        super(owner, "Chi tiết đổi/trả hàng", Dialog.ModalityType.APPLICATION_MODAL);
+        super(owner, Lang.get("returnExchange.detail.title"), Dialog.ModalityType.APPLICATION_MODAL);
         this.item = item;
         this.returnExchangeDAO = returnExchangeDAO;
         List<ReturnExchangeDetail> details = returnExchangeDAO.getDetails(item.getReturnId());
@@ -119,7 +120,9 @@ public class ReturnExchangeDetailDialog extends JDialog {
         titleBox.setOpaque(false);
         titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
 
-        JLabel titleLabel = new JLabel((item.isExchange() ? "Đổi hàng - " : "Trả hàng - ") + item.getInvoiceCode());
+        JLabel titleLabel = new JLabel(Lang.get(
+                item.isExchange() ? "returnExchange.detail.titleExchange" : "returnExchange.detail.titleReturn",
+                item.getInvoiceCode()));
         titleLabel.setFont(AppFont.DIALOG_TITLE);
         titleLabel.setForeground(AppColor.TEXT_PRIMARY);
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -163,29 +166,33 @@ public class ReturnExchangeDetailDialog extends JDialog {
 
         JPanel infoGrid = new JPanel(new GridLayout(0, 2, 28, 14));
         infoGrid.setOpaque(false);
-        infoGrid.add(infoCell("Hóa đơn gốc", item.getInvoiceCode()));
-        infoGrid.add(infoCell("Loại", item.isExchange() ? "Đổi hàng" : "Trả hàng"));
-        infoGrid.add(infoCell("Người tạo", item.getCreatedByName() != null ? item.getCreatedByName() : "-"));
-        infoGrid.add(infoCell("Ngày tạo",
+        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.invoice"), item.getInvoiceCode()));
+        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.type"),
+                item.isExchange() ? Lang.get("returnExchange.type.exchange") : Lang.get("returnExchange.type.return")));
+        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.createdBy"),
+                item.getCreatedByName() != null ? item.getCreatedByName() : "-"));
+        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.createdAt"),
                 item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
-        infoGrid.add(infoCell("Cần duyệt", item.isRequiresApproval() ? "Có (giá trị lớn)" : "Không"));
-        infoGrid.add(infoCellTotal("Giá trị hàng trả",
+        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.requiresApproval"),
+                item.isRequiresApproval() ? Lang.get("returnExchange.detail.info.requiresApprovalYes") : Lang.get("returnExchange.bool.no")));
+        infoGrid.add(infoCellTotal(Lang.get("returnExchange.detail.info.value"),
                 NumberUtil.formatThousands(item.getTotalValue() != null ? item.getTotalValue().longValue() : 0) + " đ"));
         cardInner.add(infoGrid);
 
         JPanel reasonRow = new JPanel(new GridLayout(0, 1, 0, 4));
         reasonRow.setOpaque(false);
         reasonRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-        reasonRow.add(infoCell("Lý do đổi/trả", item.getReason()));
+        reasonRow.add(infoCell(Lang.get("returnExchange.detail.info.reason"), item.getReason()));
         cardInner.add(reasonRow);
 
         if (!item.isPending()) {
             JPanel approveRow = new JPanel(new GridLayout(0, 2, 28, 14));
             approveRow.setOpaque(false);
             approveRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-            approveRow.add(infoCell(item.isApproved() ? "Người duyệt" : "Người từ chối",
+            approveRow.add(infoCell(item.isApproved()
+                    ? Lang.get("returnExchange.detail.info.approvedBy") : Lang.get("returnExchange.detail.info.rejectedBy"),
                     item.getApprovedByName() != null ? item.getApprovedByName() : "-"));
-            approveRow.add(infoCell("Thời điểm xử lý",
+            approveRow.add(infoCell(Lang.get("returnExchange.detail.info.processedAt"),
                     item.getApprovedAt() != null ? item.getApprovedAt().format(DATE_TIME_FORMAT) : "-"));
             cardInner.add(approveRow);
         }
@@ -194,7 +201,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
         content.add(infoCard);
         content.add(Box.createVerticalStrut(20));
 
-        JLabel sectionLabel = new JLabel("Danh sách sản phẩm (" + details.size() + ")");
+        JLabel sectionLabel = new JLabel(Lang.get("returnExchange.detail.products", details.size()));
         sectionLabel.setFont(AppFont.BODY_BOLD);
         sectionLabel.setForeground(AppColor.TEXT_PRIMARY);
         sectionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -264,7 +271,11 @@ public class ReturnExchangeDetailDialog extends JDialog {
     }
 
     private JTable buildDetailTable(List<ReturnExchangeDetail> details) {
-        String[] columns = {"Chiều", "Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
+        String[] columns = {
+                Lang.get("returnExchange.detail.col.direction"), Lang.get("returnExchange.detail.col.product"),
+                Lang.get("returnExchange.detail.col.qty"), Lang.get("returnExchange.detail.col.unitPrice"),
+                Lang.get("returnExchange.detail.col.lineTotal")
+        };
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
@@ -272,7 +283,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
 
         for (ReturnExchangeDetail d : details) {
             model.addRow(new Object[]{
-                    d.isIn() ? "Khách trả" : "Đổi lấy",
+                    d.isIn() ? Lang.get("returnExchange.detail.direction.in") : Lang.get("returnExchange.detail.direction.out"),
                     d.getProductName(),
                     d.getQuantity(),
                     NumberUtil.formatThousands(d.getUnitPrice().longValue()),
@@ -312,7 +323,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
                                                           boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
                 setFont(AppFont.SMALL_BOLD);
-                setForeground("Khách trả".equals(value) ? AppColor.INFO : AppColor.ACCENT);
+                setForeground(Lang.get("returnExchange.detail.direction.in").equals(value) ? AppColor.INFO : AppColor.ACCENT);
                 setBackground(AppColor.WHITE);
                 setBorder(new EmptyBorder(0, 8, 0, 4));
                 return c;
@@ -381,7 +392,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
                 && PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_APPROVE);
 
         if (canApprove) {
-            JButton rejectButton = new JButton("Từ chối");
+            JButton rejectButton = new JButton(Lang.get("returnExchange.detail.btn.reject"));
             rejectButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
             rejectButton.setFocusPainted(false);
             rejectButton.setBackground(AppColor.ERROR_BG);
@@ -390,7 +401,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
             rejectButton.addActionListener(e -> handleReject());
             footer.add(rejectButton);
 
-            JButton approveButton = new JButton("Duyệt yêu cầu");
+            JButton approveButton = new JButton(Lang.get("returnExchange.detail.btn.approve"));
             approveButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
             approveButton.setFocusPainted(false);
             approveButton.setBackground(AppColor.SUCCESS_BG);
@@ -400,7 +411,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
             footer.add(approveButton);
         }
 
-        JButton closeButton = new JButton("Đóng");
+        JButton closeButton = new JButton(Lang.get("returnExchange.detail.btn.close"));
         closeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
         closeButton.setFocusPainted(false);
         closeButton.setBackground(AppColor.BORDER);
@@ -414,42 +425,43 @@ public class ReturnExchangeDetailDialog extends JDialog {
     }
 
     private void handleApprove() {
-        boolean confirmed = BaseDialog.confirm(this, "Duyệt yêu cầu đổi/trả",
-                "Duyệt yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode()
-                        + "? Kho và hóa đơn gốc sẽ được điều chỉnh ngay sau khi duyệt.",
-                "Duyệt", AppColor.SUCCESS, AppColor.SUCCESS, FontAwesomeSolid.CHECK_CIRCLE);
+        boolean confirmed = BaseDialog.confirm(this, Lang.get("returnExchange.detail.confirm.approve.title"),
+                Lang.get("returnExchange.detail.confirm.approve.message", item.getInvoiceCode()),
+                Lang.get("returnExchange.detail.confirm.approve.button"), AppColor.SUCCESS, AppColor.SUCCESS, FontAwesomeSolid.CHECK_CIRCLE);
         if (!confirmed) return;
 
         int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
         String error = returnExchangeDAO.approve(item.getReturnId(), currentUserId);
         if (error != null) {
-            BaseDialog.error(this, "Không thể duyệt", error);
+            BaseDialog.error(this, Lang.get("returnExchange.detail.error.approveTitle"), error);
             return;
         }
-        BaseDialog.success(this, "Thành công", "Đã duyệt yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode() + ".");
+        BaseDialog.success(this, Lang.get("returnExchange.detail.success.title"),
+                Lang.get("returnExchange.detail.success.approved", item.getInvoiceCode()));
         dispose();
     }
 
     private void handleReject() {
-        boolean confirmed = BaseDialog.confirm(this, "Từ chối yêu cầu đổi/trả",
-                "Từ chối yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode() + "?",
-                "Từ chối", AppColor.ERROR, AppColor.ERROR, FontAwesomeSolid.TIMES_CIRCLE);
+        boolean confirmed = BaseDialog.confirm(this, Lang.get("returnExchange.detail.confirm.reject.title"),
+                Lang.get("returnExchange.detail.confirm.reject.message", item.getInvoiceCode()),
+                Lang.get("returnExchange.detail.confirm.reject.button"), AppColor.ERROR, AppColor.ERROR, FontAwesomeSolid.TIMES_CIRCLE);
         if (!confirmed) return;
 
         int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
         String error = returnExchangeDAO.reject(item.getReturnId(), currentUserId);
         if (error != null) {
-            BaseDialog.error(this, "Không thể từ chối", error);
+            BaseDialog.error(this, Lang.get("returnExchange.detail.error.rejectTitle"), error);
             return;
         }
-        BaseDialog.success(this, "Thành công", "Đã từ chối yêu cầu đổi/trả cho hóa đơn " + item.getInvoiceCode() + ".");
+        BaseDialog.success(this, Lang.get("returnExchange.detail.success.title"),
+                Lang.get("returnExchange.detail.success.rejected", item.getInvoiceCode()));
         dispose();
     }
 
     private String statusLabel() {
-        if (item.isApproved()) return "Đã duyệt";
-        if (item.isRejected()) return "Đã từ chối";
-        return "Chờ duyệt";
+        if (item.isApproved()) return Lang.get("returnExchange.status.approved");
+        if (item.isRejected()) return Lang.get("returnExchange.status.rejected");
+        return Lang.get("returnExchange.status.pending");
     }
 
     private Color statusColor() {

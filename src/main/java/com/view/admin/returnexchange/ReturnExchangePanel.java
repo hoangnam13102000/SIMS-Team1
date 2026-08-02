@@ -3,6 +3,7 @@ package com.view.admin.returnexchange;
 import com.components.crud.BaseCrudPanel;
 import com.components.table.AutoRowNumber;
 import com.dao.ReturnExchangeDAO;
+import com.i18n.Lang;
 import com.model.ReturnExchange;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
@@ -53,11 +54,11 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.EXCHANGE_ALT; }
 
     @Override
-    protected String getPageTitle() { return "Đổi / trả hàng"; }
+    protected String getPageTitle() { return Lang.get("returnExchange.title"); }
 
     @Override
     protected String getPageSubtitle() {
-        return "Danh sách yêu cầu đổi/trả hàng theo hóa đơn - duyệt các yêu cầu giá trị lớn";
+        return Lang.get("returnExchange.subtitle");
     }
 
     @Override
@@ -66,8 +67,11 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
     @Override
     protected String[] getColumnNames() {
         return new String[]{
-                "STT", "Mã HĐ", "Loại", "Lý do", "Giá trị",
-                "Cần duyệt", "Người tạo", "Ngày tạo", "Trạng thái"
+                Lang.get("returnExchange.col.stt"), Lang.get("returnExchange.col.invoiceCode"),
+                Lang.get("returnExchange.col.type"), Lang.get("returnExchange.col.reason"),
+                Lang.get("returnExchange.col.value"), Lang.get("returnExchange.col.requiresApproval"),
+                Lang.get("returnExchange.col.createdBy"), Lang.get("returnExchange.col.createdAt"),
+                Lang.get("returnExchange.col.status")
         };
     }
 
@@ -79,7 +83,7 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
                 item.getType(),
                 item.getReason(),
                 NumberUtil.formatThousands(item.getTotalValue() != null ? item.getTotalValue().longValue() : 0),
-                item.isRequiresApproval() ? "Có" : "Không",
+                item.isRequiresApproval() ? Lang.get("returnExchange.bool.yes") : Lang.get("returnExchange.bool.no"),
                 item.getCreatedByName() != null ? item.getCreatedByName() : "-",
                 item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-",
                 item.getStatus()
@@ -90,7 +94,7 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
     protected int[] numericColumns() { return new int[]{4}; }
 
     @Override
-    protected String getEntityLabel() { return "yêu cầu đổi/trả"; }
+    protected String getEntityLabel() { return Lang.get("returnExchange.entityLabel"); }
 
     @Override
     protected String getItemDisplayName(ReturnExchange item) { return item.getInvoiceCode(); }
@@ -117,7 +121,7 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo mã hóa đơn, người tạo..."; }
+    protected String getSearchPlaceholder() { return Lang.get("returnExchange.searchPlaceholder"); }
 
     @Override
     protected boolean supportsEdit() { return false; }
@@ -150,7 +154,8 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
     protected void onDataChanged() { reload(); }
 
     private String typeLabel(Object value) {
-        return ReturnExchange.TYPE_EXCHANGE.equalsIgnoreCase(String.valueOf(value)) ? "Đổi hàng" : "Trả hàng";
+        return ReturnExchange.TYPE_EXCHANGE.equalsIgnoreCase(String.valueOf(value))
+                ? Lang.get("returnExchange.type.exchange") : Lang.get("returnExchange.type.return");
     }
 
     private Color typeColor(Object value) {
@@ -162,15 +167,15 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
     }
 
     private Color approvalColor(Object value) {
-        return "Có".equals(String.valueOf(value)) ? AppColor.WARNING : AppColor.TEXT_MUTED;
+        return Lang.get("returnExchange.bool.yes").equals(String.valueOf(value)) ? AppColor.WARNING : AppColor.TEXT_MUTED;
     }
 
     private String statusLabel(Object value) {
         String v = String.valueOf(value);
         switch (v) {
-            case "PENDING": return "Chờ duyệt";
-            case "APPROVED": return "Đã duyệt";
-            case "REJECTED": return "Đã từ chối";
+            case "PENDING": return Lang.get("returnExchange.status.pending");
+            case "APPROVED": return Lang.get("returnExchange.status.approved");
+            case "REJECTED": return Lang.get("returnExchange.status.rejected");
             default: return v;
         }
     }

@@ -174,10 +174,9 @@ public class RevenueReportPanel extends JPanel {
         JLabel toLabel = (JLabel) bar.getClientProperty("toLabel");
         bar.add(toLabel);
         bar.add(toField);
-
-        JButton refreshBtn = iconButton(FontAwesomeSolid.SYNC_ALT, "Làm mới");
-        refreshBtn.addActionListener(e -> loadData());
-        bar.add(refreshBtn);
+        // Không cần nút "Làm mới": AutoRefresher đã bind DataChangedEvent → loadData()
+        // (debounce 400ms). Mọi thay đổi đi qua DAO / OrderNotifyPoller / restore
+        // backup đều publish event và panel tự reload khi đang hiển thị.
 
         bar.revalidate();
         bar.repaint();
@@ -693,33 +692,6 @@ public class RevenueReportPanel extends JPanel {
             @Override public void mouseExited(MouseEvent e) { button.setBackground(AppColor.BG_LIGHTER); }
         });
         button.addActionListener(e -> onClick.run());
-        return button;
-    }
-
-    private JButton iconButton(FontAwesomeSolid icon, String tooltip) {
-        FontIcon fontIcon = FontIcon.of(icon, 14);
-        fontIcon.setIconColor(AppColor.TEXT_SECONDARY);
-        JButton button = new JButton(fontIcon) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(getBackground());
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), AppRadius.MEDIUM, AppRadius.MEDIUM);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        button.setBackground(AppColor.BG_LIGHTER);
-        button.setBorder(new EmptyBorder(8, 10, 8, 10));
-        button.setFocusPainted(false);
-        button.setContentAreaFilled(false);
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setToolTipText(tooltip);
-        button.addMouseListener(new MouseAdapter() {
-            @Override public void mouseEntered(MouseEvent e) { button.setBackground(AppColor.ACCENT_SOFT); }
-            @Override public void mouseExited(MouseEvent e) { button.setBackground(AppColor.BG_LIGHTER); }
-        });
         return button;
     }
 
