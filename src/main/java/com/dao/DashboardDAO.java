@@ -30,12 +30,20 @@ public class DashboardDAO {
         public final int lowStockCount;
         public final int totalCustomers;
         public final int totalEmployees;
+        /** So hoa don bi huy TRONG NGAY hom nay (Status='CANCELLED', dem theo CancelledAt). */
+        public final int cancelledInvoicesToday;
+        /** Tong so luong san pham khach da tra lai TRONG NGAY hom nay (chi tinh doi/tra da
+         *  duoc Quan ly ban hang DUYET - luc do kho moi thuc su duoc cong tra qua trigger). */
+        public final int returnedProductsToday;
 
-        public Overview(int totalProducts, int lowStockCount, int totalCustomers, int totalEmployees) {
+        public Overview(int totalProducts, int lowStockCount, int totalCustomers, int totalEmployees,
+                         int cancelledInvoicesToday, int returnedProductsToday) {
             this.totalProducts = totalProducts;
             this.lowStockCount = lowStockCount;
             this.totalCustomers = totalCustomers;
             this.totalEmployees = totalEmployees;
+            this.cancelledInvoicesToday = cancelledInvoicesToday;
+            this.returnedProductsToday = returnedProductsToday;
         }
     }
 
@@ -58,13 +66,18 @@ public class DashboardDAO {
         }
     }
 
-    /** Tong san pham dang ban, so SP duoi muc ton toi thieu, tong khach hang/nhan vien con hoat dong (chua bi xoa mem). */
+    /** Tong san pham dang ban, so SP duoi muc ton toi thieu, tong khach hang/nhan vien con hoat dong (chua bi xoa mem),
+     *  so hoa don bi huy va so SP tra lai trong ngay hom nay (de bai muc 3.3 - thong ke ban hang hang ngay). */
     public Overview getOverview() {
         String sql = "SELECT "
                 + "(SELECT COUNT(*) FROM Products WHERE Status = 'ACTIVE') AS TotalProducts, "
                 + "(SELECT COUNT(*) FROM Products WHERE Status = 'ACTIVE' AND Stock <= MinStock) AS LowStock, "
                 + "(SELECT COUNT(*) FROM Customers c JOIN Users u ON c.CustomerID = u.UserID WHERE u.IsDeleted = 0) AS TotalCustomers, "
-                + "(SELECT COUNT(*) FROM Employees e JOIN Users u ON e.UserID = u.UserID WHERE u.IsDeleted = 0) AS TotalEmployees";
+                + "(SELECT COUNT(*) FROM Employees e JOIN Users u ON e.UserID = u.UserID WHERE u.IsDeleted = 0) AS TotalEmployees, "
+                + "(SELECT COUNT(*) FROM Invoices WHERE Status = 'CANCELLED' AND CAST(CancelledAt AS DATE) = CAST(GETDATE() AS DATE)) AS CancelledInvoicesToday, "
+                + "(SELECT ISNULL(SUM(d.Quantity), 0) FROM ReturnExchangeDetails d "
+                + "   JOIN ReturnExchanges r ON r.ReturnID = d.ReturnID "
+                + "   WHERE d.Direction = 'IN' AND r.Status = 'APPROVED' AND CAST(r.ApprovedAt AS DATE) = CAST(GETDATE() AS DATE)) AS ReturnedProductsToday";
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -73,12 +86,14 @@ public class DashboardDAO {
                         rs.getInt("TotalProducts"),
                         rs.getInt("LowStock"),
                         rs.getInt("TotalCustomers"),
-                        rs.getInt("TotalEmployees"));
+                        rs.getInt("TotalEmployees"),
+                        rs.getInt("CancelledInvoicesToday"),
+                        rs.getInt("ReturnedProductsToday"));
             }
         } catch (SQLException e) {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "DashboardDAO.getOverview", e);
         }
-        return new Overview(0, 0, 0, 0);
+        return new Overview(0, 0, 0, 0, 0, 0);
     }
 
     /** San pham dang ACTIVE va co Stock <= MinStock, het truoc/sap het sau, toi da {@code limit} dong. */

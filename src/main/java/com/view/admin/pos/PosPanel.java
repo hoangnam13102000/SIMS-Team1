@@ -13,6 +13,9 @@ import com.dao.CustomerDAO;
 import com.dao.InvoiceDAO;
 import com.dao.ProductDAO;
 import com.dao.ShiftDAO;
+import com.dao.StoreConfigDAO;
+import com.event.AutoRefresher;
+import com.event.DataChangedEvent;
 import com.model.CartItem;
 import com.model.Category;
 import com.model.Customer;
@@ -67,7 +70,15 @@ public class PosPanel extends JPanel {
     private final CustomerDAO customerDAO = new CustomerDAO();
     private final InvoiceDAO invoiceDAO = new InvoiceDAO();
     private final ShiftDAO shiftDAO = new ShiftDAO();
+    private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
     private final PosCartService cart = PosCartService.getInstance();
+
+    /**
+     * Ti le VAT (%) hien hanh, doc tu StoreConfig (KEY_VAT_RATE) - nap lai
+     * moi khi co DataChangedEvent.CONFIG (vd nguoi dung vua sua o trang Cai
+     * dat) qua AutoRefresher, KHONG con hardcode 8% nhu truoc.
+     */
+    private BigDecimal vatRate = BigDecimal.ZERO;
 
     private final ProductGrid productGrid = new ProductGrid();
     private final CardLayout productAreaLayout = new CardLayout();
@@ -79,6 +90,7 @@ public class PosPanel extends JPanel {
     private final JButton clearCustomerButton = new JButton();
     private final JTextField customerSearchField = new JTextField();
     private final JLabel subtotalValue = new JLabel();
+    private final JLabel vatLabel = new JLabel();
     private final JLabel vatValue = new JLabel();
     private final JLabel totalValue = new JLabel();
     private final JButton checkoutButton = new JButton();
@@ -111,9 +123,21 @@ public class PosPanel extends JPanel {
 
         add(LoadingOverlay.attach(body, loadingOverlay), BorderLayout.CENTER);
 
+        vatRate = storeConfigDAO.getVatRate();
+
         cart.addListener(cartListener);
         loadCategories();
         loadProducts(null, null);
+        refreshCartSummary();
+
+        // Khi trang Cai dat luu VAT_RATE moi (hoac bat ky thay doi du lieu nao
+        // khac), nap lai ti le VAT tu DB va ve lai tong tien - khong can dong
+        // mo lai panel/khoi dong lai app.
+        AutoRefresher.bind(this, DataChangedEvent.class, 300, this::reloadVatRate);
+    }
+
+    private void reloadVatRate() {
+        vatRate = storeConfigDAO.getVatRate();
         refreshCartSummary();
     }
 
@@ -296,11 +320,11 @@ public class PosPanel extends JPanel {
         panel.add(sep);
         panel.add(Box.createVerticalStrut(AppSpacing.MD));
 
-        panel.add(fixedHeight(summaryRow("Tạm tính", subtotalValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 22));
+        panel.add(fixedHeight(summaryRow(new JLabel("Tạm tính"), subtotalValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 22));
         panel.add(Box.createVerticalStrut(4));
-        panel.add(fixedHeight(summaryRow("VAT (8%)", vatValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 22));
+        panel.add(fixedHeight(summaryRow(vatLabel, vatValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 22));
         panel.add(Box.createVerticalStrut(6));
-        panel.add(fixedHeight(summaryRow("Tổng cộng", totalValue, AppFont.HEADING_MD, AppColor.TEXT_TITLE), 30));
+        panel.add(fixedHeight(summaryRow(new JLabel("Tổng cộng"), totalValue, AppFont.HEADING_MD, AppColor.TEXT_TITLE), 30));
         panel.add(Box.createVerticalStrut(AppSpacing.LG));
 
         panel.add(sectionLabel("Phương thức thanh toán"));
@@ -451,14 +475,22 @@ public class PosPanel extends JPanel {
         clearCustomerButton.setVisible(cart.getCustomerId() != null);
 
         long subTotal = cart.getSubTotal();
-        long vat = Math.round(subTotal * 0.08);
+        long vat = calculateVat(subTotal);
         long total = subTotal + vat;
 
+        vatLabel.setText("VAT (" + vatRate.stripTrailingZeros().toPlainString() + "%)");
         subtotalValue.setText(NumberUtil.formatThousands(subTotal) + " đ");
         vatValue.setText(NumberUtil.formatThousands(vat) + " đ");
         totalValue.setText(NumberUtil.formatThousands(total) + " đ");
 
         checkoutButton.setEnabled(!cart.isEmpty());
+    }
+
+    /** Tinh tien VAT tu tam tinh, dung chung vatRate hien hanh (doc tu StoreConfig). */
+    private long calculateVat(long subTotal) {
+        return vatRate.multiply(BigDecimal.valueOf(subTotal))
+                .divide(new BigDecimal("100"), 0, java.math.RoundingMode.HALF_UP)
+                .longValueExact();
     }
 
     private void rebuildCartRows() {
@@ -583,12 +615,11 @@ public class PosPanel extends JPanel {
         return btn;
     }
 
-    private JPanel summaryRow(String label, JLabel valueLabel, Font labelFont, Color labelColor) {
+    private JPanel summaryRow(JLabel labelComp, JLabel valueLabel, Font labelFont, Color labelColor) {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel labelComp = new JLabel(label);
         labelComp.setFont(labelFont);
         labelComp.setForeground(labelColor);
         row.add(labelComp, BorderLayout.WEST);
@@ -645,7 +676,7 @@ public class PosPanel extends JPanel {
         List<CartItem> snapshot = new ArrayList<>(cart.getItems());
         Integer customerId = cart.getCustomerId();
         long expectedSubTotal = cart.getSubTotal();
-        long vat = Math.round(expectedSubTotal * 0.08);
+        long vat = calculateVat(expectedSubTotal);
         long expectedTotal = expectedSubTotal + vat;
 
         if ("PAYPAL".equals(selectedPaymentMethod)) {
@@ -682,9 +713,9 @@ public class PosPanel extends JPanel {
                 invoice.setPaymentMethod(paymentMethod);
                 invoice.setPayPalOrderId(payPalOrderId);
                 invoice.setPayPalCaptureId(payPalCaptureId);
-                // TODO: doc VAT_RATE tu bang StoreConfig khi co DAO rieng - hien
-                // dung dung gia tri mac dinh cua cot Invoices.VATRate (xem SIMS.sql).
-                invoice.setVatRate(new BigDecimal("8"));
+                // Ghi lai dung ti le VAT dang ap dung tai thoi diem lap hoa don
+                // (doc tu StoreConfig qua storeConfigDAO.getVatRate(), xem constructor).
+                invoice.setVatRate(vatRate);
 
                 List<InvoiceDetail> details = new ArrayList<>();
                 for (CartItem item : snapshot) {

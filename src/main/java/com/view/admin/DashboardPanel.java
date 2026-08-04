@@ -35,16 +35,6 @@ import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 
-/**
- * Trang "Tổng quan" (Dashboard) cho Admin: chào mừng + 5 chỉ số nhanh trong
- * ngày (doanh thu, hóa đơn, sản phẩm, cảnh báo tồn kho, khách hàng), biểu đồ
- * doanh thu 7 ngày gần nhất, danh sách sản phẩm sắp/hết hàng, nhật ký hoạt
- * động gần đây và các báo cáo thiếu hàng từ nhân viên bán hàng chưa xử lý.
- * <p>
- * Không extends BaseCrudPanel (không phải màn hình CRUD 1 danh sách) - layout
- * riêng gồm nhiều khối thống kê, cùng phong cách với RevenueReportPanel
- * (nhiều DAO đọc/gộp nhóm khác nhau, tự ghép lại trong 1 SwingWorker).
- */
 public class DashboardPanel extends JPanel {
 
     private final DashboardDAO dashboardDao = new DashboardDAO();
@@ -59,6 +49,8 @@ public class DashboardPanel extends JPanel {
     private StatCard productCard;
     private StatCard lowStockCard;
     private StatCard customerCard;
+    private StatCard cancelledInvoiceCard;
+    private StatCard returnedProductCard;
 
     private RevenueChartPanel weeklyChartPanel;
     private JPanel lowStockListPanel;
@@ -118,23 +110,76 @@ public class DashboardPanel extends JPanel {
         return content;
     }
 
+    /**
+     * Hàng thống kê responsive — ưu tiên hiện đủ chữ title/footer:
+     * - ≥1320px: 1 hàng × 7
+     * - ≥720px:  2 hàng (4 + 3)  ← mặc định màn hình thường
+     * - ≥480px:  3 cột
+     * - hẹp hơn: 2 cột
+     */
     private JPanel buildStatsRow() {
-        JPanel row = new JPanel(new GridLayout(1, 5, AppSpacing.MD, 0));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
-
         revenueCard = new StatCard("Doanh thu hôm nay", "0 đ", FontAwesomeSolid.MONEY_BILL_WAVE, AppColor.ACCENT);
         invoiceCard = new StatCard("Hóa đơn hôm nay", "0", FontAwesomeSolid.RECEIPT, AppColor.INFO);
         productCard = new StatCard("Sản phẩm đang bán", "0", FontAwesomeSolid.BOX_OPEN, AppColor.TEAL);
         lowStockCard = new StatCard("Sắp / hết hàng", "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE, AppColor.WARNING);
         customerCard = new StatCard("Khách hàng", "0", FontAwesomeSolid.USERS, AppColor.BLUE);
+        cancelledInvoiceCard = new StatCard("Hóa đơn bị hủy", "0", FontAwesomeSolid.BAN, AppColor.ERROR);
+        returnedProductCard = new StatCard("SP trả lại hôm nay", "0", FontAwesomeSolid.UNDO, AppColor.RED_ALT);
 
-        row.add(revenueCard);
-        row.add(invoiceCard);
-        row.add(productCard);
-        row.add(lowStockCard);
-        row.add(customerCard);
+        StatCard[] cards = {
+                revenueCard, invoiceCard, productCard, lowStockCard,
+                customerCard, cancelledInvoiceCard, returnedProductCard
+        };
+
+        JPanel row = new JPanel() {
+            private int lastCols = -1;
+
+            {
+                setOpaque(false);
+                setAlignmentX(Component.LEFT_ALIGNMENT);
+                // Mặc định 2 hàng × 4 cột (phổ biến) — relayout sẽ chỉnh lại theo width thật
+                setLayout(new GridLayout(2, 4, AppSpacing.MD, AppSpacing.MD));
+                for (StatCard c : cards) add(c);
+
+                addComponentListener(new java.awt.event.ComponentAdapter() {
+                    @Override
+                    public void componentResized(java.awt.event.ComponentEvent e) {
+                        relayout();
+                    }
+                });
+            }
+
+            private void relayout() {
+                int w = getWidth();
+                if (w <= 0) return;
+                // Ưu tiên hiện đủ chữ: chỉ 1 hàng 7 khi rất rộng.
+                // Màn hình thường → 4 cột (2 hàng: 4+3) để mỗi card đủ rộng hiện full title/footer.
+                int cols = (w >= 1320) ? 7 : (w >= 720) ? 4 : (w >= 480) ? 3 : 2;
+                if (cols == lastCols) return;
+                lastCols = cols;
+
+                int rows = (int) Math.ceil(7.0 / cols);
+                setLayout(new GridLayout(rows, cols, AppSpacing.MD, AppSpacing.MD));
+                removeAll();
+                for (StatCard c : cards) add(c);
+                int rowH = StatCard.PREFERRED_HEIGHT;
+                int totalH = rows * rowH + Math.max(0, rows - 1) * AppSpacing.MD;
+                setPreferredSize(new Dimension(10, totalH));
+                setMaximumSize(new Dimension(Integer.MAX_VALUE, totalH + 4));
+                revalidate();
+                repaint();
+            }
+
+            @Override
+            public Dimension getPreferredSize() {
+                Dimension d = super.getPreferredSize();
+                if (lastCols <= 0) {
+                    int h = StatCard.PREFERRED_HEIGHT * 2 + AppSpacing.MD;
+                    return new Dimension(d.width, h);
+                }
+                return d;
+            }
+        };
         return row;
     }
 
@@ -289,6 +334,16 @@ public class DashboardPanel extends JPanel {
 
         customerCard.setValue(NumberUtil.formatThousands(data.overview.totalCustomers));
         customerCard.setSubtitle(NumberUtil.formatThousands(data.overview.totalEmployees) + " nhân viên đang làm việc");
+
+        cancelledInvoiceCard.setValue(NumberUtil.formatThousands(data.overview.cancelledInvoicesToday));
+        if (data.overview.cancelledInvoicesToday == 0) {
+            cancelledInvoiceCard.setSubtitle("Không có hóa đơn bị hủy");
+        } else {
+            cancelledInvoiceCard.setTrend("Cần rà soát lý do hủy", false);
+        }
+
+        returnedProductCard.setValue(NumberUtil.formatThousands(data.overview.returnedProductsToday));
+        returnedProductCard.setSubtitle("Đã duyệt đổi/trả hôm nay");
 
         weeklyChartPanel.setData(data.weeklyRevenue);
 

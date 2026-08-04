@@ -412,3 +412,19 @@ WHERE r.RoleCode = 'SALES_MANAGER' AND p.PermissionCode = 'EXCEPTION_REPORT_HAND
         WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
       );
 GO
+
+-- ---- Quyen "Cai dat he thong" (sua VAT_RATE va cac cau hinh StoreConfig khac) - chi ADMIN ----
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'SETTINGS_MANAGE', N'Xem và sửa trang Cài đặt hệ thống (VAT, tên cửa hàng, chính sách đổi trả...)'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'SETTINGS_MANAGE');
+GO
+
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'SETTINGS_MANAGE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO

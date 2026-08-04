@@ -37,15 +37,21 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         ActionColumn actions = new ActionColumn()
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
-                        this::viewRowPublic)
-                .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
-                        this::editRowPublic)
-                .add("status-toggle",
-                        this::statusToggleIcon,
-                        this::statusToggleColor,
-                        this::statusToggleTooltip,
-                        this::toggleStatusRow,
-                        null);
+                        this::viewRowPublic);
+
+        // "Sửa" và "Ngừng bán/Đang bán" thay đổi dữ liệu sản phẩm nên chỉ hiện
+        // cho ai có quyền PRODUCT_MANAGE (Admin). Vai trò chỉ có PRODUCT_VIEW
+        // (Sales Manager, Sales Staff) chỉ được xem - xem canManageProducts().
+        if (canManageProducts()) {
+            actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
+                            this::editRowPublic)
+                    .add("status-toggle",
+                            this::statusToggleIcon,
+                            this::statusToggleColor,
+                            this::statusToggleTooltip,
+                            this::toggleStatusRow,
+                            null);
+        }
 
         // Chi NV ban hang (quyen STOCK_ALERT_REPORT) moi thay nut bao het
         // hang - Quan ly kho/Admin xem trang nay khong can bao lai cho
@@ -81,7 +87,17 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     protected String getPageSubtitle() { return "Quản lý danh sách sản phẩm, giá và tồn kho trong hệ thống"; }
 
     @Override
-    protected String getAddButtonLabel() { return "Thêm sản phẩm"; }
+    protected String getAddButtonLabel() { return canManageProducts() ? "Thêm sản phẩm" : null; }
+
+    /**
+     * true nếu user hiện tại được phép thêm/sửa/ngừng-bán sản phẩm (PRODUCT_MANAGE - Admin).
+     * Role chỉ có PRODUCT_VIEW (Sales Manager, Sales Staff) vào được trang này để tra cứu
+     * nhưng KHÔNG được sửa dữ liệu - trước đây trang này không phân biệt 2 quyền này nên
+     * mọi vai trò vào được trang đều thấy đủ nút Thêm/Sửa/Ngừng bán.
+     */
+    private boolean canManageProducts() {
+        return AuthService.getInstance().can(AppPermission.PRODUCT_MANAGE);
+    }
 
     @Override
     protected String[] getColumnNames() {

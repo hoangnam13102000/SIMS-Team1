@@ -13,13 +13,23 @@ public final class RolePermissions {
     static {
         // ADMIN: toan quyen.
         MAP.put(Role.ADMIN, PermissionSet.of(AppPermission.values()));
-        // Quan ly ban hang: xem dashboard + xem/tim san pham.
+
+        // Quan ly ban hang : xem dashboard, xem/tim san pham,
+        // xem bao cao doanh thu, duyet/tu choi doi-tra gia tri lon (R4),
+        // xem va xu ly bao cao ngoai le tu NV ban hang.
         MAP.put(Role.SALES_MANAGER, PermissionSet.of(
                 AppPermission.DASHBOARD_VIEW,
-                AppPermission.PRODUCT_VIEW
+                AppPermission.PRODUCT_VIEW,
+                AppPermission.REVENUE_REPORT_VIEW,
+                AppPermission.PROFIT_REPORT_VIEW,
+                AppPermission.RETURN_EXCHANGE_APPROVE,
+                AppPermission.EXCEPTION_REPORT_HANDLE
         ));
 
-        // Quan ly kho: xem dashboard + xem/tim san pham.
+        // Quan ly kho: xem dashboard + xem/tim san pham,
+        // xem ton kho, nhap hang, doi chieu kho cuoi ngay, xu ly bao cao
+        // het/sap het hang tu NV ban hang. KHONG xu ly bao cao ngoai le -
+        // viec do thuoc Quan ly ban hang (muc 3.3), da chuyen len tren.
         MAP.put(Role.INVENTORY_MANAGER, PermissionSet.of(
                 AppPermission.DASHBOARD_VIEW,
                 AppPermission.PRODUCT_VIEW,
@@ -27,16 +37,33 @@ public final class RolePermissions {
                 AppPermission.STOCK_IMPORT,
                 AppPermission.STOCK_RECONCILE,
                 AppPermission.STOCK_ALERT_VIEW,
-                AppPermission.EXCEPTION_REPORT_HANDLE
+                // Quan ly nha cung cap gan lien nghiep vu nhap hang, dung theo
+                // thiet ke goc trong sql/Insert_SIMS.sql, nhung truoc day bi
+                // thieu o day nen chi Admin quan ly duoc NCC.
+                AppPermission.SUPPLIER_MANAGE
         ));
-     // Nhan vien ban hang: xem dashboard, quan ly khach hang, xem/tim san pham.
+
+        // Nhan vien ban hang : xem dashboard, quan ly khach
+        // hang, xem/tim san pham + trang thai ton kho, tao/huy hoa don,
+        // tao yeu cau doi/tra hang cho hoa don, gui bao cao het hang va
+        // bao cao ngoai le (khong phai nguoi XU LY 2 loai bao cao nay).
         MAP.put(Role.SALES_STAFF, PermissionSet.of(
                 AppPermission.DASHBOARD_VIEW,
                 AppPermission.CUSTOMER_MANAGE,
                 AppPermission.PRODUCT_VIEW,
+                AppPermission.STOCK_VIEW,
                 AppPermission.INVOICE_CREATE,
+                AppPermission.INVOICE_CANCEL,
+                AppPermission.RETURN_EXCHANGE_CREATE,
                 AppPermission.STOCK_ALERT_REPORT,
-                AppPermission.EXCEPTION_REPORT_HANDLE
+                AppPermission.EXCEPTION_REPORT_CREATE,
+                // Xac nhan / huy don hang online tu khach - dung theo thiet ke goc
+                // trong sql/Insert_SIMS.sql (RolePermissions cho SALES_STAFF), nhung
+                // truoc day bi thieu o day nen trang "Don hang" (orders) chi Admin
+                // moi vao duoc, du OrderDetailDialog da san co logic gate rieng theo
+                // ORDER_MANAGE cho tung nut trong trang.
+                AppPermission.ORDER_VIEW,
+                AppPermission.ORDER_MANAGE
         ));
 
         // CUSTOMER: khach hang tu dang ky o RegisterFrame, chi dung ClientMainFrame

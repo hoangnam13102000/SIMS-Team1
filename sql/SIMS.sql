@@ -410,23 +410,25 @@ GO
 CREATE TABLE Orders (
     OrderID         INT IDENTITY(1,1) PRIMARY KEY,
     OrderCode       AS ('DH' + RIGHT('0000' + CAST(OrderID AS VARCHAR(10)), 4)) PERSISTED,
-    CustomerID      INT NULL FOREIGN KEY REFERENCES Customers(CustomerID),  -- NULL = khach dat khong dang nhap
+    CustomerID      INT NULL FOREIGN KEY REFERENCES Customers(CustomerID),
     CustomerName    NVARCHAR(150) NOT NULL,
     CustomerEmail   VARCHAR(150) NOT NULL,
     CustomerPhone   VARCHAR(20)  NULL,
     ShippingAddress NVARCHAR(255) NOT NULL,
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     SubTotal        DECIMAL(18,0) NOT NULL DEFAULT 0,
-    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,
+    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8,   -- lấy từ StoreConfig VAT_RATE
+    VATAmount       AS (SubTotal * VATRate / 100) PERSISTED,
+    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,   -- SubTotal + VATAmount, duy tri qua app (giong Invoices)
     PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'COD'
                         CHECK (PaymentMethod IN ('COD', 'PAYPAL')),
     PaymentStatus   VARCHAR(20) NOT NULL DEFAULT 'PENDING'
                         CHECK (PaymentStatus IN ('PENDING', 'PAID', 'FAILED')),
-    PayPalOrderID   VARCHAR(50) NULL,     -- id don PayPal (Orders v2 API)
-    PayPalCaptureID VARCHAR(50) NULL,     -- id giao dich sau khi capture thanh cong
+    PayPalOrderID   VARCHAR(50) NULL,
+    PayPalCaptureID VARCHAR(50) NULL,
     OrderStatus     VARCHAR(20) NOT NULL DEFAULT 'NEW'
                     CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED')),
-    SeenByAdmin     BIT NOT NULL DEFAULT 0   -- admin da xem/danh dau doc thong bao chuong hay chua
+    SeenByAdmin     BIT NOT NULL DEFAULT 0
 );
 GO
 

@@ -11,7 +11,8 @@ public final class DataChangedEvent {
     public static final String STOCK_RECONCILIATION = "STOCK_RECONCILIATION";
     public static final String RETURN_EXCHANGE = "RETURN_EXCHANGE";
     public static final String EXCEPTION_REPORT = "EXCEPTION_REPORT";
-    
+    /** Cau hinh he thong (StoreConfig) vua duoc sua o trang Cai dat - vd VAT_RATE. */
+    public static final String CONFIG = "CONFIG";
     /** Dùng khi restore / thao tác ghi đè toàn bộ DB — mọi panel đều reload. */
     public static final String ALL = "ALL";
 

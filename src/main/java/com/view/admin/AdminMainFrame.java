@@ -162,7 +162,7 @@ public class AdminMainFrame extends JFrame {
         layout.addPage("returnExchange", Lang.get("sidebar.returnExchange"), FontAwesomeSolid.EXCHANGE_ALT, new ReturnExchangePanel(),
                 AppPermission.RETURN_EXCHANGE_CREATE, AppPermission.RETURN_EXCHANGE_APPROVE);
         layout.addPage("revenueReport", Lang.get("sidebar.revenueReport"), FontAwesomeSolid.CHART_LINE, new RevenueReportPanel(),
-                AppPermission.REVENUE_REPORT_VIEW);
+                AppPermission.REVENUE_REPORT_VIEW, AppPermission.PROFIT_REPORT_VIEW);
 
         layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
                 AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
@@ -176,6 +176,8 @@ public class AdminMainFrame extends JFrame {
 
         // --- Nhóm Hệ thống ---
         layout.addSection(Lang.get("sidebar.section.system"));
+        layout.addPage("settings", Lang.get("sidebar.settings"), FontAwesomeSolid.COGS, new SettingsPanel(),
+                AppPermission.SETTINGS_MANAGE);
         layout.addPage("backup", Lang.get("sidebar.backup"), FontAwesomeSolid.SHIELD_ALT, new BackupRecoveryPanel(),
                 AppPermission.BACKUP_MANAGE);
         layout.addPage("auditLogs", Lang.get("sidebar.auditLogs"), FontAwesomeSolid.HISTORY, new AuditLogPanel(),

@@ -5,6 +5,8 @@ import com.components.crud.CrudMode;
 import com.components.table.AutoRowNumber;
 import com.dao.InventoryBatchDAO;
 import com.model.InventoryBatch;
+import com.model.permission.AppPermission;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
@@ -50,7 +52,13 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     protected String getPageSubtitle() { return "Theo dõi lô hàng theo hạn sử dụng)"; }
 
     @Override
-    protected String getAddButtonLabel() { return "Nhập lô hàng mới"; }
+    protected String getAddButtonLabel() {
+        // Chi ai co STOCK_IMPORT (Inventory Manager, Admin) moi duoc tao lo hang moi.
+        // Truoc day trang nay chi gate theo "vao duoc trang hay khong" (STOCK_IMPORT
+        // HOAC STOCK_VIEW), nen Sales Staff (chi co STOCK_VIEW de tra ton kho luc ban
+        // hang) cung thay va bam duoc nut nay - day la loi da phat hien khi demo.
+        return AuthService.getInstance().can(AppPermission.STOCK_IMPORT) ? "Nhập lô hàng mới" : null;
+    }
 
     @Override
     protected String[] getColumnNames() {

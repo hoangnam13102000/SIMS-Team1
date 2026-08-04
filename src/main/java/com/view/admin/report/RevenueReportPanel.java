@@ -4,13 +4,12 @@ import com.components.BaseDialog;
 import com.components.DatePickerField;
 import com.components.LoadingOverlay;
 import com.components.SectionHeader;
-import com.components.StatCard;
-import com.components.dashboard.DashboardCard;
-import com.components.report.RevenueChartPanel;
-import com.components.report.RevenuePieChartPanel;
 import com.dao.RevenueReportDAO;
+import com.dao.RevenueReportDAO.CategoryProfit;
 import com.dao.RevenueReportDAO.DailyPoint;
 import com.dao.RevenueReportDAO.PaymentSlice;
+import com.dao.RevenueReportDAO.ProductProfit;
+import com.dao.RevenueReportDAO.ProfitSummary;
 import com.dao.RevenueReportDAO.Summary;
 import com.dao.RevenueReportDAO.TopProduct;
 import com.event.AutoRefresher;
@@ -20,11 +19,9 @@ import com.theme.AppFont;
 import com.theme.AppRadius;
 import com.theme.AppSpacing;
 import com.utils.FileUtil;
-import com.utils.NumberUtil;
 import com.utils.TableExportUtil;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
-import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -32,9 +29,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
-import java.awt.Rectangle;
 import java.io.File;
-import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -44,36 +39,40 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * Trang "Bao cao doanh thu": chon khoang thoi gian (co san preset nhanh),
- * xem tong quan + bieu do doanh thu theo ngay + doanh thu theo phuong thuc
- * thanh toan + top san pham ban chay, va xuat du lieu ra CSV/Excel.
- * <p>
- * Khong extends BaseCrudPanel vi day khong phai man hinh CRUD 1 danh sach -
- * layout rieng gom nhieu khoi thong ke, giong DashboardPanel nhung voi du
- * lieu that + bo loc thoi gian.
+ * Trang "Bao cao doanh thu & loi nhuan": chon khoang thoi gian (co san preset
+ * nhanh, dung chung cho ca 2 tab) roi chuyen doi giua 2 goc nhin:
+ * <ul>
+ *   <li><b>Doanh thu</b> - {@link RevenueReportTab}: tong quan + bieu do doanh
+ *       thu theo ngay + doanh thu theo phuong thuc thanh toan + top san pham
+ *       ban chay (doanh thu tinh theo Invoices.TotalAmount, DA GOM VAT).</li>
+ *   <li><b>Loi nhuan</b> - {@link ProfitReportTab}: so sanh gia nhap/gia ban,
+ *       loi nhuan gop theo ngay/danh muc/san pham (tinh tren co so CHUA VAT -
+ *       xem ghi chu trong {@link RevenueReportDAO}).</li>
+ * </ul>
+ * Truoc day day la 2 trang rieng ("revenueReport" va "profitReport"), gop lai
+ * thanh 1 de dung chung bo loc ngay va tranh nham lan vi ca 2 deu co the
+ * "Tong doanh thu" nhung tinh tren 2 co so khac nhau (gom VAT hay khong).
  */
 public class RevenueReportPanel extends JPanel {
 
     private static final DateTimeFormatter FILE_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final String CARD_REVENUE = "revenue";
+    private static final String CARD_PROFIT = "profit";
 
     private final RevenueReportDAO dao = new RevenueReportDAO();
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang tải báo cáo...");
 
     private DatePickerField fromField;
     private DatePickerField toField;
+    private JComponent filterBarDateSlot;
 
-    private StatCard revenueCard;
-    private StatCard invoiceCard;
-    private StatCard avgCard;
-    private StatCard itemsCard;
-
-    private RevenueChartPanel chartPanel;
-    private RevenuePieChartPanel pieChartPanel;
-    private JPanel paymentListPanel;
-    private JPanel topProductsListPanel;
-    private final List<JPanel> paymentLegendRows = new ArrayList<>();
-
-    private List<DailyPoint> lastDailyRevenue = new ArrayList<>();
+    private final CardLayout cardLayout = new CardLayout();
+    private JPanel cardContainer;
+    private RevenueReportTab revenueTab;
+    private ProfitReportTab profitTab;
+    private JButton revenueTabButton;
+    private JButton profitTabButton;
+    private boolean showingProfit = false;
 
     public RevenueReportPanel() {
         setLayout(new BorderLayout());
@@ -92,20 +91,23 @@ public class RevenueReportPanel extends JPanel {
         topSection.add(buildHeader(), gbc);
 
         gbc.gridy = 1;
+        gbc.insets = new Insets(0, 0, AppSpacing.SM, 0);
+        topSection.add(buildTabRow(), gbc);
+
+        gbc.gridy = 2;
         gbc.insets = new Insets(0, 0, 0, 0);
         topSection.add(buildFilterBar(), gbc);
 
-        JPanel dynamicContent = buildDynamicContent();
-        JScrollPane scroll = new JScrollPane(dynamicContent);
-        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        scroll.setOpaque(false);
-        scroll.getViewport().setOpaque(false);
-        scroll.setBorder(new EmptyBorder(AppSpacing.LG, 0, 0, 0));
+        revenueTab = new RevenueReportTab();
+        profitTab = new ProfitReportTab();
+
+        cardContainer = new JPanel(cardLayout);
+        cardContainer.setOpaque(false);
+        cardContainer.add(revenueTab, CARD_REVENUE);
+        cardContainer.add(profitTab, CARD_PROFIT);
 
         add(topSection, BorderLayout.NORTH);
-        add(LoadingOverlay.attach(scroll, loadingOverlay), BorderLayout.CENTER);
+        add(LoadingOverlay.attach(cardContainer, loadingOverlay), BorderLayout.CENTER);
 
         LocalDate today = LocalDate.now();
         fromField = new DatePickerField(today.minusDays(29));
@@ -121,18 +123,40 @@ public class RevenueReportPanel extends JPanel {
     }
 
     // ---------------------------------------------------------------
-    // Header + filter bar
+    // Header + tab toggle + filter bar
     // ---------------------------------------------------------------
 
     private SectionHeader buildHeader() {
         SectionHeader header = new SectionHeader(FontAwesomeSolid.CHART_LINE, AppColor.ACCENT,
-                "Báo cáo doanh thu", "Thống kê doanh thu bán hàng theo thời gian, phương thức thanh toán và sản phẩm");
+                "Báo cáo doanh thu & lợi nhuận",
+                "Thống kê doanh thu, phương thức thanh toán, sản phẩm bán chạy và so sánh giá nhập/giá bán để tính lợi nhuận");
         header.addOverflowAction("Xuất CSV", FontAwesomeSolid.FILE_CSV, () -> exportReport("csv"));
         header.addOverflowAction("Xuất Excel", FontAwesomeSolid.FILE_EXCEL, () -> exportReport("xlsx"));
         return header;
     }
 
-    private JComponent filterBarDateSlot;
+    /**
+     * Hang RIENG cho 2 nut chuyen tab "Doanh thu" / "Loi nhuan" - co truoc day
+     * nhet chung vao cuoi hang loc ngay (buildFilterBar), nhung hang do da rat
+     * chat (5 nut preset + 2 o chon ngay) va bi ep cung chieu cao 56px, nen
+     * khi FlowLayout xuong dong o man hinh hep, dong 2 (chua dung 2 nut nay)
+     * bi cat mat - nguoi dung chi thay tab Doanh thu ma khong thay duoc nut
+     * de bam sang Loi nhuan. Tach rieng ra 1 hang luon hien, khong phu thuoc
+     * be rong cua so, de dam bao 2 nut nay LUON nhin thay va bam duoc.
+     */
+    private JPanel buildTabRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        revenueTabButton = tabButton("Doanh thu", () -> switchTab(false));
+        profitTabButton = tabButton("Lợi nhuận", () -> switchTab(true));
+        row.add(revenueTabButton);
+        row.add(profitTabButton);
+        updateTabButtonStyles();
+
+        return row;
+    }
 
     private JPanel buildFilterBar() {
         RoundedPanel bar = new RoundedPanel();
@@ -147,10 +171,7 @@ public class RevenueReportPanel extends JPanel {
         bar.add(presetButton("Quý này", () -> applyRange(startOfQuarter(LocalDate.now()), LocalDate.now())));
         bar.add(presetButton("Năm nay", () -> applyRange(LocalDate.now().withDayOfYear(1), LocalDate.now())));
 
-        JSeparator sep = new JSeparator(SwingConstants.VERTICAL);
-        sep.setPreferredSize(new Dimension(1, 26));
-        sep.setForeground(AppColor.BORDER);
-        bar.add(sep);
+        bar.add(verticalSeparator());
 
         JLabel fromLabel = new JLabel("Từ ngày");
         fromLabel.setFont(AppFont.SMALL);
@@ -161,10 +182,16 @@ public class RevenueReportPanel extends JPanel {
         JLabel toLabel = new JLabel("Đến ngày");
         toLabel.setFont(AppFont.SMALL);
         toLabel.setForeground(AppColor.TEXT_MUTED);
-
         bar.putClientProperty("toLabel", toLabel);
 
         return bar;
+    }
+
+    private static JSeparator verticalSeparator() {
+        JSeparator sep = new JSeparator(SwingConstants.VERTICAL);
+        sep.setPreferredSize(new Dimension(1, 26));
+        sep.setForeground(AppColor.BORDER);
+        return sep;
     }
 
     /** DatePickerField duoc tao SAU buildFilterBar() (can LocalDate.now() 1 lan duy nhat o constructor) nen gan vao day. */
@@ -182,6 +209,24 @@ public class RevenueReportPanel extends JPanel {
         bar.repaint();
     }
 
+    private void switchTab(boolean profit) {
+        if (showingProfit == profit) return;
+        showingProfit = profit;
+        cardLayout.show(cardContainer, profit ? CARD_PROFIT : CARD_REVENUE);
+        updateTabButtonStyles();
+    }
+
+    private void updateTabButtonStyles() {
+        styleTabButton(revenueTabButton, !showingProfit);
+        styleTabButton(profitTabButton, showingProfit);
+    }
+
+    private static void styleTabButton(JButton button, boolean active) {
+        button.setBackground(active ? AppColor.ACCENT : AppColor.BG_LIGHTER);
+        button.setForeground(active ? Color.WHITE : AppColor.TEXT_SECONDARY);
+        button.repaint();
+    }
+
     private void applyRange(LocalDate from, LocalDate to) {
         fromField.setValue(from);
         toField.setValue(to);
@@ -194,140 +239,7 @@ public class RevenueReportPanel extends JPanel {
     }
 
     // ---------------------------------------------------------------
-    // Noi dung dong (stat cards + chart + payment method + top products)
-    // ---------------------------------------------------------------
-
-    private JPanel buildDynamicContent() {
-        JPanel content = new ScrollableColumn();
-
-        content.add(buildStatsRow());
-        content.add(Box.createVerticalStrut(AppSpacing.LG));
-        content.add(buildChartCard());
-        content.add(Box.createVerticalStrut(AppSpacing.LG));
-        content.add(buildBottomRow());
-
-        return content;
-    }
-
-    private JPanel buildStatsRow() {
-        JPanel row = new JPanel(new GridLayout(1, 4, AppSpacing.MD, 0));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
-
-        revenueCard = new StatCard("Tổng doanh thu", "0 đ", FontAwesomeSolid.MONEY_BILL_WAVE, AppColor.ACCENT);
-        invoiceCard = new StatCard("Số hóa đơn", "0", FontAwesomeSolid.RECEIPT, AppColor.INFO);
-        avgCard = new StatCard("Giá trị TB/hóa đơn", "0 đ", FontAwesomeSolid.PERCENTAGE, AppColor.WARNING);
-        itemsCard = new StatCard("Sản phẩm đã bán", "0", FontAwesomeSolid.BOXES, AppColor.TEAL);
-
-        row.add(revenueCard);
-        row.add(invoiceCard);
-        row.add(avgCard);
-        row.add(itemsCard);
-        return row;
-    }
-
-    private DashboardCard buildChartCard() {
-        DashboardCard card = new DashboardCard("Doanh thu theo ngày",
-                "Chỉ tính hóa đơn hợp lệ (không bao gồm hóa đơn đã hủy)",
-                FontAwesomeSolid.CHART_BAR, AppColor.ACCENT);
-        card.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.setPreferredSize(new Dimension(10, 300));
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 300));
-
-        chartPanel = new RevenueChartPanel();
-        card.getContentPanel().add(chartPanel, BorderLayout.CENTER);
-        return card;
-    }
-
-    private JPanel buildBottomRow() {
-        JPanel row = new JPanel(new GridLayout(1, 2, AppSpacing.LG, 0));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 320));
-        row.setPreferredSize(new Dimension(10, 320));
-
-        row.add(buildPaymentMethodCard());
-        row.add(buildTopProductsCard());
-        return row;
-    }
-
-    private DashboardCard buildPaymentMethodCard() {
-        DashboardCard card = new DashboardCard("Doanh thu theo phương thức thanh toán",
-                "Di chuột vào từng phần để xem chi tiết",
-                FontAwesomeSolid.CHART_PIE, AppColor.INFO);
-
-        pieChartPanel = new RevenuePieChartPanel();
-        pieChartPanel.setPreferredSize(new Dimension(168, 168));
-        pieChartPanel.setOnHoverChange(this::highlightPaymentLegendRow);
-
-        JPanel chartWrap = new JPanel(new GridBagLayout());
-        chartWrap.setOpaque(false);
-        chartWrap.add(pieChartPanel);
-
-        paymentListPanel = new ScrollableColumn();
-
-        JScrollPane scroll = plainScroll(paymentListPanel);
-
-        JPanel body = new JPanel(new BorderLayout(AppSpacing.LG, 0));
-        body.setOpaque(false);
-        body.add(chartWrap, BorderLayout.WEST);
-        body.add(scroll, BorderLayout.CENTER);
-
-        card.getContentPanel().add(body, BorderLayout.CENTER);
-        return card;
-    }
-
-    /** Highlight hang chu thich khop voi mieng dang hover tren bieu do tron (va nguoc lai). */
-    private void highlightPaymentLegendRow(int index) {
-        for (int i = 0; i < paymentLegendRows.size(); i++) {
-            JPanel row = paymentLegendRows.get(i);
-            boolean active = i == index;
-            row.setOpaque(active);
-            row.setBackground(AppColor.ACCENT_SOFT);
-            row.repaint();
-        }
-    }
-
-    private DashboardCard buildTopProductsCard() {
-        DashboardCard card = new DashboardCard("Top sản phẩm bán chạy",
-                FontAwesomeSolid.TROPHY, AppColor.WARNING);
-
-        topProductsListPanel = new ScrollableColumn();
-
-        JScrollPane scroll = plainScroll(topProductsListPanel);
-        card.getContentPanel().add(scroll, BorderLayout.CENTER);
-        return card;
-    }
-
-    private static JScrollPane plainScroll(JComponent view) {
-        JScrollPane scroll = new JScrollPane(view);
-        scroll.setBorder(null);
-        scroll.setOpaque(false);
-        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.getViewport().setOpaque(false);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        return scroll;
-    }
-
-    /** JPanel cot doc (BoxLayout Y_AXIS) luon "tracks" chieu rong vung nhin cua
-     *  JScrollPane cha, de khong bao gio phat sinh thanh cuon ngang du noi
-     *  dung ben trong (vd ten san pham dai) co muon rong hon vung hien thi. */
-    private static class ScrollableColumn extends JPanel implements Scrollable {
-        ScrollableColumn() {
-            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-            setOpaque(false);
-        }
-
-        @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
-        @Override public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) { return 16; }
-        @Override public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) { return 120; }
-        @Override public boolean getScrollableTracksViewportWidth() { return true; }
-        @Override public boolean getScrollableTracksViewportHeight() { return false; }
-    }
-
-    // ---------------------------------------------------------------
-    // Tai du lieu
+    // Tai du lieu (goi ca 2 bo DAO 1 luot de chuyen tab khong bi giat/reload)
     // ---------------------------------------------------------------
 
     private static class ReportData {
@@ -336,6 +248,11 @@ public class RevenueReportPanel extends JPanel {
         List<DailyPoint> daily;
         List<PaymentSlice> payments;
         List<TopProduct> topProducts;
+
+        ProfitSummary profitSummary;
+        List<DailyPoint> profitDaily;
+        List<CategoryProfit> categories;
+        List<ProductProfit> topProductsProfit;
     }
 
     private void loadData() {
@@ -361,6 +278,11 @@ public class RevenueReportPanel extends JPanel {
                 data.daily = dao.getDailyRevenue(from, to);
                 data.payments = dao.getRevenueByPaymentMethod(from, to);
                 data.topProducts = dao.getTopProducts(from, to, 10);
+
+                data.profitSummary = dao.getProfitSummary(from, to);
+                data.profitDaily = dao.getDailyProfit(from, to);
+                data.categories = dao.getProfitByCategory(from, to);
+                data.topProductsProfit = dao.getTopProductsByProfit(from, to, 10);
                 return data;
             }
 
@@ -369,257 +291,40 @@ public class RevenueReportPanel extends JPanel {
                 loadingOverlay.stop();
                 try {
                     ReportData data = get();
-                    applyData(data);
+                    revenueTab.applyData(data.summary, data.previousSummary, data.daily, data.payments, data.topProducts);
+                    profitTab.applyData(data.profitSummary, data.profitDaily, data.categories, data.topProductsProfit);
                 } catch (Exception e) {
                     e.printStackTrace();
-                    BaseDialog.error(RevenueReportPanel.this, "Lỗi", "Không thể tải báo cáo doanh thu: " + e.getMessage());
+                    BaseDialog.error(RevenueReportPanel.this, "Lỗi", "Không thể tải báo cáo: " + e.getMessage());
                 }
             }
         };
         worker.execute();
     }
 
-    private void applyData(ReportData data) {
-        lastDailyRevenue = data.daily;
-
-        revenueCard.setValue(NumberUtil.formatThousands(data.summary.totalRevenue.longValue()) + " đ");
-        Double growth = data.summary.growthPercent(data.previousSummary);
-        if (growth == null) {
-            revenueCard.setSubtitle("Không có dữ liệu kỳ trước để so sánh");
-        } else {
-            String sign = growth >= 0 ? "+" : "";
-            revenueCard.setTrend(sign + NumberUtil.formatDecimal(growth, 1) + "% so với kỳ trước", growth >= 0);
-        }
-
-        invoiceCard.setValue(NumberUtil.formatThousands(data.summary.invoiceCount));
-        invoiceCard.setSubtitle("Hóa đơn hợp lệ (không tính hóa đơn đã hủy)");
-
-        avgCard.setValue(NumberUtil.formatThousands(data.summary.avgOrderValue().longValue()) + " đ");
-        avgCard.setSubtitle("Doanh thu ÷ số hóa đơn");
-
-        itemsCard.setValue(NumberUtil.formatThousands(data.summary.itemsSold));
-        itemsCard.setSubtitle("Tổng số lượng sản phẩm đã bán");
-
-        chartPanel.setData(data.daily);
-
-        renderPaymentMethods(data.payments);
-        renderTopProducts(data.topProducts);
-    }
-
-    /** Doc lai mau tu AppColor moi lan ve (khong cache static) de van dung neu app doi Light/Dark theme. */
-    private static Color paymentColor(int index) {
-        Color[] palette = {
-                AppColor.ACCENT, AppColor.INFO, AppColor.WARNING, AppColor.TEAL,
-                AppColor.RED_ALT, AppColor.BLUE, AppColor.ORANGE, AppColor.YELLOW
-        };
-        return palette[index % palette.length];
-    }
-
-    private void renderPaymentMethods(List<PaymentSlice> slices) {
-        paymentListPanel.removeAll();
-        paymentLegendRows.clear();
-
-        if (slices.isEmpty()) {
-            paymentListPanel.add(emptyRow("Không có dữ liệu trong khoảng thời gian này"));
-            pieChartPanel.setData(new ArrayList<>(), "Tổng", "0 đ");
-        } else {
-            BigDecimal total = BigDecimal.ZERO;
-            for (PaymentSlice s : slices) total = total.add(s.revenue);
-
-            List<RevenuePieChartPanel.Slice> pieSlices = new ArrayList<>();
-
-            for (int i = 0; i < slices.size(); i++) {
-                PaymentSlice s = slices.get(i);
-                double ratio = total.signum() == 0 ? 0 : s.revenue.doubleValue() / total.doubleValue();
-                Color color = paymentColor(i);
-                String label = paymentMethodLabel(s.method);
-                String valueText = NumberUtil.formatThousands(s.revenue.longValue()) + " đ";
-                String countText = s.invoiceCount + " hóa đơn";
-
-                pieSlices.add(new RevenuePieChartPanel.Slice(label, s.revenue.doubleValue(), valueText, countText, color));
-
-                JPanel row = buildPaymentLegendRow(label, valueText, countText, ratio, color);
-                int index = i;
-                row.addMouseListener(new MouseAdapter() {
-                    @Override public void mouseEntered(MouseEvent e) { pieChartPanel.setHoverIndex(index); }
-                    @Override public void mouseExited(MouseEvent e) { pieChartPanel.setHoverIndex(-1); }
-                });
-                paymentLegendRows.add(row);
-
-                paymentListPanel.add(row);
-                paymentListPanel.add(Box.createVerticalStrut(AppSpacing.XS));
-            }
-
-            pieChartPanel.setData(pieSlices, "Tổng", NumberUtil.formatThousands(total.longValue()) + " đ");
-        }
-        paymentListPanel.revalidate();
-        paymentListPanel.repaint();
-    }
-
-    private void renderTopProducts(List<TopProduct> products) {
-        topProductsListPanel.removeAll();
-        if (products.isEmpty()) {
-            topProductsListPanel.add(emptyRow("Không có sản phẩm nào được bán trong khoảng thời gian này"));
-        } else {
-            int rank = 1;
-            for (TopProduct p : products) {
-                topProductsListPanel.add(buildTopProductRow(rank++, p));
-                topProductsListPanel.add(Box.createVerticalStrut(AppSpacing.SM));
-            }
-        }
-        topProductsListPanel.revalidate();
-        topProductsListPanel.repaint();
-    }
-
-    private JComponent emptyRow(String text) {
-        JLabel label = new JLabel(text);
-        label.setFont(AppFont.SMALL);
-        label.setForeground(AppColor.TEXT_MUTED);
-        label.setBorder(new EmptyBorder(AppSpacing.MD, 0, AppSpacing.MD, 0));
-        label.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return label;
-    }
-
-    /** Hang chu thich cho 1 phuong thuc thanh toan: cham mau khop voi mieng bieu do tron
-     *  + ten ben trai, doanh thu/so hoa don/ty le ben phai. Di chuot vao se highlight
-     *  dong bo voi mieng tuong ung tren bieu do (xem highlightPaymentLegendRow). */
-    private JPanel buildPaymentLegendRow(String label, String valueText, String countText, double ratio, Color color) {
-        JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
-        row.setBorder(new EmptyBorder(6, 8, 6, 8));
-        row.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
-        JLabel dot = new JLabel("\u25CF");
-        dot.setForeground(color);
-        dot.setFont(AppFont.BODY_BOLD);
-
-        JLabel nameLabel = new JLabel(label);
-        nameLabel.setFont(AppFont.BODY_BOLD);
-        nameLabel.setForeground(AppColor.TEXT_PRIMARY);
-
-        JPanel left = new JPanel(new BorderLayout(8, 0));
-        left.setOpaque(false);
-        left.add(dot, BorderLayout.WEST);
-        left.add(nameLabel, BorderLayout.CENTER);
-
-        JPanel right = new JPanel();
-        right.setOpaque(false);
-        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-
-        JLabel valueLabel = new JLabel(valueText);
-        valueLabel.setFont(AppFont.SMALL_BOLD);
-        valueLabel.setForeground(AppColor.TEXT_PRIMARY);
-        valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
-        valueLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-        JLabel countLabel = new JLabel(countText + "  ·  " + NumberUtil.formatDecimal(ratio * 100, 1) + "%");
-        countLabel.setFont(AppFont.FOOTER);
-        countLabel.setForeground(AppColor.TEXT_MUTED);
-        countLabel.setHorizontalAlignment(SwingConstants.RIGHT);
-        countLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-        right.add(valueLabel);
-        right.add(countLabel);
-
-        row.add(left, BorderLayout.CENTER);
-        row.add(right, BorderLayout.EAST);
-        return row;
-    }
-
-    private JPanel buildTopProductRow(int rank, TopProduct product) {
-        JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-
-        JLabel rankLabel = new JLabel(String.valueOf(rank), SwingConstants.CENTER) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(rankColor(rank));
-                g2.fillOval(0, 0, getWidth(), getHeight());
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        rankLabel.setForeground(Color.WHITE);
-        rankLabel.setFont(AppFont.SMALL_BOLD);
-        rankLabel.setPreferredSize(new Dimension(22, 22));
-
-        JLabel nameLabel = new JLabel(product.productName);
-        nameLabel.setFont(AppFont.BODY);
-        nameLabel.setForeground(AppColor.TEXT_PRIMARY);
-
-        JPanel right = new JPanel();
-        right.setOpaque(false);
-        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-
-        JLabel revenueLabel = new JLabel(NumberUtil.formatThousands(product.revenue.longValue()) + " đ");
-        revenueLabel.setFont(AppFont.SMALL_BOLD);
-        revenueLabel.setForeground(AppColor.TEXT_PRIMARY);
-        revenueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
-        revenueLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-        JLabel qtyLabel = new JLabel("Đã bán: " + NumberUtil.formatThousands(product.quantity));
-        qtyLabel.setFont(AppFont.FOOTER);
-        qtyLabel.setForeground(AppColor.TEXT_MUTED);
-        qtyLabel.setHorizontalAlignment(SwingConstants.RIGHT);
-        qtyLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-        right.add(revenueLabel);
-        right.add(qtyLabel);
-
-        JPanel left = new JPanel(new BorderLayout(AppSpacing.SM, 0));
-        left.setOpaque(false);
-        left.add(rankLabel, BorderLayout.WEST);
-        left.add(nameLabel, BorderLayout.CENTER);
-
-        row.add(left, BorderLayout.CENTER);
-        row.add(right, BorderLayout.EAST);
-        return row;
-    }
-
-    private static Color rankColor(int rank) {
-        switch (rank) {
-            case 1: return new Color(234, 179, 8);   // vang
-            case 2: return new Color(148, 163, 184); // bac
-            case 3: return new Color(180, 83, 9);    // dong
-            default: return AppColor.ACCENT;
-        }
-    }
-
-    private static String paymentMethodLabel(String method) {
-        if (method == null) return "Khác";
-        switch (method) {
-            case "CASH": return "Tiền mặt";
-            case "BANK_TRANSFER": return "Chuyển khoản";
-            case "PAYPAL": return "PayPal";
-            case "CARD": return "Thẻ";
-            default: return method;
-        }
-    }
-
     // ---------------------------------------------------------------
-    // Xuat CSV / Excel (doanh thu theo ngay trong khoang dang xem)
+    // Xuat CSV / Excel - xuat theo tab dang xem (Doanh thu hoac Loi nhuan)
     // ---------------------------------------------------------------
 
     private void exportReport(String format) {
-        if (lastDailyRevenue.isEmpty()) {
-            BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu doanh thu để xuất trong khoảng thời gian đang chọn.");
+        List<DailyPoint> daily = showingProfit ? profitTab.getLastDaily() : revenueTab.getLastDaily();
+        if (daily.isEmpty()) {
+            BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu để xuất trong khoảng thời gian đang chọn.");
             return;
         }
 
-        String defaultName = "bao_cao_doanh_thu_" + timestamp() + "." + format;
+        String metric = showingProfit ? "loi_nhuan" : "doanh_thu";
+        String sheetName = showingProfit ? "Lợi nhuận" : "Doanh thu";
+        String valueColumn = showingProfit ? "Lợi nhuận" : "Doanh thu";
+
+        String defaultName = "bao_cao_" + metric + "_" + timestamp() + "." + format;
         File chosen = FileUtil.chooseSaveLocation(this, defaultName);
         if (chosen == null) return;
         File file = ensureExtension(chosen, format);
 
-        String[] headers = {"Ngày", "Số hóa đơn", "Doanh thu"};
+        String[] headers = {"Ngày", "Số hóa đơn", valueColumn};
         List<Object[]> rows = new ArrayList<>();
-        for (DailyPoint p : lastDailyRevenue) {
+        for (DailyPoint p : daily) {
             rows.add(new Object[]{p.date.format(FILE_DATE_FORMAT), p.invoiceCount, p.revenue.longValue()});
         }
 
@@ -630,7 +335,7 @@ public class RevenueReportPanel extends JPanel {
                 if ("csv".equals(format)) {
                     TableExportUtil.exportCsv(file, headers, rows);
                 } else {
-                    TableExportUtil.exportExcel(file, "Doanh thu", headers, rows);
+                    TableExportUtil.exportExcel(file, sheetName, headers, rows);
                 }
                 return null;
             }
@@ -669,6 +374,25 @@ public class RevenueReportPanel extends JPanel {
 
     /** Nut "chip" bo tron cho cac preset khoang thoi gian (Hom nay/7 ngay qua...). */
     private JButton presetButton(String text, Runnable onClick) {
+        JButton button = roundedChipButton(text);
+        button.setForeground(AppColor.TEXT_SECONDARY);
+        button.setBackground(AppColor.BG_LIGHTER);
+        button.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { button.setBackground(AppColor.ACCENT_SOFT); }
+            @Override public void mouseExited(MouseEvent e) { button.setBackground(AppColor.BG_LIGHTER); }
+        });
+        button.addActionListener(e -> onClick.run());
+        return button;
+    }
+
+    /** Nut "chip" bo tron dung lam tab chuyen doi Doanh thu / Loi nhuan (mau active/inactive do updateTabButtonStyles() dieu khien). */
+    private JButton tabButton(String text, Runnable onClick) {
+        JButton button = roundedChipButton(text);
+        button.addActionListener(e -> onClick.run());
+        return button;
+    }
+
+    private static JButton roundedChipButton(String text) {
         JButton button = new JButton(text) {
             @Override
             protected void paintComponent(Graphics g) {
@@ -681,17 +405,10 @@ public class RevenueReportPanel extends JPanel {
             }
         };
         button.setFont(AppFont.SMALL_BOLD);
-        button.setForeground(AppColor.TEXT_SECONDARY);
-        button.setBackground(AppColor.BG_LIGHTER);
         button.setBorder(new EmptyBorder(6, 14, 6, 14));
         button.setFocusPainted(false);
         button.setContentAreaFilled(false);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.addMouseListener(new MouseAdapter() {
-            @Override public void mouseEntered(MouseEvent e) { button.setBackground(AppColor.ACCENT_SOFT); }
-            @Override public void mouseExited(MouseEvent e) { button.setBackground(AppColor.BG_LIGHTER); }
-        });
-        button.addActionListener(e -> onClick.run());
         return button;
     }
 

@@ -44,6 +44,9 @@ public enum AppPermission implements Permission {
     EXCEPTION_REPORT_CREATE,
     /** Quan ly ban hang xem va xu ly cac bao cao ngoai le tu NV ban hang. */
     EXCEPTION_REPORT_HANDLE,
-    
-    
+    /** Xem trang "Bao cao loi nhuan" - so sanh gia nhap/gia ban, loi nhuan gop
+     *  theo san pham/danh muc/ky (de bai muc 3.3, chi Quan ly ban hang + Admin). */
+    PROFIT_REPORT_VIEW,
+    /** Xem/sua trang "Cai dat he thong" (VAT_RATE va cac cau hinh StoreConfig khac). */
+    SETTINGS_MANAGE,
 }

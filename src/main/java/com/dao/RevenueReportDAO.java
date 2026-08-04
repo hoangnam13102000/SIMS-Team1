@@ -96,6 +96,65 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
+    // DTO rieng cho BAO CAO LOI NHUAN (de bai muc 3.3 - "Bao cao loi nhuan,
+    // so sanh giua gia nhap va gia ban"). Gia von lay tu Products.ImportPrice
+    // HIEN TAI (he thong khong luu lai gia nhap tai thoi diem ban trong
+    // InvoiceDetails) - neu gia nhap 1 SP thay doi theo thoi gian, loi nhuan
+    // cua cac hoa don CU se duoc tinh lai theo gia nhap MOI NHAT. Day la gioi
+    // han da biet, chap nhan duoc voi quy mo du lieu hien tai cua SIMS.
+    // ---------------------------------------------------------------
+
+    public static class ProfitSummary {
+        public final BigDecimal totalRevenue;
+        public final BigDecimal totalCost;
+        public final BigDecimal totalProfit;
+
+        public ProfitSummary(BigDecimal totalRevenue, BigDecimal totalCost) {
+            this.totalRevenue = totalRevenue != null ? totalRevenue : BigDecimal.ZERO;
+            this.totalCost = totalCost != null ? totalCost : BigDecimal.ZERO;
+            this.totalProfit = this.totalRevenue.subtract(this.totalCost);
+        }
+
+        /** Bien loi nhuan (%) = Loi nhuan / Doanh thu * 100. Null neu doanh thu = 0 (khong co gi de tinh %). */
+        public Double marginPercent() {
+            if (totalRevenue.signum() == 0) return null;
+            return totalProfit.divide(totalRevenue, 4, java.math.RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .doubleValue();
+        }
+    }
+
+    public static class ProductProfit {
+        public final String productName;
+        public final long quantity;
+        public final BigDecimal revenue;
+        public final BigDecimal cost;
+        public final BigDecimal profit;
+
+        public ProductProfit(String productName, long quantity, BigDecimal revenue, BigDecimal cost) {
+            this.productName = productName;
+            this.quantity = quantity;
+            this.revenue = revenue != null ? revenue : BigDecimal.ZERO;
+            this.cost = cost != null ? cost : BigDecimal.ZERO;
+            this.profit = this.revenue.subtract(this.cost);
+        }
+    }
+
+    public static class CategoryProfit {
+        public final String categoryName;
+        public final BigDecimal revenue;
+        public final BigDecimal cost;
+        public final BigDecimal profit;
+
+        public CategoryProfit(String categoryName, BigDecimal revenue, BigDecimal cost) {
+            this.categoryName = categoryName;
+            this.revenue = revenue != null ? revenue : BigDecimal.ZERO;
+            this.cost = cost != null ? cost : BigDecimal.ZERO;
+            this.profit = this.revenue.subtract(this.cost);
+        }
+    }
+
+    // ---------------------------------------------------------------
     // Truy van
     // ---------------------------------------------------------------
 
@@ -216,6 +275,139 @@ public class RevenueReportDAO {
         } catch (SQLException e) {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "RevenueReportDAO.getTopProducts - from=" + from + " to=" + to, e);
+        }
+        return list;
+    }
+
+    // ---------------------------------------------------------------
+    // Bao cao loi nhuan (doanh thu - gia von theo Products.ImportPrice hien tai)
+    // ---------------------------------------------------------------
+
+    /** Tong doanh thu, tong gia von va loi nhuan trong [from, to]. */
+    public ProfitSummary getProfitSummary(LocalDate from, LocalDate to) {
+        String sql = "SELECT ISNULL(SUM(d.LineTotal), 0) AS Revenue, ISNULL(SUM(d.Quantity * p.ImportPrice), 0) AS Cost "
+                + "FROM InvoiceDetails d "
+                + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
+                + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
+
+        BigDecimal revenue = BigDecimal.ZERO;
+        BigDecimal cost = BigDecimal.ZERO;
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    revenue = rs.getBigDecimal("Revenue");
+                    cost = rs.getBigDecimal("Cost");
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.getProfitSummary - from=" + from + " to=" + to, e);
+        }
+        return new ProfitSummary(revenue, cost);
+    }
+
+    /**
+     * Loi nhuan tung ngay trong [from, to], tra ve du moi ngay (ngay khong co
+     * hoa don thi loi nhuan = 0) de {@link com.components.report.RevenueChartPanel}
+     * ve truc lien tuc - tai su dung lai DailyPoint (truong {@code revenue} o
+     * day mang y nghia la LOI NHUAN cua ngay do, khong phai doanh thu).
+     */
+    public List<DailyPoint> getDailyProfit(LocalDate from, LocalDate to) {
+        String sql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
+                + "SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost, "
+                + "COUNT(DISTINCT inv.InvoiceID) AS Cnt "
+                + "FROM InvoiceDetails d "
+                + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
+                + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY CAST(inv.CreatedAt AS DATE) ORDER BY Day ASC";
+
+        Map<LocalDate, DailyPoint> byDay = new LinkedHashMap<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    LocalDate day = rs.getDate("Day").toLocalDate();
+                    BigDecimal revenue = rs.getBigDecimal("Revenue");
+                    BigDecimal cost = rs.getBigDecimal("Cost");
+                    BigDecimal profit = (revenue != null ? revenue : BigDecimal.ZERO)
+                            .subtract(cost != null ? cost : BigDecimal.ZERO);
+                    byDay.put(day, new DailyPoint(day, profit, rs.getInt("Cnt")));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.getDailyProfit - from=" + from + " to=" + to, e);
+        }
+
+        List<DailyPoint> result = new ArrayList<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            result.add(byDay.getOrDefault(d, new DailyPoint(d, BigDecimal.ZERO, 0)));
+        }
+        return result;
+    }
+
+    /** Top san pham theo LOI NHUAN (khong phai doanh thu) trong [from, to], toi da {@code limit} dong. */
+    public List<ProductProfit> getTopProductsByProfit(LocalDate from, LocalDate to, int limit) {
+        String sql = "SELECT TOP (?) p.ProductName, SUM(d.Quantity) AS Qty, "
+                + "SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost "
+                + "FROM InvoiceDetails d "
+                + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
+                + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY p.ProductID, p.ProductName "
+                + "ORDER BY (SUM(d.LineTotal) - SUM(d.Quantity * p.ImportPrice)) DESC";
+
+        List<ProductProfit> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, limit);
+            ps.setDate(2, Date.valueOf(from));
+            ps.setDate(3, Date.valueOf(to));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(new ProductProfit(rs.getString("ProductName"), rs.getLong("Qty"),
+                            rs.getBigDecimal("Revenue"), rs.getBigDecimal("Cost")));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.getTopProductsByProfit - from=" + from + " to=" + to, e);
+        }
+        return list;
+    }
+
+    /** Loi nhuan gop nhom theo danh muc san pham trong [from, to], sap xep giam dan theo loi nhuan. */
+    public List<CategoryProfit> getProfitByCategory(LocalDate from, LocalDate to) {
+        String sql = "SELECT c.CategoryName, SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost "
+                + "FROM InvoiceDetails d "
+                + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
+                + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "JOIN Categories c ON c.CategoryID = p.CategoryID "
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY c.CategoryID, c.CategoryName "
+                + "ORDER BY (SUM(d.LineTotal) - SUM(d.Quantity * p.ImportPrice)) DESC";
+
+        List<CategoryProfit> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(new CategoryProfit(rs.getString("CategoryName"),
+                            rs.getBigDecimal("Revenue"), rs.getBigDecimal("Cost")));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.getProfitByCategory - from=" + from + " to=" + to, e);
         }
         return list;
     }

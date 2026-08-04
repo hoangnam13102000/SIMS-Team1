@@ -54,6 +54,14 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
     public AuditLogPanel() {
         super();
         stt = table.setAutoRowNumberColumn(0);
+        // Cột "Hành động" (index 3): StatBadge màu theo loại action — trực quan hơn plain text
+        table.setBadgeColumn(3,
+                v -> actionLabel(v == null ? null : String.valueOf(v)),
+                v -> actionColor(v == null ? null : String.valueOf(v)));
+        // Cột "Đối tượng" (index 4): badge tông nhẹ theo entity type
+        table.setBadgeColumn(4,
+                v -> entityLabel(v == null ? null : String.valueOf(v)),
+                v -> entityColor(v == null ? null : String.valueOf(v)));
         setupFilters();
         AutoRefresher.bind(this, LogWrittenEvent.class, 400, this::reload);
         initialLoad();
@@ -123,12 +131,13 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
 
     @Override
     protected Object[] mapRowToColumns(ActivityLog item) {
+        // Cột Hành động / Đối tượng giữ raw code — setBadgeColumn sẽ map label + màu
         return new Object[]{
                 "",
                 item.getCreatedAt() != null ? DATE_FORMAT.format(item.getCreatedAt()) : "",
                 item.getUsername() != null ? item.getUsername() : "SYSTEM",
-                actionLabel(item.getAction()),
-                entityLabel(item.getEntityType()),
+                item.getAction(),
+                item.getEntityType(),
                 item.getDescription() != null ? item.getDescription() : ""
         };
     }
@@ -246,6 +255,36 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
         }
     }
 
+    /**
+     * Màu StatBadge theo hành động — đồng bộ tinh thần với AuditLogDetailDialog,
+     * phân biệt rõ mức độ nghiêm trọng / loại thao tác.
+     */
+    static Color actionColor(String action) {
+        if (action == null) return AppColor.TEXT_MUTED;
+        switch (action) {
+            case ActivityLog.ACTION_CREATE:
+            case ActivityLog.ACTION_RESTORE:
+            case "USER_UNLOCK":
+                return AppColor.SUCCESS;          // xanh lá — tạo mới / khôi phục
+            case ActivityLog.ACTION_LOGIN:
+                return AppColor.TEAL;             // teal — đăng nhập
+            case ActivityLog.ACTION_LOGOUT:
+                return AppColor.INFO;             // xanh dương — đăng xuất
+            case ActivityLog.ACTION_UPDATE:
+            case ActivityLog.ACTION_STATUS_CHANGE:
+                return AppColor.WARNING;          // cam — cập nhật / đổi trạng thái
+            case ActivityLog.ACTION_PASSWORD_RESET:
+                return AppColor.ORANGE != null ? AppColor.ORANGE : AppColor.WARNING;
+            case ActivityLog.ACTION_DELETE:
+            case ActivityLog.ACTION_PERMANENT_DELETE:
+            case ActivityLog.ACTION_LOGIN_FAILED:
+            case "USER_LOCK":
+                return AppColor.ERROR;            // đỏ — xóa / thất bại / khóa
+            default:
+                return AppColor.ACCENT;
+        }
+    }
+
     static String entityLabel(String entityType) {
         if (entityType == null) return "";
         switch (entityType) {
@@ -264,6 +303,33 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
             case ActivityLog.ENTITY_STOCK_ALERT: return "Cảnh báo tồn kho";
             case ActivityLog.ENTITY_PHONE: return "Điện thoại";
             default: return entityType;
+        }
+    }
+
+    /** Màu badge nhẹ cho cột Đối tượng — phân nhóm domain. */
+    static Color entityColor(String entityType) {
+        if (entityType == null) return AppColor.TEXT_MUTED;
+        switch (entityType) {
+            case ActivityLog.ENTITY_USER:
+            case "Users":
+            case ActivityLog.ENTITY_EMPLOYEE:
+                return AppColor.ACCENT;
+            case ActivityLog.ENTITY_CUSTOMER:
+                return AppColor.BLUE;
+            case ActivityLog.ENTITY_PRODUCT:
+            case ActivityLog.ENTITY_CATEGORY:
+                return AppColor.TEAL;
+            case ActivityLog.ENTITY_INVOICE:
+            case ActivityLog.ENTITY_ORDER:
+                return AppColor.SUCCESS;
+            case ActivityLog.ENTITY_SUPPLIER:
+            case ActivityLog.ENTITY_PURCHASE_RECEIPT:
+            case ActivityLog.ENTITY_INVENTORY_BATCH:
+                return AppColor.WARNING;
+            case ActivityLog.ENTITY_STOCK_ALERT:
+                return AppColor.ERROR;
+            default:
+                return AppColor.TEXT_MUTED;
         }
     }
 }
