@@ -138,10 +138,15 @@ GO
 -- Customers gio ke thua Users (CustomerID = UserID), nen chi con insert
 -- CustomerID (tro toi tai khoan da tao o buoc 4) + MemberPoint rieng cua
 -- ho so khach hang. FullName/Phone/Email lay thang tu Users, khong luu trung.
-INSERT INTO Customers (CustomerID, MemberPoint) VALUES
-((SELECT UserID FROM Users WHERE Username = 'lan.nguyen'), 120),
-((SELECT UserID FROM Users WHERE Username = 'hung.tran'),   35),
-((SELECT UserID FROM Users WHERE Username = 'khach_le'),     0);   -- dai dien cho khach vang lai khong luu thong tin
+INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint)
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 120
+FROM Users WHERE Username = 'lan.nguyen'
+UNION ALL
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 35
+FROM Users WHERE Username = 'hung.tran'
+UNION ALL
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 0   -- dai dien cho khach vang lai khong luu thong tin
+FROM Users WHERE Username = 'khach_le';
 GO
 
 -- ---- 10. Shift ----
@@ -293,6 +298,9 @@ INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái');
+-- So VND khach can chi de duoc cong 1 diem thanh vien (xem StoreConfigDAO.getPointRate()
+-- va InvoiceDAO.createInvoice - tich diem tu dong khi lap hoa don co gan khach hang).
+('POINT_RATE', '10000');
 GO
 
 UPDATE Products
@@ -428,3 +436,9 @@ WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'SETTINGS_MANAGE'
         WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
       );
 GO
+
+
+
+
+select * from Users
+select * from Customers

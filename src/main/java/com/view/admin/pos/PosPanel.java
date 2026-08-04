@@ -248,7 +248,7 @@ public class PosPanel extends JPanel {
     }
 
     private Integer selectedCategoryId() {
-        Object selected = categoryCombo.getSelectedItem();
+    	Object selected = categoryCombo.getSelectedItem();
         return (selected instanceof Category) ? ((Category) selected).getCategoryId() : null;
     }
 
@@ -352,7 +352,9 @@ public class PosPanel extends JPanel {
         return comp;
     }
 
-    // ---------------- Khach hang ----------------
+ // ---------------- Khach hang ----------------
+
+ // ---------------- Khach hang ----------------
 
     private JPanel buildCustomerSearchRow() {
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
@@ -363,11 +365,47 @@ public class PosPanel extends JPanel {
         customerSearchField.addActionListener(e -> searchCustomer());
         row.add(customerSearchField, BorderLayout.CENTER);
 
+        JPanel searchButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        searchButtons.setOpaque(false);
+
+        JButton scanCustomerBtn = iconButton(FontAwesomeSolid.ID_CARD, AppColor.ACCENT);
+        scanCustomerBtn.setToolTipText("Quét mã/thẻ khách hàng bằng webcam");
+        scanCustomerBtn.addActionListener(e -> openCustomerBarcodeScanner());
+        searchButtons.add(scanCustomerBtn);
+
         JButton searchBtn = iconButton(FontAwesomeSolid.SEARCH, AppColor.ACCENT_HOVER);
         searchBtn.addActionListener(e -> searchCustomer());
-        row.add(searchBtn, BorderLayout.EAST);
+        searchButtons.add(searchBtn);
+
+        row.add(searchButtons, BorderLayout.EAST);
 
         return row;
+    }
+
+    /**
+     * Mo dialog quet ma vach/the khach hang bang webcam (tai su dung
+     * BarcodeScannerDialog voi tieu de rieng, xem overload moi). Ma quet
+     * duoc coi la CustomerCode (vd "CUS_0007", in tren the thanh vien) - tra
+     * CHINH XAC 1 khach qua {@link CustomerDAO#findByCode}, giong het cach
+     * quet ma san pham (ProductDAO.findActiveByCode). O tim kiem text
+     * (SDT/ten) van giu nguyen cho truong hop nhap tay/khong co the.
+     */
+    private void openCustomerBarcodeScanner() {
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        new BarcodeScannerDialog(owner, "Quét mã khách hàng", "Đưa mã vạch/thẻ thành viên của khách vào giữa khung hình")
+                .onScanned(this::handleCustomerBarcodeScanned)
+                .setVisible(true);
+    }
+
+    private void handleCustomerBarcodeScanned(String code) {
+        Customer customer = customerDAO.findByCode(code);
+        if (customer == null) {
+            AppAlert.error(this, "Không tìm thấy khách hàng",
+                    "Không có khách hàng nào khớp với mã vừa quét: \"" + code + "\".");
+            return;
+        }
+        selectCustomer(customer);
+        AppAlert.success(this, "Đã chọn khách hàng \"" + customer.getFullName() + "\".");
     }
 
     private JPanel buildCustomerStatusRow() {
@@ -412,7 +450,8 @@ public class PosPanel extends JPanel {
         JPopupMenu popup = new JPopupMenu();
         for (Customer c : results) {
             String phone = c.getPhone() != null && !c.getPhone().isBlank() ? c.getPhone() : "-";
-            JMenuItem item = new JMenuItem(c.getFullName() + "   -   " + phone);
+            JMenuItem item = new JMenuItem(c.getFullName() + "   -   " + phone
+                    + "   -   " + c.getMemberPoint() + " điểm");
             item.setFont(AppFont.BODY);
             item.addActionListener(e -> selectCustomer(c));
             popup.add(item);
@@ -422,7 +461,10 @@ public class PosPanel extends JPanel {
 
     private void selectCustomer(Customer customer) {
         String phone = customer.getPhone() != null && !customer.getPhone().isBlank() ? customer.getPhone() : "";
-        String label = customer.getFullName() + (phone.isEmpty() ? "" : " - " + phone);
+        // Hien them diem thanh vien hien co ngay khi chon/quet khach - de thu
+        // ngan biet truoc khi thanh toan (vd khach hoi doi diem lay qua tang).
+        String label = customer.getFullName() + (phone.isEmpty() ? "" : " - " + phone)
+                + " - Điểm: " + customer.getMemberPoint();
         cart.setCustomer(customer.getCustomerId(), label);
         customerSearchField.setText("");
     }
@@ -463,8 +505,7 @@ public class PosPanel extends JPanel {
         btn.setForeground(selected ? AppColor.ACCENT_HOVER : AppColor.TEXT_SECONDARY);
         btn.setBorder(BorderFactory.createLineBorder(selected ? AppColor.ACCENT_HOVER : AppColor.BORDER, selected ? 2 : 1, true));
     }
-
-    // ---------------- Gio hang ----------------
+ // ---------------- Gio hang ----------------
 
     private void refreshCartSummary() {
         rebuildCartRows();
@@ -714,7 +755,7 @@ public class PosPanel extends JPanel {
                 invoice.setPayPalOrderId(payPalOrderId);
                 invoice.setPayPalCaptureId(payPalCaptureId);
                 // Ghi lai dung ti le VAT dang ap dung tai thoi diem lap hoa don
-                // (doc tu StoreConfig qua storeConfigDAO.getVatRate(), xem constructor).
+             // (doc tu StoreConfig qua storeConfigDAO.getVatRate(), xem constructor).
                 invoice.setVatRate(vatRate);
 
                 List<InvoiceDetail> details = new ArrayList<>();
@@ -742,18 +783,24 @@ public class PosPanel extends JPanel {
                 if (ok) {
                     cart.clear();
                     loadProducts(null, null); // ton kho vua doi
+                    // "+N diem" chi xuat hien khi hoa don gan voi 1 khach hang co
+                    // tai khoan (khach le khong tich diem) - xem InvoiceDAO#createInvoice.
+                    String pointsSuffix = invoice.getPointsEarned() > 0
+                            ? " Khách được cộng " + invoice.getPointsEarned() + " điểm thành viên."
+                            : "";
                     boolean stockLimited = invoice.getSubTotal() != null
                             && invoice.getSubTotal().longValue() < expectedSubTotal;
                     if (stockLimited) {
                         AppAlert.warning(PosPanel.this, "Đã lập hóa đơn " + invoice.getInvoiceCode(),
                                 "Một số sản phẩm không đủ tồn kho nên đã được giới hạn số lượng. "
                                         + "Tổng tiền thực tế: " + NumberUtil.formatThousands(
-                                        invoice.getTotalAmount().longValue()) + " đ. "
+                                        invoice.getTotalAmount().longValue()) + " đ." + pointsSuffix + " "
                                         + "Vui lòng kiểm tra lại trong \"Quản lý hóa đơn\".");
                     } else {
                         AppAlert.success(PosPanel.this, "Lập hóa đơn thành công",
                                 "Hóa đơn " + invoice.getInvoiceCode() + " - Tổng tiền: "
-                                        + NumberUtil.formatThousands(invoice.getTotalAmount().longValue()) + " đ");
+                                        + NumberUtil.formatThousands(invoice.getTotalAmount().longValue()) + " đ."
+                                        + pointsSuffix);
                     }
                 } else {
                     AppAlert.error(PosPanel.this, "Không thể lập hóa đơn",
@@ -943,6 +990,5 @@ public class PosPanel extends JPanel {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
-  
     private record PayPalPosResult(boolean success, String status, String orderId, String captureId) {}
 }

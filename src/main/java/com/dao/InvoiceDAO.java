@@ -22,6 +22,8 @@ import java.util.List;
 
 public class InvoiceDAO extends BaseDAO<Invoice> {
 
+    private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
+
     private static final String BASE_TABLE =
             "Invoices inv "
                     + "JOIN Users u ON inv.CreatedBy = u.UserID "
@@ -111,9 +113,11 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
      *   <li>Doc lai LineTotal thuc te (sau khi trigger co the da cat bot so
      *   luong) de tinh dung SubTotal/TotalAmount, roi UPDATE lai Invoices -
      *   2 cot nay KHONG tu tinh, "duy tri qua trigger/app" (xem SIMS.sql).</li>
+     *   <li>Neu hoa don co gan khach hang (co tai khoan): cong diem thanh
+     *   vien theo StoreConfig.POINT_RATE, TRONG CUNG transaction nay.</li>
      * </ol>
-     * Tra ve true + gan lai invoiceId/invoiceCode/subTotal/totalAmount vao
-     * {@code invoice} neu thanh cong; false neu that bai (het hang, loi
+     * Tra ve true + gan lai invoiceId/invoiceCode/subTotal/totalAmount/pointsEarned
+     * vao {@code invoice} neu thanh cong; false neu that bai (het hang, loi
      * DB...) - chi tiet loi da duoc log qua AppLogger.
      */
     public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
@@ -201,11 +205,33 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     ps.executeUpdate();
                 }
 
+                // Cong diem thanh vien - CHI ap dung cho hoa don co khach hang (co
+                // tai khoan), khach le (CustomerID null) khong tich diem. Tinh tren
+                // totalAmount THAT SU (sau khi trigger co the da cat bot so luong o
+                // tren, xem sumLineTotalSql) - dam bao khong bao gio cong "khong" so
+                // voi so tien khach thuc tra. Lam trong CUNG transaction voi hoa don
+                // de khong bao gio lech du lieu (hoa don thanh cong nhung diem thi
+                // khong, hoac nguoc lai).
+                int pointsEarned = 0;
+                if (invoice.getCustomerId() != null) {
+                    BigDecimal pointRate = storeConfigDAO.getPointRate();
+                    pointsEarned = totalAmount.divide(pointRate, 0, java.math.RoundingMode.DOWN).intValueExact();
+                    if (pointsEarned > 0) {
+                        String addPointSql = "UPDATE Customers SET MemberPoint = MemberPoint + ? WHERE CustomerID = ?";
+                        try (PreparedStatement ps = con.prepareStatement(addPointSql)) {
+                            ps.setInt(1, pointsEarned);
+                            ps.setInt(2, invoice.getCustomerId());
+                            ps.executeUpdate();
+                        }
+                    }
+                }
+
                 con.commit();
                 invoice.setInvoiceId(invoiceId);
                 invoice.setInvoiceCode(invoiceCode);
                 invoice.setSubTotal(subTotal);
                 invoice.setTotalAmount(totalAmount);
+                invoice.setPointsEarned(pointsEarned);
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.INVOICE));
                 return true;
             } catch (SQLException e) {

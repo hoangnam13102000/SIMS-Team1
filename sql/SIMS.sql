@@ -95,6 +95,7 @@ GO
 -- (khong UNIQUE) nen khong con van de nay.
 CREATE TABLE Customers (
     CustomerID      INT NOT NULL PRIMARY KEY,        -- = Users.UserID (1-1, ke thua)
+    CustomerCode    VARCHAR(20) NOT NULL UNIQUE,    -- Ma khach hang: "CUS_" + UserID dem 4 so (vd CUS_0001) - dung lam ma vach the thanh vien
     MemberPoint     INT NOT NULL DEFAULT 0,
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     CONSTRAINT FK_Customers_Users

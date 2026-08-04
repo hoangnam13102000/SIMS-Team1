@@ -99,6 +99,8 @@ public class CustomerDetailDialog extends JDialog {
         body.add(buildDivider());
         body.add(Box.createVerticalStrut(18));
 
+        body.add(infoRow(FontAwesomeSolid.ID_CARD, "Mã khách hàng", emptyDash(customer.getCustomerCode())));
+        body.add(Box.createVerticalStrut(16));
         body.add(infoRow(FontAwesomeSolid.ENVELOPE, "Email", emptyDash(customer.getEmail())));
         body.add(Box.createVerticalStrut(16));
         body.add(infoRow(FontAwesomeSolid.PHONE_ALT, "Số điện thoại", emptyDash(customer.getPhone())));
@@ -108,6 +110,7 @@ public class CustomerDetailDialog extends JDialog {
         body.add(infoRow(FontAwesomeSolid.DOLLAR_SIGN, "Tổng chi tiêu", "0 đ"));
         body.add(Box.createVerticalStrut(16));
         body.add(infoRow(FontAwesomeSolid.CALENDAR_ALT, "Ngày tham gia",
+                // ... (dòng còn lại giữ nguyên như file gốc)
                 customer.getCreatedAt() != null ? DateUtil.formatDate(customer.getCreatedAt()) : "-"));
 
         JScrollPane scroll = new JScrollPane(body);

@@ -25,9 +25,13 @@ import java.util.Map;
 public class StoreConfigDAO {
 
     public static final String KEY_VAT_RATE = "VAT_RATE";
+    /** So VND khach can chi de duoc cong 1 diem thanh vien (vd "10000" = 10.000d/diem). */
+    public static final String KEY_POINT_RATE = "POINT_RATE";
 
     /** Giá trị mặc định khi bảng chưa được seed hoặc đọc lỗi - khớp DEFAULT 8 của cột Invoices.VATRate. */
     private static final BigDecimal DEFAULT_VAT_RATE = new BigDecimal("8");
+    /** Mac dinh 10.000d = 1 diem neu chua cau hinh / cau hinh loi. */
+    private static final BigDecimal DEFAULT_POINT_RATE = new BigDecimal("10000");
 
     /** Đọc tỉ lệ VAT hiện hành (%). Không bao giờ trả về null - fallback DEFAULT_VAT_RATE nếu thiếu/lỗi. */
     public BigDecimal getVatRate() {
@@ -39,6 +43,25 @@ public class StoreConfigDAO {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "StoreConfigDAO.getVatRate - gia tri VAT_RATE khong hop le: " + raw, e);
             return DEFAULT_VAT_RATE;
+        }
+    }
+
+    /**
+     * Đọc "định mức" điểm thành viên hiện hành: số VNĐ khách cần chi để được
+     * cộng 1 điểm (vd 10.000 nghĩa là hóa đơn 35.000đ -> cộng 3 điểm, phần dư
+     * làm tròn xuống - xem InvoiceDAO#createInvoice). Không bao giờ trả về
+     * null hoặc <= 0 - fallback DEFAULT_POINT_RATE nếu thiếu/lỗi/âm.
+     */
+    public BigDecimal getPointRate() {
+        String raw = getValue(KEY_POINT_RATE, null);
+        if (raw == null || raw.isBlank()) return DEFAULT_POINT_RATE;
+        try {
+            BigDecimal rate = new BigDecimal(raw.trim());
+            return rate.signum() > 0 ? rate : DEFAULT_POINT_RATE;
+        } catch (NumberFormatException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StoreConfigDAO.getPointRate - gia tri POINT_RATE khong hop le: " + raw, e);
+            return DEFAULT_POINT_RATE;
         }
     }
 

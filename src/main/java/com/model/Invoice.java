@@ -33,6 +33,11 @@ public class Invoice {
 
     private int itemCount; // so dong san pham khac nhau trong hoa don
 
+    // Chi duoc gan (KHONG luu cot rieng trong Invoices) ngay sau khi tao hoa
+    // don thanh cong cho khach co tai khoan (xem InvoiceDAO#createInvoice) -
+    // dung de hien thong bao "+N diem" tren PosPanel.
+    private int pointsEarned;
+
     public Invoice() {
     }
 
@@ -91,6 +96,9 @@ public class Invoice {
 
     public int getItemCount() { return itemCount; }
     public void setItemCount(int itemCount) { this.itemCount = itemCount; }
+
+    public int getPointsEarned() { return pointsEarned; }
+    public void setPointsEarned(int pointsEarned) { this.pointsEarned = pointsEarned; }
 
     public boolean isCancelled() {
         return "CANCELLED".equalsIgnoreCase(status);

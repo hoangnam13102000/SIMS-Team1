@@ -418,8 +418,9 @@ public class UserDAO extends BaseDAO<User> {
             }
 
             if (user.getRole() == Role.CUSTOMER) {
-                try (PreparedStatement cps = con.prepareStatement(insertCustomerSql)) {
+            	try (PreparedStatement cps = con.prepareStatement(insertCustomerSql)) {
                     cps.setInt(1, user.getUserId());
+                    cps.setString(2, generateCustomerCode(user.getUserId()));
                     int customerAffected = cps.executeUpdate();
                     if (customerAffected == 0) {
                         con.rollback();
@@ -565,7 +566,7 @@ public class UserDAO extends BaseDAO<User> {
 
         String sql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID, Status) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?), 'ACTIVE')";
-        String insertCustomerSql = "INSERT INTO Customers (CustomerID, MemberPoint) VALUES (?, 0)";
+        String insertCustomerSql = "INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint) VALUES (?, ?, 0)";
 
         Connection con = null;
         try {
@@ -596,6 +597,7 @@ public class UserDAO extends BaseDAO<User> {
             if (user.getRole() == Role.CUSTOMER) {
                 try (PreparedStatement cps = con.prepareStatement(insertCustomerSql)) {
                     cps.setInt(1, user.getUserId());
+                    cps.setString(2, generateCustomerCode(user.getUserId()));
                     if (cps.executeUpdate() == 0) {
                         con.rollback();
                         AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
@@ -701,5 +703,8 @@ public class UserDAO extends BaseDAO<User> {
 
         if (where.length() == 0) return getPaged(pageNumber, pageSize);
         return getPaged(pageNumber, pageSize, where.toString(), params.toArray());
+    }
+    private String generateCustomerCode(int userId) {
+        return "CUS_" + String.format("%04d", userId);
     }
 }

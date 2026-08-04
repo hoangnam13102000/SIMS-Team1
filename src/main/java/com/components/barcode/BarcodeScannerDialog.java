@@ -3,7 +3,9 @@ package com.components.barcode;
 import com.github.sarxos.webcam.Webcam;
 import com.github.sarxos.webcam.WebcamPanel;
 import com.github.sarxos.webcam.WebcamResolution;
+import com.google.zxing.BarcodeFormat;
 import com.google.zxing.BinaryBitmap;
+import com.google.zxing.DecodeHintType;
 import com.google.zxing.LuminanceSource;
 import com.google.zxing.MultiFormatReader;
 import com.google.zxing.NotFoundException;
@@ -20,6 +22,9 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.Map;
 import java.util.function.Consumer;
 
 public class BarcodeScannerDialog extends JDialog {
@@ -35,7 +40,16 @@ public class BarcodeScannerDialog extends JDialog {
     private Consumer<String> onScanned;
 
     public BarcodeScannerDialog(Window owner) {
-        super(owner, "Quét mã vạch sản phẩm", ModalityType.APPLICATION_MODAL);
+        this(owner, "Quét mã vạch sản phẩm", "Đưa mã vạch sản phẩm vào giữa khung hình");
+    }
+
+    /**
+     * Overload cho phep tuy bien tieu de dialog + dong huong dan - dung khi
+     * tai su dung dialog nay cho muc dich KHAC ngoai quet san pham (vd quet
+     * the/ma khach hang tren PosPanel) ma khong doi lai UI hardcode "san pham".
+     */
+    public BarcodeScannerDialog(Window owner, String dialogTitle, String instructionText) {
+        super(owner, dialogTitle, ModalityType.APPLICATION_MODAL);
         setSize(520, 460);
         setLocationRelativeTo(owner);
         setResizable(false);
@@ -45,7 +59,7 @@ public class BarcodeScannerDialog extends JDialog {
         root.setBackground(AppColor.WHITE);
         root.setBorder(new EmptyBorder(AppSpacing.LG, AppSpacing.LG, AppSpacing.LG, AppSpacing.LG));
 
-        JLabel title = new JLabel("Đưa mã vạch sản phẩm vào giữa khung hình");
+        JLabel title = new JLabel(instructionText);
         title.setFont(AppFont.BODY_BOLD);
         title.setForeground(AppColor.TEXT_TITLE);
         root.add(title, BorderLayout.NORTH);
@@ -123,15 +137,37 @@ public class BarcodeScannerDialog extends JDialog {
     }
 
     /**
-     * Vong lap doc + giai ma chay tren thread nen rieng (daemon) - dung
-     * webcam.getImage() de lay khung hinh moi nhat (doc lap voi vong ve cua
-     * WebcamPanel), thu giai ma bang ZXing; neu chua thay ma vach nao trong
-     * khung hinh (truong hop BINH THUONG, xay ra hau het cac lan) thi bo qua
-     * va thu lai khung ke tiep sau 1 khoang nghi ngan.
+     * TRY_HARDER: bat ZXing dung nhieu ky thuat xu ly anh hon (chap nhan cham
+     * hon) thay vi bo cuoc ngay khi khung hinh hoi mo/nghieng - day la nguyen
+     * nhan pho bien nhat khi camera mo binh thuong nhung quet mai khong
+     * nhan duoc ma. POSSIBLE_FORMATS: khai bao san cac dinh dang thuc te
+     * dang dung (1D cho ma san pham dang in, QR phong khi can) de reader
+     * khong mat thoi gian thu cac dinh dang khong lien quan.
+     * <p>
+     * Vong lap ben duoi doc + giai ma chay tren thread nen rieng (daemon) -
+     * dung webcam.getImage() de lay khung hinh moi nhat (doc lap voi vong ve
+     * cua WebcamPanel), thu giai ma bang ZXing; neu chua thay ma vach nao
+     * trong khung hinh (truong hop BINH THUONG, xay ra hau het cac lan) thi
+     * bo qua va thu lai khung ke tiep sau 1 khoang nghi ngan.
      */
+    private static Map<DecodeHintType, Object> buildHints() {
+        Map<DecodeHintType, Object> hints = new EnumMap<>(DecodeHintType.class);
+        hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+        hints.put(DecodeHintType.POSSIBLE_FORMATS, EnumSet.of(
+                BarcodeFormat.CODE_128,
+                BarcodeFormat.CODE_39,
+                BarcodeFormat.EAN_13,
+                BarcodeFormat.EAN_8,
+                BarcodeFormat.UPC_A,
+                BarcodeFormat.UPC_E,
+                BarcodeFormat.QR_CODE));
+        return hints;
+    }
+
     private void startScanLoop() {
         scanThread = new Thread(() -> {
             MultiFormatReader reader = new MultiFormatReader();
+            reader.setHints(buildHints());
             while (scanning) {
                 try {
                     BufferedImage image = webcam.getImage();
@@ -164,7 +200,10 @@ public class BarcodeScannerDialog extends JDialog {
         try {
             LuminanceSource source = new BufferedImageLuminanceSource(image);
             BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
-            Result result = reader.decode(bitmap);
+            // decode(bitmap) 1 tham so BO QUA hint da setHints() truoc do (chi
+            // decodeWithState moi "honor" state/hint dang luu tren reader) -
+            // day la ly do TRY_HARDER khong co tac dung neu dung decode().
+            Result result = reader.decodeWithState(bitmap);
             return result.getText();
         } catch (NotFoundException notFound) {
             // Binh thuong: khung hinh nay chua doc duoc ma vach nao.
