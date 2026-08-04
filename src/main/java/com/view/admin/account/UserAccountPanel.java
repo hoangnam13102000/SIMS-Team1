@@ -77,7 +77,7 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     protected String getPageSubtitle() { return "Quản lý tài khoản người dùng và phân quyền trong hệ thống"; }
 
     @Override
-    protected String getAddButtonLabel() { return "Thêm tài khoản"; }
+    protected String getAddButtonLabel() { return null; }
 
     @Override
     protected String[] getColumnNames() {

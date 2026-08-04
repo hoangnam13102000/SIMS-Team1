@@ -5,11 +5,9 @@ import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.crud.TrashConfig;
 import com.components.table.ActionColumn;
-import com.components.table.AutoRowNumber;
 import com.dao.CustomerDAO;
 import com.model.Customer;
 import com.theme.AppColor;
-import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -26,7 +24,6 @@ import javax.swing.SwingUtilities;
 public class CustomerPanel extends BaseCrudPanel<Customer> {
 
     private final CustomerDAO customerDAO = new CustomerDAO();
-    private AutoRowNumber stt;
 
     public CustomerPanel() {
         super();
@@ -40,17 +37,13 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
                 .add("delete", FontAwesomeSolid.TRASH_ALT, AppColor.ERROR, "Xóa khách hàng",
                         this::deleteRowPublic));
 
-        stt = table.setAutoRowNumberColumn(0);
-        table.setBadgeColumn(7, this::statusLabel, this::statusColor);
-        table.setBadgeColumn(8, this::lockLabel, this::lockColor);
+        // Không STT / Điểm TV / Khóa — nhường chỗ cho Mã KH, Đăng nhập, Họ tên, Email, SĐT
+        // để hiện full text (không "CUS_00...", không "gmail..."). Không scroll ngang.
+        table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
-        // Dat do rong "ua thich" theo ty le hop ly cho tung cot (STT/Trang
-        // thai/Khoa nho gon, Ho ten/Email rong hon) - ket hop voi hanh vi mac
-        // dinh cua JTable (AUTO_RESIZE_SUBSEQUENT_COLUMNS, khong bat
-        // enableHorizontalScroll() o day) se tu co gian ty le theo dung do
-        // rong khung nhin hien tai, tranh phai cuon ngang moi thay het cac cot.
-        table.setColumnWidths(55, 100, 130, 85, 130, 80, 95, 115, 110);
-        table.setColumnMinWidths(48, 85, 100, 60, 90, 65, 75, 90, 95);
+        // Mã KH ~ CUS_0009 (9 ký tự), Email dài nhất → ưu tiên width.
+        table.setColumnWidths(110, 130, 160, 240, 120, 130);
+        table.setColumnMinWidths(100, 110, 130, 200, 105, 120);
 
         initialLoad();
     }
@@ -74,34 +67,19 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
 
     @Override
     protected String[] getColumnNames() {
-    	return new String[]{"STT", "Mã KH", "Đăng nhập", "Họ tên", "Email", "SĐT", "Điểm TV", "Trạng thái", "Khóa"};
+        return new String[]{"Mã KH", "Đăng nhập", "Họ tên", "Email", "SĐT", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(Customer item) {
         return new Object[]{
-                "",
                 item.getCustomerCode(),
                 item.getUsername(),
                 item.getFullName(),
                 item.getEmail(),
                 item.getPhone(),
-                NumberUtil.formatThousands(item.getMemberPoint()),
-                item.getStatus(),
-                item.isLocked() ? "LOCKED" : "NORMAL"
+                item.getStatus()
         };
-    }
-
-    /** Cột "Điểm thành viên" (chỉ số 6, sau khi thêm cột "Mã KH") đã format bằng NumberUtil - sort theo giá trị số thay vì chữ cái. */
-    @Override
-    protected int[] numericColumns() { return new int[]{6}; }
-
-    /** STT phải tính theo đúng trang đang xem (vd trang 2, 10 dòng/trang thì
-     *  dòng đầu là STT 11) chứ không luôn bắt đầu lại từ 1. */
-    @Override
-    protected void afterRender(PaginationHelper.PaginationResult<Customer> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
-        table.getTable().repaint();
     }
 
     @Override
@@ -239,13 +217,5 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
 
     private Color statusColor(Object value) {
         return "DISABLED".equalsIgnoreCase(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
-    }
-
-    private String lockLabel(Object value) {
-        return "LOCKED".equals(value) ? "Đang khóa" : "Bình thường";
-    }
-
-    private Color lockColor(Object value) {
-        return "LOCKED".equals(value) ? AppColor.ERROR : AppColor.TEXT_MUTED;
     }
 }

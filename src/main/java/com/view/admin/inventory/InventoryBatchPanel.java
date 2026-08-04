@@ -2,7 +2,6 @@ package com.view.admin.inventory;
 
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
-import com.components.table.AutoRowNumber;
 import com.dao.InventoryBatchDAO;
 import com.model.InventoryBatch;
 import com.model.permission.AppPermission;
@@ -28,16 +27,14 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     private static final int NEAR_EXPIRY_DAYS = 7;
 
     private final InventoryBatchDAO batchDAO = new InventoryBatchDAO();
-    private AutoRowNumber stt;
 
     public InventoryBatchPanel() {
         super();
 
-        stt = table.setAutoRowNumberColumn(0);
-        // STT | Ma lo | San pham | Nha cung cap | NSX | HSD | SL nhap | Con lai | Gia nhap | Trang thai
-        table.setColumnWidths(45, 95, 150, 130, 90, 90, 70, 80, 110, 120);
-        table.setColumnMinWidths(35, 80, 120, 100, 80, 80, 60, 70, 100, 100);
-        table.setBadgeColumn(9, this::statusLabel, this::statusColor);
+        // Ma lo | San pham | Nha cung cap | NSX | HSD | SL nhap | Con lai | Gia nhap | Trang thai
+        table.setColumnWidths(160, 150, 130, 90, 90, 70, 80, 110, 120);
+        table.setColumnMinWidths(140, 120, 100, 80, 80, 60, 70, 100, 100);
+        table.setBadgeColumn(8, this::statusLabel, this::statusColor);
 
         initialLoad();
     }
@@ -62,14 +59,13 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Mã lô", "Sản phẩm", "Nhà cung cấp",
+        return new String[]{"Mã lô", "Sản phẩm", "Nhà cung cấp",
                 "NSX", "HSD", "SL nhập", "Còn lại", "Giá nhập", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(InventoryBatch item) {
         return new Object[]{
-                "",
                 item.getBatchCode(),
                 item.getProductName(),
                 item.getSupplierName(),
@@ -83,7 +79,7 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{6, 7, 8}; }
+    protected int[] numericColumns() { return new int[]{5, 6, 7}; }
 
     @Override
     protected String getEntityLabel() { return "lô hàng"; }
@@ -91,12 +87,6 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     @Override
     protected String getItemDisplayName(InventoryBatch item) {
         return item.getBatchCode() + " - " + item.getProductName();
-    }
-
-    @Override
-    protected void afterRender(PaginationHelper.PaginationResult<InventoryBatch> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
-        table.getTable().repaint();
     }
 
     @Override

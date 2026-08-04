@@ -1,7 +1,6 @@
 package com.view.admin.invoice;
 
 import com.components.crud.BaseCrudPanel;
-import com.components.table.AutoRowNumber;
 import com.dao.InvoiceDAO;
 import com.model.Invoice;
 import com.theme.AppColor;
@@ -32,21 +31,30 @@ import javax.swing.SwingUtilities;
  */
 public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
-    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    /** Chỉ ngày, không giờ. */
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final InvoiceDAO invoiceDAO = new InvoiceDAO();
-    private AutoRowNumber stt;
 
     public InvoicePanel() {
         super();
 
-        stt = table.setAutoRowNumberColumn(0);
-        // STT | Ma hoa don | Khach hang | Nguoi tao | Ngay tao | So mat hang | Tong tien | PT thanh toan | Trang thai
-        table.setColumnWidths(45, 100, 140, 120, 130, 90, 120, 110, 100);
-        table.setColumnMinWidths(35, 90, 110, 100, 110, 70, 100, 90, 90);
-        table.setBadgeColumn(8, this::statusLabel, this::statusColor);
+        // Không STT / Số mặt hàng. Ngày tạo chỉ dd/MM/yyyy.
+        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
 
         initialLoad();
+        applyColumnWidths();
+    }
+
+    private void applyColumnWidths() {
+        // Mã HĐ | Khách hàng | Người tạo | Ngày tạo | Tổng tiền | PT thanh toán | Trạng thái
+        table.setColumnWidths(175, 150, 130, 110, 120, 120, 110);
+        table.setColumnMinWidths(165, 110, 100, 100, 100, 100, 95);
+        if (table.getTable().getColumnModel().getColumnCount() > 0) {
+            var col = table.getTable().getColumnModel().getColumn(0);
+            col.setMinWidth(165);
+            col.setPreferredWidth(175);
+        }
     }
 
     @Override
@@ -65,27 +73,26 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Mã hóa đơn", "Khách hàng", "Người tạo", "Ngày tạo",
-                "Số mặt hàng", "Tổng tiền", "PT thanh toán", "Trạng thái"};
+        return new String[]{"Mã hóa đơn", "Khách hàng", "Người tạo", "Ngày tạo",
+                "Tổng tiền", "PT thanh toán", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(Invoice item) {
         return new Object[]{
-                "",
                 item.getInvoiceCode(),
                 item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ",
                 item.getCreatedByName(),
-                item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-",
-                item.getItemCount(),
+                item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_FORMAT) : "-",
                 NumberUtil.formatThousands(item.getTotalAmount().longValue()),
                 paymentMethodLabel(item.getPaymentMethod()),
                 statusLabel(item)
         };
     }
 
+    /** Tổng tiền (chỉ số 4) — sort theo số. */
     @Override
-    protected int[] numericColumns() { return new int[]{5, 6}; }
+    protected int[] numericColumns() { return new int[]{4}; }
 
     @Override
     protected String getEntityLabel() { return "hóa đơn"; }
@@ -93,12 +100,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
     @Override
     protected String getItemDisplayName(Invoice item) {
         return item.getInvoiceCode() + " - " + (item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ");
-    }
-
-    @Override
-    protected void afterRender(PaginationHelper.PaginationResult<Invoice> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
-        table.getTable().repaint();
     }
 
     @Override

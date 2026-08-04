@@ -1,7 +1,6 @@
 package com.view.admin.order;
 
 import com.components.crud.BaseCrudPanel;
-import com.components.table.AutoRowNumber;
 import com.dao.OrderDAO;
 import com.model.Order;
 import com.theme.AppColor;
@@ -15,7 +14,6 @@ import java.awt.Frame;
 import java.awt.Window;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 
 /**
@@ -38,21 +36,27 @@ public class OrderPanel extends BaseCrudPanel<Order> {
             DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
 
     private final OrderDAO orderDAO = new OrderDAO();
-    private AutoRowNumber stt;
 
     public OrderPanel() {
         super();
 
-        stt = table.setAutoRowNumberColumn(0);
-        // STT | Mã đơn | Khách hàng | SĐT | Ngày đặt | SL | Tổng tiền | PTTT | Thanh toán | Trạng thái
-        // Tổng preferred ~940px + cột Thao tác -> vừa viewport admin, không cần scroll ngang.
-        table.setColumnWidths(40, 85, 150, 105, 120, 50, 90, 70, 120, 110);
-        table.setColumnMinWidths(36, 70, 100, 90, 105, 45, 75, 60, 105, 95);
-        table.getTable().setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
-        table.setBadgeColumn(8, this::statusLabel, this::paymentStatusColor);
-        table.setBadgeColumn(9, this::statusLabel, this::orderStatusColor);
+        // Không STT / SĐT / SL — Mã đơn | Khách hàng | Ngày đặt | Tổng tiền | PTTT | Thanh toán | Trạng thái
+        table.setBadgeColumn(5, this::statusLabel, this::paymentStatusColor);
+        table.setBadgeColumn(6, this::statusLabel, this::orderStatusColor);
 
         initialLoad();
+        applyColumnWidths();
+    }
+
+    private void applyColumnWidths() {
+        // Mã đơn (DH####) min đủ hiện full; các cột khác co được. Không scroll ngang.
+        table.setColumnWidths(110, 160, 130, 110, 80, 130, 125);
+        table.setColumnMinWidths(100, 120, 110, 90, 70, 110, 110);
+        if (table.getTable().getColumnModel().getColumnCount() > 0) {
+            var col = table.getTable().getColumnModel().getColumn(0);
+            col.setMinWidth(100);
+            col.setPreferredWidth(110);
+        }
     }
 
     @Override
@@ -71,22 +75,18 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     @Override
     protected String[] getColumnNames() {
-        // Header ngắn để không wrap / cắt chữ khi AUTO_RESIZE.
         return new String[]{
-                "STT", "Mã đơn", "Khách hàng", "SĐT", "Ngày đặt",
-                "SL", "Tổng tiền", "PTTT", "Thanh toán", "Trạng thái"
+                "Mã đơn", "Khách hàng", "Ngày đặt",
+                "Tổng tiền", "PTTT", "Thanh toán", "Trạng thái"
         };
     }
 
     @Override
     protected Object[] mapRowToColumns(Order item) {
         return new Object[]{
-                "",
                 item.getOrderCode(),
                 item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ",
-                item.getCustomerPhone() != null ? item.getCustomerPhone() : "-",
                 item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-",
-                item.getItemCount(),
                 NumberUtil.formatThousands(item.getTotalAmount().longValue()),
                 paymentMethodLabel(item.getPaymentMethod()),
                 paymentStatusLabel(item.getPaymentStatus()),
@@ -94,8 +94,9 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         };
     }
 
+    /** Tổng tiền (chỉ số 3) — sort theo số. */
     @Override
-    protected int[] numericColumns() { return new int[]{5, 6}; }
+    protected int[] numericColumns() { return new int[]{3}; }
 
     @Override
     protected String getEntityLabel() { return "đơn hàng"; }
@@ -104,12 +105,6 @@ public class OrderPanel extends BaseCrudPanel<Order> {
     protected String getItemDisplayName(Order item) {
         return item.getOrderCode() + " - "
                 + (item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ");
-    }
-
-    @Override
-    protected void afterRender(PaginationHelper.PaginationResult<Order> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
-        table.getTable().repaint();
     }
 
     @Override

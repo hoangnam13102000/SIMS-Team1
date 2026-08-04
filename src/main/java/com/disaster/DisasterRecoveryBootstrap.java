@@ -27,23 +27,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.function.Supplier;
 
-/**
- * Goi tu Main.java: DisasterRecoveryBootstrap.init();
- * Cau hinh tuy chon qua secure-config.enc (co default an toan neu khong khai bao):
- *   BACKUP_DIR, INCIDENT_DIR, BACKUP_INTERVAL_MINUTES, BACKUP_RETENTION_COUNT,
- *   DB_HEALTH_CHECK_INTERVAL_SEC, DB_HEALTH_FAILURE_THRESHOLD, EMERGENCY_BACKUP_STALE_HOURS,
- *   BACKUP_ENCRYPTION_ENABLED (mac dinh true), BACKUP_ENCRYPTION_PASSPHRASE (bat buoc
- *   neu BACKUP_ENCRYPTION_ENABLED=true - file backup se duoc ma hoa AES-256-GCM,
- *   khoa dan xuat tu passphrase nay qua PBKDF2; xem EncryptingBackupStrategy).
- * <p>
- * KHAC voi ban goc cua myShop: SIMS chua co module "Bao cao bao mat"
- * (SecurityMonitorScheduler) hay canh bao qua email (EmailIncidentSink), nen
- * ban rut gon nay CHI gom: sao luu dinh ky/thu cong + khoi phuc + ghi nhat
- * ky su co ra file cuc bo (FileIncidentSink) + theo doi ket noi DB
- * (DbHealthMonitor, tu dong sao luu khan cap neu ban backup gan nhat da cu).
- * Neu sau nay SIMS co module bao mat/email rieng, co the bo sung them sink
- * tuong tu EmailIncidentSink cua myShop ma khong can doi gi o day.
- */
 public final class DisasterRecoveryBootstrap {
 
     private static volatile BackupManager backupManager;
@@ -65,7 +48,7 @@ public final class DisasterRecoveryBootstrap {
 
         File backupDir = new File(config.get("BACKUP_DIR", "backups"));
         File incidentDir = new File(config.get("INCIDENT_DIR", "incidents"));
-        long intervalMinutes = parseLong(config.get("BACKUP_INTERVAL_MINUTES", "360"), 360L);
+        long intervalMinutes = parseLong(config.get("BACKUP_INTERVAL_MINUTES", "1440"), 1440L);
         int retentionCount = config.getInt("BACKUP_RETENTION_COUNT", 14);
         long healthCheckIntervalSec = parseLong(config.get("DB_HEALTH_CHECK_INTERVAL_SEC", "30"), 30L);
         int failureThreshold = config.getInt("DB_HEALTH_FAILURE_THRESHOLD", 5);

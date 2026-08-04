@@ -4,6 +4,7 @@ import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.model.Product;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -76,9 +77,6 @@ public class ProductDAO extends BaseDAO<Product> {
         String sql = "INSERT INTO Products (ProductName, CategoryID, Brand, Unit, WeightVolume, Description, "
                 + "ImportPrice, SellPrice, ImageUrl, Stock, MinStock, Status) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        // KHONG dua ProductCode vao day: no la cot COMPUTED PERSISTED (xem
-        // SIMS.sql), SQL Server tu tinh tu ProductID ngay sau khi insert -
-        // khong duoc phep (va khong can) ghi gia tri tay cho cot nay.
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
             bindProduct(ps, product);
@@ -99,17 +97,10 @@ public class ProductDAO extends BaseDAO<Product> {
         }
     }
 
-    /**
-     * "SP_" + ProductID dem 4 so (vd ProductID=7 -> "SP_0007") - PHAI khop
-     * chinh xac cong thuc cot COMPUTED trong SIMS.sql
-     * (ProductCode AS ('SP_' + RIGHT('0000' + CAST(ProductID AS VARCHAR(10)), 4))),
-     * dung de gan ngay vao object sau insert() ma khong can truy van lai.
-     */
     private String generateProductCode(int productId) {
         return "SP_" + String.format("%04d", productId);
     }
 
-    /** Cap nhat 1 san pham (gom ca Stock/MinStock - hien chua co man hinh nhap/xuat kho rieng nen ProductFormDialog la noi duy nhat chinh ton kho). Tra ve true neu co it nhat 1 dong bi anh huong. */
     public boolean update(Product product) {
         String sql = "UPDATE Products SET ProductName = ?, CategoryID = ?, Brand = ?, Unit = ?, WeightVolume = ?, Description = ?, "
                 + "ImportPrice = ?, SellPrice = ?, ImageUrl = ?, Stock = ?, MinStock = ?, Status = ?, UpdatedAt = GETDATE() "
@@ -126,7 +117,6 @@ public class ProductDAO extends BaseDAO<Product> {
         }
     }
 
-    /** Gan cac tham so chung cho insert/update, tra ve index tiep theo con trong (dung cho update noi them WHERE ProductID = ?). */
     private int bindProduct(PreparedStatement ps, Product product) throws SQLException {
         ps.setString(1, product.getProductName());
         ps.setInt(2, product.getCategoryId());
@@ -143,26 +133,65 @@ public class ProductDAO extends BaseDAO<Product> {
         return 13;
     }
 
-    /** Danh sach san pham dang ban (Status = ACTIVE), moi nhat/ten A-Z. */
+    /**
+     * Ban mo rong cua {@link #getPaged(int, int)}/{@link #search(String, int, int)}
+     * danh cho trang Quan ly san pham (Admin, ProductPanel): ket hop CUNG LUC
+     * tu khoa tim kiem (tren cac cot khai bao o getSearchableColumns()), loc
+     * theo danh muc (CategoryID) va loc theo khoang gia ban (SellPrice) trong
+     * 1 truy van phan trang duy nhat.
+     * <p>
+     * Moi tham so loc deu co the null/rong de bo qua dieu kien tuong ung.
+     * minPrice la can duoi bao gom (>=), maxPrice la can tren KHONG bao gom (<).
+     */
+    public PaginationHelper.PaginationResult<Product> getPagedFiltered(
+            int page, int pageSize, String keyword, Integer categoryId,
+            BigDecimal minPrice, BigDecimal maxPrice) {
+
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            String[] columns = getSearchableColumns();
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            StringBuilder keywordCondition = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) keywordCondition.append(" OR ");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(likeParam);
+            }
+            keywordCondition.append(")");
+            conditions.add(keywordCondition.toString());
+        }
+        if (categoryId != null) {
+            conditions.add("p.CategoryID = ?");
+            params.add(categoryId);
+        }
+        if (minPrice != null) {
+            conditions.add("p.SellPrice >= ?");
+            params.add(minPrice);
+        }
+        if (maxPrice != null) {
+            conditions.add("p.SellPrice < ?");
+            params.add(maxPrice);
+        }
+
+        String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
+        return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
     public List<Product> findAllActive() {
         return findActive(null, null);
     }
 
-    /** Tim san pham dang ban theo tu khoa (ten san pham hoac ten danh muc), dung cho o tim kiem tren header. */
     public List<Product> searchActive(String keyword) {
         return findActive(keyword, null);
     }
 
-    /** Danh sach san pham dang ban thuoc 1 danh muc, dung cho trang "Sản phẩm" phia client khi loc theo danh muc. */
     public List<Product> findActiveByCategory(int categoryId) {
         return findActive(null, categoryId);
     }
 
-    /**
-     * Truy van hop nhat: san pham dang ban (Status = ACTIVE), loc theo tu
-     * khoa (ten san pham/ten danh muc) va/hoac theo danh muc - ca 2 tham so
-     * deu co the null/rong de bo qua dieu kien tuong ung.
-     */
     public List<Product> findActive(String keyword, Integer categoryId) {
         StringBuilder sql = new StringBuilder(BASE_SELECT).append("WHERE p.Status = 'ACTIVE' ");
         List<Object> params = new ArrayList<>();
@@ -200,18 +229,6 @@ public class ProductDAO extends BaseDAO<Product> {
         return result;
     }
 
-    /**
-     * Tim 1 san pham DANG BAN theo ma san pham (ProductCode, vd "SP_0007") -
-     * dung cho luong quet ma vach tai POS (xem BarcodeScannerDialog): may
-     * quet tra ve chuoi text giai ma duoc, app tim dung san pham co
-     * ProductCode khop chuoi do. So sanh khong phan biet hoa/thuong va bo
-     * khoang trang thua o 2 dau de khoan dung sai nho tu qua trinh quet.
-     * <p>
-     * LUU Y: DB hien CHUA co cot Barcode rieng - cua hang can tu in nhan ma
-     * vach ma NOI DUNG la ProductCode (vd in ma vach cho chuoi "SP_0007")
-     * roi dan len san pham/ke hang thi tinh nang nay moi hoat dong dung.
-     * Tra ve null neu khong tim thay hoac san pham da ngung ban (DISABLED).
-     */
     public Product findActiveByCode(String code) {
         if (code == null || code.isBlank()) return null;
         String sql = BASE_SELECT + "WHERE p.Status = 'ACTIVE' AND UPPER(p.ProductCode) = UPPER(?)";
@@ -228,7 +245,6 @@ public class ProductDAO extends BaseDAO<Product> {
         }
     }
 
-    /** Escape cac ky tu dac biet cua LIKE (%, _, [) truoc khi noi vao tham so tim kiem. */
     private String escapeLike(String raw) {
         return raw.replace("\\", "\\\\")
                 .replace("%", "\\%")

@@ -3,7 +3,6 @@ package com.view.admin.stockalert;
 import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.table.ActionColumn;
-import com.components.table.AutoRowNumber;
 import com.dao.StockAlertDAO;
 import com.model.StockAlert;
 import com.service.AuthService;
@@ -16,22 +15,12 @@ import java.awt.Color;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/**
- * Trang "Cảnh báo tồn kho" (Quan ly kho) - danh sách các báo cáo hết/sắp
- * hết hàng do NV bán hàng gửi lên (xem sql/StockAlerts_Migration.sql +
- * {@link StockAlertDAO}), để lên kế hoạch nhập hàng bổ sung.
- * <p>
- * Không tạo/sửa/xóa tại đây - báo cáo chỉ được tạo từ phía NV bán hàng
- * (xem nút "Báo hết hàng" ở {@link com.view.admin.product.ProductPanel}),
- * Quan ly kho chỉ xử lý chuyển trạng thái NEW -&gt; PLANNED -&gt; RESOLVED.
- */
 public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
 
     private final StockAlertDAO stockAlertDAO = new StockAlertDAO();
-    private AutoRowNumber stt;
 
     public StockAlertPanel() {
         super();
@@ -43,18 +32,22 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 .add("resolve", FontAwesomeSolid.CHECK_CIRCLE, AppColor.SUCCESS, "Đánh dấu đã xử lý xong",
                         this::resolveRow, this::canResolve));
 
-        stt = table.setAutoRowNumberColumn(0);
-        table.setBadgeColumn(3, this::alertTypeLabel, this::alertTypeColor);
-        table.setBadgeColumn(8, this::statusLabel, this::statusColor);
-
-        table.setColumnWidths(40, 85, 170, 105, 90, 90, 120, 120, 110);
-        table.setColumnMinWidths(36, 70, 130, 90, 75, 75, 100, 105, 95);
+        // Không STT / Tồn khi báo / Tồn tối thiểu
+        // Mã SP | Tên SP | Loại cảnh báo | Người báo cáo | Thời gian | Trạng thái
+        table.setBadgeColumn(2, this::alertTypeLabel, this::alertTypeColor);
+        table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
         initialLoad();
+        applyColumnWidths();
 
         // Quan ly kho vao trang nay -> coi nhu da xem het cac bao cao hien
         // co, badge tren sidebar se ve 0 trong lan poll ke tiep (toi da 5s).
         stockAlertDAO.markAllSeen();
+    }
+
+    private void applyColumnWidths() {
+        table.setColumnWidths(100, 200, 120, 150, 130, 130);
+        table.setColumnMinWidths(90, 150, 105, 120, 110, 110);
     }
 
     @Override
@@ -74,20 +67,17 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
     @Override
     protected String[] getColumnNames() {
         return new String[]{
-                "STT", "Mã SP", "Tên sản phẩm", "Loại cảnh báo", "Tồn khi báo cáo",
-                "Tồn tối thiểu", "Người báo cáo", "Thời gian", "Trạng thái"
+                "Mã SP", "Tên sản phẩm", "Loại cảnh báo",
+                "Người báo cáo", "Thời gian", "Trạng thái"
         };
     }
 
     @Override
     protected Object[] mapRowToColumns(StockAlert item) {
         return new Object[]{
-                "",
                 item.getProductCode(),
                 item.getProductName(),
                 item.getAlertType(),
-                item.getStockAtReport(),
-                item.getMinStock(),
                 item.getReportedByName(),
                 item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-",
                 item.getStatus()
@@ -95,19 +85,13 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{4, 5}; }
+    protected int[] numericColumns() { return new int[]{}; }
 
     @Override
     protected String getEntityLabel() { return "cảnh báo"; }
 
     @Override
     protected String getItemDisplayName(StockAlert item) { return item.getProductName(); }
-
-    @Override
-    protected void afterRender(PaginationHelper.PaginationResult<StockAlert> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
-        table.getTable().repaint();
-    }
 
     @Override
     protected PaginationHelper.PaginationResult<StockAlert> fetchPage(int page, int pageSize) {

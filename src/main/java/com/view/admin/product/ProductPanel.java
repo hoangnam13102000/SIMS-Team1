@@ -1,12 +1,15 @@
 package com.view.admin.product;
 
 import com.components.BaseDialog;
+import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
 import com.components.table.AutoRowNumber;
+import com.dao.CategoryDAO;
 import com.dao.ProductDAO;
 import com.dao.StockAlertDAO;
+import com.model.Category;
 import com.model.Product;
 import com.model.StockAlert;
 import com.model.permission.AppPermission;
@@ -16,20 +19,33 @@ import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
+import javax.swing.JLabel;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import javax.swing.SwingUtilities;
 
 public class ProductPanel extends BaseCrudPanel<Product> {
 
     private final ProductDAO productDAO = new ProductDAO();
+    private final CategoryDAO categoryDAO = new CategoryDAO();
     private final StockAlertDAO stockAlertDAO = new StockAlertDAO();
     private AutoRowNumber stt;
+
+    private FilterDropdown<CategoryOption> categoryFilter;
+    private FilterDropdown<PriceRangeOption> priceFilter;
+    private JLabel clearFiltersLink;
 
     public ProductPanel() {
         super();
@@ -39,9 +55,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
                         this::viewRowPublic);
 
-        // "Sửa" và "Ngừng bán/Đang bán" thay đổi dữ liệu sản phẩm nên chỉ hiện
-        // cho ai có quyền PRODUCT_MANAGE (Admin). Vai trò chỉ có PRODUCT_VIEW
-        // (Sales Manager, Sales Staff) chỉ được xem - xem canManageProducts().
         if (canManageProducts()) {
             actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                             this::editRowPublic)
@@ -53,10 +66,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                             null);
         }
 
-        // Chi NV ban hang (quyen STOCK_ALERT_REPORT) moi thay nut bao het
-        // hang - Quan ly kho/Admin xem trang nay khong can bao lai cho
-        // chinh minh. Nut bi "khoa xam" (enabledPredicate) o cac SP con du
-        // ton, tranh bao trung/bao sai.
         if (AuthService.getInstance().can(AppPermission.STOCK_ALERT_REPORT)) {
             actions.add("report-alert", FontAwesomeSolid.BELL, AppColor.WARNING, "Báo hết/sắp hết hàng",
                     this::reportAlertRow, this::canReportAlert);
@@ -68,13 +77,119 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         table.setImageColumn(1, 40);
         table.setBadgeColumn(8, this::statusLabel, this::statusColor);
 
-        // Preferred theo tỷ lệ; minWidth đủ badge "Đang bán"/"Ngừng bán" không bị clip.
-        // Không enableHorizontalScroll → cột co giãn theo khung, không scrollbar ngang.
-        // Text dài (tên SP, danh mục...) nếu tràn sẽ hiện "..." + tooltip full khi hover.
         table.setColumnWidths(45, 52, 85, 160, 110, 95, 95, 70, 105);
         table.setColumnMinWidths(40, 48, 70, 100, 85, 75, 75, 55, 95);
 
+        buildFilterBar();
+
         initialLoad();
+    }
+
+    // ---------------------------------------------------------------
+    // Bo loc: danh muc + khoang gia ban (hien canh o tim kiem tren toolbar)
+    // ---------------------------------------------------------------
+
+    private static final class CategoryOption {
+        final Integer categoryId;
+        final String label;
+
+        CategoryOption(Integer categoryId, String label) {
+            this.categoryId = categoryId;
+            this.label = label;
+        }
+
+        @Override
+        public String toString() { return label; }
+    }
+
+    private enum PriceRangeOption {
+        ALL("Tất cả mức giá", null, null),
+        UNDER_50K("Dưới 50.000đ", null, new BigDecimal(50_000)),
+        R_50_100K("50.000đ - 100.000đ", new BigDecimal(50_000), new BigDecimal(100_000)),
+        R_100_300K("100.000đ - 300.000đ", new BigDecimal(100_000), new BigDecimal(300_000)),
+        R_300_500K("300.000đ - 500.000đ", new BigDecimal(300_000), new BigDecimal(500_000)),
+        R_500K_1M("500.000đ - 1.000.000đ", new BigDecimal(500_000), new BigDecimal(1_000_000)),
+        OVER_1M("Trên 1.000.000đ", new BigDecimal(1_000_000), null);
+
+        final String label;
+        final BigDecimal min;
+        final BigDecimal max;
+
+        PriceRangeOption(String label, BigDecimal min, BigDecimal max) {
+            this.label = label;
+            this.min = min;
+            this.max = max;
+        }
+
+        @Override
+        public String toString() { return label; }
+    }
+
+    private void buildFilterBar() {
+        List<Category> categories = categoryDAO.findAll();
+        CategoryOption[] categoryOptions = new CategoryOption[categories.size() + 1];
+        categoryOptions[0] = new CategoryOption(null, "Tất cả danh mục");
+        for (int i = 0; i < categories.size(); i++) {
+            Category c = categories.get(i);
+            categoryOptions[i + 1] = new CategoryOption(c.getCategoryId(), c.getCategoryName());
+        }
+
+        categoryFilter = new FilterDropdown<>(FontAwesomeSolid.LAYER_GROUP, categoryOptions);
+        categoryFilter.onChange(opt -> onFilterChanged());
+        addToolbarFilter(categoryFilter);
+
+        priceFilter = new FilterDropdown<>(FontAwesomeSolid.TAG, PriceRangeOption.values());
+        priceFilter.onChange(opt -> onFilterChanged());
+        addToolbarFilter(priceFilter);
+
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
+        clearFiltersLink.setIconTextGap(6);
+        clearFiltersLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+        clearFiltersLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearFiltersLink.setVisible(false);
+        clearFiltersLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                categoryFilter.resetToAll();
+                priceFilter.resetToAll();
+                onFilterChanged();
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.ERROR);
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+            }
+        });
+        addToolbarFilter(clearFiltersLink);
+    }
+
+    private void onFilterChanged() {
+        boolean anyActive = categoryFilter.isFilterActive() || priceFilter.isFilterActive();
+        if (clearFiltersLink != null) clearFiltersLink.setVisible(anyActive);
+        applyFilters();
+    }
+
+    private Integer selectedCategoryId() {
+        CategoryOption opt = categoryFilter == null ? null : categoryFilter.getSelected();
+        return opt == null ? null : opt.categoryId;
+    }
+
+    private BigDecimal selectedMinPrice() {
+        PriceRangeOption opt = priceFilter == null ? null : priceFilter.getSelected();
+        return opt == null ? null : opt.min;
+    }
+
+    private BigDecimal selectedMaxPrice() {
+        PriceRangeOption opt = priceFilter == null ? null : priceFilter.getSelected();
+        return opt == null ? null : opt.max;
     }
 
     @Override
@@ -89,12 +204,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     @Override
     protected String getAddButtonLabel() { return canManageProducts() ? "Thêm sản phẩm" : null; }
 
-    /**
-     * true nếu user hiện tại được phép thêm/sửa/ngừng-bán sản phẩm (PRODUCT_MANAGE - Admin).
-     * Role chỉ có PRODUCT_VIEW (Sales Manager, Sales Staff) vào được trang này để tra cứu
-     * nhưng KHÔNG được sửa dữ liệu - trước đây trang này không phân biệt 2 quyền này nên
-     * mọi vai trò vào được trang đều thấy đủ nút Thêm/Sửa/Ngừng bán.
-     */
     private boolean canManageProducts() {
         return AuthService.getInstance().can(AppPermission.PRODUCT_MANAGE);
     }
@@ -138,12 +247,14 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
     @Override
     protected PaginationHelper.PaginationResult<Product> fetchPage(int page, int pageSize) {
-        return productDAO.getPaged(page, pageSize);
+        return productDAO.getPagedFiltered(page, pageSize, null,
+                selectedCategoryId(), selectedMinPrice(), selectedMaxPrice());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<Product> searchPage(String keyword, int page, int pageSize) {
-        return productDAO.search(keyword, page, pageSize);
+        return productDAO.getPagedFiltered(page, pageSize, keyword,
+                selectedCategoryId(), selectedMinPrice(), selectedMaxPrice());
     }
 
     @Override
@@ -161,7 +272,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         dialog.setVisible(true);
     }
 
-    /** Không hỗ trợ xóa cứng - dùng "Ngừng bán" trong cột Thao tác hoặc form Sửa thay thế. */
     @Override
     protected boolean supportsDelete() { return false; }
 
@@ -245,7 +355,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         }
     }
 
-    /** Chỉ cho báo khi SP còn hàng để bán (ACTIVE) và đang hết/sắp hết hàng. */
     private boolean canReportAlert(int modelRow) {
         Product item = rowToItem(modelRow);
         return item != null && item.isActive() && (item.isOutOfStock() || item.isLowStock());
