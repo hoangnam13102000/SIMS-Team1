@@ -50,12 +50,15 @@ public class UserDAO extends BaseDAO<User> {
     @Override
     protected String getColumns() {
         return "u.UserID, u.Username, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
-                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode";
+                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode, e.EmployeeID";
     }
 
     @Override
     protected String getJoinClause() {
-        return "JOIN Roles r ON u.RoleID = r.RoleID";
+        // LEFT JOIN: khong phai User nao cung co ho so Employees (vd Role.CUSTOMER
+        // khong co dong tuong ung trong Employees, chi co trong Customers).
+        return "JOIN Roles r ON u.RoleID = r.RoleID "
+                + "LEFT JOIN Employees e ON u.UserID = e.UserID";
     }
 
     @Override
@@ -70,7 +73,7 @@ public class UserDAO extends BaseDAO<User> {
 
     @Override
     protected String[] getSearchableColumns() {
-        return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone"};
+        return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone", "e.EmployeeID"};
     }
 
     /**
@@ -390,6 +393,7 @@ public class UserDAO extends BaseDAO<User> {
         String insertUserSql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?))";
         String insertCustomerSql = "INSERT INTO Customers (CustomerID, MemberPoint) VALUES (?, 0)";
+        String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID) VALUES (?, ?)";
 
         Connection con = null;
         try {
@@ -418,7 +422,7 @@ public class UserDAO extends BaseDAO<User> {
             }
 
             if (user.getRole() == Role.CUSTOMER) {
-            	try (PreparedStatement cps = con.prepareStatement(insertCustomerSql)) {
+                try (PreparedStatement cps = con.prepareStatement(insertCustomerSql)) {
                     cps.setInt(1, user.getUserId());
                     cps.setString(2, generateCustomerCode(user.getUserId()));
                     int customerAffected = cps.executeUpdate();
@@ -426,6 +430,20 @@ public class UserDAO extends BaseDAO<User> {
                         con.rollback();
                         AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
                                 "UserDAO.register - khong the tao Customers cho userId=" + user.getUserId(), null);
+                        return false;
+                    }
+                }
+            } else {
+                // Moi role con lai (ADMIN, SALES_MANAGER, INVENTORY_MANAGER, SALES_STAFF)
+                // deu la nhan vien - tao ho so Employees tuong ung de co "ma nhan vien".
+                try (PreparedStatement eps = con.prepareStatement(insertEmployeeSql)) {
+                    eps.setInt(1, user.getUserId());
+                    eps.setString(2, generateEmployeeCode(user.getUserId()));
+                    int employeeAffected = eps.executeUpdate();
+                    if (employeeAffected == 0) {
+                        con.rollback();
+                        AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
+                                "UserDAO.register - khong the tao Employees cho userId=" + user.getUserId(), null);
                         return false;
                     }
                 }
@@ -472,7 +490,25 @@ public class UserDAO extends BaseDAO<User> {
         user.setStatus(rs.getString("Status"));
         java.sql.Timestamp createdAt = rs.getTimestamp("CreatedAt");
         if (createdAt != null) user.setCreatedAt(createdAt.toLocalDateTime());
+        user.setEmployeeCode(readEmployeeCodeIfPresent(rs));
         return user;
+    }
+
+    /**
+     * Doc cot EmployeeID (tu LEFT JOIN Employees) neu co trong ResultSet.
+     * Mot vai truy van thu cong khac trong DAO nay (login/findByUsername/
+     * findForPasswordReset) khong SELECT cot nay - rs.getString() se nem
+     * SQLException "column not found" thay vi tra ve null nhu voi cot NULL
+     * that su, nen phai tu kiem tra qua ResultSetMetaData truoc khi doc.
+     */
+    private String readEmployeeCodeIfPresent(ResultSet rs) throws SQLException {
+        java.sql.ResultSetMetaData meta = rs.getMetaData();
+        for (int i = 1; i <= meta.getColumnCount(); i++) {
+            if ("EmployeeID".equalsIgnoreCase(meta.getColumnLabel(i))) {
+                return rs.getString(i);
+            }
+        }
+        return null;
     }
 
     public Map<String, Role> findRolesByUsernames(Collection<String> usernames) {
@@ -567,6 +603,7 @@ public class UserDAO extends BaseDAO<User> {
         String sql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID, Status) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?), 'ACTIVE')";
         String insertCustomerSql = "INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint) VALUES (?, ?, 0)";
+        String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID) VALUES (?, ?)";
 
         Connection con = null;
         try {
@@ -602,6 +639,17 @@ public class UserDAO extends BaseDAO<User> {
                         con.rollback();
                         AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
                                 "UserDAO.createByAdmin - khong the tao Customers cho userId=" + user.getUserId(), null);
+                        return false;
+                    }
+                }
+            } else {
+                try (PreparedStatement eps = con.prepareStatement(insertEmployeeSql)) {
+                    eps.setInt(1, user.getUserId());
+                    eps.setString(2, generateEmployeeCode(user.getUserId()));
+                    if (eps.executeUpdate() == 0) {
+                        con.rollback();
+                        AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
+                                "UserDAO.createByAdmin - khong the tao Employees cho userId=" + user.getUserId(), null);
                         return false;
                     }
                 }
@@ -706,5 +754,9 @@ public class UserDAO extends BaseDAO<User> {
     }
     private String generateCustomerCode(int userId) {
         return "CUS_" + String.format("%04d", userId);
+    }
+
+    private String generateEmployeeCode(int userId) {
+        return "EMP_" + String.format("%04d", userId);
     }
 }

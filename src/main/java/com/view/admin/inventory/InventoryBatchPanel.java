@@ -16,6 +16,8 @@ import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
@@ -106,7 +108,30 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo tên sản phẩm, mã SP, số lô, nhà cung cấp..."; }
+    protected String getSearchPlaceholder() { return "Tìm theo mã lô, tên SP, mã SP, số lô, nhà cung cấp..."; }
+
+    @Override
+    protected List<String> fetchAutocompleteSuggestions() {
+        List<String> names = new ArrayList<>();
+        for (InventoryBatch b : batchDAO.getAll()) {
+            if (b.getBatchCode() != null && !b.getBatchCode().isBlank()) {
+                names.add(b.getBatchCode());
+            }
+            if (b.getProductName() != null && !b.getProductName().isBlank()) {
+                names.add(b.getProductName());
+            }
+            if (b.getProductCode() != null && !b.getProductCode().isBlank()) {
+                names.add(b.getProductCode());
+            }
+            if (b.getLotNumber() != null && !b.getLotNumber().isBlank()) {
+                names.add(b.getLotNumber());
+            }
+            if (b.getSupplierName() != null && !b.getSupplierName().isBlank()) {
+                names.add(b.getSupplierName());
+            }
+        }
+        return new ArrayList<>(new LinkedHashSet<>(names));
+    }
 
     // ---------------------------------------------------------------
     // Lo hang la du lieu kho, khong cho sua/xoa tuy tien (se pha vo tinh

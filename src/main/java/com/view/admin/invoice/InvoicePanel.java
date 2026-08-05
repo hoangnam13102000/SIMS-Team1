@@ -21,25 +21,14 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
-/**
- * Trang "Quan ly hoa don" - danh sach cac hoa don ban hang (Invoices) da
- * duoc lap. Cung tinh chat so sach/lich su nhu PurchaseReceiptPanel: chi
- * TRA CUU + HUY, khong tao moi tai day - viec lap hoa don moi thuoc ve luong
- * ban hang (gio hang -> thanh toan) o phia client, hien tai van la mock nen
- * chua ghi xuong bang Invoices.
- * <p>
- * Khong cho sua/xoa vat ly: trigger trg_Invoices_BlockDelete chan xoa, va
- * sua se lam lech doanh thu/ton kho. "Huy" o day la HUY NGHIEP VU (doi
- * Status -> CANCELLED, hoan lai ton kho dung tung lo) thuc hien trong
- * InvoiceDetailDialog, khong dung co che deleteItem() mac dinh cua
- * BaseCrudPanel (vi can nhap ly do huy, khong chi la 1 dialog xac nhan don gian).
- */
 public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
     /** Chỉ ngày, không giờ. */
@@ -207,6 +196,24 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo mã hóa đơn, khách hàng, người tạo..."; }
+
+    /** Gợi ý autocomplete: mã hóa đơn, tên khách hàng, người tạo. */
+    @Override
+    protected List<String> fetchAutocompleteSuggestions() {
+        List<String> names = new ArrayList<>();
+        for (Invoice inv : invoiceDAO.getAll()) {
+            if (inv.getInvoiceCode() != null && !inv.getInvoiceCode().isBlank()) {
+                names.add(inv.getInvoiceCode());
+            }
+            if (inv.getCustomerName() != null && !inv.getCustomerName().isBlank()) {
+                names.add(inv.getCustomerName());
+            }
+            if (inv.getCreatedByName() != null && !inv.getCreatedByName().isBlank()) {
+                names.add(inv.getCreatedByName());
+            }
+        }
+        return new ArrayList<>(new LinkedHashSet<>(names)); // loại trùng, giữ thứ tự
+    }
 
     // ---------------------------------------------------------------
     // Chi xem chi tiet - khong sua/xoa (xem ly do o javadoc dau file).

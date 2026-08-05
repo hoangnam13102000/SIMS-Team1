@@ -271,7 +271,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     protected boolean deleteItem(Product item) { return false; }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo tên sản phẩm, danh mục..."; }
+    protected String getSearchPlaceholder() { return "Tìm theo mã SP, tên sản phẩm, danh mục..."; }
 
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
@@ -279,6 +279,9 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         for (Product p : productDAO.getAll()) {
             if (p.getProductName() != null && !p.getProductName().isBlank()) {
                 names.add(p.getProductName());
+            }
+            if (p.getProductCode() != null && !p.getProductCode().isBlank()) {
+                names.add(p.getProductCode());
             }
         }
         return new ArrayList<>(new LinkedHashSet<>(names));

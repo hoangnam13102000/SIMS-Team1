@@ -14,6 +14,8 @@ import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
@@ -104,6 +106,23 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo mã phiếu, nhà cung cấp, người tạo..."; }
+
+    @Override
+    protected List<String> fetchAutocompleteSuggestions() {
+        List<String> names = new ArrayList<>();
+        for (PurchaseReceipt r : receiptDAO.getAll()) {
+            if (r.getReceiptCode() != null && !r.getReceiptCode().isBlank()) {
+                names.add(r.getReceiptCode());
+            }
+            if (r.getSupplierName() != null && !r.getSupplierName().isBlank()) {
+                names.add(r.getSupplierName());
+            }
+            if (r.getCreatedByName() != null && !r.getCreatedByName().isBlank()) {
+                names.add(r.getCreatedByName());
+            }
+        }
+        return new ArrayList<>(new LinkedHashSet<>(names));
+    }
 
     // ---------------------------------------------------------------
     // Chi xem chi tiet - khong sua/xoa (xem ly do o javadoc dau file).

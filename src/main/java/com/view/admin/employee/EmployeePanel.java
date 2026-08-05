@@ -194,6 +194,9 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
             if (e.getUsername() != null && !e.getUsername().isBlank()) {
                 names.add(e.getUsername());
             }
+            if (e.getEmployeeId() != null && !e.getEmployeeId().isBlank()) {
+                names.add(e.getEmployeeId());
+            }
         }
         return new ArrayList<>(new LinkedHashSet<>(names));
     }

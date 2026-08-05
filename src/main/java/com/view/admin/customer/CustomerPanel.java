@@ -146,7 +146,7 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo tên đăng nhập, họ tên, email..."; }
+    protected String getSearchPlaceholder() { return "Tìm theo mã KH, tên đăng nhập, họ tên, email..."; }
 
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
@@ -157,6 +157,9 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
             }
             if (c.getUsername() != null && !c.getUsername().isBlank()) {
                 names.add(c.getUsername());
+            }
+            if (c.getCustomerCode() != null && !c.getCustomerCode().isBlank()) {
+                names.add(c.getCustomerCode());
             }
         }
         return new ArrayList<>(new LinkedHashSet<>(names)); // loai trung, giu thu tu

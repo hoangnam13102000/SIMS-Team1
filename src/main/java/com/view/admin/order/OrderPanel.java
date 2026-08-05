@@ -21,25 +21,15 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
-/**
- * Trang "Quản lý đơn hàng online" - danh sách các đơn khách tự đặt ở
- * ClientMainFrame (giỏ hàng -> thanh toán), lấy từ bảng Orders +
- * OrderDetails (xem sql/SIMS.sql). Tách riêng khỏi {@link com.view.admin.invoice.InvoicePanel}
- * vì Orders không gắn ca làm việc/nhân viên lập như Invoices - xem javadoc
- * {@link Order}.
- * <p>
- * Chỉ TRA CỨU + XÁC NHẬN/GIAO HÀNG/HOÀN THÀNH/HỦY (thực hiện trong
- * {@link OrderDetailDialog}, đi qua flow NEW -> CONFIRMED -> SHIPPING ->
- * COMPLETED, hủy được ở NEW/CONFIRMED), không tạo/sửa/xóa tại đây: đơn hàng
- * chỉ được tạo từ luồng đặt hàng online của khách, và không cho sửa/xóa vật
- * lý để giữ đúng lịch sử đơn hàng.
- */
+
 public class OrderPanel extends BaseCrudPanel<Order> {
 
     /** Format ngắn để cột Ngày đặt không bị ellipsis khi AUTO_RESIZE. */
@@ -213,6 +203,27 @@ public class OrderPanel extends BaseCrudPanel<Order> {
     @Override
     protected String getSearchPlaceholder() {
         return "Tìm theo mã đơn, khách hàng, email, SĐT...";
+    }
+
+    /** Gợi ý autocomplete: mã đơn, tên khách hàng, email, SĐT. */
+    @Override
+    protected List<String> fetchAutocompleteSuggestions() {
+        List<String> names = new ArrayList<>();
+        for (Order o : orderDAO.getAll()) {
+            if (o.getOrderCode() != null && !o.getOrderCode().isBlank()) {
+                names.add(o.getOrderCode());
+            }
+            if (o.getCustomerName() != null && !o.getCustomerName().isBlank()) {
+                names.add(o.getCustomerName());
+            }
+            if (o.getCustomerEmail() != null && !o.getCustomerEmail().isBlank()) {
+                names.add(o.getCustomerEmail());
+            }
+            if (o.getCustomerPhone() != null && !o.getCustomerPhone().isBlank()) {
+                names.add(o.getCustomerPhone());
+            }
+        }
+        return new ArrayList<>(new LinkedHashSet<>(names)); // loại trùng, giữ thứ tự
     }
 
     @Override

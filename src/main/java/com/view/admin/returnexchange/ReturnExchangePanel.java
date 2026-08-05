@@ -13,20 +13,11 @@ import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
-/**
- * Trang "Đổi / trả hàng" - danh sách các yêu cầu đổi/trả được NV bán hàng
- * tạo cho từng hóa đơn (xem {@link com.view.admin.invoice.InvoiceDetailDialog}),
- * cùng nơi Quản lý bán hàng duyệt/từ chối các yêu cầu giá trị lớn (R4, xem
- * {@link ReturnExchangeDAO#APPROVAL_THRESHOLD}).
- * <p>
- * Chỉ TRA CỨU + XEM CHI TIẾT/DUYỆT (thực hiện trong {@link ReturnExchangeDetailDialog}),
- * không tạo/sửa/xóa tại đây - việc cộng/trừ kho và điều chỉnh hóa đơn gốc do
- * trigger trg_ReturnExchange_ApprovedStock đảm nhiệm khi 1 yêu cầu chuyển
- * sang APPROVED.
- */
 public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
 
     private final ReturnExchangeDAO returnExchangeDAO = new ReturnExchangeDAO();
@@ -124,6 +115,21 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
 
     @Override
     protected String getSearchPlaceholder() { return Lang.get("returnExchange.searchPlaceholder"); }
+
+    /** Gợi ý autocomplete: mã hóa đơn, người tạo. */
+    @Override
+    protected List<String> fetchAutocompleteSuggestions() {
+        List<String> names = new ArrayList<>();
+        for (ReturnExchange re : returnExchangeDAO.getAll()) {
+            if (re.getInvoiceCode() != null && !re.getInvoiceCode().isBlank()) {
+                names.add(re.getInvoiceCode());
+            }
+            if (re.getCreatedByName() != null && !re.getCreatedByName().isBlank()) {
+                names.add(re.getCreatedByName());
+            }
+        }
+        return new ArrayList<>(new LinkedHashSet<>(names)); // loại trùng, giữ thứ tự
+    }
 
     @Override
     protected boolean supportsEdit() { return false; }

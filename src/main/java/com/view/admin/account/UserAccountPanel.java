@@ -146,7 +146,7 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     protected boolean deleteItem(User item) { return false; }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo tên đăng nhập, họ tên, email..."; }
+    protected String getSearchPlaceholder() { return "Tìm theo mã NV (tên đăng nhập), họ tên, email..."; }
 
     /**
      * Goi y autocomplete gom ho ten VA ten dang nhap cua toan bo tai khoan -
