@@ -26,9 +26,13 @@ import com.utils.DateUtil;
 import com.utils.NumberUtil;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
+import javax.swing.border.Border;
+import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.MatteBorder;
 import java.awt.*;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -407,21 +411,46 @@ public class DashboardPanel extends JPanel {
         if (logs.isEmpty()) {
             activityListPanel.add(emptyRow("Chưa có hoạt động nào được ghi nhận"));
         } else {
-            for (ActivityLog log : logs) {
-                activityListPanel.add(buildActivityRow(log));
-                activityListPanel.add(Box.createVerticalStrut(AppSpacing.XS));
+            for (int i = 0; i < logs.size(); i++) {
+                boolean isLast = (i == logs.size() - 1);
+                activityListPanel.add(buildActivityRow(logs.get(i), isLast));
             }
         }
         activityListPanel.revalidate();
         activityListPanel.repaint();
     }
 
-    private JPanel buildActivityRow(ActivityLog log) {
+    private JPanel buildActivityRow(ActivityLog log, boolean isLast) {
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
-        row.setBorder(new EmptyBorder(6, 4, 6, 4));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+        // Duong ke mong ngan cach cac dong (tru dong cuoi), thay cho khoang trong don thuan.
+        Border padding = new EmptyBorder(10, 4, 10, 4);
+        row.setBorder(isLast ? padding
+                : new CompoundBorder(new MatteBorder(0, 0, 1, 0, AppColor.BORDER), padding));
+
+        // Avatar tron the hien loai hanh dong, giup tach bach truc quan tung dong voi nhau.
+        Color color = actionColor(log.getAction());
+        FontIcon fontIcon = FontIcon.of(actionIcon(log.getAction()), 14);
+        fontIcon.setIconColor(color);
+        JLabel iconLabel = new JLabel(fontIcon) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 30));
+                g2.fillOval(0, 0, getWidth() - 1, getHeight() - 1);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        iconLabel.setVerticalAlignment(SwingConstants.CENTER);
+        Dimension avatarSize = new Dimension(34, 34);
+        iconLabel.setPreferredSize(avatarSize);
+        iconLabel.setMinimumSize(avatarSize);
+        iconLabel.setMaximumSize(avatarSize);
 
         JPanel left = new JPanel();
         left.setOpaque(false);
@@ -434,7 +463,7 @@ public class DashboardPanel extends JPanel {
         userLabel.setFont(AppFont.BODY_BOLD);
         userLabel.setForeground(AppColor.TEXT_PRIMARY);
         line1.add(userLabel);
-        line1.add(new StatBadge(actionLabel(log.getAction()), actionColor(log.getAction())));
+        line1.add(new StatBadge(actionLabel(log.getAction()), color));
 
         String desc = (log.getDescription() != null && !log.getDescription().isBlank())
                 ? log.getDescription() : entityLabel(log.getEntityType());
@@ -444,14 +473,21 @@ public class DashboardPanel extends JPanel {
         descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         left.add(line1);
+        left.add(Box.createVerticalStrut(2));
         left.add(descLabel);
 
+        // Gan thoi gian vao mep tren thay vi keo dai het chieu cao dong (tranh lech giua
+        // luc dong 1 dong text va luc dong 2 dong text).
         JLabel timeLabel = new JLabel(DateUtil.timeAgo(log.getCreatedAt()));
         timeLabel.setFont(AppFont.FOOTER);
         timeLabel.setForeground(AppColor.TEXT_DISABLED);
+        JPanel timeWrap = new JPanel(new BorderLayout());
+        timeWrap.setOpaque(false);
+        timeWrap.add(timeLabel, BorderLayout.NORTH);
 
+        row.add(iconLabel, BorderLayout.WEST);
         row.add(left, BorderLayout.CENTER);
-        row.add(timeLabel, BorderLayout.EAST);
+        row.add(timeWrap, BorderLayout.EAST);
         return row;
     }
 
@@ -484,6 +520,24 @@ public class DashboardPanel extends JPanel {
             case ActivityLog.ACTION_LOGOUT: return AppColor.TEAL;
             case ActivityLog.ACTION_RESTORE: return AppColor.ACCENT;
             default: return AppColor.WARNING;
+        }
+    }
+
+    /** Icon tuong ung tung loai hanh dong, dung lam avatar tron dau moi dong trong "Hoat dong gan day". */
+    private static FontAwesomeSolid actionIcon(String action) {
+        if (action == null) return FontAwesomeSolid.CIRCLE;
+        switch (action) {
+            case ActivityLog.ACTION_CREATE: return FontAwesomeSolid.PLUS;
+            case ActivityLog.ACTION_UPDATE: return FontAwesomeSolid.PEN;
+            case ActivityLog.ACTION_DELETE:
+            case ActivityLog.ACTION_PERMANENT_DELETE: return FontAwesomeSolid.TRASH_ALT;
+            case ActivityLog.ACTION_RESTORE: return FontAwesomeSolid.UNDO;
+            case ActivityLog.ACTION_LOGIN: return FontAwesomeSolid.SIGN_IN_ALT;
+            case ActivityLog.ACTION_LOGIN_FAILED: return FontAwesomeSolid.EXCLAMATION_TRIANGLE;
+            case ActivityLog.ACTION_LOGOUT: return FontAwesomeSolid.SIGN_OUT_ALT;
+            case ActivityLog.ACTION_STATUS_CHANGE: return FontAwesomeSolid.TOGGLE_ON;
+            case ActivityLog.ACTION_PASSWORD_RESET: return FontAwesomeSolid.KEY;
+            default: return FontAwesomeSolid.CIRCLE;
         }
     }
 

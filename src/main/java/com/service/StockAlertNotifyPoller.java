@@ -1,6 +1,8 @@
 package com.service;
 
 import com.dao.StockAlertDAO;
+import com.event.AppEventBus;
+import com.event.DataChangedEvent;
 import com.model.StockAlert;
 import com.utils.NotificationSound;
 
@@ -70,6 +72,14 @@ public final class StockAlertNotifyPoller {
                 lastKnownUnseenCount = actualCount;
 
                 if (increased) {
+                    // Co canh bao ton kho moi (tu dong sinh boi trigger
+                    // trg_Products_AutoStockAlert - khong qua Java nen khong
+                    // co cho nao khac publish DataChangedEvent): bao cho toan
+                    // app (StockAlertPanel, Dashboard...) tu lam moi qua
+                    // AutoRefresher, giong cach OrderNotifyPoller da lam voi
+                    // DataChangedEvent.ORDER. Neu khong co dong nay, trang
+                    // dang mo phai F5/chuyen tab qua lai moi thay canh bao moi.
+                    AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.STOCK_ALERT));
                     NotificationSound.playDing();
                 }
 

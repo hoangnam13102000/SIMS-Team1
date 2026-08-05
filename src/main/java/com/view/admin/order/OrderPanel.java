@@ -1,5 +1,6 @@
 package com.view.admin.order;
 
+import com.components.DatePickerField;
 import com.components.crud.BaseCrudPanel;
 import com.dao.OrderDAO;
 import com.model.Order;
@@ -8,12 +9,22 @@ import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
+import java.awt.FlowLayout;
 import java.awt.Frame;
 import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
 /**
@@ -37,6 +48,11 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     private final OrderDAO orderDAO = new OrderDAO();
 
+    /** Lọc theo khoảng ngày đặt hàng. allowEmpty = true: mặc định KHÔNG lọc (hiện tất cả). */
+    private DatePickerField fromDateFilter;
+    private DatePickerField toDateFilter;
+    private JLabel clearDateFilterLink;
+
     public OrderPanel() {
         super();
 
@@ -44,8 +60,80 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         table.setBadgeColumn(5, this::statusLabel, this::paymentStatusColor);
         table.setBadgeColumn(6, this::statusLabel, this::orderStatusColor);
 
+        buildDateFilterBar();
+
         initialLoad();
         applyColumnWidths();
+    }
+
+    // ---------------------------------------------------------------
+    // Bộ lọc: khoảng ngày đặt hàng (hiện cạnh ô tìm kiếm trên toolbar)
+    // ---------------------------------------------------------------
+
+    private void buildDateFilterBar() {
+        fromDateFilter = new DatePickerField(null, true);
+        toDateFilter = new DatePickerField(null, true);
+
+        JLabel fromLabel = new JLabel("Từ ngày");
+        fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fromLabel.setForeground(AppColor.TEXT_MUTED);
+        JLabel toLabel = new JLabel("Đến ngày");
+        toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toLabel.setForeground(AppColor.TEXT_MUTED);
+
+        JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        dateRow.setOpaque(false);
+        dateRow.add(fromLabel);
+        dateRow.add(fromDateFilter);
+        dateRow.add(toLabel);
+        dateRow.add(toDateFilter);
+
+        fromDateFilter.onChange(d -> onDateFilterChanged());
+        toDateFilter.onChange(d -> onDateFilterChanged());
+        addToolbarFilter(dateRow);
+
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearDateFilterLink = new JLabel("Xóa lọc ngày", clearIcon, SwingConstants.LEFT);
+        clearDateFilterLink.setIconTextGap(6);
+        clearDateFilterLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        clearDateFilterLink.setForeground(AppColor.TEXT_MUTED);
+        clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearDateFilterLink.setVisible(false);
+        clearDateFilterLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                fromDateFilter.setValue(null);
+                toDateFilter.setValue(null);
+                onDateFilterChanged();
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearDateFilterLink.setForeground(AppColor.ERROR);
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearDateFilterLink.setForeground(AppColor.TEXT_MUTED);
+            }
+        });
+        addToolbarFilter(clearDateFilterLink);
+    }
+
+    private void onDateFilterChanged() {
+        if (clearDateFilterLink != null) {
+            clearDateFilterLink.setVisible(fromDateFilter.getValue() != null || toDateFilter.getValue() != null);
+        }
+        applyFilters();
+    }
+
+    private LocalDate selectedFromDate() {
+        return fromDateFilter == null ? null : fromDateFilter.getValue();
+    }
+
+    private LocalDate selectedToDate() {
+        return toDateFilter == null ? null : toDateFilter.getValue();
     }
 
     private void applyColumnWidths() {
@@ -109,12 +197,12 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     @Override
     protected PaginationHelper.PaginationResult<Order> fetchPage(int page, int pageSize) {
-        return orderDAO.getPaged(page, pageSize);
+        return orderDAO.getPagedFiltered(page, pageSize, null, selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<Order> searchPage(String keyword, int page, int pageSize) {
-        return orderDAO.search(keyword, page, pageSize);
+        return orderDAO.getPagedFiltered(page, pageSize, keyword, selectedFromDate(), selectedToDate());
     }
 
     @Override

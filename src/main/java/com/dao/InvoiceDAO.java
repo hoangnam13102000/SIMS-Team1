@@ -7,6 +7,7 @@ import com.event.DataChangedEvent;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -16,6 +17,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -94,6 +96,56 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 
         invoice.setItemCount(rs.getInt("ItemCount"));
         return invoice;
+    }
+
+    /**
+     * Tim kiem + loc hoa don theo tu khoa (ma HD/nguoi tao/khach hang) va/hoac
+     * khoang ngay tao (ca 2 dau co the null neu khong loc). Dung chung 1
+     * whereClause tham so hoa (giong ProductDAO.getPagedFiltered) de vua an
+     * toan SQL injection vua tranh phai tu escape ky tu dac biet cua LIKE.
+     *
+     * @param fromDate ngay bat dau (bao gom ca ngay nay), null = khong gioi han duoi
+     * @param toDate   ngay ket thuc (bao gom ca ngay nay), null = khong gioi han tren
+     */
+    public PaginationHelper.PaginationResult<Invoice> getPagedFiltered(
+            int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
+
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            String[] columns = getSearchableColumns();
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            StringBuilder keywordCondition = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) keywordCondition.append(" OR ");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(likeParam);
+            }
+            keywordCondition.append(")");
+            conditions.add(keywordCondition.toString());
+        }
+        // Loc theo [fromDate 00:00:00, toDate+1 00:00:00) - vua danh cho kieu
+        // DATETIME co gio/phut/giay, vua bao gom tron ven ca ngay toDate.
+        if (fromDate != null) {
+            conditions.add("inv.CreatedAt >= ?");
+            params.add(Timestamp.valueOf(fromDate.atStartOfDay()));
+        }
+        if (toDate != null) {
+            conditions.add("inv.CreatedAt < ?");
+            params.add(Timestamp.valueOf(toDate.plusDays(1).atStartOfDay()));
+        }
+
+        String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
+        return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
+    private String escapeLike(String raw) {
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace("[", "\\[");
     }
 
     /**

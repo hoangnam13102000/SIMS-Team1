@@ -16,11 +16,15 @@ import java.sql.Timestamp;
 import java.util.List;
 
 /**
- * DAO cho bao cao het/sap het hang cua NV ban hang gui Quan ly kho (xem
- * sql/StockAlerts_Migration.sql). Poll "chua xem" duoc {@code
- * com.service.StockAlertNotifyPoller} dam nhiem (giong OrderNotifyPoller
- * voi Orders.SeenByAdmin), StockAlertPanel dung getPaged/search de hien thi
- * danh sach cho Quan ly kho xu ly.
+ * DAO cho canh bao het/sap het hang gui Quan ly kho (xem sql/SIMS.sql +
+ * sql/Trigger_SIMS.sql). Cac dong StockAlerts gio day duoc trigger
+ * trg_Products_AutoStockAlert TU DONG sinh ra khi Products.Stock giam
+ * xuong <= MinStock (khong con NV ban hang bam chuong bao thu cong nua) -
+ * {@link #create(StockAlert)} van duoc giu lai o day cho truong hop can
+ * tao thu cong/goi lai tu code, nhung UI khong con goi den. Poll "chua
+ * xem" duoc {@code com.service.StockAlertNotifyPoller} dam nhiem (giong
+ * OrderNotifyPoller voi Orders.SeenByAdmin), StockAlertPanel dung
+ * getPaged/search de hien thi danh sach cho Quan ly kho xu ly.
  */
 public class StockAlertDAO extends BaseDAO<StockAlert> {
 
@@ -37,7 +41,7 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
     @Override
     protected String getJoinClause() {
         return "JOIN Products p ON sa.ProductID = p.ProductID "
-                + "JOIN Users ru ON sa.ReportedBy = ru.UserID "
+                + "LEFT JOIN Users ru ON sa.ReportedBy = ru.UserID "
                 + "LEFT JOIN Users rv ON sa.ResolvedBy = rv.UserID";
     }
 
@@ -68,7 +72,8 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         alert.setAlertType(rs.getString("AlertType"));
         alert.setStockAtReport(rs.getInt("StockAtReport"));
         alert.setNote(rs.getString("Note"));
-        alert.setReportedBy(rs.getInt("ReportedBy"));
+        int reportedBy = rs.getInt("ReportedBy");
+        alert.setReportedBy(rs.wasNull() ? null : reportedBy);
         alert.setReportedByName(rs.getString("ReportedByName"));
         Timestamp createdAt = rs.getTimestamp("CreatedAt");
         if (createdAt != null) alert.setCreatedAt(createdAt.toLocalDateTime());
@@ -119,7 +124,11 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
             } else {
                 ps.setString(4, alert.getNote());
             }
-            ps.setInt(5, alert.getReportedBy());
+            if (alert.getReportedBy() == null) {
+                ps.setNull(5, java.sql.Types.INTEGER);
+            } else {
+                ps.setInt(5, alert.getReportedBy());
+            }
 
             int rows = ps.executeUpdate();
             if (rows == 0) return false;

@@ -8,10 +8,8 @@ import com.components.table.ActionColumn;
 import com.components.table.AutoRowNumber;
 import com.dao.CategoryDAO;
 import com.dao.ProductDAO;
-import com.dao.StockAlertDAO;
 import com.model.Category;
 import com.model.Product;
-import com.model.StockAlert;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
 import com.theme.AppColor;
@@ -40,7 +38,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
     private final ProductDAO productDAO = new ProductDAO();
     private final CategoryDAO categoryDAO = new CategoryDAO();
-    private final StockAlertDAO stockAlertDAO = new StockAlertDAO();
     private AutoRowNumber stt;
 
     private FilterDropdown<CategoryOption> categoryFilter;
@@ -64,11 +61,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                             this::statusToggleTooltip,
                             this::toggleStatusRow,
                             null);
-        }
-
-        if (AuthService.getInstance().can(AppPermission.STOCK_ALERT_REPORT)) {
-            actions.add("report-alert", FontAwesomeSolid.BELL, AppColor.WARNING, "Báo hết/sắp hết hàng",
-                    this::reportAlertRow, this::canReportAlert);
         }
 
         table.setActionColumn(actions);
@@ -352,40 +344,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
             onDataChanged();
         } else {
             BaseDialog.error(this, "Không thể cập nhật", "Cập nhật trạng thái thất bại. Vui lòng thử lại.");
-        }
-    }
-
-    private boolean canReportAlert(int modelRow) {
-        Product item = rowToItem(modelRow);
-        return item != null && item.isActive() && (item.isOutOfStock() || item.isLowStock());
-    }
-
-    private void reportAlertRow(int modelRow) {
-        Product item = rowToItem(modelRow);
-        if (item == null) return;
-
-        String alertType = item.isOutOfStock() ? "OUT_OF_STOCK" : "LOW_STOCK";
-        boolean confirmed = BaseDialog.confirm(this,
-                "Báo hết/sắp hết hàng",
-                (item.isOutOfStock()
-                        ? "Báo cho Quản lý kho \"" + item.getProductName() + "\" đã HẾT hàng?"
-                        : "Báo cho Quản lý kho \"" + item.getProductName() + "\" SẮP hết hàng (còn "
-                                + item.getStock() + "/" + item.getMinStock() + ")?"),
-                "Gửi báo cáo", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.BELL);
-        if (!confirmed) return;
-
-        StockAlert alert = new StockAlert();
-        alert.setProductId(item.getProductId());
-        alert.setAlertType(alertType);
-        alert.setStockAtReport(item.getStock());
-        alert.setReportedBy(AuthService.getInstance().getCurrentUser().getUserId());
-
-        if (stockAlertDAO.create(alert)) {
-            BaseDialog.success(this, "Đã gửi báo cáo",
-                    "Quản lý kho sẽ nhận được thông báo về \"" + item.getProductName() + "\".");
-        } else {
-            BaseDialog.error(this, "Không thể gửi báo cáo",
-                    "Sản phẩm này đã có báo cáo đang chờ xử lý, hoặc có lỗi hệ thống. Vui lòng thử lại.");
         }
     }
 

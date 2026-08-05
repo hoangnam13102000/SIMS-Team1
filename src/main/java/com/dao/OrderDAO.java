@@ -7,6 +7,7 @@ import com.event.DataChangedEvent;
 import com.model.Order;
 import com.model.OrderDetail;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -15,6 +16,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -155,6 +157,57 @@ public class OrderDAO extends BaseDAO<Order> {
                     "OrderDAO.createOrder - " + order.getCustomerName(), e);
             return false;
         }
+    }
+
+    /**
+     * Tìm kiếm + lọc đơn hàng theo từ khóa (mã đơn/khách hàng/email/SĐT)
+     * và/hoặc khoảng ngày đặt (Orders.CreatedAt) - cả 2 đầu có thể null nếu
+     * không lọc. Cùng cách làm với {@code InvoiceDAO.getPagedFiltered}: dùng
+     * chung 1 whereClause tham số hóa để vừa an toàn SQL injection vừa tránh
+     * phải tự escape ký tự đặc biệt của LIKE.
+     *
+     * @param fromDate ngày bắt đầu (bao gồm cả ngày này), null = không giới hạn dưới
+     * @param toDate   ngày kết thúc (bao gồm cả ngày này), null = không giới hạn trên
+     */
+    public PaginationHelper.PaginationResult<Order> getPagedFiltered(
+            int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
+
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            String[] columns = getSearchableColumns();
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            StringBuilder keywordCondition = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) keywordCondition.append(" OR ");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(likeParam);
+            }
+            keywordCondition.append(")");
+            conditions.add(keywordCondition.toString());
+        }
+        // Loc theo [fromDate 00:00:00, toDate+1 00:00:00) - vua danh cho kieu
+        // DATETIME co gio/phut/giay, vua bao gom tron ven ca ngay toDate.
+        if (fromDate != null) {
+            conditions.add("o.CreatedAt >= ?");
+            params.add(Timestamp.valueOf(fromDate.atStartOfDay()));
+        }
+        if (toDate != null) {
+            conditions.add("o.CreatedAt < ?");
+            params.add(Timestamp.valueOf(toDate.plusDays(1).atStartOfDay()));
+        }
+
+        String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
+        return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
+    private String escapeLike(String raw) {
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace("[", "\\[");
     }
 
     /** Danh sách đơn CHƯA được admin xem (dùng cho polling chuông thông báo). */

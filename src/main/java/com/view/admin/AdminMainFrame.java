@@ -138,6 +138,16 @@ public class AdminMainFrame extends JFrame {
         layout.addPage("products", Lang.get("sidebar.products.short"), FontAwesomeSolid.BOX, new ProductPanel(),
                 AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_VIEW);
         layout.addPage("suppliers", Lang.get("sidebar.suppliers.short"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
+        // Bao cao ngoai le (NV ban hang gui, Quan ly ban hang xu ly) khong
+        // phai nghiep vu kho nen giu lai day, khong chuyen sang muc Kho.
+        layout.addPage("exceptionReport", Lang.get("sidebar.exceptionReport"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new ExceptionReportPanel(),
+                AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
+
+        // --- Nhóm Quản lý kho (tách riêng khỏi Hàng hóa - danh mục/sản
+        // phẩm/NCC/báo cáo ngoại lệ la du lieu goc/nghiep vu ban hang, con
+        // day la cac nghiep vu van hanh kho: nhap kho, lo hang, doi chieu,
+        // canh bao ton kho) ---
+        layout.addSection(Lang.get("sidebar.section.warehouse"));
         layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
@@ -146,8 +156,6 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.STOCK_RECONCILE);
         layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new StockAlertPanel(),
                 AppPermission.STOCK_ALERT_VIEW);
-        layout.addPage("exceptionReport", Lang.get("sidebar.exceptionReport"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new ExceptionReportPanel(),
-                AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
         // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
 
         // --- Nhóm Bán hàng ---

@@ -439,3 +439,35 @@ BEGIN
     RAISERROR(N'Khong duoc xoa vinh vien lich su doi chieu kho.', 16, 1);
 END;
 GO
+
+ALTER TABLE StockAlerts ALTER COLUMN ReportedBy INT NULL;
+GO
+
+DROP TRIGGER IF EXISTS trg_Products_AutoStockAlert;
+GO
+
+CREATE TRIGGER trg_Products_AutoStockAlert
+ON Products
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF UPDATE(Stock)
+    BEGIN
+        INSERT INTO StockAlerts (ProductID, AlertType, StockAtReport, ReportedBy)
+        SELECT i.ProductID,
+               CASE WHEN i.Stock <= 0 THEN 'OUT_OF_STOCK' ELSE 'LOW_STOCK' END,
+               i.Stock,
+               NULL
+        FROM inserted i
+        JOIN deleted d ON d.ProductID = i.ProductID
+        WHERE i.Stock <> d.Stock          -- Stock thuc su vua thay doi
+          AND i.Stock <= i.MinStock       -- va dang o muc thap/het hang
+          AND NOT EXISTS (
+                SELECT 1 FROM StockAlerts sa
+                WHERE sa.ProductID = i.ProductID AND sa.Status <> 'RESOLVED'
+          );
+    END
+END;
+GO
