@@ -9,23 +9,14 @@ import org.java_websocket.server.WebSocketServer;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-/**
- * WebSocket server chay chat ho tro khach hang real-time: giu ket noi lau
- * dai (persistent) voi tung khach hang dang mo ClientMainFrame, cho phep 2
- * chieu: khach hang gui cau hoi len, nhan vien (Admin/quan ly) tra loi
- * xuong dung khach hang do.
- *
- * Singleton, khoi dong khi mo AdminMainFrame (start()), dung khi dong app
- * quan tri (stopServer()). Cac panel Swing (view.admin.ChatPanel) dang ky
- * lang nghe qua addListener(); callback luon dua ve Swing EDT nen an toan
- * de cap nhat UI truc tiep.
- */
 public class ChatServer {
 
     private static final Gson GSON = new Gson();
@@ -33,21 +24,20 @@ public class ChatServer {
 
     private final int port;
     private final CopyOnWriteArrayList<Consumer<ChatMessage>> listeners = new CopyOnWriteArrayList<>();
-    // Anh xa userId cua khach hang -> ket noi WebSocket hien tai cua ho (moi userId chi 1 ket noi tai 1 thoi diem).
+
     private final ConcurrentHashMap<Integer, WebSocket> connectionsByUserId = new ConcurrentHashMap<>();
-    // Chieu nguoc lai, dung khi mot ket noi bi dong de biet do la userId nao (bao onClose/onLeave).
     private final ConcurrentHashMap<WebSocket, ChatMessage> sessionByConnection = new ConcurrentHashMap<>();
+
+    private final ConcurrentHashMap<Integer, WebSocket> staffConnections = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<WebSocket, ChatMessage> staffSessionByConnection = new ConcurrentHashMap<>();
+
     private InternalServer server;
     private final AtomicBoolean bindFailureNotified = new AtomicBoolean(false);
 
-    private ChatServer(int port) {
-        this.port = port;
-    }
+    private ChatServer(int port) { this.port = port; }
 
     public static synchronized ChatServer getInstance() {
-        if (instance == null) {
-            instance = new ChatServer(loadPort());
-        }
+        if (instance == null) instance = new ChatServer(loadPort());
         return instance;
     }
 
@@ -55,48 +45,31 @@ public class ChatServer {
         Properties props = new Properties();
         try (InputStream in = ChatServer.class.getClassLoader().getResourceAsStream("ws.properties")) {
             if (in != null) props.load(in);
-        } catch (IOException ignored) {
-            // Dung port mac dinh ben duoi neu khong doc duoc file config.
-        }
+        } catch (IOException ignored) {}
         return Integer.parseInt(props.getProperty("WS_CHAT_PORT", "8890"));
     }
 
-    /** Bat dau lang nghe. Goi nhieu lan khong sao (bo qua neu da chay roi). */
     public synchronized void start() {
         if (server != null) return;
         server = new InternalServer(port);
         server.setReuseAddr(true);
         server.start();
-
-        // Phong khi JVM bi dung dot ngot (vd: Stop trong IDE) ma khong di qua
-        // windowClosed() binh thuong cua AdminMainFrame - dam bao cong van
-        // duoc giai phong de lan chay sau khong bi "Address already in use".
-        // stopServer() da idempotent (an toan goi nhieu lan/khi server=null).
         Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer, "ChatServer-shutdown"));
     }
 
     public synchronized void stopServer() {
         if (server == null) return;
-        try {
-            server.stop(500);
-        } catch (Exception ignored) {
-            // Bo qua loi khi dong, khong anh huong viec thoat app.
-        }
+        try { server.stop(500); } catch (Exception ignored) {}
         server = null;
         connectionsByUserId.clear();
         sessionByConnection.clear();
+        staffConnections.clear();
+        staffSessionByConnection.clear();
     }
 
-    /** Dang ky nhan tat ca su kien chat (JOIN / CHAT / LEAVE) tu moi khach hang. */
-    public void addListener(Consumer<ChatMessage> listener) {
-        listeners.add(listener);
-    }
+    public void addListener(Consumer<ChatMessage> listener) { listeners.add(listener); }
+    public void removeListener(Consumer<ChatMessage> listener) { listeners.remove(listener); }
 
-    public void removeListener(Consumer<ChatMessage> listener) {
-        listeners.remove(listener);
-    }
-
-    /** Nhan vien quan tri gui tra loi xuong dung khach hang co userId nay. Tra ve false neu khach da roi mang. */
     public boolean sendToCustomer(int userId, String adminName, String text) {
         WebSocket conn = connectionsByUserId.get(userId);
         if (conn == null || !conn.isOpen()) return false;
@@ -104,9 +77,33 @@ public class ChatServer {
         return true;
     }
 
-    /** Danh sach userId dang ket noi (con online) tai thoi diem goi. */
+    public boolean sendImageToCustomer(int userId, String adminName, String text,
+                                       String imageBase64, String imageMime) {
+        WebSocket conn = connectionsByUserId.get(userId);
+        if (conn == null || !conn.isOpen()) return false;
+        if (imageBase64 == null || imageBase64.isBlank()) return false;
+        conn.send(GSON.toJson(ChatMessage.imageFromAdmin(userId, adminName, text, imageBase64, imageMime)));
+        return true;
+    }
+
     public java.util.Set<Integer> onlineCustomerIds() {
         return new java.util.HashSet<>(connectionsByUserId.keySet());
+    }
+
+    public Map<Integer, String[]> onlineStaff() {
+        Map<Integer, String[]> result = new HashMap<>();
+        for (Map.Entry<WebSocket, ChatMessage> e : staffSessionByConnection.entrySet()) {
+            if (e.getKey() != null && e.getKey().isOpen() && e.getValue() != null) {
+                ChatMessage s = e.getValue();
+                result.put(s.userId, new String[]{s.userName, s.roleCode != null ? s.roleCode : ""});
+            }
+        }
+        return result;
+    }
+
+    public boolean isStaffOnline(int userId) {
+        WebSocket conn = staffConnections.get(userId);
+        return conn != null && conn.isOpen();
     }
 
     private void dispatch(ChatMessage message) {
@@ -115,15 +112,26 @@ public class ChatServer {
         }
     }
 
-    private class InternalServer extends WebSocketServer {
-        InternalServer(int port) {
-            super(new InetSocketAddress(port));
-        }
+    private void sendToStaff(int userId, ChatMessage message) {
+        WebSocket conn = staffConnections.get(userId);
+        if (conn != null && conn.isOpen()) conn.send(GSON.toJson(message));
+    }
 
-        @Override
-        public void onOpen(WebSocket conn, ClientHandshake handshake) {
-            // Chua biet la khach hang nao cho toi khi nhan duoc message JOIN dau tien.
+    private void broadcastToStaff(ChatMessage message, Integer excludeUserId) {
+        String json = GSON.toJson(message);
+        for (Map.Entry<Integer, WebSocket> e : staffConnections.entrySet()) {
+            if (excludeUserId != null && excludeUserId.equals(e.getKey())) continue;
+            WebSocket conn = e.getValue();
+            if (conn != null && conn.isOpen()) {
+                try { conn.send(json); } catch (Exception ignored) {}
+            }
         }
+    }
+
+    private class InternalServer extends WebSocketServer {
+        InternalServer(int port) { super(new InetSocketAddress(port)); }
+
+        @Override public void onOpen(WebSocket conn, ClientHandshake handshake) {}
 
         @Override
         public void onClose(WebSocket conn, int code, String reason, boolean remote) {
@@ -131,6 +139,13 @@ public class ChatServer {
             if (session != null) {
                 connectionsByUserId.remove(session.userId, conn);
                 dispatch(ChatMessage.leave(session.userId, session.userName));
+            }
+            ChatMessage staffSession = staffSessionByConnection.remove(conn);
+            if (staffSession != null) {
+                staffConnections.remove(staffSession.userId, conn);
+                ChatMessage leave = ChatMessage.staffLeave(staffSession.userId, staffSession.userName);
+                broadcastToStaff(leave, staffSession.userId);
+                dispatch(leave);
             }
         }
 
@@ -143,6 +158,46 @@ public class ChatServer {
                 if (chatMessage.isJoin()) {
                     connectionsByUserId.put(chatMessage.userId, conn);
                     sessionByConnection.put(conn, chatMessage);
+                    dispatch(chatMessage);
+                    return;
+                }
+
+                if (chatMessage.isStaffJoin()) {
+                    WebSocket old = staffConnections.put(chatMessage.userId, conn);
+                    if (old != null && old != conn) {
+                        staffSessionByConnection.remove(old);
+                        try { old.close(); } catch (Exception ignored) {}
+                    }
+                    staffSessionByConnection.put(conn, chatMessage);
+                    broadcastToStaff(chatMessage, chatMessage.userId);
+                    for (Map.Entry<WebSocket, ChatMessage> e : staffSessionByConnection.entrySet()) {
+                        ChatMessage other = e.getValue();
+                        if (other != null && other.userId != chatMessage.userId && e.getKey().isOpen()) {
+                            conn.send(GSON.toJson(ChatMessage.staffJoin(other.userId, other.userName, other.roleCode)));
+                        }
+                    }
+                    dispatch(chatMessage);
+                    return;
+                }
+
+                if (chatMessage.isStaffLeave()) {
+                    staffConnections.remove(chatMessage.userId, conn);
+                    staffSessionByConnection.remove(conn);
+                    broadcastToStaff(chatMessage, chatMessage.userId);
+                    dispatch(chatMessage);
+                    return;
+                }
+
+                if (chatMessage.isStaffChat()) {
+                    sendToStaff(chatMessage.toUserId, chatMessage);
+                    sendToStaff(chatMessage.userId, chatMessage);
+                    dispatch(chatMessage);
+                    return;
+                }
+
+                if (chatMessage.isLeave()) {
+                    connectionsByUserId.remove(chatMessage.userId, conn);
+                    sessionByConnection.remove(conn);
                 }
                 dispatch(chatMessage);
             } catch (Exception e) {
@@ -153,16 +208,23 @@ public class ChatServer {
         @Override
         public void onError(WebSocket conn, Exception ex) {
             if (NetworkErrorNotifier.isBindFailure(ex)) {
-                NetworkErrorNotifier.notifyBindFailureOnce(
-                        bindFailureNotified, "ChatServer (chat hỗ trợ)", port);
+                // Cong da bi process khac giu. Khong popup: dung che do client.
+                if (bindFailureNotified.compareAndSet(false, true)) {
+                    System.out.println("[ChatServer] Cong " + port
+                            + " da bi chiem - bo qua bind, dung che do client"
+                            + " (ket noi toi WS_HOST trong ws.properties).");
+                    synchronized (ChatServer.this) {
+                        if (server == this) {
+                            try { stop(0); } catch (Exception ignored) {}
+                            server = null;
+                        }
+                    }
+                }
                 return;
             }
             ex.printStackTrace();
         }
 
-        @Override
-        public void onStart() {
-            // Server da san sang lang nghe.
-        }
+        @Override public void onStart() {}
     }
 }

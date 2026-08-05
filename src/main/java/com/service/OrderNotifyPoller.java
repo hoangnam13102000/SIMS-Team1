@@ -6,11 +6,9 @@ import com.event.DataChangedEvent;
 import com.model.Order;
 import com.settings.NotificationSettings;
 import com.utils.NotificationSound;
-import com.utils.NumberUtil;
 
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 
@@ -23,15 +21,17 @@ public final class OrderNotifyPoller {
     private final Timer timer;
 
     private int lastKnownUnseenCount = -1;
-    private BiConsumer<Integer, List<String>> onUnseenChanged;
+    private BiConsumer<Integer, List<Order>> onUnseenChanged;
 
     public OrderNotifyPoller() {
         timer = new Timer(POLL_INTERVAL_MS, e -> poll());
         timer.setRepeats(true);
     }
 
-    /** Được gọi lại (trên EDT) mỗi khi số đơn chưa xem thay đổi: (soLuong, danhSachXemTruoc). */
-    public void onUnseenChanged(BiConsumer<Integer, List<String>> listener) {
+    /** Được gọi lại (trên EDT) mỗi khi số đơn chưa xem thay đổi: (soLuong, danhSachXemTruoc).
+     *  danhSachXemTruoc la List<Order> (toi da PREVIEW_LIMIT don) de noi goi (Header) tu
+     *  quyet dinh hien thi/dieu huong/danh dau da xem tung don - thay vi chuoi text dung san. */
+    public void onUnseenChanged(BiConsumer<Integer, List<Order>> listener) {
         this.onUnseenChanged = listener;
     }
 
@@ -90,12 +90,7 @@ public final class OrderNotifyPoller {
                     return;
                 }
 
-                List<String> preview = new ArrayList<>();
-                for (int i = 0; i < Math.min(PREVIEW_LIMIT, unseen.size()); i++) {
-                    Order o = unseen.get(i);
-                    preview.add(o.getOrderCode() + " · " + o.getCustomerName() + " · "
-                            + NumberUtil.formatThousands(o.getTotalAmount().longValue()) + " đ");
-                }
+                List<Order> preview = unseen.subList(0, Math.min(PREVIEW_LIMIT, unseen.size()));
                 onUnseenChanged.accept(actualCount, preview);
             }
         };

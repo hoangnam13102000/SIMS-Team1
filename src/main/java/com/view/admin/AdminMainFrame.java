@@ -4,32 +4,35 @@ import com.components.BaseDialog;
 import com.components.SettingsButton;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
+import com.model.NotificationItem;
+import com.model.Order;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
+import com.service.OrderNotifyPoller;
+import com.service.StockAlertNotifyPoller;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
-import com.view.client.ProfilePanel;
-import com.view.layouts.MainLayout;
 import com.view.admin.account.UserAccountPanel;
+import com.view.admin.auditlog.AuditLogPanel;
 import com.view.admin.category.CategoryPanel;
 import com.view.admin.customer.CustomerPanel;
 import com.view.admin.employee.EmployeePanel;
-import com.view.admin.product.ProductPanel;
-import com.view.admin.supplier.SupplierPanel;
+import com.view.admin.exceptionreport.ExceptionReportPanel;
 import com.view.admin.inventory.InventoryBatchPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
 import com.view.admin.inventory.StockReconciliationPanel;
-import com.view.admin.order.OrderPanel;
 import com.view.admin.invoice.InvoicePanel;
-import com.view.admin.report.RevenueReportPanel;
+import com.view.admin.order.OrderPanel;
 import com.view.admin.pos.PosPanel;
-import com.view.admin.stockalert.StockAlertPanel;
-import com.view.admin.auditlog.AuditLogPanel;
-import com.service.OrderNotifyPoller;
-import com.service.StockAlertNotifyPoller;
+import com.view.admin.product.ProductPanel;
+import com.view.admin.report.RevenueReportPanel;
 import com.view.admin.returnexchange.ReturnExchangePanel;
-import com.view.admin.exceptionreport.ExceptionReportPanel;
+import com.view.admin.stockalert.StockAlertPanel;
+import com.view.admin.supplier.SupplierPanel;
+import com.view.client.ProfilePanel;
+import com.view.layouts.MainLayout;
+import com.ws.ChatClient;
 import com.ws.ChatServer;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -37,21 +40,19 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AdminMainFrame extends JFrame {
 
     private MainLayout layout;
+    private final List<NotificationItem> orderNotifications = new ArrayList<>();
+    private final List<NotificationItem> chatNotifications = new ArrayList<>();
+    private ChatPanel chatPanelRef;
     private String currentPageKey = "dashboard";
     private final Runnable onThemeChanged = this::rebuildContent;
     private final Runnable onLangChanged = this::rebuildContent;
-    // Polling dinh ky xuong DB de phat hien don hang online moi (xem
-    // com.service.OrderNotifyPoller) - truoc day class nay ton tai san
-    // nhung chua bao gio duoc start() o dau ca nen KHONG co chuong/thong
-    // bao nao khi co hoa don/don hang online moi.
     private final OrderNotifyPoller orderNotifyPoller = new OrderNotifyPoller();
-    // Polling tuong tu cho bao cao het/sap het hang cua NV ban hang (xem
-    // com.service.StockAlertNotifyPoller) - cap nhat badge rieng o muc
-    // "stockAlerts" tren Sidebar, khong dung chung chuong voi don hang.
     private final StockAlertNotifyPoller stockAlertNotifyPoller = new StockAlertNotifyPoller();
 
     public AdminMainFrame() {
@@ -63,38 +64,28 @@ public class AdminMainFrame extends JFrame {
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.PAGE_BG);
 
-        // Server WebSocket cho chat ho tro khach hang real-time (xem com.ws.ChatServer).
         ChatServer.getInstance().start();
-
+        if (AuthService.getInstance().isLoggedIn()) {
+            var u = AuthService.getInstance().getCurrentUser();
+            String role = u.getRole() != null ? u.getRole().name() : "";
+            ChatClient.getInstance().connectStaff(u.getUserId(), u.getFullName(), role);
+        }
         buildContent();
 
-        // Nut cai dat (Sang/Toi, Ngon ngu) noi goc phai duoi man hinh.
         SettingsButton.attach(this);
 
-        // Moi khi co don hang online moi (SeenByAdmin=0 tang len): cap nhat
-        // dropdown thong bao + cham do o chuong tren Header, va so badge o
-        // muc "orders" tren Sidebar. Dang ky 1 lan duy nhat o day - vi lambda
-        // doc truc tiep field "layout" (khong phai bien local), no van luon
-        // tro dung MainLayout/Header MOI NHAT sau moi lan rebuildContent().
         orderNotifyPoller.onUnseenChanged((count, preview) -> {
             layout.setBadge("orders", count);
-            layout.getHeader().setNotifications(preview);
-            layout.getHeader().setNotificationBadge(count > 0);
+            orderNotifications.clear();
+            orderNotifications.addAll(toNotificationItems(preview));
+            refreshHeaderNotifications();
         });
         orderNotifyPoller.start();
 
-        // Moi khi co bao cao het/sap het hang moi tu NV ban hang: cap nhat
-        // so badge o muc "stockAlerts" tren Sidebar (rieng, khong dung
-        // chung chuong Header voi don hang online).
         stockAlertNotifyPoller.onUnseenChanged((count, preview) -> layout.setBadge("stockAlerts", count));
         stockAlertNotifyPoller.start();
 
-        // Moi khi ThemeManager doi theme (Light/Dark), xay lai toan bo noi
-        // dung de tat ca component doc lai dung mau + FlatLaf UI moi nhat.
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
-
-        // Moi khi LanguageManager doi ngon ngu (Viet/Anh), xay lai toan bo
-        // noi dung de tat ca component doc lai chuoi dich moi.
         LanguageManager.getInstance().addRebuildListener(onLangChanged);
 
         addWindowListener(new WindowAdapter() {
@@ -104,7 +95,7 @@ public class AdminMainFrame extends JFrame {
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
                 orderNotifyPoller.stop();
                 stockAlertNotifyPoller.stop();
-                ChatServer.getInstance().stopServer();
+                ChatClient.getInstance().disconnect();
                 AuthService.getInstance().logout();
                 new LoginFrame();
             }
@@ -113,7 +104,6 @@ public class AdminMainFrame extends JFrame {
         setVisible(true);
     }
 
-    /** Xay (hoac xay lai) toan bo noi dung ben trong frame - MainLayout + cac trang. */
     private void buildContent() {
         setTitle(Lang.get("admin.frame.title"));
         if (layout != null) {
@@ -123,30 +113,21 @@ public class AdminMainFrame extends JFrame {
 
         layout = new MainLayout(Lang.get("admin.mainlayout.title"));
 
-        // --- Tổng quan ---
         layout.addPage("dashboard", Lang.get("sidebar.dashboard"), FontAwesomeSolid.TACHOMETER_ALT, new DashboardPanel(), AppPermission.DASHBOARD_VIEW);
 
-        // --- Nhóm Người dùng ---
         layout.addSection(Lang.get("sidebar.section.users"));
         layout.addPage("users", Lang.get("sidebar.users.short"), FontAwesomeSolid.USERS_COG, new UserAccountPanel(), AppPermission.USER_MANAGE);
         layout.addPage("employees", Lang.get("sidebar.employees.short"), FontAwesomeSolid.USER_TIE, new EmployeePanel(), AppPermission.USER_MANAGE);
         layout.addPage("customers", Lang.get("sidebar.customers.short"), FontAwesomeSolid.ID_CARD, new CustomerPanel(), AppPermission.CUSTOMER_MANAGE);
 
-        // --- Nhóm Hàng hóa ---
         layout.addSection(Lang.get("sidebar.section.catalog"));
         layout.addPage("categories", Lang.get("sidebar.categories.short"), FontAwesomeSolid.TAGS, new CategoryPanel(), AppPermission.CATEGORY_MANAGE);
         layout.addPage("products", Lang.get("sidebar.products.short"), FontAwesomeSolid.BOX, new ProductPanel(),
                 AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_VIEW);
         layout.addPage("suppliers", Lang.get("sidebar.suppliers.short"), FontAwesomeSolid.TRUCK, new SupplierPanel(), AppPermission.SUPPLIER_MANAGE);
-        // Bao cao ngoai le (NV ban hang gui, Quan ly ban hang xu ly) khong
-        // phai nghiep vu kho nen giu lai day, khong chuyen sang muc Kho.
         layout.addPage("exceptionReport", Lang.get("sidebar.exceptionReport"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new ExceptionReportPanel(),
                 AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
 
-        // --- Nhóm Quản lý kho (tách riêng khỏi Hàng hóa - danh mục/sản
-        // phẩm/NCC/báo cáo ngoại lệ la du lieu goc/nghiep vu ban hang, con
-        // day la cac nghiep vu van hanh kho: nhap kho, lo hang, doi chieu,
-        // canh bao ton kho) ---
         layout.addSection(Lang.get("sidebar.section.warehouse"));
         layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
@@ -156,17 +137,12 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.STOCK_RECONCILE);
         layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new StockAlertPanel(),
                 AppPermission.STOCK_ALERT_VIEW);
-        // ---- Vi du them 1 trang moi khi ban ghep tinh nang that ----
 
-        // --- Nhóm Bán hàng ---
         layout.addSection(Lang.get("sidebar.section.sales"));
         layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
                 AppPermission.INVOICE_CREATE);
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
-        // Doi/tra hang gan lien voi hoa don (tao boi NV ban hang, duyet boi
-        // Quan ly ban hang theo R4) - thuoc nghiep vu Ban hang, khong phai
-        // Hang hoa/Kho, nen chuyen ve day thay vi de chung voi danh muc/kho.
         layout.addPage("returnExchange", Lang.get("sidebar.returnExchange"), FontAwesomeSolid.EXCHANGE_ALT, new ReturnExchangePanel(),
                 AppPermission.RETURN_EXCHANGE_CREATE, AppPermission.RETURN_EXCHANGE_APPROVE);
         layout.addPage("revenueReport", Lang.get("sidebar.revenueReport"), FontAwesomeSolid.CHART_LINE, new RevenueReportPanel(),
@@ -174,15 +150,17 @@ public class AdminMainFrame extends JFrame {
 
         layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
                 AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
-        // layout.addPage("products", "San pham", FontAwesomeSolid.BOX, new ProductPanel(), AppPermission.PRODUCT_VIEW);
 
-        // --- Chat hỗ trợ khách hàng (real-time qua WebSocket, xem com.ws) ---
         layout.addSection(Lang.get("sidebar.section.support"));
-        ChatPanel chatPanel = new ChatPanel();
-        chatPanel.setOnUnreadCountChanged(count -> layout.setBadge("chat", count));
-        layout.addPage("chat", Lang.get("sidebar.chat"), FontAwesomeSolid.COMMENT_DOTS, chatPanel);
+        chatPanelRef = new ChatPanel();
+        chatPanelRef.setOnUnreadCountChanged(count -> layout.setBadge("chat", count));
+        chatPanelRef.setOnUnreadNotifications(items -> {
+            chatNotifications.clear();
+            if (items != null) chatNotifications.addAll(items);
+            refreshHeaderNotifications();
+        });
+        layout.addPage("chat", Lang.get("sidebar.chat"), FontAwesomeSolid.COMMENT_DOTS, chatPanelRef);
 
-        // --- Nhóm Hệ thống ---
         layout.addSection(Lang.get("sidebar.section.system"));
         layout.addPage("settings", Lang.get("sidebar.settings"), FontAwesomeSolid.COGS, new SettingsPanel(),
                 AppPermission.SETTINGS_MANAGE);
@@ -199,9 +177,32 @@ public class AdminMainFrame extends JFrame {
         layout.onPageChange(key -> currentPageKey = key);
         layout.showPage(currentPageKey);
         layout.onLogout(this::doLogout);
-        // Bam vao chuong thong bao -> nhay thang sang trang "Don hang" de xem
-        // ngay don/hoa don online moi (giong myShop: bell click = xem don hang).
-        layout.getHeader().onBellClick(() -> layout.showPage("orders"));
+
+        layout.getHeader().onBellClick(null);
+        layout.getHeader().onNotificationClick(item -> {
+            if (item == null) return;
+            dismissNotificationSource(item);
+            if (item.getType() == NotificationItem.Type.MESSAGE) {
+                layout.showPage("chat");
+            } else if (item.getType() == NotificationItem.Type.ORDER) {
+                layout.showPage("orders");
+            } else if (item.getType() == NotificationItem.Type.STOCK) {
+                layout.showPage("stockAlerts");
+            }
+        });
+        layout.getHeader().onNotificationDismiss(this::dismissNotificationSource);
+        layout.getHeader().onClearAllNotifications(() -> {
+            if (chatPanelRef != null) chatPanelRef.clearAllUnread();
+            try {
+                new com.dao.OrderDAO().markAllSeen();
+            } catch (Exception ignored) {}
+            orderNotifications.clear();
+            chatNotifications.clear();
+            layout.setBadge("orders", 0);
+            layout.setBadge("chat", 0);
+            refreshHeaderNotifications();
+        });
+        refreshHeaderNotifications();
         add(layout, BorderLayout.CENTER);
 
         revalidate();
@@ -210,8 +211,6 @@ public class AdminMainFrame extends JFrame {
 
     private void rebuildContent() {
         buildContent();
-        // Cac component ngoai MainLayout (vd SettingsButton tren layered pane)
-        // doc mau truc tiep tu AppColor luc paintComponent nen chi can repaint.
         getLayeredPane().repaint();
     }
 
@@ -225,11 +224,53 @@ public class AdminMainFrame extends JFrame {
             AppColor.ERROR_HOVER,
             FontAwesomeSolid.SIGN_OUT_ALT
         );
-
         if (confirmed) {
-            // Chi can dispose() - windowClosed() ben duoi se lo logout() va
-            // mo lai LoginFrame, tranh bi goi 2 lan.
             dispose();
+        }
+    }
+
+    private static List<NotificationItem> toNotificationItems(List<Order> orders) {
+        List<NotificationItem> items = new ArrayList<>();
+        for (Order o : orders) {
+            items.add(new NotificationItem(
+                "order-" + o.getOrderId(),
+                NotificationItem.Type.ORDER,
+                Lang.get("admin.header.notification.newOrder") + " " + o.getOrderCode(),
+                o.getCustomerName() + " - " + o.getTotalAmount() + "đ",
+                o.getCreatedAt(),
+                o.getOrderId()
+            ));
+        }
+        return items;
+    }
+
+    private void refreshHeaderNotifications() {
+        if (layout == null || layout.getHeader() == null) return;
+        List<NotificationItem> merged = new ArrayList<>();
+        merged.addAll(chatNotifications);
+        merged.addAll(orderNotifications);
+        layout.getHeader().setNotifications(merged);
+    }
+
+    private void dismissNotificationSource(NotificationItem item) {
+        if (item == null) return;
+        if (item.getType() == NotificationItem.Type.MESSAGE) {
+            if (chatPanelRef != null) {
+                chatPanelRef.markNotificationRead(item.getId());
+            }
+            chatNotifications.removeIf(n -> item.getId().equals(n.getId()));
+        } else if (item.getType() == NotificationItem.Type.ORDER) {
+            Integer orderId = item.getRefId();
+            if (orderId != null) {
+                try {
+                    new com.dao.OrderDAO().markSeen(orderId);
+                } catch (Exception ignored) {}
+            }
+            orderNotifications.removeIf(n -> item.getId().equals(n.getId()));
+            layout.setBadge("orders", orderNotifications.size());
+        }
+        if (item.getType() != NotificationItem.Type.MESSAGE) {
+            refreshHeaderNotifications();
         }
     }
 }

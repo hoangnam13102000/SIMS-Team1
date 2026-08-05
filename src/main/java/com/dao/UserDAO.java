@@ -752,6 +752,26 @@ public class UserDAO extends BaseDAO<User> {
         if (where.length() == 0) return getPaged(pageNumber, pageSize);
         return getPaged(pageNumber, pageSize, where.toString(), params.toArray());
     }
+    /**
+     * Danh sách tài khoản nhân viên (không phải CUSTOMER), đang ACTIVE, chưa bị xóa.
+     * Dùng cho chat nội bộ giữa các tài khoản admin/staff.
+     */
+    public List<User> findActiveStaff() {
+        String sql = "SELECT " + getColumns() + " FROM " + getTableName() + " " + getJoinClause()
+                + " WHERE u.IsDeleted = 0 AND u.Status = 'ACTIVE' AND r.RoleCode <> 'CUSTOMER'"
+                + " ORDER BY u.FullName ASC, u.Username ASC";
+        List<User> result = new java.util.ArrayList<>();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                result.add(mapUser(rs));
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "UserDAO.findActiveStaff", e);
+        }
+        return result;
+    }
     private String generateCustomerCode(int userId) {
         return "CUS_" + String.format("%04d", userId);
     }

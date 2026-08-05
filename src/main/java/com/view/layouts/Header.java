@@ -1,6 +1,7 @@
 package com.view.layouts;
 
 import com.i18n.Lang;
+import com.model.NotificationItem;
 import com.model.User;
 import com.service.AuthService;
 import com.utils.ImageUtil;
@@ -14,9 +15,11 @@ import javax.swing.event.PopupMenuListener;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class Header extends JPanel {
 
@@ -38,14 +41,20 @@ public class Header extends JPanel {
     private static final int AVATAR_SIZE = 36;
     private static final int EMAIL_MAX_WIDTH = 150;
 
-    private final List<String> notifications = new ArrayList<>();
+    private final List<NotificationItem> notifications = new ArrayList<>();
 
     private Runnable profileListener;
     private Runnable logoutListener;
     private Runnable bellListener;
+    private Consumer<NotificationItem> notificationClickListener;
+    private Consumer<NotificationItem> notificationDismissListener;
+    private Runnable clearAllListener;
 
     private BellIcon bellIcon;
     private FontIcon chevron;
+    /** Panel danh sach ben trong dropdown chuong - giu lai de xoa tung dong (swipe/x) ma khong dong popup. */
+    private JPanel notificationListPanel;
+    private JPopupMenu notificationPopup;
 
     public Header() {
         this("Cửa hàng điện thoại trực tuyến");
@@ -213,79 +222,344 @@ public class Header extends JPanel {
         }
     }
 
+    private static final int NOTIF_WIDTH = 320;
+    private static final int SWIPE_DISMISS_THRESHOLD = 90;
+
+    /** Mau nen + icon rieng cho tung loai thong bao (giong Facebook: moi loai 1 mau). */
+    private static Color colorForType(NotificationItem.Type type) {
+        switch (type) {
+            case ORDER: return new Color(37, 99, 235);      // blue-600
+            case INVOICE: return new Color(217, 119, 6);    // amber-600
+            case STOCK: return new Color(220, 38, 38);       // red-600
+            case MESSAGE: return new Color(5, 150, 105);     // emerald-600 (ACCENT_COLOR)
+            default: return new Color(100, 116, 139);        // slate-500
+        }
+    }
+
+    private static FontAwesomeSolid iconForType(NotificationItem.Type type) {
+        switch (type) {
+            case ORDER: return FontAwesomeSolid.SHOPPING_CART;
+            case INVOICE: return FontAwesomeSolid.FILE_INVOICE;
+            case STOCK: return FontAwesomeSolid.EXCLAMATION_TRIANGLE;
+            case MESSAGE: return FontAwesomeSolid.COMMENT_DOTS;
+            default: return FontAwesomeSolid.BELL;
+        }
+    }
+
     private void showNotificationDropdown() {
         JPopupMenu popup = new JPopupMenu();
         popup.setBorder(new EmptyBorder(0, 0, 0, 0));
         popup.setOpaque(false);
+        notificationPopup = popup;
 
         JPanel card = new JPanel();
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBackground(DROPDOWN_BG);
         card.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(DROPDOWN_BORDER, 1, true),
-            new EmptyBorder(10, 12, 10, 12)
+            new EmptyBorder(10, 0, 6, 0)
         ));
+
+        JPanel headerRow = new JPanel(new BorderLayout());
+        headerRow.setOpaque(false);
+        headerRow.setBorder(new EmptyBorder(0, 12, 8, 12));
+        headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        headerRow.setMaximumSize(new Dimension(NOTIF_WIDTH, 24));
 
         JLabel title = new JLabel(Lang.get("admin.header.notifications"));
         title.setFont(new Font("Segoe UI", Font.BOLD, 13));
         title.setForeground(TEXT_WHITE);
-        title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        title.setBorder(new EmptyBorder(0, 4, 8, 4));
-        card.add(title);
+        headerRow.add(title, BorderLayout.WEST);
 
-        if (notifications.isEmpty()) {
-            JLabel empty = new JLabel(Lang.get("admin.header.notifications.empty"));
-            empty.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            empty.setForeground(TEXT_MUTED);
-            empty.setBorder(new EmptyBorder(6, 4, 10, 4));
-            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
-            card.add(empty);
-        } else {
-            for (String text : notifications) {
-                JLabel item = new JLabel("<html><div style='width:220px'>" + text + "</div></html>");
-                item.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-                item.setForeground(TEXT_WHITE);
-                item.setBorder(new EmptyBorder(8, 8, 8, 8));
-                item.setOpaque(true);
-                item.setBackground(DROPDOWN_BG);
-                item.setAlignmentX(Component.LEFT_ALIGNMENT);
-                item.addMouseListener(new MouseAdapter() {
-                    @Override
-                    public void mouseEntered(MouseEvent e) {
-                        item.setBackground(ROW_HOVER);
+        if (!notifications.isEmpty()) {
+            JLabel clearAll = new JLabel(Lang.get("admin.header.notifications.clearAll"));
+            clearAll.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            clearAll.setForeground(ACCENT_COLOR);
+            clearAll.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            clearAll.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    List<NotificationItem> snapshot = new ArrayList<>(notifications);
+                    notifications.clear();
+                    if (bellIcon != null) bellIcon.repaint();
+                    popup.setVisible(false);
+                    if (clearAllListener != null) {
+                        clearAllListener.run();
+                    } else if (notificationDismissListener != null) {
+                        for (NotificationItem it : snapshot) notificationDismissListener.accept(it);
                     }
-
-                    @Override
-                    public void mouseExited(MouseEvent e) {
-                        item.setBackground(DROPDOWN_BG);
-                    }
-                });
-                card.add(item);
-            }
+                }
+            });
+            headerRow.add(clearAll, BorderLayout.EAST);
         }
+        card.add(headerRow);
+
+        notificationListPanel = new JPanel();
+        notificationListPanel.setLayout(new BoxLayout(notificationListPanel, BoxLayout.Y_AXIS));
+        notificationListPanel.setOpaque(false);
+        notificationListPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rebuildNotificationRows();
+        card.add(notificationListPanel);
 
         popup.add(card);
         popup.pack();
         popup.show(bellIcon, bellIcon.getWidth() - popup.getPreferredSize().width + 20, bellIcon.getHeight() + 8);
     }
 
+    /** Ve lai toan bo danh sach dong thong bao ben trong dropdown (goi khi mo dropdown hoac sau khi xoa 1 dong). */
+    private void rebuildNotificationRows() {
+        if (notificationListPanel == null) return;
+        notificationListPanel.removeAll();
+        if (notifications.isEmpty()) {
+            JLabel empty = new JLabel(Lang.get("admin.header.notifications.empty"));
+            empty.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            empty.setForeground(TEXT_MUTED);
+            empty.setBorder(new EmptyBorder(6, 16, 12, 16));
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            notificationListPanel.add(empty);
+        } else {
+            for (NotificationItem item : new ArrayList<>(notifications)) {
+                notificationListPanel.add(new NotificationRow(item));
+            }
+        }
+        notificationListPanel.revalidate();
+        notificationListPanel.repaint();
+        if (notificationPopup != null && notificationPopup.isVisible()) {
+            notificationPopup.pack();
+        }
+    }
+
+    /** Xoa 1 thong bao (do bam nut x hoac vuot qua nguong) khoi danh sach + goi callback ra ngoai. */
+    private void dismissNotification(NotificationItem item) {
+        notifications.remove(item);
+        if (bellIcon != null) bellIcon.repaint();
+        rebuildNotificationRows();
+        if (notificationDismissListener != null) notificationDismissListener.accept(item);
+    }
+
+    /**
+     * Mot dong thong bao: icon mau theo loai + tieu de/noi dung/thoi gian + nut "x", ho tro:
+     *  - Bam vao dong (ngoai vung nut x) -> notificationClickListener + dong popup.
+     *  - Keo ngang (chuot trai giu + ru) qua nguong -> tu dong xoa dong (giong vuot xoa tren dien thoai).
+     *  - Bam nut x -> xoa ngay dong nay.
+     * Ky thuat: outer track dung null-layout, content la 1 JPanel duoc doi vi tri (setLocation) khi keo
+     * de tao cam giac "truot" ma khong can lam lai toan bo layout cua popup.
+     */
+    private class NotificationRow extends JPanel {
+        private final JPanel content;
+        private int dragStartX = -1;
+        private int currentOffset = 0;
+
+        NotificationRow(NotificationItem item) {
+            super(null);
+            setOpaque(false);
+            int rowHeight = (item.getMessage() != null && !item.getMessage().isBlank()) ? 62 : 46;
+            setPreferredSize(new Dimension(NOTIF_WIDTH, rowHeight));
+            setMaximumSize(new Dimension(NOTIF_WIDTH, rowHeight));
+            setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            content = buildContent(item, rowHeight);
+            content.setBounds(0, 0, NOTIF_WIDTH, rowHeight);
+            add(content);
+
+            MouseAdapter dragHandler = new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    dragStartX = e.getXOnScreen();
+                }
+
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    if (dragStartX < 0) return;
+                    boolean dragged = Math.abs(currentOffset) > 6;
+                    if (Math.abs(currentOffset) >= SWIPE_DISMISS_THRESHOLD) {
+                        dismissNotification(item);
+                    } else {
+                        currentOffset = 0;
+                        content.setBounds(0, 0, NOTIF_WIDTH, rowHeight);
+                        content.setBackground(DROPDOWN_BG);
+                    }
+                    dragStartX = -1;
+                    if (!dragged) {
+                        // Coi la click (khong keo): dieu huong + dong dropdown.
+                        if (notificationPopup != null) notificationPopup.setVisible(false);
+                        if (notificationClickListener != null) notificationClickListener.accept(item);
+                    }
+                }
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    if (currentOffset == 0) content.setBackground(ROW_HOVER);
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    if (currentOffset == 0) content.setBackground(DROPDOWN_BG);
+                }
+            };
+            content.addMouseListener(dragHandler);
+            content.addMouseMotionListener(new MouseMotionAdapter() {
+                @Override
+                public void mouseDragged(MouseEvent e) {
+                    if (dragStartX < 0) return;
+                    int delta = e.getXOnScreen() - dragStartX;
+                    currentOffset = Math.max(-NOTIF_WIDTH, Math.min(NOTIF_WIDTH, delta));
+                    content.setBounds(currentOffset, 0, NOTIF_WIDTH, rowHeight);
+                }
+            });
+        }
+
+        private JPanel buildContent(NotificationItem item, int rowHeight) {
+            JPanel row = new JPanel(new BorderLayout(10, 0));
+            row.setOpaque(true);
+            row.setBackground(DROPDOWN_BG);
+            row.setBorder(new EmptyBorder(8, 16, 8, 10));
+            row.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+            // Icon tron mau theo loai thong bao.
+            JLabel iconLabel = new JLabel();
+            iconLabel.setPreferredSize(new Dimension(34, 34));
+            iconLabel.setOpaque(false);
+            Color typeColor = colorForType(item.getType());
+            FontAwesomeSolid iconType = iconForType(item.getType());
+            iconLabel.setIcon(circleIcon(iconType, typeColor, 34));
+            JPanel iconWrap = new JPanel(new GridBagLayout());
+            iconWrap.setOpaque(false);
+            iconWrap.add(iconLabel);
+            row.add(iconWrap, BorderLayout.WEST);
+
+            JPanel textPanel = new JPanel();
+            textPanel.setOpaque(false);
+            textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+
+            JLabel titleLabel = new JLabel(item.getTitle());
+            titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            titleLabel.setForeground(TEXT_WHITE);
+            titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            textPanel.add(titleLabel);
+
+            if (item.getMessage() != null && !item.getMessage().isBlank()) {
+                JLabel msgLabel = new JLabel("<html><div style='width:200px'>" + item.getMessage() + "</div></html>");
+                msgLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                msgLabel.setForeground(TEXT_MUTED);
+                msgLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                textPanel.add(msgLabel);
+            }
+
+            String time = item.getRelativeTime();
+            if (time != null && !time.isBlank()) {
+                JLabel timeLabel = new JLabel(time);
+                timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+                timeLabel.setForeground(TEXT_MUTED);
+                timeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                textPanel.add(Box.createVerticalStrut(2));
+                textPanel.add(timeLabel);
+            }
+
+            row.add(textPanel, BorderLayout.CENTER);
+
+            // Nut "x" xoa rieng dong nay.
+            JLabel closeBtn = new JLabel(FontIcon.of(FontAwesomeSolid.TIMES, 11));
+            closeBtn.setForeground(TEXT_MUTED);
+            ((FontIcon) closeBtn.getIcon()).setIconColor(TEXT_MUTED);
+            closeBtn.setBorder(new EmptyBorder(2, 6, 2, 2));
+            closeBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            closeBtn.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    dismissNotification(item);
+                }
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    ((FontIcon) closeBtn.getIcon()).setIconColor(DANGER);
+                    closeBtn.repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    ((FontIcon) closeBtn.getIcon()).setIconColor(TEXT_MUTED);
+                    closeBtn.repaint();
+                }
+            });
+            JPanel closeWrap = new JPanel(new GridBagLayout());
+            closeWrap.setOpaque(false);
+            closeWrap.add(closeBtn);
+            row.add(closeWrap, BorderLayout.EAST);
+
+            return row;
+        }
+    }
+
+    /** Ve icon dang tron mau (nen mau + icon trang o giua) - dung cho tung dong thong bao. */
+    private static ImageIcon circleIcon(FontAwesomeSolid iconType, Color bg, int size) {
+        BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = img.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setColor(bg);
+        g2.fillOval(0, 0, size, size);
+        FontIcon icon = FontIcon.of(iconType, (int) (size * 0.5));
+        icon.setIconColor(Color.WHITE);
+        icon.paintIcon(null, g2, (size - icon.getIconWidth()) / 2, (size - icon.getIconHeight()) / 2);
+        g2.dispose();
+        return new ImageIcon(img);
+    }
+
     /** Thay danh sach thong bao hien trong dropdown chuong; rong -> hien "Chưa có thông báo mới". */
-    public void setNotifications(List<String> items) {
+    public void setNotifications(List<NotificationItem> items) {
         notifications.clear();
         if (items != null) notifications.addAll(items);
         if (bellIcon != null) bellIcon.repaint();
+        if (notificationPopup != null && notificationPopup.isVisible()) {
+            rebuildNotificationRows();
+        }
     }
 
-    /** Bat/tat nhanh cham do tren chuong ma khong can truyen danh sach day du. */
+    /**
+     * Bat/tat cham do tren chuong. KHONG xoa danh sach (de gop order + chat).
+     * Cham do khi ve dua vao !notifications.isEmpty().
+     */
     public void setNotificationBadge(boolean hasUnread) {
-        if (hasUnread && notifications.isEmpty()) notifications.add(" ");
-        if (!hasUnread) notifications.clear();
         if (bellIcon != null) bellIcon.repaint();
+    }
+
+    public void upsertNotification(NotificationItem item) {
+        if (item == null) return;
+        notifications.removeIf(n -> item.getId().equals(n.getId()));
+        notifications.add(0, item);
+        if (bellIcon != null) bellIcon.repaint();
+        if (notificationPopup != null && notificationPopup.isVisible()) {
+            rebuildNotificationRows();
+        }
+    }
+
+    public void removeNotificationById(String id) {
+        if (id == null) return;
+        notifications.removeIf(n -> id.equals(n.getId()));
+        if (bellIcon != null) bellIcon.repaint();
+        if (notificationPopup != null && notificationPopup.isVisible()) {
+            rebuildNotificationRows();
+        }
     }
 
     /** Neu duoc gan, bam chuong se chay callback nay thay vi mo dropdown mac dinh. */
     public void onBellClick(Runnable listener) {
         this.bellListener = listener;
+    }
+
+    /** Goi khi nguoi dung bam vao mot dong thong bao (khong phai nut x) - dung de dieu huong. */
+    public void onNotificationClick(Consumer<NotificationItem> listener) {
+        this.notificationClickListener = listener;
+    }
+
+    /** Goi khi mot dong thong bao bi xoa (bam x, vuot qua nguong, hoac "Xóa tất cả" tung dong). */
+    public void onNotificationDismiss(Consumer<NotificationItem> listener) {
+        this.notificationDismissListener = listener;
+    }
+
+    /** Neu duoc gan, se duoc goi rieng khi bam "Xóa tất cả" thay vi lap qua onNotificationDismiss. */
+    public void onClearAllNotifications(Runnable listener) {
+        this.clearAllListener = listener;
     }
 
     // ---------- Khoi tai khoan (avatar + ten + email + dropdown) ----------

@@ -54,6 +54,17 @@ public class Main {
             com.disaster.DisasterRecoveryBootstrap.recordInitFailure(e.getMessage());
         }
 
+        // Chat WebSocket server: khoi dong SOM (truoc LoginFrame) de khach hang
+        // van chat duoc du chua mo AdminMainFrame. Neu cong da bi process
+        // khac giu (may admin khac trong LAN), bind se fail nhe - client
+        // van ket noi qua WS_HOST trong ws.properties.
+        try {
+            com.ws.ChatServer.getInstance().start();
+        } catch (Exception e) {
+            System.err.println("Khong khoi dong duoc ChatServer: " + e.getMessage());
+            AppLogger.getInstance().error(ErrorCode.SYSTEM_UNCAUGHT, "Main - ChatServer.start", e);
+        }
+
         SwingUtilities.invokeLater(LoginFrame::new);
     }
 }

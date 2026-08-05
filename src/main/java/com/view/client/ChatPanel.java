@@ -2,7 +2,9 @@ package com.view.client;
 
 import com.theme.AppColor;
 import com.service.AuthService;
+import com.utils.FileUtil;
 import com.ws.ChatClient;
+import com.ws.ChatImageUtil;
 import com.ws.ChatMessage;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -15,6 +17,8 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.function.Consumer;
@@ -23,6 +27,8 @@ import java.util.function.Consumer;
 public class ChatPanel extends JPanel {
 
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm");
+    /** Chieu rong toi da anh trong bubble (px). */
+    private static final int IMAGE_MAX_W = 200;
 
     private final JPanel messagesContainer;
     private final JScrollPane scrollPane;
@@ -54,7 +60,7 @@ public class ChatPanel extends JPanel {
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.getViewport().setBackground(AppColor.WHITE);
 
-        JPanel inputBar = new JPanel(new BorderLayout(10, 0));
+        JPanel inputBar = new JPanel(new BorderLayout(8, 0));
         inputBar.setBackground(AppColor.WHITE);
         inputBar.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
@@ -70,6 +76,9 @@ public class ChatPanel extends JPanel {
             }
         });
 
+        JButton imageButton = buildIconButton(FontAwesomeSolid.IMAGE, "Gửi ảnh");
+        imageButton.addActionListener(e -> pickAndSendImage());
+
         FontIcon sendIcon = FontIcon.of(FontAwesomeSolid.PAPER_PLANE, 13);
         sendIcon.setIconColor(Color.WHITE);
         JButton sendButton = new JButton("Gửi", sendIcon);
@@ -81,8 +90,13 @@ public class ChatPanel extends JPanel {
         sendButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         sendButton.addActionListener(e -> sendCurrentInput());
 
+        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        rightActions.setOpaque(false);
+        rightActions.add(imageButton);
+        rightActions.add(sendButton);
+
         inputBar.add(inputField, BorderLayout.CENTER);
-        inputBar.add(sendButton, BorderLayout.EAST);
+        inputBar.add(rightActions, BorderLayout.EAST);
 
         add(headerBar, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
@@ -108,6 +122,32 @@ public class ChatPanel extends JPanel {
 
     public void onIncomingMessage(Runnable listener) {
         this.onIncomingMessageListener = listener;
+    }
+
+    private JButton buildIconButton(FontAwesomeSolid iconType, String tooltip) {
+        FontIcon icon = FontIcon.of(iconType, 16);
+        icon.setIconColor(AppColor.TEXT_MUTED);
+        JButton btn = new JButton(icon);
+        btn.setToolTipText(tooltip);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btn.setPreferredSize(new Dimension(36, 36));
+        btn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                icon.setIconColor(AppColor.ACCENT_HOVER);
+                btn.repaint();
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                icon.setIconColor(AppColor.TEXT_MUTED);
+                btn.repaint();
+            }
+        });
+        return btn;
     }
 
     private JPanel buildHeaderBar() {
@@ -162,7 +202,7 @@ public class ChatPanel extends JPanel {
 
     private void addWelcomeBubble() {
         addBubble("Xin chào! Bạn cần hỗ trợ gì, hãy nhắn cho chúng tôi nhé.",
-                false, TIME_FORMAT.format(new Date()));
+                null, false, TIME_FORMAT.format(new Date()));
     }
 
     private void sendCurrentInput() {
@@ -170,18 +210,73 @@ public class ChatPanel extends JPanel {
         if (text.isEmpty()) return;
 
         boolean sent = ChatClient.getInstance().sendMessage(text);
-        addBubble(text, true, TIME_FORMAT.format(new Date()));
+        addBubble(text, null, true, TIME_FORMAT.format(new Date()));
         inputField.setText("");
 
         if (!sent) {
             addBubble("Không thể gửi: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
-                    false, TIME_FORMAT.format(new Date()));
+                    null, false, TIME_FORMAT.format(new Date()));
         }
+    }
+
+    private void pickAndSendImage() {
+        File file = FileUtil.chooseImageFile(this);
+        if (file == null) return;
+
+        if (!ChatImageUtil.isSupportedImage(file)) {
+            JOptionPane.showMessageDialog(this,
+                    "Định dạng ảnh không được hỗ trợ. Vui lòng chọn JPG, PNG, GIF, BMP hoặc WEBP.",
+                    "Không hỗ trợ", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        new SwingWorker<ChatImageUtil.EncodedImage, Void>() {
+            @Override
+            protected ChatImageUtil.EncodedImage doInBackground() {
+                return ChatImageUtil.encodeForChat(file);
+            }
+
+            @Override
+            protected void done() {
+                setCursor(Cursor.getDefaultCursor());
+                ChatImageUtil.EncodedImage encoded;
+                try {
+                    encoded = get();
+                } catch (Exception ex) {
+                    encoded = null;
+                }
+                if (encoded == null) {
+                    JOptionPane.showMessageDialog(ChatPanel.this,
+                            "Không đọc được ảnh hoặc ảnh quá lớn sau khi nén. Vui lòng chọn ảnh khác.",
+                            "Lỗi ảnh", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+
+                String caption = inputField.getText() == null ? "" : inputField.getText().trim();
+                boolean sent = ChatClient.getInstance().sendImage(
+                        caption.isEmpty() ? null : caption,
+                        encoded.base64,
+                        encoded.mime);
+
+                BufferedImage preview = ChatImageUtil.decodeBase64(encoded.base64);
+                addBubble(caption.isEmpty() ? null : caption, preview, true, TIME_FORMAT.format(new Date()));
+                inputField.setText("");
+
+                if (!sent) {
+                    addBubble("Không thể gửi ảnh: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
+                            null, false, TIME_FORMAT.format(new Date()));
+                }
+            }
+        }.execute();
     }
 
     private void onMessageReceived(ChatMessage message) {
         if (!message.isChat() || !message.fromAdmin) return;
-        addBubble(message.text, false, TIME_FORMAT.format(new Date(message.timestamp)));
+        BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
+        String text = message.text;
+        if ((text == null || text.isBlank()) && image == null) return;
+        addBubble(text, image, false, TIME_FORMAT.format(new Date(message.timestamp)));
         if (onIncomingMessageListener != null) onIncomingMessageListener.run();
     }
 
@@ -194,9 +289,7 @@ public class ChatPanel extends JPanel {
         statusLabelRef.setText(connected ? "Đang trực tuyến" : "Mất kết nối");
     }
 
-    private void addBubble(String text, boolean isMine, String time) {
-        // Cap bubble text width so long messages wrap instead of stretching the row.
-        // Prefer measuring against the current viewport; fall back when not laid out yet.
+    private void addBubble(String text, BufferedImage image, boolean isMine, String time) {
         int viewportW = scrollPane.getViewport().getWidth();
         if (viewportW <= 0) viewportW = 300;
         int maxBubbleW = Math.max(160, Math.min(260, viewportW - 48));
@@ -221,28 +314,38 @@ public class ChatPanel extends JPanel {
         bubble.setBorder(new EmptyBorder(10, 14, 10, 14));
         bubble.setMaximumSize(new Dimension(maxBubbleW, Integer.MAX_VALUE));
 
-        JLabel textLabel = new JLabel("<html><body style='width: " + htmlW + "px'>"
-                + escapeHtml(text) + "</body></html>");
-        textLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        textLabel.setForeground(isMine ? Color.WHITE : AppColor.TEXT_PRIMARY);
+        JPanel contentWrap = new JPanel();
+        contentWrap.setOpaque(false);
+        contentWrap.setLayout(new BoxLayout(contentWrap, BoxLayout.Y_AXIS));
+
+        if (image != null) {
+            JLabel imageLabel = buildImageLabel(image, maxBubbleW - 28);
+            imageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            contentWrap.add(imageLabel);
+            if (text != null && !text.isBlank()) {
+                contentWrap.add(Box.createVerticalStrut(6));
+            }
+        }
+
+        if (text != null && !text.isBlank()) {
+            JLabel textLabel = new JLabel("<html><body style='width: " + htmlW + "px'>"
+                    + escapeHtml(text) + "</body></html>");
+            textLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+            textLabel.setForeground(isMine ? Color.WHITE : AppColor.TEXT_PRIMARY);
+            textLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            contentWrap.add(textLabel);
+        }
 
         JLabel timeLabel = new JLabel(time);
         timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         timeLabel.setForeground(isMine ? AppColor.ACCENT_SELECTION_BG : AppColor.TEXT_MUTED);
         timeLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
         timeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        contentWrap.add(timeLabel);
 
-        JPanel textWrap = new JPanel();
-        textWrap.setOpaque(false);
-        textWrap.setLayout(new BoxLayout(textWrap, BoxLayout.Y_AXIS));
-        textWrap.add(textLabel);
-        textWrap.add(timeLabel);
-
-        bubble.add(textWrap, BorderLayout.CENTER);
+        bubble.add(contentWrap, BorderLayout.CENTER);
         row.add(bubble);
 
-        // Measure AFTER children are attached so BoxLayout does not clip multi-line bubbles.
-        // Previously maximumSize used preferred height of an empty row (~40px) and cut content.
         Dimension pref = row.getPreferredSize();
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
 
@@ -256,7 +359,47 @@ public class ChatPanel extends JPanel {
         });
     }
 
+    private JLabel buildImageLabel(BufferedImage src, int maxWidth) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int targetW = Math.min(w, Math.min(IMAGE_MAX_W, maxWidth));
+        int targetH = (int) Math.round(h * (targetW / (double) w));
+        Image scaled = src.getScaledInstance(targetW, targetH, Image.SCALE_SMOOTH);
+        JLabel label = new JLabel(new ImageIcon(scaled));
+        label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        label.setToolTipText("Nhấp để xem ảnh lớn");
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                showImagePreview(src);
+            }
+        });
+        return label;
+    }
+
+    private void showImagePreview(BufferedImage src) {
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), "Xem ảnh", Dialog.ModalityType.MODELESS);
+        dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+
+        int maxW = 720;
+        int maxH = 540;
+        int w = src.getWidth();
+        int h = src.getHeight();
+        double scale = Math.min(1.0, Math.min(maxW / (double) w, maxH / (double) h));
+        int dw = Math.max(1, (int) Math.round(w * scale));
+        int dh = Math.max(1, (int) Math.round(h * scale));
+        Image scaled = src.getScaledInstance(dw, dh, Image.SCALE_SMOOTH);
+
+        JLabel label = new JLabel(new ImageIcon(scaled));
+        label.setBorder(new EmptyBorder(12, 12, 12, 12));
+        dialog.add(new JScrollPane(label));
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
     private String escapeHtml(String text) {
+        if (text == null) return "";
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>");
     }
 

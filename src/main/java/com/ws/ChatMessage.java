@@ -1,14 +1,5 @@
 package com.ws;
 
-/**
- * Du lieu 1 tin nhan trao doi qua WebSocket giua khach hang (ChatClient) va
- * man hinh quan tri (ChatServer), duoc serialize/deserialize bang Gson.
- *
- * type:
- *  - "JOIN"  : client vua ket noi, bao userId/userName de admin biet dang chat voi ai.
- *  - "CHAT"  : mot tin nhan noi dung (text).
- *  - "LEAVE" : client chu dong ngat ket noi (dong cua so / thoat app / dang xuat).
- */
 public class ChatMessage {
 
     public String type;
@@ -18,6 +9,14 @@ public class ChatMessage {
     public long timestamp;
     /** true neu tin nhan nay la cua nhan vien quan tri gui xuong cho khach hang. */
     public boolean fromAdmin;
+
+    public String imageBase64;
+    public String imageMime;
+
+    /** STAFF_CHAT: userId = nguoi gui, toUserId = nguoi nhan. */
+    public int toUserId;
+    public String roleCode;
+    public boolean staff;
 
     public ChatMessage() {
     }
@@ -47,15 +46,57 @@ public class ChatMessage {
         return new ChatMessage("CHAT", toUserId, adminName, text, true);
     }
 
-    public boolean isJoin() {
-        return "JOIN".equals(type);
+    public static ChatMessage image(int userId, String userName, String text,
+                                    String imageBase64, String imageMime) {
+        ChatMessage m = new ChatMessage("CHAT", userId, userName, text, false);
+        m.imageBase64 = imageBase64;
+        m.imageMime = imageMime != null ? imageMime : "image/jpeg";
+        return m;
     }
 
-    public boolean isChat() {
-        return "CHAT".equals(type);
+    public static ChatMessage imageFromAdmin(int toUserId, String adminName, String text,
+                                             String imageBase64, String imageMime) {
+        ChatMessage m = new ChatMessage("CHAT", toUserId, adminName, text, true);
+        m.imageBase64 = imageBase64;
+        m.imageMime = imageMime != null ? imageMime : "image/jpeg";
+        return m;
     }
 
-    public boolean isLeave() {
-        return "LEAVE".equals(type);
+    public static ChatMessage staffJoin(int userId, String userName, String roleCode) {
+        ChatMessage m = new ChatMessage("STAFF_JOIN", userId, userName, null, false);
+        m.staff = true;
+        m.roleCode = roleCode;
+        return m;
     }
+
+    public static ChatMessage staffLeave(int userId, String userName) {
+        ChatMessage m = new ChatMessage("STAFF_LEAVE", userId, userName, null, false);
+        m.staff = true;
+        return m;
+    }
+
+    public static ChatMessage staffChat(int fromUserId, String fromName, int toUserId, String text) {
+        ChatMessage m = new ChatMessage("STAFF_CHAT", fromUserId, fromName, text, false);
+        m.staff = true;
+        m.toUserId = toUserId;
+        return m;
+    }
+
+    public static ChatMessage staffImage(int fromUserId, String fromName, int toUserId,
+                                         String text, String imageBase64, String imageMime) {
+        ChatMessage m = new ChatMessage("STAFF_CHAT", fromUserId, fromName, text, false);
+        m.staff = true;
+        m.toUserId = toUserId;
+        m.imageBase64 = imageBase64;
+        m.imageMime = imageMime != null ? imageMime : "image/jpeg";
+        return m;
+    }
+
+    public boolean isJoin() { return "JOIN".equals(type); }
+    public boolean isChat() { return "CHAT".equals(type); }
+    public boolean isLeave() { return "LEAVE".equals(type); }
+    public boolean isStaffJoin() { return "STAFF_JOIN".equals(type); }
+    public boolean isStaffLeave() { return "STAFF_LEAVE".equals(type); }
+    public boolean isStaffChat() { return "STAFF_CHAT".equals(type); }
+    public boolean hasImage() { return imageBase64 != null && !imageBase64.isBlank(); }
 }

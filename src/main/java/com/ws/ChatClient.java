@@ -16,20 +16,6 @@ import java.util.function.Consumer;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
-/**
- * Client WebSocket cho khung chat ho tro cua khach hang: giu ket noi lau
- * dai trong suot thoi gian ClientMainFrame dang mo, cho phep nhan tin nhan
- * tra loi tu Admin theo thoi gian thuc.
- *
- * Singleton dung chung cho ca phien dang nhap cua khach hang. Goi
- * connect(userId, userName) khi mo ClientMainFrame, disconnect() khi dong.
- *
- * TU DONG KET NOI LAI: neu lan ket noi dau tien that bai (vd: Admin/ChatServer
- * chua mo), hoac ket noi dang co bi rot, 1 thread nen (daemon) se dinh ky
- * thu ket noi lai moi RECONNECT_INTERVAL_SECONDS giay cho toi khi thanh cong -
- * khong quan trong ben nao mo truoc. Chi dung lai khi disconnect() duoc goi
- * tuong minh (vd: dong ClientMainFrame / dang xuat).
- */
 public class ChatClient {
 
     private static final Gson GSON = new Gson();
@@ -42,48 +28,47 @@ public class ChatClient {
     private WebSocketClient client;
     private int userId;
     private String userName;
+    private String roleCode;
+    private boolean staffMode;
 
-    /** true tu luc connect() duoc goi toi luc disconnect() - dieu khien vong lap tu ket noi lai. */
     private volatile boolean wantConnected = false;
-    /** Tranh 2 lan connect() chong cheo khi 1 lan ket noi truoc van dang "CONNECTING" dang do. */
     private volatile boolean connectAttemptInFlight = false;
     private ScheduledExecutorService reconnectScheduler;
 
-    private ChatClient() {
-    }
+    private ChatClient() {}
 
     public static synchronized ChatClient getInstance() {
-        if (instance == null) {
-            instance = new ChatClient();
-        }
+        if (instance == null) instance = new ChatClient();
         return instance;
     }
 
-    /** Dang ky nhan tin nhan (tra loi tu Admin) gui ve cho khach hang nay. */
-    public void addMessageListener(Consumer<ChatMessage> listener) {
-        messageListeners.add(listener);
-    }
-
-    public void removeMessageListener(Consumer<ChatMessage> listener) {
-        messageListeners.remove(listener);
-    }
-
-    /** Dang ky nhan trang thai ket noi (true = da ket noi, false = mat ket noi) de hien thi len UI. */
-    public void addConnectionListener(Consumer<Boolean> listener) {
-        connectionListeners.add(listener);
-    }
-
-    public void removeConnectionListener(Consumer<Boolean> listener) {
-        connectionListeners.remove(listener);
-    }
+    public void addMessageListener(Consumer<ChatMessage> listener) { messageListeners.add(listener); }
+    public void removeMessageListener(Consumer<ChatMessage> listener) { messageListeners.remove(listener); }
+    public void addConnectionListener(Consumer<Boolean> listener) { connectionListeners.add(listener); }
+    public void removeConnectionListener(Consumer<Boolean> listener) { connectionListeners.remove(listener); }
 
     public synchronized void connect(int userId, String userName) {
         this.userId = userId;
         this.userName = userName;
+        this.roleCode = null;
+        this.staffMode = false;
         this.wantConnected = true;
         attemptConnect();
         ensureReconnectSchedulerRunning();
     }
+
+    public synchronized void connectStaff(int userId, String userName, String roleCode) {
+        this.userId = userId;
+        this.userName = userName;
+        this.roleCode = roleCode;
+        this.staffMode = true;
+        this.wantConnected = true;
+        attemptConnect();
+        ensureReconnectSchedulerRunning();
+    }
+
+    public boolean isStaffMode() { return staffMode; }
+    public int getUserId() { return userId; }
 
     private synchronized void attemptConnect() {
         if (!wantConnected) return;
@@ -93,9 +78,7 @@ public class ChatClient {
         Properties props = new Properties();
         try (InputStream in = ChatClient.class.getClassLoader().getResourceAsStream("ws.properties")) {
             if (in != null) props.load(in);
-        } catch (IOException ignored) {
-            // Dung gia tri mac dinh ben duoi neu khong doc duoc file config.
-        }
+        } catch (IOException ignored) {}
         String host = props.getProperty("WS_HOST", "localhost");
         int port = Integer.parseInt(props.getProperty("WS_CHAT_PORT", "8890"));
 
@@ -105,7 +88,12 @@ public class ChatClient {
                 @Override
                 public void onOpen(ServerHandshake handshakedata) {
                     connectAttemptInFlight = false;
-                    send(GSON.toJson(ChatMessage.join(ChatClient.this.userId, ChatClient.this.userName)));
+                    if (staffMode) {
+                        send(GSON.toJson(ChatMessage.staffJoin(
+                                ChatClient.this.userId, ChatClient.this.userName, ChatClient.this.roleCode)));
+                    } else {
+                        send(GSON.toJson(ChatMessage.join(ChatClient.this.userId, ChatClient.this.userName)));
+                    }
                     notifyConnection(true);
                 }
 
@@ -114,16 +102,13 @@ public class ChatClient {
                     try {
                         ChatMessage chatMessage = GSON.fromJson(message, ChatMessage.class);
                         if (chatMessage != null) notifyMessage(chatMessage);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    } catch (Exception e) { e.printStackTrace(); }
                 }
 
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
                     connectAttemptInFlight = false;
                     notifyConnection(false);
-                    // Khong tu goi connect() ngay tai day - de reconnectScheduler xu ly.
                 }
 
                 @Override
@@ -131,7 +116,7 @@ public class ChatClient {
                     System.out.println("[ChatClient] Loi ket noi chat: " + ex.getMessage());
                 }
             };
-            client.connect(); // bat dong bo, khong lam treo UI neu server chua san sang
+            client.connect();
         } catch (Exception e) {
             connectAttemptInFlight = false;
             System.out.println("[ChatClient] Khong the khoi tao ket noi chat: " + e.getMessage());
@@ -140,7 +125,6 @@ public class ChatClient {
 
     private synchronized void ensureReconnectSchedulerRunning() {
         if (reconnectScheduler != null && !reconnectScheduler.isShutdown()) return;
-
         ThreadFactory daemonFactory = r -> {
             Thread t = new Thread(r, "chat-client-reconnect");
             t.setDaemon(true);
@@ -154,16 +138,33 @@ public class ChatClient {
         }, RECONNECT_INTERVAL_SECONDS, RECONNECT_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
 
-    /** Gui 1 tin nhan chat len ChatServer. Tra ve false neu hien khong co ket noi. */
     public boolean sendMessage(String text) {
         if (client == null || !client.isOpen()) return false;
         client.send(GSON.toJson(ChatMessage.chat(userId, userName, text)));
         return true;
     }
 
-    public boolean isConnected() {
-        return client != null && client.isOpen();
+    public boolean sendImage(String text, String imageBase64, String imageMime) {
+        if (client == null || !client.isOpen()) return false;
+        if (imageBase64 == null || imageBase64.isBlank()) return false;
+        client.send(GSON.toJson(ChatMessage.image(userId, userName, text, imageBase64, imageMime)));
+        return true;
     }
+
+    public boolean sendStaffMessage(int toUserId, String text) {
+        if (client == null || !client.isOpen() || !staffMode) return false;
+        client.send(GSON.toJson(ChatMessage.staffChat(userId, userName, toUserId, text)));
+        return true;
+    }
+
+    public boolean sendStaffImage(int toUserId, String text, String imageBase64, String imageMime) {
+        if (client == null || !client.isOpen() || !staffMode) return false;
+        if (imageBase64 == null || imageBase64.isBlank()) return false;
+        client.send(GSON.toJson(ChatMessage.staffImage(userId, userName, toUserId, text, imageBase64, imageMime)));
+        return true;
+    }
+
+    public boolean isConnected() { return client != null && client.isOpen(); }
 
     public synchronized void disconnect() {
         wantConnected = false;
@@ -174,11 +175,11 @@ public class ChatClient {
         if (client == null) return;
         try {
             if (client.isOpen()) {
-                client.send(GSON.toJson(ChatMessage.leave(userId, userName)));
+                if (staffMode) client.send(GSON.toJson(ChatMessage.staffLeave(userId, userName)));
+                else client.send(GSON.toJson(ChatMessage.leave(userId, userName)));
             }
             client.close();
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
         client = null;
     }
 
