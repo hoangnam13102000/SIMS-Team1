@@ -298,7 +298,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         Window owner = SwingUtilities.getWindowAncestor(this);
         ProductDetailDialog dialog = new ProductDetailDialog(
                 owner instanceof Frame ? (Frame) owner : null, item);
-        dialog.onEditRequested(() -> openForm(item));
         dialog.setVisible(true);
     }
 

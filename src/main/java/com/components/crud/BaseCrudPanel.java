@@ -652,13 +652,24 @@ public abstract class BaseCrudPanel<T> extends JPanel {
     /**
      * Helper để subclass gắn làm {@link CrudCallback} cho BaseFormDialog:
      * {@code dialog.onSaved(this::handleFormSaved);}
+     * <p>
+     * Sau ADD: xóa keyword tìm kiếm và về trang 1 (bản ghi mới thường nằm đầu
+     * danh sách theo ORDER BY id DESC). Sau EDIT: reload đúng trang đang xem.
+     * Subclass có thể override (vd EmployeePanel bỏ dialog generic vì form đã
+     * hiện thông báo chi tiết riêng).
      */
     protected void handleFormSaved(T item, CrudMode mode) {
         BaseDialog.success(this, "Thành công",
                 mode == CrudMode.ADD ? "Đã thêm " + getEntityLabel() + " mới" : "Đã cập nhật " + getEntityLabel());
-        // Chi can onDataChanged() - AutoRefresher tu goi reload(), tranh loadingOverlay
-        // hien 2 lan lien tiep (xem giai thich chi tiet o deleteRow()).
-        onDataChanged();
+        if (mode == CrudMode.ADD) {
+            if (searchBar != null) {
+                searchBar.setText("");
+            }
+            // Về trang 1 để thấy bản ghi vừa thêm (tránh giữ page cũ / keyword lọc mất dòng mới)
+            applyFilters();
+        } else {
+            onDataChanged();
+        }
     }
 
     // ---------------------------------------------------------------

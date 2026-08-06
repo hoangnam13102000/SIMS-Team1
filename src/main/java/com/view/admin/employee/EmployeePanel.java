@@ -201,10 +201,42 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return new ArrayList<>(new LinkedHashSet<>(names));
     }
 
-    /** Giống UserAccountPanel/CustomerPanel: chưa có nơi nào publish DataChangedEvent cho Users nên reload() trực tiếp sau mỗi thao tác. */
+    /**
+     * Giống UserAccountPanel/CustomerPanel: chưa có nơi nào publish DataChangedEvent
+     * cho Users/Employees nên reload() trực tiếp sau mỗi thao tác.
+     */
     @Override
     protected void onDataChanged() {
         reload();
+    }
+
+    /**
+     * Sau khi thêm nhân viên mới:
+     * <ul>
+     *   <li>Không hiện dialog "Đã thêm nhân viên mới" (EmployeeFormDialog đã báo
+     *       chi tiết mã NV / username / mật khẩu-email).</li>
+     *   <li>Xóa bộ lọc vai trò + ô tìm kiếm và về trang 1 — vì danh sách ORDER BY
+     *       UserID DESC, nhân viên vừa tạo luôn nằm trang đầu. Nếu giữ nguyên
+     *       trang/filter hiện tại thì bảng trông như "không auto-refresh".</li>
+     * </ul>
+     * Khi sửa: giữ hành vi mặc định (thông báo + reload trang hiện tại).
+     */
+    @Override
+    protected void handleFormSaved(Employee item, CrudMode mode) {
+        if (mode == CrudMode.ADD) {
+            selectedRole = null;
+            if (roleFilter != null) {
+                roleFilter.setSelectedIndex(0);
+            }
+            if (searchBar != null) {
+                searchBar.setText("");
+            }
+            // applyFilters() luôn load trang 1 (không giữ page cũ)
+            applyFilters();
+            return;
+        }
+        BaseDialog.success(this, "Thành công", "Đã cập nhật " + getEntityLabel());
+        onDataChanged();
     }
 
     // ---------------------------------------------------------------

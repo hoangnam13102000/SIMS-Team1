@@ -457,3 +457,14 @@ CREATE TABLE StoreConfig (
     ConfigValue     NVARCHAR(255) NOT NULL
 );
 GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'OrderDetailBatches')
+BEGIN
+    CREATE TABLE OrderDetailBatches (
+        OrderDetailID   INT NOT NULL FOREIGN KEY REFERENCES OrderDetails(OrderDetailID),
+        BatchID         INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+        Quantity        INT NOT NULL CHECK (Quantity > 0),
+        PRIMARY KEY (OrderDetailID, BatchID)
+    );
+END
+GO

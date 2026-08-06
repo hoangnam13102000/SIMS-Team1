@@ -51,8 +51,6 @@ public class ProductDetailDialog extends JDialog {
     private static final int IMAGE_W = 280;
     private static final int ICON_BOX_SIZE = 40;
 
-    private Runnable onEditRequested;
-
     public ProductDetailDialog(java.awt.Frame owner, Product product) {
         super(owner, "Chi tiết sản phẩm", true);
         setLayout(new BorderLayout());
@@ -69,10 +67,6 @@ public class ProductDetailDialog extends JDialog {
         // Layout ngang rộng hơn, cao vừa đủ cho lưới info + mô tả.
         setSize(860, 600);
         setLocationRelativeTo(owner);
-    }
-
-    public void onEditRequested(Runnable callback) {
-        this.onEditRequested = callback;
     }
 
     // ---------------------------------------------------------------
@@ -523,19 +517,6 @@ public class ProductDetailDialog extends JDialog {
         closeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         closeButton.addActionListener(e -> dispose());
         buttons.add(closeButton);
-
-        JButton editButton = new JButton("Chỉnh sửa", FontIcon.of(FontAwesomeSolid.EDIT, 13, Color.WHITE));
-        editButton.setFont(AppFont.BODY_BOLD);
-        editButton.setFocusPainted(false);
-        editButton.setBackground(AppColor.ACCENT);
-        editButton.setForeground(Color.WHITE);
-        editButton.setBorder(new EmptyBorder(9, 20, 9, 20));
-        editButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        editButton.addActionListener(e -> {
-            dispose();
-            if (onEditRequested != null) onEditRequested.run();
-        });
-        buttons.add(editButton);
 
         footer.add(buttons, BorderLayout.EAST);
         getRootPane().setDefaultButton(closeButton);

@@ -20,14 +20,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * DAO cho đơn hàng online từ khách (xem sql/Orders_SIMS.sql). Tạo đơn được
- * bọc trong 1 transaction (Orders + OrderDetails), phát {@link DataChangedEvent}
- * (entity ORDER) sau khi tạo/đổi trạng thái thành công để các listener trong
- * cùng JVM (dashboard, OrdersPanel) cập nhật ngay; đơn nhận thông báo real-time
- * bên admin (khi client/admin chạy 2 tiến trình khác nhau) do
- * {@code com.service.OrderNotifyPoller} đảm nhiệm bằng cách polling định kỳ.
- */
 public class OrderDAO extends BaseDAO<Order> {
 
     private static final String BASE_TABLE = "Orders o";
@@ -244,6 +236,20 @@ public class OrderDAO extends BaseDAO<Order> {
         }
     }
 
+    /** Kết quả chuyển trạng thái đơn - kèm lý do cụ thể khi thất bại (vd thiếu hàng, còn thiếu SP nào) để UI hiển thị đúng thay vì chỉ "thất bại, thử lại". */
+    public static final class StatusUpdateResult {
+        public final boolean success;
+        public final String errorMessage;
+
+        private StatusUpdateResult(boolean success, String errorMessage) {
+            this.success = success;
+            this.errorMessage = errorMessage;
+        }
+
+        public static StatusUpdateResult ok() { return new StatusUpdateResult(true, null); }
+        public static StatusUpdateResult fail(String message) { return new StatusUpdateResult(false, message); }
+    }
+
     /**
      * Xác nhận / chuyển trạng thái đơn: NEW -&gt; CONFIRMED -&gt; SHIPPING -&gt; COMPLETED,
      * hủy (-&gt; CANCELLED) chỉ được phép ở NEW hoặc CONFIRMED (đơn đã giao cho ĐVVC
@@ -252,19 +258,36 @@ public class OrderDAO extends BaseDAO<Order> {
      * <p>
      * Kho CHỈ thực sự bị trừ tại thời điểm xác nhận (không trừ lúc khách đặt
      * hàng ở {@link #createOrder}, vì đơn NEW có thể bị hủy) - khi chuyển
-     * NEW -> CONFIRMED, trừ Products.Stock theo từng dòng OrderDetails. Nếu
-     * 1 đơn ĐÃ CONFIRMED sau đó bị hủy, hoàn lại đúng số lượng đã trừ. SHIPPING
-     * và COMPLETED không đụng tới kho (đã trừ xong từ bước CONFIRMED). Toàn
-     * bộ nằm trong 1 transaction để tránh lệch kho nếu update giữa chừng lỗi.
+     * NEW -> CONFIRMED, trừ theo FEFO từng lô (InventoryBatch) giống nguyên tắc
+     * bán hàng tại quầy ({@code trg_InvoiceDetails_CheckStock}), ghi lại
+     * OrderDetailBatches để hoàn ĐÚNG lô nếu đơn bị hủy sau đó, và ghi
+     * InventoryTransactions để có dấu vết kiểm toán. Nếu không đủ hàng cho
+     * bất kỳ dòng nào, KHÔNG trừ dòng nào cả (all-or-nothing) và trả về lý do
+     * cụ thể. SHIPPING và COMPLETED không đụng tới kho (đã trừ xong từ bước
+     * CONFIRMED). Toàn bộ nằm trong 1 transaction để tránh lệch kho nếu có
+     * lỗi giữa chừng.
+     *
+     * @param actorUserId UserID của admin đang thao tác - dùng làm CreatedBy khi ghi InventoryTransactions.
      */
-    public boolean updateOrderStatus(int orderId, String newStatus) {
+    public StatusUpdateResult updateOrderStatus(int orderId, String newStatus, int actorUserId) {
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
                 String oldStatus = getOrderStatusForUpdate(con, orderId);
                 if (oldStatus == null || !isValidTransition(oldStatus, newStatus)) {
                     con.rollback();
-                    return false;
+                    return StatusUpdateResult.fail("Đơn hàng không ở trạng thái cho phép chuyển đổi này.");
+                }
+
+                if ("NEW".equals(oldStatus) && "CONFIRMED".equals(newStatus)) {
+                    String insufficient = deductStockFEFO(con, orderId, actorUserId);
+                    if (insufficient != null) {
+                        con.rollback();
+                        return StatusUpdateResult.fail(
+                                "Không đủ tồn kho để xác nhận đơn - " + insufficient + ".");
+                    }
+                } else if ("CONFIRMED".equals(oldStatus) && "CANCELLED".equals(newStatus)) {
+                    restoreStockFEFO(con, orderId, actorUserId);
                 }
 
                 try (PreparedStatement ps = con.prepareStatement(
@@ -274,15 +297,9 @@ public class OrderDAO extends BaseDAO<Order> {
                     ps.executeUpdate();
                 }
 
-                if ("NEW".equals(oldStatus) && "CONFIRMED".equals(newStatus)) {
-                    adjustProductStock(con, orderId, -1);
-                } else if ("CONFIRMED".equals(oldStatus) && "CANCELLED".equals(newStatus)) {
-                    adjustProductStock(con, orderId, +1);
-                }
-
                 con.commit();
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
-                return true;
+                return StatusUpdateResult.ok();
             } catch (SQLException e) {
                 con.rollback();
                 throw e;
@@ -291,7 +308,7 @@ public class OrderDAO extends BaseDAO<Order> {
             }
         } catch (SQLException e) {
             AppLogger.getInstance().error(ErrorCode.ORDER_STATUS_UPDATE_FAIL, "OrderDAO.updateOrderStatus - " + orderId, e);
-            return false;
+            return StatusUpdateResult.fail("Đã xảy ra lỗi hệ thống. Vui lòng thử lại.");
         }
     }
 
@@ -316,14 +333,214 @@ public class OrderDAO extends BaseDAO<Order> {
         }
     }
 
-    /** direction = -1 khi trừ kho (xác nhận đơn), +1 khi hoàn kho (hủy đơn đã xác nhận). */
-    private void adjustProductStock(Connection con, int orderId, int direction) throws SQLException {
-        String sql = "UPDATE p SET p.Stock = p.Stock + (? * od.Quantity) "
-                + "FROM Products p INNER JOIN OrderDetails od ON od.ProductID = p.ProductID "
+    /**
+     * Trừ kho theo FEFO (lô hết hạn sớm nhất trước, loại lô đã hết hạn) cho
+     * TẤT CẢ dòng OrderDetails của đơn - cùng nguyên tắc với
+     * {@code trg_InvoiceDetails_CheckStock} bên bán tại quầy, chỉ khác là
+     * viết ở tầng Java vì luồng đổi trạng thái đơn đã tự quản lý transaction
+     * riêng (khác trigger INSTEAD OF INSERT của InvoiceDetails).
+     * <p>
+     * Kiểm tra ĐỦ hàng cho toàn bộ các dòng trước, chỉ trừ khi tất cả các
+     * dòng đều đủ (all-or-nothing) - khác với bên POS (cho phép bán ít hơn
+     * số yêu cầu nếu thiếu hàng), vì đơn online khách đã chốt đúng số lượng,
+     * không thể tự ý giao thiếu.
+     *
+     * @return null nếu đã trừ thành công tất cả các dòng; ngược lại là chuỗi
+     *         mô tả (các) sản phẩm không đủ hàng, kèm số lượng còn khả dụng.
+     */
+    private String deductStockFEFO(Connection con, int orderId, int actorUserId) throws SQLException {
+        List<OrderDetail> lines = getDetailsForUpdate(con, orderId);
+
+        StringBuilder insufficient = new StringBuilder();
+        for (OrderDetail line : lines) {
+            int available = getAvailableStock(con, line.getProductId());
+            if (line.getQuantity() > available) {
+                if (insufficient.length() > 0) insufficient.append("; ");
+                insufficient.append(line.getProductName()).append(" (cần ")
+                        .append(line.getQuantity()).append(", còn ").append(available).append(")");
+            }
+        }
+        if (insufficient.length() > 0) return insufficient.toString();
+
+        for (OrderDetail line : lines) {
+            List<int[]> batches = getFefoBatches(con, line.getProductId()); // {BatchID, RemainingQty}
+            int remaining = line.getQuantity();
+
+            for (int[] batch : batches) {
+                if (remaining <= 0) break;
+                int batchId = batch[0];
+                int take = Math.min(batch[1], remaining);
+
+                try (PreparedStatement upd = con.prepareStatement(
+                        "UPDATE InventoryBatch SET RemainingQty = RemainingQty - ?, "
+                                + "Status = CASE WHEN RemainingQty - ? = 0 THEN 'DEPLETED' ELSE Status END "
+                                + "WHERE BatchID = ?")) {
+                    upd.setInt(1, take);
+                    upd.setInt(2, take);
+                    upd.setInt(3, batchId);
+                    upd.executeUpdate();
+                }
+
+                try (PreparedStatement ins = con.prepareStatement(
+                        "INSERT INTO OrderDetailBatches (OrderDetailID, BatchID, Quantity) VALUES (?, ?, ?)")) {
+                    ins.setInt(1, line.getOrderDetailId());
+                    ins.setInt(2, batchId);
+                    ins.setInt(3, take);
+                    ins.executeUpdate();
+                }
+
+                remaining -= take;
+            }
+
+            int stockBefore = getProductStock(con, line.getProductId());
+            try (PreparedStatement upd = con.prepareStatement(
+                    "UPDATE Products SET Stock = Stock - ? WHERE ProductID = ?")) {
+                upd.setInt(1, line.getQuantity());
+                upd.setInt(2, line.getProductId());
+                upd.executeUpdate();
+            }
+
+            insertInventoryTransaction(con, line.getProductId(), "SALE", "OUT", line.getQuantity(),
+                    stockBefore, stockBefore - line.getQuantity(), orderId, actorUserId);
+        }
+        return null;
+    }
+
+    /**
+     * Hoàn kho khi đơn ĐÃ CONFIRMED bị hủy - hoàn ĐÚNG lô đã trừ lúc xác
+     * nhận (đọc lại từ OrderDetailBatches, giống cách
+     * {@code trg_Invoices_CancelSameDayOnly} hoàn lô khi hủy hóa đơn tại
+     * quầy) thay vì cộng thẳng vào Products.Stock chung chung.
+     */
+    private void restoreStockFEFO(Connection con, int orderId, int actorUserId) throws SQLException {
+        String sql = "SELECT odb.BatchID, odb.Quantity, od.ProductID, od.ProductName "
+                + "FROM OrderDetailBatches odb "
+                + "JOIN OrderDetails od ON od.OrderDetailID = odb.OrderDetailID "
+                + "WHERE od.OrderID = ?";
+
+        List<int[]> batchRestores = new ArrayList<>(); // {BatchID, Quantity}
+        // productId -> tong so luong hoan (gop nhieu lo cung 1 SP)
+        java.util.LinkedHashMap<Integer, Integer> perProduct = new java.util.LinkedHashMap<>();
+
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int batchId = rs.getInt("BatchID");
+                    int qty = rs.getInt("Quantity");
+                    int productId = rs.getInt("ProductID");
+                    batchRestores.add(new int[]{batchId, qty});
+                    perProduct.merge(productId, qty, Integer::sum);
+                }
+            }
+        }
+
+        for (int[] restore : batchRestores) {
+            try (PreparedStatement upd = con.prepareStatement(
+                    "UPDATE InventoryBatch SET RemainingQty = RemainingQty + ?, "
+                            + "Status = CASE WHEN Status = 'DEPLETED' THEN 'ACTIVE' ELSE Status END "
+                            + "WHERE BatchID = ?")) {
+                upd.setInt(1, restore[1]);
+                upd.setInt(2, restore[0]);
+                upd.executeUpdate();
+            }
+        }
+
+        for (var entry : perProduct.entrySet()) {
+            int productId = entry.getKey();
+            int qty = entry.getValue();
+            int stockBefore = getProductStock(con, productId);
+
+            try (PreparedStatement upd = con.prepareStatement(
+                    "UPDATE Products SET Stock = Stock + ? WHERE ProductID = ?")) {
+                upd.setInt(1, qty);
+                upd.setInt(2, productId);
+                upd.executeUpdate();
+            }
+
+            insertInventoryTransaction(con, productId, "SALE_CANCEL", "IN", qty,
+                    stockBefore, stockBefore + qty, orderId, actorUserId);
+        }
+    }
+
+    /** Đọc OrderDetails của đơn, khóa dòng Products tương ứng (UPDLOCK) để tránh 2 giao dịch cùng trừ 1 sản phẩm chồng lấn. */
+    private List<OrderDetail> getDetailsForUpdate(Connection con, int orderId) throws SQLException {
+        List<OrderDetail> list = new ArrayList<>();
+        String sql = "SELECT od.OrderDetailID, od.ProductID, od.ProductName, od.Quantity "
+                + "FROM OrderDetails od "
+                + "JOIN Products p WITH (UPDLOCK, ROWLOCK) ON p.ProductID = od.ProductID "
                 + "WHERE od.OrderID = ?";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, direction);
-            ps.setInt(2, orderId);
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    OrderDetail d = new OrderDetail();
+                    d.setOrderDetailId(rs.getInt("OrderDetailID"));
+                    d.setProductId(rs.getInt("ProductID"));
+                    d.setProductName(rs.getString("ProductName"));
+                    d.setQuantity(rs.getInt("Quantity"));
+                    list.add(d);
+                }
+            }
+        }
+        return list;
+    }
+
+    /** Tồn khả dụng = tổng RemainingQty các lô ACTIVE, chưa hết hạn (khớp điều kiện lọc của getFefoBatches). */
+    private int getAvailableStock(Connection con, int productId) throws SQLException {
+        String sql = "SELECT ISNULL(SUM(RemainingQty), 0) FROM InventoryBatch "
+                + "WHERE ProductID = ? AND Status = 'ACTIVE' "
+                + "AND (ExpiryDate IS NULL OR ExpiryDate >= CAST(GETDATE() AS DATE))";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, productId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
+    /** Danh sách lô còn hàng theo thứ tự FEFO (hết hạn sớm nhất trước, lô không HSD xếp sau cùng), loại lô đã hết hạn. */
+    private List<int[]> getFefoBatches(Connection con, int productId) throws SQLException {
+        List<int[]> batches = new ArrayList<>();
+        String sql = "SELECT BatchID, RemainingQty FROM InventoryBatch WITH (UPDLOCK, ROWLOCK) "
+                + "WHERE ProductID = ? AND Status = 'ACTIVE' AND RemainingQty > 0 "
+                + "AND (ExpiryDate IS NULL OR ExpiryDate >= CAST(GETDATE() AS DATE)) "
+                + "ORDER BY ISNULL(ExpiryDate, '9999-12-31'), BatchID";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, productId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    batches.add(new int[]{rs.getInt("BatchID"), rs.getInt("RemainingQty")});
+                }
+            }
+        }
+        return batches;
+    }
+
+    private int getProductStock(Connection con, int productId) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("SELECT Stock FROM Products WHERE ProductID = ?")) {
+            ps.setInt(1, productId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
+    /** RefTable luôn là 'Orders' - dùng lại TransactionType SALE/SALE_CANCEL sẵn có (CHECK constraint InventoryTransactions) để báo cáo tồn kho không cần đổi gì thêm. */
+    private void insertInventoryTransaction(Connection con, int productId, String type, String direction,
+            int quantity, int stockBefore, int stockAfter, int orderId, int actorUserId) throws SQLException {
+        String sql = "INSERT INTO InventoryTransactions (ProductID, TransactionType, Direction, Quantity, "
+                + "StockBefore, StockAfter, RefTable, RefID, CreatedBy) "
+                + "VALUES (?, ?, ?, ?, ?, ?, 'Orders', ?, ?)";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, productId);
+            ps.setString(2, type);
+            ps.setString(3, direction);
+            ps.setInt(4, quantity);
+            ps.setInt(5, stockBefore);
+            ps.setInt(6, stockAfter);
+            ps.setInt(7, orderId);
+            ps.setInt(8, actorUserId);
             ps.executeUpdate();
         }
     }

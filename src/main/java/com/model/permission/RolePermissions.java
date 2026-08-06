@@ -36,11 +36,7 @@ public final class RolePermissions {
                 AppPermission.STOCK_VIEW,
                 AppPermission.STOCK_IMPORT,
                 AppPermission.STOCK_RECONCILE,
-                AppPermission.STOCK_ALERT_VIEW,
-                // Quan ly nha cung cap gan lien nghiep vu nhap hang, dung theo
-                // thiet ke goc trong sql/Insert_SIMS.sql, nhung truoc day bi
-                // thieu o day nen chi Admin quan ly duoc NCC.
-                AppPermission.SUPPLIER_MANAGE
+                AppPermission.STOCK_ALERT_VIEW
         ));
 
         // Nhan vien ban hang : xem dashboard, quan ly khach

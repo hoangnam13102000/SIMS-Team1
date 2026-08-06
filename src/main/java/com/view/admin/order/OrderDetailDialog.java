@@ -6,6 +6,7 @@ import com.model.Order;
 import com.model.OrderDetail;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
+import com.service.AuthService;
 import com.components.table.ImageColumn;
 import com.components.table.RowColorProvider;
 import com.theme.AppColor;
@@ -47,14 +48,6 @@ import java.awt.event.KeyEvent;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/**
- * Dialog xem chi tiết 1 đơn hàng online: thông tin khách (lưới 2 cột),
- * địa chỉ giao hàng, bảng sản phẩm có ảnh. Mở dialog sẽ đánh dấu đã xem
- * (OrderDAO.markSeen). Nút thao tác theo quyền ORDER_MANAGE thay đổi theo
- * trạng thái hiện tại: NEW -&gt; "Xác nhận đơn"; CONFIRMED -&gt; "Bắt đầu giao";
- * SHIPPING -&gt; "Hoàn thành". Nút "Hủy đơn" chỉ hiện ở NEW/CONFIRMED (đã giao
- * cho đơn vị vận chuyển thì không hủy được nữa).
- */
 public class OrderDetailDialog extends JDialog {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT =
@@ -455,10 +448,10 @@ public class OrderDetailDialog extends JDialog {
                 "Xác nhận đơn hàng " + order.getOrderCode() + "?");
         if (!confirmed) return;
 
-        boolean ok = orderDAO.updateOrderStatus(order.getOrderId(), "CONFIRMED");
-        if (!ok) {
-            BaseDialog.error(this, "Không thể xác nhận",
-                    "Xác nhận đơn hàng thất bại. Vui lòng thử lại.");
+        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
+                order.getOrderId(), "CONFIRMED", AuthService.getInstance().getCurrentUser().getUserId());
+        if (!result.success) {
+            BaseDialog.error(this, "Không thể xác nhận", result.errorMessage);
             return;
         }
 
@@ -472,10 +465,10 @@ public class OrderDetailDialog extends JDialog {
                 "Chuyển đơn hàng " + order.getOrderCode() + " sang trạng thái đang giao?");
         if (!confirmed) return;
 
-        boolean ok = orderDAO.updateOrderStatus(order.getOrderId(), "SHIPPING");
-        if (!ok) {
-            BaseDialog.error(this, "Không thể cập nhật",
-                    "Cập nhật trạng thái đang giao thất bại. Vui lòng thử lại.");
+        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
+                order.getOrderId(), "SHIPPING", AuthService.getInstance().getCurrentUser().getUserId());
+        if (!result.success) {
+            BaseDialog.error(this, "Không thể cập nhật", result.errorMessage);
             return;
         }
 
@@ -489,10 +482,10 @@ public class OrderDetailDialog extends JDialog {
                 "Xác nhận đơn hàng " + order.getOrderCode() + " đã giao thành công?");
         if (!confirmed) return;
 
-        boolean ok = orderDAO.updateOrderStatus(order.getOrderId(), "COMPLETED");
-        if (!ok) {
-            BaseDialog.error(this, "Không thể cập nhật",
-                    "Cập nhật trạng thái hoàn thành thất bại. Vui lòng thử lại.");
+        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
+                order.getOrderId(), "COMPLETED", AuthService.getInstance().getCurrentUser().getUserId());
+        if (!result.success) {
+            BaseDialog.error(this, "Không thể cập nhật", result.errorMessage);
             return;
         }
 
@@ -506,10 +499,10 @@ public class OrderDetailDialog extends JDialog {
                 "Bạn có chắc muốn hủy đơn hàng " + order.getOrderCode() + "?");
         if (!confirmed) return;
 
-        boolean ok = orderDAO.updateOrderStatus(order.getOrderId(), "CANCELLED");
-        if (!ok) {
-            BaseDialog.error(this, "Không thể hủy đơn",
-                    "Hủy đơn hàng thất bại. Vui lòng thử lại.");
+        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
+                order.getOrderId(), "CANCELLED", AuthService.getInstance().getCurrentUser().getUserId());
+        if (!result.success) {
+            BaseDialog.error(this, "Không thể hủy đơn", result.errorMessage);
             return;
         }
 

@@ -438,7 +438,22 @@ WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'SETTINGS_MANAGE'
 GO
 
 
+/* ============================================================
+   Migration: Backfill Employees.EmployeeID cho cac tai khoan
+   nhan vien da ton tai TRUOC KHI co thay doi nay trong UserDAO
+   (register()/createByAdmin() truoc day KHONG insert vao bang
+   Employees cho bat ky role nao, chi Customers cho Role.CUSTOMER).
 
+   Chay 1 LAN sau khi da cap nhat code UserDAO.java. An toan de
+   chay lai nhieu lan (idempotent) nho dieu kien NOT EXISTS.
+   ============================================================ */
 
-select * from Users
-select * from Customers
+INSERT INTO Employees (UserID, EmployeeID)
+SELECT u.UserID, 'EMP_' + RIGHT('0000' + CAST(u.UserID AS VARCHAR(10)), 4)
+FROM Users u
+JOIN Roles r ON u.RoleID = r.RoleID
+WHERE r.RoleCode <> 'CUSTOMER'
+  AND NOT EXISTS (
+        SELECT 1 FROM Employees e WHERE e.UserID = u.UserID
+      );
+GO

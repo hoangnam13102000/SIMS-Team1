@@ -11,7 +11,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -151,6 +153,54 @@ public class RevenueReportDAO {
             this.revenue = revenue != null ? revenue : BigDecimal.ZERO;
             this.cost = cost != null ? cost : BigDecimal.ZERO;
             this.profit = this.revenue.subtract(this.cost);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // DTO rieng cho "Xu huong ban hang theo thang & danh muc" (bieu do
+    // duong nhieu chuoi so lieu - 1 duong / danh muc). Tach 2 lop: 1 diem
+    // tho tu SQL (MonthlyCategoryPoint) va 1 goi da PIVOT san theo thang de
+    // MonthlyCategoryTrendPanel chi viec ve, khong phai tu gop nhom lai.
+    // ---------------------------------------------------------------
+
+    public static class MonthlyCategoryPoint {
+        public final YearMonth month;
+        public final String categoryName;
+        public final long quantity;
+        public final BigDecimal revenue;
+
+        public MonthlyCategoryPoint(YearMonth month, String categoryName, long quantity, BigDecimal revenue) {
+            this.month = month;
+            this.categoryName = categoryName;
+            this.quantity = quantity;
+            this.revenue = revenue != null ? revenue : BigDecimal.ZERO;
+        }
+    }
+
+    /** 1 duong (danh muc) tren bieu do: so lieu da can chinh du cho MOI thang trong khoang loc. */
+    public static class CategorySeries {
+        public final String categoryName;
+        public final List<Long> quantityByMonth;
+        public final List<BigDecimal> revenueByMonth;
+        public final long totalQuantity;
+
+        public CategorySeries(String categoryName, List<Long> quantityByMonth,
+                               List<BigDecimal> revenueByMonth, long totalQuantity) {
+            this.categoryName = categoryName;
+            this.quantityByMonth = quantityByMonth;
+            this.revenueByMonth = revenueByMonth;
+            this.totalQuantity = totalQuantity;
+        }
+    }
+
+    /** Ket qua da PIVOT: truc thang (day du, khong thieu thang nao) + danh sach duong theo danh muc. */
+    public static class MonthlyCategoryTrend {
+        public final List<YearMonth> months;
+        public final List<CategorySeries> series;
+
+        public MonthlyCategoryTrend(List<YearMonth> months, List<CategorySeries> series) {
+            this.months = months;
+            this.series = series;
         }
     }
 
@@ -410,5 +460,103 @@ public class RevenueReportDAO {
                     "RevenueReportDAO.getProfitByCategory - from=" + from + " to=" + to, e);
         }
         return list;
+    }
+
+    // ---------------------------------------------------------------
+    // Xu huong ban hang theo thang & danh muc (bieu do duong nhieu chuoi)
+    // ---------------------------------------------------------------
+
+    /**
+     * So luong + doanh thu ban ra, gop nhom theo (nam, thang, danh muc) trong
+     * [from, to]. Tra ve dang "tho" (1 dong / thang / danh muc co du lieu) -
+     * dung {@link #getMonthlyCategoryTrend(LocalDate, LocalDate)} de co ban
+     * da PIVOT san, dien du thang trong ("hut" thang khong co doanh so = 0)
+     * cho bieu do duong ve truc lien tuc.
+     */
+    public List<MonthlyCategoryPoint> getMonthlySalesByCategory(LocalDate from, LocalDate to) {
+        String sql = "SELECT YEAR(inv.CreatedAt) AS Yr, MONTH(inv.CreatedAt) AS Mo, "
+                + "c.CategoryName AS CategoryName, SUM(d.Quantity) AS Qty, SUM(d.LineTotal) AS Revenue "
+                + "FROM InvoiceDetails d "
+                + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
+                + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "JOIN Categories c ON c.CategoryID = p.CategoryID "
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY YEAR(inv.CreatedAt), MONTH(inv.CreatedAt), c.CategoryID, c.CategoryName "
+                + "ORDER BY Yr ASC, Mo ASC, CategoryName ASC";
+
+        List<MonthlyCategoryPoint> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    YearMonth ym = YearMonth.of(rs.getInt("Yr"), rs.getInt("Mo"));
+                    list.add(new MonthlyCategoryPoint(ym, rs.getString("CategoryName"),
+                            rs.getLong("Qty"), rs.getBigDecimal("Revenue")));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.getMonthlySalesByCategory - from=" + from + " to=" + to, e);
+        }
+        return list;
+    }
+
+    /**
+     * Ban PIVOT san cua {@link #getMonthlySalesByCategory(LocalDate, LocalDate)}:
+     * dien DU moi thang trong [from, to] (thang khong co don hang -> so luong = 0)
+     * de {@link com.components.report.MonthlyCategoryTrendPanel} ve cac duong
+     * lien tuc, khong bi "gay khuc" o thang thieu du lieu. Danh muc duoc sap
+     * xep giam dan theo tong so luong ban ra (danh muc ban chay nhat len dau
+     * danh sach chu thich).
+     */
+    public MonthlyCategoryTrend getMonthlyCategoryTrend(LocalDate from, LocalDate to) {
+        List<MonthlyCategoryPoint> raw = getMonthlySalesByCategory(from, to);
+
+        List<YearMonth> months = new ArrayList<>();
+        YearMonth start = YearMonth.from(from);
+        YearMonth end = YearMonth.from(to);
+        for (YearMonth ym = start; !ym.isAfter(end); ym = ym.plusMonths(1)) {
+            months.add(ym);
+        }
+        int n = months.size();
+
+        Map<String, long[]> qtyByCategory = new LinkedHashMap<>();
+        Map<String, BigDecimal[]> revenueByCategory = new LinkedHashMap<>();
+
+        for (MonthlyCategoryPoint p : raw) {
+            int idx = months.indexOf(p.month);
+            if (idx < 0) continue; // an toan: khong roi vao khoang loc thi bo qua
+
+            long[] qtyArr = qtyByCategory.computeIfAbsent(p.categoryName, k -> new long[n]);
+            BigDecimal[] revArr = revenueByCategory.computeIfAbsent(p.categoryName, k -> {
+                BigDecimal[] arr = new BigDecimal[n];
+                Arrays.fill(arr, BigDecimal.ZERO);
+                return arr;
+            });
+            qtyArr[idx] += p.quantity;
+            revArr[idx] = revArr[idx].add(p.revenue);
+        }
+
+        List<CategorySeries> series = new ArrayList<>();
+        for (Map.Entry<String, long[]> entry : qtyByCategory.entrySet()) {
+            String categoryName = entry.getKey();
+            long[] qtyArr = entry.getValue();
+            BigDecimal[] revArr = revenueByCategory.get(categoryName);
+
+            List<Long> qtyList = new ArrayList<>(n);
+            List<BigDecimal> revList = new ArrayList<>(n);
+            long total = 0;
+            for (int i = 0; i < n; i++) {
+                qtyList.add(qtyArr[i]);
+                revList.add(revArr[i]);
+                total += qtyArr[i];
+            }
+            series.add(new CategorySeries(categoryName, qtyList, revList, total));
+        }
+        series.sort((a, b) -> Long.compare(b.totalQuantity, a.totalQuantity));
+
+        return new MonthlyCategoryTrend(months, series);
     }
 }

@@ -41,14 +41,6 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * Dialog Thêm/Sửa sản phẩm — layout ngang giống EmployeeFormDialog:
- * <ul>
- *   <li>(EDIT) thẻ Mã SP full-width phía trên</li>
- *   <li>3 cột: Ảnh | Thông tin sản phẩm | Giá &amp; tồn kho</li>
- * </ul>
- * Rộng hơn, thấp hơn form dọc cũ — ít phải cuộn.
- */
 public class ProductFormDialog extends BaseFormDialog<Product> {
 
     private static final String UPLOAD_DIR = "uploads/products";
@@ -562,18 +554,19 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         product.setMinStock(Integer.parseInt(minStockField.getText().trim()));
         product.setStatus(statusCombo.getSelectedIndex() == 1 ? "DISABLED" : "ACTIVE");
 
-        if (pendingImageFile != null) {
-            File saved = FileUtil.copyToDirectory(pendingImageFile, UPLOAD_DIR);
-            product.setImageUrl(saved != null ? saved.getPath() : currentImageUrl);
-        } else {
-            product.setImageUrl(currentImageUrl);
-        }
+        // Copy ảnh để ở persist() (chạy background) — tránh đơ UI trên EDT
+        product.setImageUrl(currentImageUrl);
 
         return product;
     }
 
     @Override
     protected boolean persist(Product entity, CrudMode mode) {
+        // File I/O chạy trên SwingWorker (BaseFormDialog) — không block EDT
+        if (pendingImageFile != null) {
+            File saved = FileUtil.copyToDirectory(pendingImageFile, UPLOAD_DIR);
+            entity.setImageUrl(saved != null ? saved.getPath() : currentImageUrl);
+        }
         return mode == CrudMode.ADD ? productDAO.insert(entity) : productDAO.update(entity);
     }
 

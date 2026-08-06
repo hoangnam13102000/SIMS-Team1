@@ -7,6 +7,7 @@ import com.components.SectionHeader;
 import com.dao.RevenueReportDAO;
 import com.dao.RevenueReportDAO.CategoryProfit;
 import com.dao.RevenueReportDAO.DailyPoint;
+import com.dao.RevenueReportDAO.MonthlyCategoryTrend;
 import com.dao.RevenueReportDAO.PaymentSlice;
 import com.dao.RevenueReportDAO.ProductProfit;
 import com.dao.RevenueReportDAO.ProfitSummary;
@@ -58,6 +59,7 @@ public class RevenueReportPanel extends JPanel {
     private static final DateTimeFormatter FILE_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final String CARD_REVENUE = "revenue";
     private static final String CARD_PROFIT = "profit";
+    private static final String CARD_TREND = "trend";
 
     private final RevenueReportDAO dao = new RevenueReportDAO();
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang tải báo cáo...");
@@ -70,9 +72,11 @@ public class RevenueReportPanel extends JPanel {
     private JPanel cardContainer;
     private RevenueReportTab revenueTab;
     private ProfitReportTab profitTab;
+    private SalesTrendTab salesTrendTab;
     private JButton revenueTabButton;
     private JButton profitTabButton;
-    private boolean showingProfit = false;
+    private JButton trendTabButton;
+    private String activeCard = CARD_REVENUE;
 
     public RevenueReportPanel() {
         setLayout(new BorderLayout());
@@ -100,11 +104,13 @@ public class RevenueReportPanel extends JPanel {
 
         revenueTab = new RevenueReportTab();
         profitTab = new ProfitReportTab();
+        salesTrendTab = new SalesTrendTab();
 
         cardContainer = new JPanel(cardLayout);
         cardContainer.setOpaque(false);
         cardContainer.add(revenueTab, CARD_REVENUE);
         cardContainer.add(profitTab, CARD_PROFIT);
+        cardContainer.add(salesTrendTab, CARD_TREND);
 
         add(topSection, BorderLayout.NORTH);
         add(LoadingOverlay.attach(cardContainer, loadingOverlay), BorderLayout.CENTER);
@@ -149,10 +155,12 @@ public class RevenueReportPanel extends JPanel {
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        revenueTabButton = tabButton("Doanh thu", () -> switchTab(false));
-        profitTabButton = tabButton("Lợi nhuận", () -> switchTab(true));
+        revenueTabButton = tabButton("Doanh thu", () -> switchTab(CARD_REVENUE));
+        profitTabButton = tabButton("Lợi nhuận", () -> switchTab(CARD_PROFIT));
+        trendTabButton = tabButton("Xu hướng bán hàng", () -> switchTab(CARD_TREND));
         row.add(revenueTabButton);
         row.add(profitTabButton);
+        row.add(trendTabButton);
         updateTabButtonStyles();
 
         return row;
@@ -209,16 +217,17 @@ public class RevenueReportPanel extends JPanel {
         bar.repaint();
     }
 
-    private void switchTab(boolean profit) {
-        if (showingProfit == profit) return;
-        showingProfit = profit;
-        cardLayout.show(cardContainer, profit ? CARD_PROFIT : CARD_REVENUE);
+    private void switchTab(String card) {
+        if (activeCard.equals(card)) return;
+        activeCard = card;
+        cardLayout.show(cardContainer, card);
         updateTabButtonStyles();
     }
 
     private void updateTabButtonStyles() {
-        styleTabButton(revenueTabButton, !showingProfit);
-        styleTabButton(profitTabButton, showingProfit);
+        styleTabButton(revenueTabButton, CARD_REVENUE.equals(activeCard));
+        styleTabButton(profitTabButton, CARD_PROFIT.equals(activeCard));
+        styleTabButton(trendTabButton, CARD_TREND.equals(activeCard));
     }
 
     private static void styleTabButton(JButton button, boolean active) {
@@ -253,6 +262,8 @@ public class RevenueReportPanel extends JPanel {
         List<DailyPoint> profitDaily;
         List<CategoryProfit> categories;
         List<ProductProfit> topProductsProfit;
+
+        MonthlyCategoryTrend monthlyCategoryTrend;
     }
 
     private void loadData() {
@@ -283,6 +294,8 @@ public class RevenueReportPanel extends JPanel {
                 data.profitDaily = dao.getDailyProfit(from, to);
                 data.categories = dao.getProfitByCategory(from, to);
                 data.topProductsProfit = dao.getTopProductsByProfit(from, to, 10);
+
+                data.monthlyCategoryTrend = dao.getMonthlyCategoryTrend(from, to);
                 return data;
             }
 
@@ -293,6 +306,7 @@ public class RevenueReportPanel extends JPanel {
                     ReportData data = get();
                     revenueTab.applyData(data.summary, data.previousSummary, data.daily, data.payments, data.topProducts);
                     profitTab.applyData(data.profitSummary, data.profitDaily, data.categories, data.topProductsProfit);
+                    salesTrendTab.applyData(data.monthlyCategoryTrend);
                 } catch (Exception e) {
                     e.printStackTrace();
                     BaseDialog.error(RevenueReportPanel.this, "Lỗi", "Không thể tải báo cáo: " + e.getMessage());
@@ -307,6 +321,12 @@ public class RevenueReportPanel extends JPanel {
     // ---------------------------------------------------------------
 
     private void exportReport(String format) {
+        if (CARD_TREND.equals(activeCard)) {
+            exportSalesTrend(format);
+            return;
+        }
+
+        boolean showingProfit = CARD_PROFIT.equals(activeCard);
         List<DailyPoint> daily = showingProfit ? profitTab.getLastDaily() : revenueTab.getLastDaily();
         if (daily.isEmpty()) {
             BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu để xuất trong khoảng thời gian đang chọn.");
@@ -336,6 +356,63 @@ public class RevenueReportPanel extends JPanel {
                     TableExportUtil.exportCsv(file, headers, rows);
                 } else {
                     TableExportUtil.exportExcel(file, sheetName, headers, rows);
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                loadingOverlay.stop();
+                try {
+                    get();
+                    BaseDialog.success(RevenueReportPanel.this, "Thành công",
+                            "Đã xuất báo cáo vào file \"" + file.getName() + "\"");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    BaseDialog.error(RevenueReportPanel.this, "Lỗi", "Xuất file thất bại: " + e.getMessage());
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    /** Xuat bang "Thang x Danh muc" (moi cot 1 danh muc, gia tri = so luong ban ra) cua tab Xu huong ban hang. */
+    private void exportSalesTrend(String format) {
+        MonthlyCategoryTrend trend = salesTrendTab.getLastTrend();
+        if (trend == null || trend.months.isEmpty() || trend.series.isEmpty()) {
+            BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu để xuất trong khoảng thời gian đang chọn.");
+            return;
+        }
+
+        String defaultName = "xu_huong_ban_hang_" + timestamp() + "." + format;
+        File chosen = FileUtil.chooseSaveLocation(this, defaultName);
+        if (chosen == null) return;
+        File file = ensureExtension(chosen, format);
+
+        String[] headers = new String[trend.series.size() + 1];
+        headers[0] = "Tháng";
+        for (int i = 0; i < trend.series.size(); i++) {
+            headers[i + 1] = trend.series.get(i).categoryName;
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        for (int m = 0; m < trend.months.size(); m++) {
+            Object[] row = new Object[trend.series.size() + 1];
+            row[0] = trend.months.get(m).getMonthValue() + "/" + trend.months.get(m).getYear();
+            for (int i = 0; i < trend.series.size(); i++) {
+                row[i + 1] = trend.series.get(i).quantityByMonth.get(m);
+            }
+            rows.add(row);
+        }
+
+        loadingOverlay.start("Đang xuất dữ liệu...");
+        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                if ("csv".equals(format)) {
+                    TableExportUtil.exportCsv(file, headers, rows);
+                } else {
+                    TableExportUtil.exportExcel(file, "Xu hướng bán hàng", headers, rows);
                 }
                 return null;
             }

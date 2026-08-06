@@ -1,6 +1,7 @@
 package com.components.crud;
 
 
+import com.components.LoadingOverlay;
 import com.theme.AppColor;
 import com.core.log.ActivityLogHelper;
 import com.core.log.AuditSnapshot;
@@ -31,7 +32,10 @@ public abstract class BaseFormDialog<T> extends JDialog {
     private JPanel formPanel;
     private JLabel messageLabel;
     private JButton saveButton;
+    private JButton cancelButton;
+    private LoadingOverlay loadingOverlay;
     private boolean saved = false;
+    private boolean saving = false;
     private T result;
     private CrudCallback<T> callback;
 
@@ -114,7 +118,12 @@ public abstract class BaseFormDialog<T> extends JDialog {
             saveButton.setVisible(false);
         }
 
-        getRootPane().registerKeyboardAction(e -> dispose(),
+        loadingOverlay = new LoadingOverlay();
+        setGlassPane(loadingOverlay);
+
+        getRootPane().registerKeyboardAction(e -> {
+                    if (!saving) dispose();
+                },
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
                 JComponent.WHEN_IN_FOCUSED_WINDOW);
 
@@ -154,13 +163,15 @@ public abstract class BaseFormDialog<T> extends JDialog {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         buttons.setBackground(footer.getBackground());
 
-        JButton cancelButton = new JButton("Hủy");
+        cancelButton = new JButton("Hủy");
         cancelButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
         cancelButton.setFocusPainted(false);
         cancelButton.setBackground(AppColor.BORDER);
         cancelButton.setForeground(AppColor.TEXT_PRIMARY);
         cancelButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-        cancelButton.addActionListener(e -> dispose());
+        cancelButton.addActionListener(e -> {
+            if (!saving) dispose();
+        });
         buttons.add(cancelButton);
 
         saveButton = new JButton(mode == CrudMode.EDIT ? "Lưu thay đổi" : "Thêm mới");
@@ -170,8 +181,11 @@ public abstract class BaseFormDialog<T> extends JDialog {
         saveButton.setForeground(Color.WHITE);
         saveButton.setBorder(new EmptyBorder(8, 18, 8, 18));
         saveButton.addActionListener(e -> onSaveClicked());
-        saveButton.getModel().addChangeListener(e ->
-                saveButton.setBackground(saveButton.getModel().isRollover() ? AppColor.ACCENT_HOVER : AppColor.ACCENT));
+        saveButton.getModel().addChangeListener(e -> {
+            if (saveButton.isEnabled()) {
+                saveButton.setBackground(saveButton.getModel().isRollover() ? AppColor.ACCENT_HOVER : AppColor.ACCENT);
+            }
+        });
         buttons.add(saveButton);
 
         footer.add(buttons, BorderLayout.EAST);
@@ -179,33 +193,82 @@ public abstract class BaseFormDialog<T> extends JDialog {
         return footer;
     }
 
+    /**
+     * Lưu trên background thread (SwingWorker) + LoadingOverlay trên glass pane
+     * để UI không bị đơ khi insert/update DB hoặc copy ảnh mất thời gian.
+     */
     private void onSaveClicked() {
+        if (saving) return;
+
         String error = validateForm();
         if (error != null) {
             showMessage(error);
             return;
         }
 
-        T data = collectFormData();
-        saveButton.setEnabled(false);
-        boolean ok;
-        try {
-            ok = persist(data, mode);
-        } finally {
-            saveButton.setEnabled(true);
-        }
+        // collectFormData() đụng Swing components → phải gọi trên EDT
+        final T data = collectFormData();
+        setSaving(true, mode == CrudMode.ADD ? "Đang thêm " + entityLabel + "..." : "Đang lưu " + entityLabel + "...");
 
-        if (ok) {
-            this.result = data;
-            this.saved = true;
-            logAudit(data);
-            if (callback != null) {
-                callback.onSaved(data, mode);
+        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Boolean doInBackground() {
+                return persist(data, mode);
             }
-            dispose();
-        } else {
-            showMessage("Không thể lưu " + entityLabel + ". Vui lòng thử lại.");
+
+            @Override
+            protected void done() {
+                boolean ok = false;
+                try {
+                    ok = Boolean.TRUE.equals(get());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    ok = false;
+                }
+
+                if (ok) {
+                    result = data;
+                    saved = true;
+                    logAudit(data);
+                    if (callback != null) {
+                        callback.onSaved(data, mode);
+                    }
+                    dispose();
+                } else {
+                    setSaving(false, null);
+                    showMessage("Không thể lưu " + entityLabel + ". Vui lòng thử lại.");
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void setSaving(boolean active, String message) {
+        saving = active;
+        if (saveButton != null) {
+            saveButton.setEnabled(!active);
+            if (active) {
+                saveButton.setText("Đang xử lý...");
+                saveButton.setBackground(AppColor.BORDER);
+            } else {
+                saveButton.setText(mode == CrudMode.EDIT ? "Lưu thay đổi" : "Thêm mới");
+                saveButton.setBackground(AppColor.ACCENT);
+            }
         }
+        if (cancelButton != null) {
+            cancelButton.setEnabled(!active);
+        }
+        if (loadingOverlay != null) {
+            if (active) {
+                loadingOverlay.start(message != null ? message : "Đang xử lý...");
+                getGlassPane().setVisible(true);
+            } else {
+                loadingOverlay.stop();
+                // stop() có thể delay ẩn overlay; glass pane tắt ngay để cho phép tương tác lại
+                getGlassPane().setVisible(false);
+            }
+        }
+        setCursor(active ? Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR) : Cursor.getDefaultCursor());
     }
 
     /**
