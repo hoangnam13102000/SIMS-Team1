@@ -19,7 +19,6 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
-
 public class ClientMainFrame extends JFrame {
 
     private CardLayout cardLayout;
@@ -60,7 +59,6 @@ public class ClientMainFrame extends JFrame {
         setVisible(true);
     }
 
-    /** Xay (hoac xay lai) toan bo noi dung ben trong frame - header + cac trang + footer. */
     private void buildContent() {
         getContentPane().removeAll();
         getContentPane().setBackground(AppColor.PAGE_BG);
@@ -71,6 +69,7 @@ public class ClientMainFrame extends JFrame {
         header = new ClientHeader();
 
         ProfilePanel profilePanel = new ProfilePanel();
+        OrderHistoryPanel orderHistoryPanel = new OrderHistoryPanel();
         profilePanel.onSaved(() -> {
             header.refreshAccountLabel();
             setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
@@ -87,7 +86,6 @@ public class ClientMainFrame extends JFrame {
             productsPanel.showAll();
         });
 
-        // Bam the san pham (Home / Products / Related) -> mo trang chi tiet
         java.util.function.Consumer<Product> openProductDetail = product -> {
             productDetailPanel.showProduct(product);
             showPage("productDetail");
@@ -110,11 +108,11 @@ public class ClientMainFrame extends JFrame {
         addPage("products", Lang.get("client.nav.products"), FontAwesomeSolid.STORE, productsPanel);
         addPage("about", Lang.get("client.nav.about"), FontAwesomeSolid.INFO_CIRCLE, new AboutPanel());
         addPage("contact", Lang.get("client.nav.contact"), FontAwesomeSolid.ENVELOPE, new ContactPanel());
-        contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
-        contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
-        contentPanel.add(productDetailPanel, "productDetail"); // an trong nav, chi mo khi bam the SP
+        contentPanel.add(profilePanel, "profile");
+        contentPanel.add(orderHistoryPanel, "orderHistory");
+        contentPanel.add(cartPanel, "cart");
+        contentPanel.add(productDetailPanel, "productDetail");
 
-        // Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham, loc san theo danh muc do
         header.onCategorySelect((categoryId, categoryName) -> {
             showPage("products");
             productsPanel.filterByCategory(categoryId, categoryName);
@@ -131,6 +129,10 @@ public class ClientMainFrame extends JFrame {
             homePanel.search(keyword);
         });
         header.onProfile(() -> showPage("profile"));
+        header.onOrderHistory(() -> {
+            orderHistoryPanel.refresh();
+            showPage("orderHistory");
+        });
         header.onCartClick(() -> {
             showPage("cart");
             cartPanel.loadCart();
@@ -173,7 +175,6 @@ public class ClientMainFrame extends JFrame {
             AppColor.ERROR_HOVER,
             FontAwesomeSolid.SIGN_OUT_ALT
         );
-
         if (confirmed) {
             dispose();
         }

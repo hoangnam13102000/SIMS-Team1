@@ -53,6 +53,7 @@ public class ClientHeader extends JPanel {
     private Consumer<String> searchListener;
     private BiConsumer<Integer, String> categorySelectListener;
     private Runnable profileListener;
+    private Runnable orderHistoryListener;
     private Runnable logoutListener;
     private Runnable cartListener;
     private CartIconButton cartButton;
@@ -1368,6 +1369,10 @@ public class ClientHeader extends JPanel {
             if (profileListener != null) profileListener.run();
         }));
         card.add(Box.createVerticalStrut(6));
+        card.add(buildMenuRow("Lịch sử mua hàng", FontAwesomeSolid.RECEIPT, AppColor.TEXT_PRIMARY, popup, () -> {
+            if (orderHistoryListener != null) orderHistoryListener.run();
+        }));
+        card.add(Box.createVerticalStrut(6));
         card.add(buildDivider());
         card.add(Box.createVerticalStrut(6));
         card.add(buildMenuRow(Lang.get("client.header.logout"), FontAwesomeSolid.SIGN_OUT_ALT, AppColor.ERROR, popup, () -> {
@@ -1513,6 +1518,10 @@ public class ClientHeader extends JPanel {
 
     public void onProfile(Runnable listener) {
         this.profileListener = listener;
+    }
+
+    public void onOrderHistory(Runnable listener) {
+        this.orderHistoryListener = listener;
     }
 
     public void onLogout(Runnable listener) {

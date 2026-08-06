@@ -201,7 +201,13 @@ public class OrderDAO extends BaseDAO<Order> {
                 .replace("_", "\\_")
                 .replace("[", "\\[");
     }
-
+    
+    /**
+     * Toàn bộ đơn hàng của 1 khách (trang Lịch sử mua hàng ở client).
+     */
+    public List<Order> getByCustomerId(int customerId) {
+        return getByCondition("o.CustomerID = " + customerId);
+    }
     /** Danh sách đơn CHƯA được admin xem (dùng cho polling chuông thông báo). */
     public List<Order> getUnseenOrders() {
         return getByCondition("o.SeenByAdmin = 0");

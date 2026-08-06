@@ -14,7 +14,6 @@ import org.kordamp.ikonli.swing.FontIcon;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -32,6 +31,7 @@ import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -41,9 +41,12 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -53,7 +56,8 @@ import java.util.List;
 import java.util.function.BiConsumer;
 
 /**
- * Form lap phieu tieu huy nhieu dong theo lo.
+ * Form lap phieu tieu huy — UI dong bo voi PurchaseReceiptFormDialog
+ * (card bo tron, header icon, field block, bang header dam, footer tong).
  */
 public class StockDisposalFormDialog extends JDialog {
 
@@ -67,13 +71,12 @@ public class StockDisposalFormDialog extends JDialog {
     private JTextArea noteArea;
     private JComboBox<InventoryBatch> batchCombo;
     private JTextField qtyField;
-    private JLabel unitCostLabel;
-    private JLabel remainLabel;
 
     private LineTableModel tableModel;
     private JTable lineTable;
     private JLabel totalLabel;
     private JLabel lineCountLabel;
+    private JLabel emptyHint;
 
     private BiConsumer<Integer, Integer> onSaved;
 
@@ -81,11 +84,12 @@ public class StockDisposalFormDialog extends JDialog {
         super(owner, "Lập phiếu tiêu hủy", Dialog.ModalityType.APPLICATION_MODAL);
         this.batches = disposalDAO.listDisposableBatches();
 
-        setSize(960, 680);
-        setMinimumSize(new Dimension(860, 560));
+        setSize(1020, 700);
+        setMinimumSize(new Dimension(900, 600));
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
-        getContentPane().setBackground(AppColor.PAGE_BG != null ? AppColor.PAGE_BG : new Color(248, 250, 252));
+        Color pageBg = AppColor.PAGE_BG != null ? AppColor.PAGE_BG : new Color(248, 250, 252);
+        getContentPane().setBackground(pageBg);
 
         add(buildHeader(), BorderLayout.NORTH);
         add(buildBody(), BorderLayout.CENTER);
@@ -104,25 +108,45 @@ public class StockDisposalFormDialog extends JDialog {
     }
 
     private JPanel buildHeader() {
-        JPanel header = new JPanel(new BorderLayout());
+        JPanel header = new JPanel(new BorderLayout(16, 0));
         header.setBackground(AppColor.WHITE);
         header.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, softBorder()),
-                new EmptyBorder(18, 24, 16, 24)));
-        JLabel title = new JLabel("Lập phiếu tiêu hủy hàng");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        title.setForeground(AppColor.TEXT_PRIMARY);
-        title.setIcon(FontIcon.of(FontAwesomeSolid.TRASH, 20, AppColor.ERROR));
-        title.setIconTextGap(10);
-        JLabel sub = new JLabel("Trừ lô theo FEFO / HSD, tính tổn thất = SL × giá nhập lô");
-        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        sub.setForeground(AppColor.TEXT_MUTED);
+                new EmptyBorder(20, 28, 18, 28)));
+
+        JPanel iconBox = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                Color bg = AppColor.ERROR_BG != null ? AppColor.ERROR_BG : new Color(254, 226, 226);
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        iconBox.setOpaque(false);
+        iconBox.setPreferredSize(new Dimension(52, 52));
+        iconBox.setLayout(new BorderLayout());
+        JLabel icon = new JLabel(FontIcon.of(FontAwesomeSolid.TRASH, 22, AppColor.ERROR));
+        icon.setHorizontalAlignment(SwingConstants.CENTER);
+        iconBox.add(icon, BorderLayout.CENTER);
+
         JPanel titles = new JPanel();
         titles.setOpaque(false);
         titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        JLabel title = new JLabel("Lập phiếu tiêu hủy hàng");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        title.setForeground(AppColor.TEXT_TITLE != null ? AppColor.TEXT_TITLE : AppColor.TEXT_PRIMARY);
+        JLabel sub = new JLabel("Một phiếu · nhiều lô · trừ tồn theo FEFO / HSD · tổn thất = SL × giá nhập lô");
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        sub.setForeground(AppColor.TEXT_MUTED);
         titles.add(title);
         titles.add(Box.createVerticalStrut(4));
         titles.add(sub);
+
+        header.add(iconBox, BorderLayout.WEST);
         header.add(titles, BorderLayout.CENTER);
         return header;
     }
@@ -131,170 +155,260 @@ public class StockDisposalFormDialog extends JDialog {
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.setBorder(new EmptyBorder(14, 20, 8, 20));
+        body.setBorder(new EmptyBorder(16, 24, 8, 24));
 
         body.add(cardReason());
-        body.add(Box.createVerticalStrut(10));
+        body.add(Box.createVerticalStrut(12));
         body.add(cardAddLine());
-        body.add(Box.createVerticalStrut(10));
-        body.add(cardTable());
+        body.add(Box.createVerticalStrut(12));
+        body.add(cardLinesTable());
 
-        JScrollPane scroll = new JScrollPane(body);
-        scroll.setBorder(null);
-        scroll.getViewport().setBackground(getContentPane().getBackground());
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        return scroll;
+        JScrollPane outer = new JScrollPane(body);
+        outer.setBorder(null);
+        Color pageBg = AppColor.PAGE_BG != null ? AppColor.PAGE_BG : new Color(248, 250, 252);
+        outer.getViewport().setBackground(pageBg);
+        outer.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        outer.getVerticalScrollBar().setUnitIncrement(16);
+        return outer;
     }
 
     private JPanel cardReason() {
-        JPanel card = whiteCard();
+        JPanel card = roundedCard();
         card.setLayout(new GridBagLayout());
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+
         GridBagConstraints gc = new GridBagConstraints();
         gc.fill = GridBagConstraints.HORIZONTAL;
         gc.insets = new Insets(0, 0, 0, 12);
 
-        reasonCombo = new JComboBox<>(REASON_LABELS);
-        reasonCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        reasonCombo.setPreferredSize(new Dimension(200, 34));
+        reasonCombo = styledCombo(REASON_LABELS);
+        reasonCombo.setPreferredSize(new Dimension(220, 38));
 
-        noteArea = new JTextArea(2, 30);
+        noteArea = new JTextArea(2, 28);
         noteArea.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         noteArea.setLineWrap(true);
         noteArea.setWrapStyleWord(true);
         noteArea.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(softBorder(), 1),
-                new EmptyBorder(6, 8, 6, 8)));
+                new EmptyBorder(8, 10, 8, 10)));
         JScrollPane noteScroll = new JScrollPane(noteArea);
-        noteScroll.setPreferredSize(new Dimension(400, 52));
+        noteScroll.setPreferredSize(new Dimension(420, 52));
+        noteScroll.setBorder(BorderFactory.createLineBorder(softBorder(), 1));
 
-        gc.gridx = 0; gc.gridy = 0; gc.weightx = 0;
-        card.add(label("Lý do *"), gc);
-        gc.gridx = 1; gc.weightx = 0.3;
-        card.add(reasonCombo, gc);
-        gc.gridx = 2; gc.weightx = 0;
-        card.add(label("Ghi chú"), gc);
-        gc.gridx = 3; gc.weightx = 0.7;
-        card.add(noteScroll, gc);
+        gc.gridx = 0; gc.gridy = 0; gc.weightx = 0.35;
+        card.add(fieldBlock("Lý do *", reasonCombo), gc);
+        gc.gridx = 1; gc.weightx = 0.65;
+        card.add(fieldBlock("Ghi chú", noteScroll), gc);
         return card;
     }
 
     private JPanel cardAddLine() {
-        JPanel card = whiteCard();
-        card.setLayout(new BorderLayout(0, 8));
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+        JPanel card = roundedCard();
+        card.setLayout(new BorderLayout(0, 12));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 160));
 
-        JLabel title = label("Thêm lô cần tiêu hủy");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
+        JLabel title = sectionLabel("Thêm lô cần tiêu hủy");
+        title.setIcon(FontIcon.of(FontAwesomeSolid.PLUS_CIRCLE, 14, AppColor.ACCENT));
+        title.setIconTextGap(8);
+        titleRow.add(title, BorderLayout.WEST);
 
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        row.setOpaque(false);
+        JPanel grid = new JPanel(new GridBagLayout());
+        grid.setOpaque(false);
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        gc.insets = new Insets(0, 0, 0, 10);
+        gc.weightx = 1;
 
-        batchCombo = new JComboBox<>(batches.toArray(new InventoryBatch[0]));
-        batchCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        batchCombo.setPreferredSize(new Dimension(360, 34));
-        batchCombo.setRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
-                                                          int index, boolean isSelected, boolean cellHasFocus) {
-                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof InventoryBatch b) {
-                    String exp = b.getExpiryDate() != null ? b.getExpiryDate().toString() : "—";
-                    setText(b.getBatchCode() + " | " + b.getProductName()
-                            + " | con " + b.getRemainingQty() + " | HSD " + exp);
-                }
-                return this;
+        batchCombo = styledCombo(batches.toArray(new InventoryBatch[0]));
+        batchCombo.setRenderer((list, value, index, isSelected, cellHasFocus) -> {
+            String text;
+            if (value != null) {
+                InventoryBatch b = value;
+                String exp = b.getExpiryDate() != null ? b.getExpiryDate().toString() : "—";
+                text = b.getBatchCode() + "  ·  " + b.getProductName()
+                        + "  ·  còn " + b.getRemainingQty() + "  ·  HSD " + exp;
+            } else {
+                text = "— Chọn lô hàng —";
+            }
+            return comboLabel(text, isSelected);
+        });
+        qtyField = styledField();
+        qtyField.setPreferredSize(new Dimension(100, 38));
+
+        JLabel remainHint = new JLabel(" ");
+        remainHint.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        remainHint.setForeground(AppColor.TEXT_MUTED);
+        batchCombo.addActionListener(e -> {
+            InventoryBatch b = (InventoryBatch) batchCombo.getSelectedItem();
+            if (b == null) {
+                remainHint.setText(" ");
+            } else {
+                remainHint.setText("Còn " + b.getRemainingQty()
+                        + "  ·  Giá vốn "
+                        + NumberUtil.formatThousands(b.getImportPrice().longValue()) + " đ");
             }
         });
-        batchCombo.addActionListener(e -> syncBatchInfo());
+        if (batchCombo.getItemCount() > 0) {
+            batchCombo.setSelectedIndex(0);
+        }
 
-        qtyField = new JTextField(6);
-        qtyField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        qtyField.setPreferredSize(new Dimension(80, 34));
-
-        unitCostLabel = new JLabel("Giá vốn: -");
-        unitCostLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        unitCostLabel.setForeground(AppColor.TEXT_MUTED);
-        remainLabel = new JLabel("Còn: -");
-        remainLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        remainLabel.setForeground(AppColor.TEXT_MUTED);
-
-        JButton addBtn = accentBtn("Thêm dòng", FontAwesomeSolid.PLUS);
+        gc.gridx = 0; gc.gridy = 0; gc.weightx = 2.2;
+        grid.add(fieldBlock("Lô hàng *", batchCombo), gc);
+        gc.gridx = 1; gc.weightx = 0.5;
+        grid.add(fieldBlock("Số lượng *", qtyField), gc);
+        gc.gridx = 2; gc.weightx = 0.7;
+        JPanel btnWrap = new JPanel(new BorderLayout());
+        btnWrap.setOpaque(false);
+        btnWrap.add(fieldLabel(" "), BorderLayout.NORTH);
+        JButton addBtn = accentButton("Thêm dòng", FontAwesomeSolid.PLUS);
+        addBtn.setPreferredSize(new Dimension(130, 36));
         addBtn.addActionListener(e -> handleAddLine());
+        btnWrap.add(addBtn, BorderLayout.CENTER);
+        grid.add(btnWrap, gc);
 
-        row.add(batchCombo);
-        row.add(label("SL"));
-        row.add(qtyField);
-        row.add(remainLabel);
-        row.add(unitCostLabel);
-        row.add(addBtn);
+        JPanel south = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        south.setOpaque(false);
+        south.add(remainHint);
 
-        card.add(title, BorderLayout.NORTH);
-        card.add(row, BorderLayout.CENTER);
-        syncBatchInfo();
+        JPanel center = new JPanel(new BorderLayout(0, 4));
+        center.setOpaque(false);
+        center.add(grid, BorderLayout.CENTER);
+        center.add(south, BorderLayout.SOUTH);
+
+        card.add(titleRow, BorderLayout.NORTH);
+        card.add(center, BorderLayout.CENTER);
         return card;
     }
 
-    private JPanel cardTable() {
-        JPanel card = whiteCard();
-        card.setLayout(new BorderLayout(0, 8));
+    private JPanel cardLinesTable() {
+        JPanel card = roundedCard();
+        card.setLayout(new BorderLayout(0, 10));
         card.setPreferredSize(new Dimension(0, 280));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 360));
 
-        JPanel top = new JPanel(new BorderLayout());
-        top.setOpaque(false);
-        JLabel title = label("Danh sách lô trên phiếu");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
+        JLabel title = sectionLabel("Danh sách lô trên phiếu");
+        title.setIcon(FontIcon.of(FontAwesomeSolid.LIST, 14, AppColor.ACCENT));
+        title.setIconTextGap(8);
         lineCountLabel = new JLabel("0 dòng");
         lineCountLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         lineCountLabel.setForeground(AppColor.TEXT_MUTED);
-        top.add(title, BorderLayout.WEST);
-        top.add(lineCountLabel, BorderLayout.EAST);
+        titleRow.add(title, BorderLayout.WEST);
+        titleRow.add(lineCountLabel, BorderLayout.EAST);
 
         tableModel = new LineTableModel();
         lineTable = new JTable(tableModel);
-        lineTable.setRowHeight(36);
+        lineTable.setRowHeight(40);
         lineTable.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lineTable.setShowHorizontalLines(true);
+        lineTable.setShowVerticalLines(false);
+        lineTable.setGridColor(softBorder());
         lineTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        lineTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        Color selBg = AppColor.ACCENT_SELECTION_BG != null ? AppColor.ACCENT_SELECTION_BG : new Color(209, 250, 229);
+        lineTable.setSelectionBackground(selBg);
+        lineTable.setSelectionForeground(AppColor.TEXT_PRIMARY);
+        lineTable.setBackground(AppColor.WHITE);
         lineTable.setFillsViewportHeight(true);
+        lineTable.setIntercellSpacing(new Dimension(0, 0));
 
-        int[] w = {110, 180, 90, 70, 100, 110, 50};
-        for (int i = 0; i < w.length && i < lineTable.getColumnCount(); i++) {
-            lineTable.getColumnModel().getColumn(i).setPreferredWidth(w[i]);
+        JTableHeader header = lineTable.getTableHeader();
+        header.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        Color headerBg = new Color(30, 41, 59);
+        header.setBackground(headerBg);
+        header.setForeground(Color.WHITE);
+        header.setPreferredSize(new Dimension(0, 36));
+        header.setReorderingAllowed(false);
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, softBorder()));
+        header.setDefaultRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
+                                                           boolean hasFocus, int row, int column) {
+                JLabel lb = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                lb.setBackground(headerBg);
+                lb.setForeground(Color.WHITE);
+                lb.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                lb.setHorizontalAlignment(SwingConstants.CENTER);
+                lb.setBorder(new EmptyBorder(0, 8, 0, 8));
+                lb.setOpaque(true);
+                return lb;
+            }
+        });
+
+        int[] widths = {120, 200, 100, 80, 110, 120, 56};
+        for (int i = 0; i < widths.length && i < lineTable.getColumnCount(); i++) {
+            lineTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         }
-        DefaultTableCellRenderer right = new DefaultTableCellRenderer();
-        right.setHorizontalAlignment(SwingConstants.RIGHT);
+        lineTable.getColumnModel().getColumn(6).setMaxWidth(64);
+
+        DefaultTableCellRenderer left = cellRenderer(SwingConstants.LEFT);
+        DefaultTableCellRenderer right = cellRenderer(SwingConstants.RIGHT);
+        DefaultTableCellRenderer center = cellRenderer(SwingConstants.CENTER);
+        lineTable.getColumnModel().getColumn(0).setCellRenderer(left);
+        lineTable.getColumnModel().getColumn(1).setCellRenderer(left);
+        lineTable.getColumnModel().getColumn(2).setCellRenderer(center);
         lineTable.getColumnModel().getColumn(3).setCellRenderer(right);
         lineTable.getColumnModel().getColumn(4).setCellRenderer(right);
-        lineTable.getColumnModel().getColumn(5).setCellRenderer(right);
+        lineTable.getColumnModel().getColumn(5).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
+                                                           boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.RIGHT);
+                setForeground(AppColor.ERROR);
+                setFont(getFont().deriveFont(Font.BOLD));
+                if (!isSelected) {
+                    setBackground(row % 2 == 0 ? AppColor.WHITE : softStripe());
+                }
+                return c;
+            }
+        });
         lineTable.getColumnModel().getColumn(6).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
                                                            boolean hasFocus, int row, int column) {
-                JLabel lb = new JLabel(FontIcon.of(FontAwesomeSolid.TRASH_ALT, 12, AppColor.ERROR));
+                JLabel lb = new JLabel(FontIcon.of(FontAwesomeSolid.TRASH_ALT, 13,
+                        isSelected ? AppColor.ERROR : new Color(148, 163, 184)));
                 lb.setHorizontalAlignment(SwingConstants.CENTER);
                 lb.setOpaque(true);
-                lb.setBackground(isSelected ? table.getSelectionBackground() : AppColor.WHITE);
+                Color bg = isSelected ? selBg : (row % 2 == 0 ? AppColor.WHITE : softStripe());
+                lb.setBackground(bg);
+                lb.setToolTipText("Xóa dòng này");
                 return lb;
             }
         });
+
         lineTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (lineTable.columnAtPoint(e.getPoint()) == 6) {
-                    int row = lineTable.rowAtPoint(e.getPoint());
-                    if (row >= 0) {
-                        tableModel.removeRow(row);
-                        refreshSummary();
-                    }
+                int col = lineTable.columnAtPoint(e.getPoint());
+                int row = lineTable.rowAtPoint(e.getPoint());
+                if (col == 6 && row >= 0) {
+                    tableModel.removeRow(row);
+                    refreshSummary();
                 }
             }
         });
 
         JScrollPane scroll = new JScrollPane(lineTable);
         scroll.setBorder(BorderFactory.createLineBorder(softBorder(), 1));
-        card.add(top, BorderLayout.NORTH);
-        card.add(scroll, BorderLayout.CENTER);
+        scroll.getViewport().setBackground(AppColor.WHITE);
+        scroll.setPreferredSize(new Dimension(0, 200));
+
+        emptyHint = new JLabel("Chưa có lô — dùng form phía trên để thêm dòng", SwingConstants.CENTER);
+        emptyHint.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        emptyHint.setForeground(AppColor.TEXT_MUTED);
+        emptyHint.setBorder(new EmptyBorder(24, 0, 24, 0));
+
+        JPanel tableWrap = new JPanel(new BorderLayout());
+        tableWrap.setOpaque(false);
+        tableWrap.add(scroll, BorderLayout.CENTER);
+        tableWrap.add(emptyHint, BorderLayout.SOUTH);
+
+        card.add(titleRow, BorderLayout.NORTH);
+        card.add(tableWrap, BorderLayout.CENTER);
         return card;
     }
 
@@ -303,35 +417,35 @@ public class StockDisposalFormDialog extends JDialog {
         footer.setBackground(AppColor.WHITE);
         footer.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, softBorder()),
-                new EmptyBorder(12, 24, 14, 24)));
-        totalLabel = new JLabel("Tổng tổn thất: 0 đ");
-        totalLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        totalLabel.setForeground(AppColor.ERROR);
+                new EmptyBorder(14, 28, 16, 28)));
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel totalBox = new JPanel();
+        totalBox.setOpaque(false);
+        totalBox.setLayout(new BoxLayout(totalBox, BoxLayout.Y_AXIS));
+        JLabel totalCap = new JLabel("TỔNG TỔN THẤT");
+        totalCap.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        totalCap.setForeground(AppColor.TEXT_MUTED);
+        totalLabel = new JLabel("0 đ");
+        totalLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        totalLabel.setForeground(AppColor.ERROR);
+        totalBox.add(totalCap);
+        totalBox.add(Box.createVerticalStrut(2));
+        totalBox.add(totalLabel);
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         actions.setOpaque(false);
-        JButton cancel = ghostBtn("Hủy");
+        JButton cancel = ghostButton("Hủy", FontAwesomeSolid.TIMES);
         cancel.addActionListener(e -> dispose());
-        JButton save = accentBtn("Lưu phiếu tiêu hủy", FontAwesomeSolid.SAVE);
+        JButton save = accentButton("Lưu phiếu tiêu hủy", FontAwesomeSolid.SAVE);
+        save.setPreferredSize(new Dimension(190, 40));
         save.addActionListener(e -> handleSave());
         actions.add(cancel);
         actions.add(save);
 
-        footer.add(totalLabel, BorderLayout.WEST);
+        footer.add(totalBox, BorderLayout.WEST);
         footer.add(actions, BorderLayout.EAST);
         getRootPane().setDefaultButton(save);
         return footer;
-    }
-
-    private void syncBatchInfo() {
-        InventoryBatch b = (InventoryBatch) batchCombo.getSelectedItem();
-        if (b == null) {
-            remainLabel.setText("Còn: -");
-            unitCostLabel.setText("Giá vốn: -");
-            return;
-        }
-        remainLabel.setText("Còn: " + b.getRemainingQty());
-        unitCostLabel.setText("Giá vốn: " + NumberUtil.formatThousands(b.getImportPrice().longValue()) + " đ");
     }
 
     private void handleAddLine() {
@@ -340,7 +454,6 @@ public class StockDisposalFormDialog extends JDialog {
             BaseDialog.error(this, "Thiếu thông tin", "Vui lòng chọn lô hàng.");
             return;
         }
-        // Khong trung batch tren phieu
         for (int i = 0; i < tableModel.getRowCount(); i++) {
             if (tableModel.getRow(i).batch.getBatchId() == b.getBatchId()) {
                 BaseDialog.error(this, "Trùng lô", "Lô này đã có trên phiếu. Xóa dòng cũ nếu muốn sửa SL.");
@@ -352,11 +465,13 @@ public class StockDisposalFormDialog extends JDialog {
             qty = Integer.parseInt(qtyField.getText().trim().replaceAll("[^0-9]", ""));
             if (qty <= 0) throw new NumberFormatException();
         } catch (NumberFormatException e) {
-            BaseDialog.error(this, "SL không hợp lệ", "Nhập số lượng nguyên > 0.");
+            BaseDialog.error(this, "Số lượng không hợp lệ", "Số lượng phải là số nguyên lớn hơn 0.");
+            qtyField.requestFocus();
             return;
         }
         if (qty > b.getRemainingQty()) {
             BaseDialog.error(this, "Vượt tồn lô", "Lô chỉ còn " + b.getRemainingQty() + ".");
+            qtyField.requestFocus();
             return;
         }
         LineRow row = new LineRow();
@@ -366,11 +481,12 @@ public class StockDisposalFormDialog extends JDialog {
         tableModel.addRow(row);
         qtyField.setText("");
         refreshSummary();
+        batchCombo.requestFocus();
     }
 
     private void handleSave() {
         if (tableModel.getRowCount() == 0) {
-            BaseDialog.error(this, "Chưa có dòng", "Thêm ít nhất 1 lô cần tiêu hủy.");
+            BaseDialog.error(this, "Chưa có dòng", "Thêm ít nhất 1 lô cần tiêu hủy trước khi lưu phiếu.");
             return;
         }
         int reasonIdx = reasonCombo.getSelectedIndex();
@@ -378,6 +494,7 @@ public class StockDisposalFormDialog extends JDialog {
         String note = noteArea.getText() != null ? noteArea.getText().trim() : null;
 
         List<StockDisposalDetail> details = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
         for (int i = 0; i < tableModel.getRowCount(); i++) {
             LineRow r = tableModel.getRow(i);
             StockDisposalDetail d = new StockDisposalDetail();
@@ -386,18 +503,16 @@ public class StockDisposalFormDialog extends JDialog {
             d.setQuantity(r.quantity);
             d.setUnitCost(r.unitCost);
             details.add(d);
-        }
-
-        BigDecimal total = BigDecimal.ZERO;
-        for (StockDisposalDetail d : details) {
-            total = total.add(d.getUnitCost().multiply(BigDecimal.valueOf(d.getQuantity())));
+            total = total.add(r.lineLoss());
         }
 
         boolean ok = BaseDialog.confirm(this, "Xác nhận tiêu hủy",
                 "Tiêu hủy " + details.size() + " lô?\nTổng tổn thất ước tính: "
                         + NumberUtil.formatThousands(total.longValue()) + " đ\n"
                         + "Tồn kho sẽ bị trừ ngay sau khi lưu.",
-                "Lưu phiếu", AppColor.ERROR, AppColor.ERROR, FontAwesomeSolid.TRASH);
+                "Lưu phiếu", AppColor.ERROR,
+                AppColor.ERROR_HOVER != null ? AppColor.ERROR_HOVER : AppColor.ERROR,
+                FontAwesomeSolid.TRASH);
         if (!ok) return;
 
         int userId = AuthService.getInstance().getCurrentUser().getUserId();
@@ -405,7 +520,8 @@ public class StockDisposalFormDialog extends JDialog {
         if (id > 0) {
             BaseDialog.success(this, "Thành công",
                     "Đã lập phiếu TH_" + String.format("%06d", id)
-                            + ". Tổn thất: " + NumberUtil.formatThousands(total.longValue()) + " đ");
+                            + " (" + details.size() + " dòng). Tổn thất: "
+                            + NumberUtil.formatThousands(total.longValue()) + " đ");
             if (onSaved != null) onSaved.accept(id, details.size());
             dispose();
         } else {
@@ -418,51 +534,136 @@ public class StockDisposalFormDialog extends JDialog {
         for (int i = 0; i < tableModel.getRowCount(); i++) {
             total = total.add(tableModel.getRow(i).lineLoss());
         }
-        totalLabel.setText("Tổng tổn thất: " + NumberUtil.formatThousands(total.longValue()) + " đ");
-        lineCountLabel.setText(tableModel.getRowCount() + " dòng");
+        totalLabel.setText(NumberUtil.formatThousands(total.longValue()) + " đ");
+        int n = tableModel.getRowCount();
+        lineCountLabel.setText(n + " dòng");
+        emptyHint.setVisible(n == 0);
     }
 
-    private JPanel whiteCard() {
-        JPanel p = new JPanel();
-        p.setBackground(AppColor.WHITE);
-        p.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(softBorder(), 1),
-                new EmptyBorder(12, 14, 12, 14)));
-        p.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return p;
+    private JPanel roundedCard() {
+        JPanel card = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(AppColor.WHITE);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                g2.setColor(softBorder());
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                g2.dispose();
+            }
+        };
+        card.setOpaque(false);
+        card.setBorder(new EmptyBorder(16, 18, 16, 18));
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return card;
     }
 
-    private JLabel label(String t) {
-        JLabel lb = new JLabel(t);
-        lb.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lb.setForeground(AppColor.TEXT_MUTED);
+    private JLabel sectionLabel(String text) {
+        JLabel lb = new JLabel(text);
+        lb.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        lb.setForeground(AppColor.TEXT_PRIMARY);
         return lb;
     }
 
-    private JButton accentBtn(String text, FontAwesomeSolid icon) {
-        JButton btn = new JButton(text, FontIcon.of(icon, 12, Color.WHITE));
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+    private JLabel fieldLabel(String text) {
+        JLabel lb = new JLabel(text);
+        lb.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lb.setForeground(AppColor.TEXT_MUTED);
+        lb.setBorder(new EmptyBorder(0, 0, 4, 0));
+        return lb;
+    }
+
+    private JPanel fieldBlock(String label, JComponent field) {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setOpaque(false);
+        p.add(fieldLabel(label), BorderLayout.NORTH);
+        p.add(field, BorderLayout.CENTER);
+        return p;
+    }
+
+    private <E> JComboBox<E> styledCombo(E[] items) {
+        JComboBox<E> combo = new JComboBox<>(items);
+        combo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        combo.setBackground(AppColor.WHITE);
+        combo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(softBorder(), 1),
+                new EmptyBorder(4, 8, 4, 8)));
+        return combo;
+    }
+
+    private JTextField styledField() {
+        JTextField f = new JTextField();
+        f.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        f.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(softBorder(), 1),
+                new EmptyBorder(8, 10, 8, 10)));
+        return f;
+    }
+
+    private JLabel comboLabel(String text, boolean selected) {
+        JLabel lb = new JLabel(text);
+        lb.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lb.setOpaque(true);
+        lb.setBorder(new EmptyBorder(6, 10, 6, 10));
+        if (selected) {
+            lb.setBackground(AppColor.ACCENT_SELECTION_BG != null
+                    ? AppColor.ACCENT_SELECTION_BG : new Color(209, 250, 229));
+            lb.setForeground(AppColor.TEXT_PRIMARY);
+        } else {
+            lb.setBackground(AppColor.WHITE);
+            lb.setForeground(AppColor.TEXT_PRIMARY);
+        }
+        return lb;
+    }
+
+    private JButton accentButton(String text, FontAwesomeSolid icon) {
+        JButton btn = new JButton(text, FontIcon.of(icon, 13, Color.WHITE));
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
         btn.setBackground(AppColor.ACCENT);
         btn.setForeground(Color.WHITE);
         btn.setFocusPainted(false);
-        btn.setBorder(new EmptyBorder(8, 14, 8, 14));
+        btn.setBorder(new EmptyBorder(10, 16, 10, 16));
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return btn;
     }
 
-    private JButton ghostBtn(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+    private JButton ghostButton(String text, FontAwesomeSolid icon) {
+        JButton btn = new JButton(text, FontIcon.of(icon, 12, AppColor.TEXT_MUTED));
+        btn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         btn.setBackground(AppColor.WHITE);
+        btn.setForeground(AppColor.TEXT_PRIMARY);
+        btn.setFocusPainted(false);
         btn.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(softBorder(), 1),
-                new EmptyBorder(7, 14, 7, 14)));
+                new EmptyBorder(9, 14, 9, 14)));
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return btn;
+    }
+
+    private DefaultTableCellRenderer cellRenderer(int align) {
+        return new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
+                                                           boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(align);
+                if (!isSelected) {
+                    setBackground(row % 2 == 0 ? AppColor.WHITE : softStripe());
+                    setForeground(AppColor.TEXT_PRIMARY);
+                }
+                setBorder(new EmptyBorder(0, 10, 0, 10));
+                return c;
+            }
+        };
     }
 
     private static Color softBorder() {
         return AppColor.BORDER != null ? AppColor.BORDER : new Color(226, 232, 240);
+    }
+
+    private static Color softStripe() {
+        return AppColor.BG_LIGHTER != null ? AppColor.BG_LIGHTER : new Color(248, 250, 252);
     }
 
     private static final class LineRow {
@@ -475,7 +676,9 @@ public class StockDisposalFormDialog extends JDialog {
     }
 
     private static final class LineTableModel extends AbstractTableModel {
-        private static final String[] COLS = {"Mã lô", "Sản phẩm", "HSD", "SL hủy", "Giá vốn", "Tổn thất", ""};
+        private static final String[] COLS = {
+                "Mã lô", "Sản phẩm", "HSD", "SL hủy", "Giá vốn", "Tổn thất", ""
+        };
         private final List<LineRow> rows = new ArrayList<>();
 
         void addRow(LineRow r) {
