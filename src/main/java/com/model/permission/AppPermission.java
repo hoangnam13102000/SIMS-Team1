@@ -49,4 +49,8 @@ public enum AppPermission implements Permission {
     PROFIT_REPORT_VIEW,
     /** Xem/sua trang "Cai dat he thong" (VAT_RATE va cac cau hinh StoreConfig khac). */
     SETTINGS_MANAGE,
+    /** Lap phieu tieu huy hang (tru lo + ghi ton that). */
+    STOCK_DISPOSE,
+    /** Xem lich su tieu huy va bao cao ton that tai chinh. */
+    STOCK_DISPOSE_VIEW,
 }

@@ -320,7 +320,7 @@ CREATE TABLE InventoryTransactions (
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
     TransactionType VARCHAR(20) NOT NULL
                         CHECK (TransactionType IN ('IMPORT','SALE','SALE_CANCEL',
-                                                    'RETURN_IN','RETURN_OUT','RECONCILE_ADJUST')),
+                                                    'RETURN_IN','RETURN_OUT','RECONCILE_ADJUST','DISPOSAL')),
     Direction       VARCHAR(3) NOT NULL CHECK (Direction IN ('IN','OUT')),
     Quantity        INT NOT NULL CHECK (Quantity > 0),
     StockBefore     INT NOT NULL,
@@ -467,4 +467,38 @@ BEGIN
         PRIMARY KEY (OrderDetailID, BatchID)
     );
 END
+GO
+
+IF OBJECT_ID('StockDisposalDetails', 'U') IS NOT NULL DROP TABLE StockDisposalDetails;
+IF OBJECT_ID('StockDisposals', 'U') IS NOT NULL DROP TABLE StockDisposals;
+GO
+
+CREATE TABLE StockDisposals (
+    DisposalID      INT IDENTITY(1,1) PRIMARY KEY,
+    DisposalCode    AS ('TH_' + RIGHT('000000' + CAST(DisposalID AS VARCHAR(10)), 6)) PERSISTED UNIQUE,
+    Reason          VARCHAR(20) NOT NULL
+                        CHECK (Reason IN ('EXPIRED','DAMAGED','QUALITY','OTHER')),
+    Status          VARCHAR(20) NOT NULL DEFAULT 'COMPLETED'
+                        CHECK (Status IN ('COMPLETED','CANCELLED')),
+    TotalLossAmount DECIMAL(18,0) NOT NULL DEFAULT 0 CHECK (TotalLossAmount >= 0),
+    Note            NVARCHAR(500) NULL,
+    CreatedBy       INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+);
+GO
+CREATE INDEX IX_StockDisposals_CreatedAt ON StockDisposals(CreatedAt DESC);
+GO
+
+CREATE TABLE StockDisposalDetails (
+    DisposalDetailID INT IDENTITY(1,1) PRIMARY KEY,
+    DisposalID       INT NOT NULL FOREIGN KEY REFERENCES StockDisposals(DisposalID),
+    ProductID        INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
+    BatchID          INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+    Quantity         INT NOT NULL CHECK (Quantity > 0),
+    UnitCost         DECIMAL(18,0) NOT NULL CHECK (UnitCost >= 0),
+    LineLossAmount   AS (Quantity * UnitCost) PERSISTED,
+    CONSTRAINT UQ_Disposal_Batch UNIQUE (DisposalID, BatchID)
+);
+GO
+CREATE INDEX IX_StockDisposalDetails_Product ON StockDisposalDetails(ProductID);
 GO

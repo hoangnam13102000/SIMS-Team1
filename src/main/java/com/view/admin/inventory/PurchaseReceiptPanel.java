@@ -3,6 +3,8 @@ package com.view.admin.inventory;
 import com.components.crud.BaseCrudPanel;
 import com.components.table.AutoRowNumber;
 import com.dao.PurchaseReceiptDAO;
+import com.model.permission.AppPermission;
+import com.service.AuthService;
 import com.model.PurchaseReceipt;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
@@ -45,12 +47,12 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
     protected String getPageTitle() { return "Quản lý nhập kho"; }
 
     @Override
-    protected String getPageSubtitle() { return "Tra cứu lịch sử các phiếu nhập kho đã lập theo từng nhà cung cấp"; }
+    protected String getPageSubtitle() { return "Lập phiếu nhập nhiều sản phẩm và tra cứu lịch sử theo nhà cung cấp"; }
 
-    // Nhap kho moi thuc hien o trang "Quan ly lo hang" (nut "Nhap lo hang
-    // moi") - trang nay chi tra cuu lai, nen an nut them.
     @Override
-    protected String getAddButtonLabel() { return null; }
+    protected String getAddButtonLabel() {
+        return AuthService.getInstance().can(AppPermission.STOCK_IMPORT) ? "Lập phiếu nhập" : null;
+    }
 
     @Override
     protected String[] getColumnNames() {
@@ -124,10 +126,6 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
         return new ArrayList<>(new LinkedHashSet<>(names));
     }
 
-    // ---------------------------------------------------------------
-    // Chi xem chi tiet - khong sua/xoa (xem ly do o javadoc dau file).
-    // ---------------------------------------------------------------
-
     @Override
     protected boolean supportsEdit() { return false; }
 
@@ -146,7 +144,11 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
     @Override
     protected void openForm(PurchaseReceipt item) {
-        // Khong bao gio duoc goi: getAddButtonLabel() = null va supportsEdit() = false.
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        PurchaseReceiptFormDialog dialog = new PurchaseReceiptFormDialog(
+                owner instanceof Frame ? (Frame) owner : null);
+        dialog.onSaved((receiptId, lineCount) -> onDataChanged());
+        dialog.setVisible(true);
     }
 
     @Override
@@ -164,15 +166,10 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
         reload();
     }
 
-    // ---------------------------------------------------------------
-    // Nhan/mau trang thai phieu
-    // ---------------------------------------------------------------
-
     private String statusLabel(PurchaseReceipt r) {
         return r.isCancelled() ? "Đã hủy" : "Hoàn tất";
     }
 
-    /** BaseTable.setBadgeColumn goi lai ham nay voi gia tri DA la chuoi nhan (khong phai PurchaseReceipt). */
     private String statusLabel(Object value) {
         return String.valueOf(value);
     }

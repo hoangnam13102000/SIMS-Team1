@@ -2,21 +2,18 @@ package com.dao;
 
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
-import com.event.AppEventBus;      
-import com.event.DataChangedEvent; 
 import com.model.InventoryBatch;
 import com.utils.DBConnection;
 import com.utils.PaginationHelper;
 
-import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.sql.Timestamp;
-import java.sql.Types;
+import java.util.ArrayList;
+import java.util.List;
 
 public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
 
@@ -50,7 +47,9 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
     @Override
     protected String getOrderBy() {
         // Lo het han/sap het han len truoc (dung tinh than FEFO) - lo khong co HSD xep sau cung.
-        return "CASE WHEN b.ExpiryDate IS NULL THEN 1 ELSE 0 END, b.ExpiryDate ASC, b.BatchID DESC";
+        // Cung HSD -> BatchID ASC (lo nhap truoc len truoc) de khop dung thu tu
+        // trigger trg_InvoiceDetails_CheckStock dung khi tru kho FEFO luc ban hang.
+        return "CASE WHEN b.ExpiryDate IS NULL THEN 1 ELSE 0 END, b.ExpiryDate ASC, b.BatchID ASC";
     }
 
     @Override
@@ -114,72 +113,64 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
         return super.getPaged(pageNumber, pageSize, whereClause, params);
     }
 
+    /**
+     * Nhập 1 lô đơn lẻ — ủy quyền sang {@link PurchaseReceiptDAO#createReceipt}
+     * (1 phiếu / 1 dòng). Giữ API cũ cho form đơn lô; form nhiều dòng dùng
+     * trực tiếp PurchaseReceiptDAO.
+     */
     public boolean receiveBatch(InventoryBatch batch, int createdByUserId) {
-        String receiptSql = "INSERT INTO PurchaseReceipts (ReceiptCode, SupplierID, CreatedBy, TotalAmount) "
-                + "VALUES (?, ?, ?, ?)";
-        String updateCodeSql = "UPDATE PurchaseReceipts SET ReceiptCode = ? WHERE ReceiptID = ?";
-        String detailSql = "INSERT INTO PurchaseReceiptDetails "
-                + "(ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        com.model.PurchaseReceiptDetail detail = new com.model.PurchaseReceiptDetail();
+        detail.setProductId(batch.getProductId());
+        detail.setQuantity(batch.getQuantity());
+        detail.setImportPrice(batch.getImportPrice());
+        detail.setLotNumber(batch.getLotNumber());
+        detail.setManufactureDate(batch.getManufactureDate());
+        detail.setExpiryDate(batch.getExpiryDate());
+        int receiptId = new PurchaseReceiptDAO().createReceipt(
+                batch.getSupplierId(), createdByUserId, java.util.List.of(detail));
+        return receiptId > 0;
+    }
 
-        try (Connection con = DBConnection.getConnection()) {
-            con.setAutoCommit(false);
-            try {
-                BigDecimal total = batch.getImportPrice().multiply(BigDecimal.valueOf(batch.getQuantity()));
-                int receiptId;
+    /**
+     * Tim + loc lo hang theo tu khoa (ma lo, ten SP, ma SP, so lo, NCC) va/hoac
+     * danh muc san pham. categoryId = null -> khong loc theo danh muc ("Tat ca
+     * danh muc"). Ket qua van giu nguyen thu tu FEFO tu {@link #getOrderBy()}
+     * (uu tien HSD gan nhat) nen loc theo danh muc se cho thay dung danh sach
+     * "san pham nao trong danh muc do se duoc ban truoc" theo tung nganh hang.
+     */
+    public PaginationHelper.PaginationResult<InventoryBatch> getPagedFiltered(
+            int page, int pageSize, String keyword, Integer categoryId) {
 
-                try (PreparedStatement ps = con.prepareStatement(receiptSql, Statement.RETURN_GENERATED_KEYS)) {
-                    ps.setString(1, "PENDING");
-                    ps.setInt(2, batch.getSupplierId());
-                    ps.setInt(3, createdByUserId);
-                    ps.setBigDecimal(4, total);
-                    ps.executeUpdate();
-                    try (ResultSet keys = ps.getGeneratedKeys()) {
-                        if (!keys.next()) throw new SQLException("Khong lay duoc ReceiptID vua tao.");
-                        receiptId = keys.getInt(1);
-                    }
-                }
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
 
-                try (PreparedStatement ps = con.prepareStatement(updateCodeSql)) {
-                    ps.setString(1, "PN_" + String.format("%06d", receiptId));
-                    ps.setInt(2, receiptId);
-                    ps.executeUpdate();
-                }
-
-                try (PreparedStatement ps = con.prepareStatement(detailSql)) {
-                    ps.setInt(1, receiptId);
-                    ps.setInt(2, batch.getProductId());
-                    ps.setInt(3, batch.getQuantity());
-                    ps.setBigDecimal(4, batch.getImportPrice());
-                    ps.setString(5, batch.getLotNumber());
-                    if (batch.getManufactureDate() != null) {
-                        ps.setDate(6, Date.valueOf(batch.getManufactureDate()));
-                    } else {
-                        ps.setNull(6, Types.DATE);
-                    }
-                    if (batch.getExpiryDate() != null) {
-                        ps.setDate(7, Date.valueOf(batch.getExpiryDate()));
-                    } else {
-                        ps.setNull(7, Types.DATE);
-                    }
-                    ps.executeUpdate();
-                }
-
-                con.commit();
-                // MỚI: bao cho cac panel dang mo (VD: Quan ly nhap kho) tu reload
-                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.PURCHASE_RECEIPT));
-                return true;
-            } catch (Exception e) {
-                con.rollback();
-                throw e;
-            } finally {
-                con.setAutoCommit(true);
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            String[] columns = getSearchableColumns();
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            StringBuilder keywordCondition = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) keywordCondition.append(" OR ");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(likeParam);
             }
-        } catch (Exception e) {
-            AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
-                    "InventoryBatchDAO.receiveBatch - productId=" + batch.getProductId(), e);
-            return false;
+            keywordCondition.append(")");
+            conditions.add(keywordCondition.toString());
         }
+        if (categoryId != null) {
+            conditions.add("p.CategoryID = ?");
+            params.add(categoryId);
+        }
+
+        String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
+        return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
+    private String escapeLike(String raw) {
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace("[", "\\[");
     }
 
     /** Dem so lo sap het han trong vong {@code days} ngay toi (dung cho canh bao tren Dashboard). */

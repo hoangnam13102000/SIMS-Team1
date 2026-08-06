@@ -264,8 +264,9 @@ public class OrderDAO extends BaseDAO<Order> {
      * InventoryTransactions để có dấu vết kiểm toán. Nếu không đủ hàng cho
      * bất kỳ dòng nào, KHÔNG trừ dòng nào cả (all-or-nothing) và trả về lý do
      * cụ thể. SHIPPING và COMPLETED không đụng tới kho (đã trừ xong từ bước
-     * CONFIRMED). Toàn bộ nằm trong 1 transaction để tránh lệch kho nếu có
-     * lỗi giữa chừng.
+     * CONFIRMED). Khi chuyển sang COMPLETED, đơn COD/CASH còn PaymentStatus
+     * = PENDING sẽ được đánh dấu PAID (đã thu tiền khi giao hàng xong).
+     * Toàn bộ nằm trong 1 transaction để tránh lệch kho nếu có lỗi giữa chừng.
      *
      * @param actorUserId UserID của admin đang thao tác - dùng làm CreatedBy khi ghi InventoryTransactions.
      */
@@ -290,11 +291,26 @@ public class OrderDAO extends BaseDAO<Order> {
                     restoreStockFEFO(con, orderId, actorUserId);
                 }
 
-                try (PreparedStatement ps = con.prepareStatement(
-                        "UPDATE Orders SET OrderStatus = ? WHERE OrderID = ?")) {
-                    ps.setString(1, newStatus);
-                    ps.setInt(2, orderId);
-                    ps.executeUpdate();
+                // Khi hoàn thành đơn COD (tiền mặt khi nhận hàng): coi như đã thu tiền,
+                // đồng bộ PaymentStatus = PAID. PayPal đã PAID từ lúc capture, không đụng.
+                if ("COMPLETED".equals(newStatus)) {
+                    try (PreparedStatement ps = con.prepareStatement(
+                            "UPDATE Orders SET OrderStatus = ?, "
+                                    + "PaymentStatus = CASE "
+                                    + "WHEN PaymentMethod IN ('COD', 'CASH') AND PaymentStatus = 'PENDING' "
+                                    + "THEN 'PAID' ELSE PaymentStatus END "
+                                    + "WHERE OrderID = ?")) {
+                        ps.setString(1, newStatus);
+                        ps.setInt(2, orderId);
+                        ps.executeUpdate();
+                    }
+                } else {
+                    try (PreparedStatement ps = con.prepareStatement(
+                            "UPDATE Orders SET OrderStatus = ? WHERE OrderID = ?")) {
+                        ps.setString(1, newStatus);
+                        ps.setInt(2, orderId);
+                        ps.executeUpdate();
+                    }
                 }
 
                 con.commit();

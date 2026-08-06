@@ -20,8 +20,10 @@ import com.view.admin.customer.CustomerPanel;
 import com.view.admin.employee.EmployeePanel;
 import com.view.admin.exceptionreport.ExceptionReportPanel;
 import com.view.admin.inventory.InventoryBatchPanel;
+import com.view.admin.inventoryreport.InventoryReportPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
 import com.view.admin.inventory.StockReconciliationPanel;
+import com.view.admin.inventory.StockDisposalPanel;
 import com.view.admin.invoice.InvoicePanel;
 import com.view.admin.order.OrderPanel;
 import com.view.admin.pos.PosPanel;
@@ -135,8 +137,12 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE, new StockReconciliationPanel(),
                 AppPermission.STOCK_RECONCILE);
+        layout.addPage("stockDisposal", Lang.get("sidebar.stockDisposal"), FontAwesomeSolid.TRASH, new StockDisposalPanel(),
+                AppPermission.STOCK_DISPOSE, AppPermission.STOCK_DISPOSE_VIEW);
         layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE, new StockAlertPanel(),
                 AppPermission.STOCK_ALERT_VIEW);
+        layout.addPage("inventoryReport", Lang.get("sidebar.inventoryReport"), FontAwesomeSolid.WAREHOUSE, new InventoryReportPanel(),
+                AppPermission.STOCK_VIEW);
 
         layout.addSection(Lang.get("sidebar.section.sales"));
         layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
