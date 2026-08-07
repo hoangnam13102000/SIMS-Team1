@@ -38,11 +38,9 @@ public final class RolePermissions {
                 AppPermission.DASHBOARD_VIEW,
                 AppPermission.CUSTOMER_MANAGE,
                 AppPermission.PRODUCT_VIEW,
-                AppPermission.STOCK_VIEW,
                 AppPermission.INVOICE_CREATE,
                 AppPermission.INVOICE_CANCEL,
                 AppPermission.RETURN_EXCHANGE_CREATE,
-                AppPermission.STOCK_ALERT_REPORT,
                 AppPermission.EXCEPTION_REPORT_CREATE,
                 AppPermission.ORDER_VIEW,
                 AppPermission.ORDER_MANAGE
