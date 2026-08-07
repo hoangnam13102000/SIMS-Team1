@@ -73,6 +73,40 @@ public class RevenueReportDAO {
         }
     }
 
+    /**
+     * 1 diem du lieu "Thu / Chi / Loi nhuan rong" theo ngay, dung cho bieu do
+     * cot nhom trong tab Loi nhuan (xem {@link com.components.report.FinanceChartPanel}).
+     * "Thu" = doanh thu ban hang (chua VAT). "Chi" = gia von hang ban + thiet
+     * hai hang huy trong ngay do (disposalLoss). Tach rieng cost/disposalLoss
+     * (khong gop san) de chart/tooltip van hien duoc tung phan cau thanh "Chi".
+     */
+    public static class DailyFinancePoint {
+        public final LocalDate date;
+        public final BigDecimal revenue;
+        public final BigDecimal cost;
+        public final BigDecimal disposalLoss;
+        public final int invoiceCount;
+
+        public DailyFinancePoint(LocalDate date, BigDecimal revenue, BigDecimal cost,
+                                  BigDecimal disposalLoss, int invoiceCount) {
+            this.date = date;
+            this.revenue = revenue != null ? revenue : BigDecimal.ZERO;
+            this.cost = cost != null ? cost : BigDecimal.ZERO;
+            this.disposalLoss = disposalLoss != null ? disposalLoss : BigDecimal.ZERO;
+            this.invoiceCount = invoiceCount;
+        }
+
+        /** Tong "Chi" = gia von + thiet hai. */
+        public BigDecimal totalExpense() {
+            return cost.add(disposalLoss);
+        }
+
+        /** Loi nhuan rong cua ngay = Thu - Chi. */
+        public BigDecimal netProfit() {
+            return revenue.subtract(totalExpense());
+        }
+    }
+
     public static class PaymentSlice {
         public final String method;
         public final BigDecimal revenue;
@@ -109,12 +143,31 @@ public class RevenueReportDAO {
     public static class ProfitSummary {
         public final BigDecimal totalRevenue;
         public final BigDecimal totalCost;
+        /** Tong thiet hai hang huy (StockDisposals.TotalLossAmount) trong ky - xem StockDisposalDAO.sumLossBetween. */
+        public final BigDecimal totalLoss;
+        /** Loi nhuan GOP = Revenue - Cost (chua tru thiet hai) - giu de tuong thich cac noi dang dung. */
         public final BigDecimal totalProfit;
+        /** Loi nhuan RONG = Revenue - Cost - Loss (da tru ca hang huy) - so "that" nen dung de bao cao. */
+        public final BigDecimal netProfit;
 
         public ProfitSummary(BigDecimal totalRevenue, BigDecimal totalCost) {
+            this(totalRevenue, totalCost, BigDecimal.ZERO);
+        }
+
+        public ProfitSummary(BigDecimal totalRevenue, BigDecimal totalCost, BigDecimal totalLoss) {
             this.totalRevenue = totalRevenue != null ? totalRevenue : BigDecimal.ZERO;
             this.totalCost = totalCost != null ? totalCost : BigDecimal.ZERO;
+            this.totalLoss = totalLoss != null ? totalLoss : BigDecimal.ZERO;
             this.totalProfit = this.totalRevenue.subtract(this.totalCost);
+            this.netProfit = this.totalProfit.subtract(this.totalLoss);
+        }
+
+        /** Bien loi nhuan RONG (%) = Loi nhuan rong / Doanh thu * 100. Null neu doanh thu = 0. */
+        public Double netMarginPercent() {
+            if (totalRevenue.signum() == 0) return null;
+            return netProfit.divide(totalRevenue, 4, java.math.RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .doubleValue();
         }
 
         /** Bien loi nhuan (%) = Loi nhuan / Doanh thu * 100. Null neu doanh thu = 0 (khong co gi de tinh %). */
@@ -357,7 +410,74 @@ public class RevenueReportDAO {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "RevenueReportDAO.getProfitSummary - from=" + from + " to=" + to, e);
         }
-        return new ProfitSummary(revenue, cost);
+        // Thiet hai hang huy trong ky - tai su dung StockDisposalDAO (cung package
+        // com.dao) thay vi lap lai query, de luon dong bo voi StockDisposalPanel.
+        BigDecimal loss = new StockDisposalDAO().sumLossBetween(from, to);
+        return new ProfitSummary(revenue, cost, loss);
+    }
+
+    /**
+     * "Thu / Chi / Loi nhuan rong" tung ngay trong [from, to], tra du moi ngay
+     * (ngay khong co du lieu thi = 0) de bieu do cot nhom ve truc lien tuc.
+     * "Chi" gom 2 phan: gia von hang ban (tu InvoiceDetails, JOIN Products
+     * lay gia nhap HIEN TAI - cung gioi han da ghi chu o getDailyProfit) va
+     * thiet hai hang huy trong ngay (tu StockDisposals.TotalLossAmount, chi
+     * tinh phieu Status='COMPLETED').
+     */
+    public List<DailyFinancePoint> getDailyFinance(LocalDate from, LocalDate to) {
+        String salesSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
+                + "SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost, "
+                + "COUNT(DISTINCT inv.InvoiceID) AS Cnt "
+                + "FROM InvoiceDetails d "
+                + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
+                + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY CAST(inv.CreatedAt AS DATE)";
+        String lossSql = "SELECT CAST(CreatedAt AS DATE) AS Day, SUM(TotalLossAmount) AS Loss "
+                + "FROM StockDisposals WHERE Status = 'COMPLETED' "
+                + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY CAST(CreatedAt AS DATE)";
+
+        Map<LocalDate, BigDecimal> revenueByDay = new LinkedHashMap<>();
+        Map<LocalDate, BigDecimal> costByDay = new LinkedHashMap<>();
+        Map<LocalDate, Integer> cntByDay = new LinkedHashMap<>();
+        Map<LocalDate, BigDecimal> lossByDay = new LinkedHashMap<>();
+
+        try (Connection con = getConnection()) {
+            try (PreparedStatement ps = con.prepareStatement(salesSql)) {
+                ps.setDate(1, Date.valueOf(from));
+                ps.setDate(2, Date.valueOf(to));
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        LocalDate day = rs.getDate("Day").toLocalDate();
+                        revenueByDay.put(day, rs.getBigDecimal("Revenue"));
+                        costByDay.put(day, rs.getBigDecimal("Cost"));
+                        cntByDay.put(day, rs.getInt("Cnt"));
+                    }
+                }
+            }
+            try (PreparedStatement ps = con.prepareStatement(lossSql)) {
+                ps.setDate(1, Date.valueOf(from));
+                ps.setDate(2, Date.valueOf(to));
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        LocalDate day = rs.getDate("Day").toLocalDate();
+                        lossByDay.put(day, rs.getBigDecimal("Loss"));
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.getDailyFinance - from=" + from + " to=" + to, e);
+        }
+
+        List<DailyFinancePoint> result = new ArrayList<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            result.add(new DailyFinancePoint(d,
+                    revenueByDay.get(d), costByDay.get(d), lossByDay.get(d),
+                    cntByDay.getOrDefault(d, 0)));
+        }
+        return result;
     }
 
     /**

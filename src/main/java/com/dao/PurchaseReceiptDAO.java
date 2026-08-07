@@ -20,18 +20,6 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * DAO phiếu nhập kho.
- * <p>
- * Luồng tạo mới: {@link #createReceipt(int, int, List)} insert
- * {@code PurchaseReceipts} + N dòng {@code PurchaseReceiptDetails}.
- * Trigger {@code trg_PurchaseReceiptDetails_Insert} tự:
- * <ul>
- *   <li>sinh 1 {@code InventoryBatch} / dòng</li>
- *   <li>cộng {@code Products.Stock}</li>
- *   <li>ghi {@code InventoryTransactions} (IMPORT)</li>
- * </ul>
- */
 public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
 
     private static final String BASE_TABLE =
@@ -166,6 +154,18 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
                         } else {
                             ps.setNull(7, Types.DATE);
                         }
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+
+                // Liên kết giá nhập lô/phiếu → Products.ImportPrice (giá lần nhập gần nhất).
+                // Báo cáo lợi nhuận dùng Products.ImportPrice; không cập nhật sẽ lệch với giá thực tế trên lô.
+                String updateProductPriceSql = "UPDATE Products SET ImportPrice = ? WHERE ProductID = ?";
+                try (PreparedStatement ps = con.prepareStatement(updateProductPriceSql)) {
+                    for (PurchaseReceiptDetail d : details) {
+                        ps.setBigDecimal(1, d.getImportPrice());
+                        ps.setInt(2, d.getProductId());
                         ps.addBatch();
                     }
                     ps.executeBatch();

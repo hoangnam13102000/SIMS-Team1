@@ -6,12 +6,12 @@ import com.components.SectionHeader;
 import com.components.StatBadge;
 import com.components.StatCard;
 import com.components.dashboard.DashboardCard;
-import com.components.report.RevenueChartPanel;
+import com.components.report.FinanceChartPanel;
 import com.dao.AuditLogDAO;
 import com.dao.DashboardDAO;
 import com.dao.DashboardDAO.LowStockItem;
 import com.dao.RevenueReportDAO;
-import com.dao.RevenueReportDAO.DailyPoint;
+import com.dao.RevenueReportDAO.DailyFinancePoint;
 import com.dao.RevenueReportDAO.Summary;
 import com.dao.StockAlertDAO;
 import com.event.AutoRefresher;
@@ -56,7 +56,7 @@ public class DashboardPanel extends JPanel {
     private StatCard cancelledInvoiceCard;
     private StatCard returnedProductCard;
 
-    private RevenueChartPanel weeklyChartPanel;
+    private FinanceChartPanel weeklyChartPanel;
     private JPanel lowStockListPanel;
     private JPanel activityListPanel;
     private JPanel stockAlertListPanel;
@@ -214,10 +214,10 @@ public class DashboardPanel extends JPanel {
     }
 
     private DashboardCard buildRevenueChartCard() {
-        DashboardCard card = new DashboardCard("Doanh thu 7 ngày gần đây",
-                "Chỉ tính hóa đơn hợp lệ, không tính hóa đơn đã hủy",
-                FontAwesomeSolid.CHART_LINE, AppColor.ACCENT);
-        weeklyChartPanel = new RevenueChartPanel();
+        DashboardCard card = new DashboardCard("Thu / Chi / Lợi nhuận 7 ngày gần đây",
+                "Thu = doanh thu (chưa VAT) · Chi = giá vốn + thiệt hại · Lợi nhuận ròng = Thu − Chi",
+                FontAwesomeSolid.CHART_BAR, AppColor.ACCENT);
+        weeklyChartPanel = new FinanceChartPanel();
         card.getContentPanel().add(weeklyChartPanel, BorderLayout.CENTER);
         return card;
     }
@@ -279,7 +279,7 @@ public class DashboardPanel extends JPanel {
 
     private static class DashboardData {
         Summary todaySummary;
-        List<DailyPoint> weeklyRevenue;
+        List<DailyFinancePoint> weeklyFinance;
         DashboardDAO.Overview overview;
         List<LowStockItem> lowStockItems;
         List<ActivityLog> recentActivity;
@@ -295,7 +295,7 @@ public class DashboardPanel extends JPanel {
 
                 DashboardData data = new DashboardData();
                 data.todaySummary = revenueDao.getSummary(today, today);
-                data.weeklyRevenue = revenueDao.getDailyRevenue(today.minusDays(6), today);
+                data.weeklyFinance = revenueDao.getDailyFinance(today.minusDays(6), today);
                 data.overview = dashboardDao.getOverview();
                 data.lowStockItems = dashboardDao.getLowStockProducts(8);
                 data.recentActivity = auditLogDao.getPaged(1, 8).getData();
@@ -349,7 +349,7 @@ public class DashboardPanel extends JPanel {
         returnedProductCard.setValue(NumberUtil.formatThousands(data.overview.returnedProductsToday));
         returnedProductCard.setSubtitle("Đã duyệt đổi/trả hôm nay");
 
-        weeklyChartPanel.setData(data.weeklyRevenue);
+        weeklyChartPanel.setData(data.weeklyFinance);
 
         renderLowStock(data.lowStockItems);
         renderActivity(data.recentActivity);
@@ -425,12 +425,12 @@ public class DashboardPanel extends JPanel {
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
-        // Duong ke mong ngan cach cac dong (tru dong cuoi), thay cho khoang trong don thuan.
+        // Đường kẻ mỏng ngăn cách các dòng (trừ dòng cuối), thay cho khoảng trống đơn thuần.
         Border padding = new EmptyBorder(10, 4, 10, 4);
         row.setBorder(isLast ? padding
                 : new CompoundBorder(new MatteBorder(0, 0, 1, 0, AppColor.BORDER), padding));
 
-        // Avatar tron the hien loai hanh dong, giup tach bach truc quan tung dong voi nhau.
+        // Avatar tròn thể hiện loại hành động, giúp tách bạch trực quan từng dòng với nhau.
         Color color = actionColor(log.getAction());
         FontIcon fontIcon = FontIcon.of(actionIcon(log.getAction()), 14);
         fontIcon.setIconColor(color);
@@ -476,8 +476,8 @@ public class DashboardPanel extends JPanel {
         left.add(Box.createVerticalStrut(2));
         left.add(descLabel);
 
-        // Gan thoi gian vao mep tren thay vi keo dai het chieu cao dong (tranh lech giua
-        // luc dong 1 dong text va luc dong 2 dong text).
+        // Gắn thời gian vào mép trên thay vì kéo dài hết chiều cao dòng (tránh lệch giữa
+        // lúc dòng 1 dòng text và lúc dòng 2 dòng text).
         JLabel timeLabel = new JLabel(DateUtil.timeAgo(log.getCreatedAt()));
         timeLabel.setFont(AppFont.FOOTER);
         timeLabel.setForeground(AppColor.TEXT_DISABLED);
@@ -523,7 +523,7 @@ public class DashboardPanel extends JPanel {
         }
     }
 
-    /** Icon tuong ung tung loai hanh dong, dung lam avatar tron dau moi dong trong "Hoat dong gan day". */
+    /** Icon tương ứng từng loại hành động, dùng làm avatar tròn đầu mỗi dòng trong "Hoạt động gần đây". */
     private static FontAwesomeSolid actionIcon(String action) {
         if (action == null) return FontAwesomeSolid.CIRCLE;
         switch (action) {

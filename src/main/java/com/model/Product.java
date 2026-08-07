@@ -3,11 +3,6 @@ package com.model;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/**
- * Model cho bang Products (SIMS.sql), co kem CategoryName lay tu JOIN
- * Categories de cac man hinh hien thi (vd HomePanel phia client) khong
- * phai truy van rieng ten danh muc cho tung san pham.
- */
 public class Product {
 
     private int productId;
@@ -20,7 +15,11 @@ public class Product {
     private String weightVolume;  // Khoi luong/dung tich: 180ml, 500g, 1kg... (tuy chon)
     private String description;   // Mo ta san pham (tuy chon)
     private BigDecimal importPrice;
+    // SellPrice: tu DATABASE tinh (trigger trg_Products_SyncSellPrice) khi
+    // autoPrice = true, KHONG nen sua tay o Java khi do - xem margin/autoPrice.
     private BigDecimal sellPrice;
+    private BigDecimal margin;   // chenh lech RIENG cua SP nay (VND); null = dung StoreConfig.DEFAULT_MARGIN chung
+    private boolean autoPrice = true; // true = SellPrice tu dong tinh theo ImportPrice + margin hieu luc; false = da khoa gia, sua tay
     private String imageUrl;
     private int stock;
     private int minStock;
@@ -63,6 +62,12 @@ public class Product {
 
     public BigDecimal getSellPrice() { return sellPrice; }
     public void setSellPrice(BigDecimal sellPrice) { this.sellPrice = sellPrice; }
+
+    public BigDecimal getMargin() { return margin; }
+    public void setMargin(BigDecimal margin) { this.margin = margin; }
+
+    public boolean isAutoPrice() { return autoPrice; }
+    public void setAutoPrice(boolean autoPrice) { this.autoPrice = autoPrice; }
 
     public String getImageUrl() { return imageUrl; }
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }

@@ -13,25 +13,27 @@ import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * DAO rất mỏng cho bảng StoreConfig (key-value, xem sql/SIMS.sql), theo đúng
- * phong cách ShiftDAO - không cần cả bộ máy BaseDAO (search/paging)
- * cho một bảng chỉ vài dòng cấu hình.
- *
- * Khoá quan trọng nhất hiện tại là VAT_RATE (%, ví dụ "8" = 8%) -
- * dùng chung cho cả hoá đơn tại quầy (PosPanel/InvoiceDAO) và đơn hàng online
- * (CartPanel/OrderDAO) thay vì hardcode rải rác nhiều nơi.
- */
 public class StoreConfigDAO {
 
     public static final String KEY_VAT_RATE = "VAT_RATE";
     /** So VND khach can chi de duoc cong 1 diem thanh vien (vd "10000" = 10.000d/diem). */
     public static final String KEY_POINT_RATE = "POINT_RATE";
+    /**
+     * Chenh lech (VND) mac dinh giua SellPrice va ImportPrice khi 1 SP
+     * KHONG dat Margin rieng (Products.Margin = NULL). Dung boi trigger
+     * SQL trg_Products_SyncSellPrice (xem sql/Trigger_SIMS.sql) - moi lan
+     * ImportPrice/Margin/AutoPrice cua SP thay doi (nhap hang qua
+     * PurchaseReceiptDAO, hoac sua tay qua ProductDAO), SellPrice duoc
+     * DATABASE tu tinh lai theo dung gia tri nay, khong can nho chinh tay.
+     */
+    public static final String KEY_DEFAULT_MARGIN = "DEFAULT_MARGIN";
 
     /** Giá trị mặc định khi bảng chưa được seed hoặc đọc lỗi - khớp DEFAULT 8 của cột Invoices.VATRate. */
     private static final BigDecimal DEFAULT_VAT_RATE = new BigDecimal("8");
     /** Mac dinh 10.000d = 1 diem neu chua cau hinh / cau hinh loi. */
     private static final BigDecimal DEFAULT_POINT_RATE = new BigDecimal("10000");
+    /** Mac dinh 5.000d neu chua cau hinh / cau hinh loi - phai KHOP voi fallback trong fn_GetDefaultMargin() (SQL). */
+    private static final BigDecimal DEFAULT_MARGIN = new BigDecimal("5000");
 
     /** Đọc tỉ lệ VAT hiện hành (%). Không bao giờ trả về null - fallback DEFAULT_VAT_RATE nếu thiếu/lỗi. */
     public BigDecimal getVatRate() {
@@ -62,6 +64,26 @@ public class StoreConfigDAO {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "StoreConfigDAO.getPointRate - gia tri POINT_RATE khong hop le: " + raw, e);
             return DEFAULT_POINT_RATE;
+        }
+    }
+
+    /**
+     * Doc chenh lech mac dinh (VND) hien hanh giua Gia ban va Gia nhap
+     * (KEY_DEFAULT_MARGIN). Khong bao gio tra ve null/am - fallback
+     * DEFAULT_MARGIN neu thieu/loi/am. Dung de HIEN THI xem truoc (preview)
+     * o UI (ProductFormDialog) - gia tri that su duoc DATABASE tinh boi
+     * trigger trg_Products_SyncSellPrice, day chi la doc lai de show cho dung.
+     */
+    public BigDecimal getDefaultMargin() {
+        String raw = getValue(KEY_DEFAULT_MARGIN, null);
+        if (raw == null || raw.isBlank()) return DEFAULT_MARGIN;
+        try {
+            BigDecimal margin = new BigDecimal(raw.trim());
+            return margin.signum() >= 0 ? margin : DEFAULT_MARGIN;
+        } catch (NumberFormatException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StoreConfigDAO.getDefaultMargin - gia tri DEFAULT_MARGIN khong hop le: " + raw, e);
+            return DEFAULT_MARGIN;
         }
     }
 

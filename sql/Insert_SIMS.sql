@@ -293,14 +293,18 @@ INSERT INTO AuditLogs (UserID, Action, TableName, RecordID, OldValue, NewValue, 
 GO
 
 -- ---- 18. Cau hinh he thong mau ----
+-- So VND khach can chi de duoc cong 1 diem thanh vien (xem StoreConfigDAO.getPointRate()
+-- va InvoiceDAO.createInvoice - tich diem tu dong khi lap hoa don co gan khach hang).
+-- DEFAULT_MARGIN: chenh lech (VND) mac dinh giua SellPrice va ImportPrice khi
+-- 1 SP khong dat Margin rieng (xem StoreConfigDAO.getDefaultMargin() va
+-- trigger trg_Products_SyncSellPrice trong Trigger_SIMS.sql).
 INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('VAT_RATE', '8'),
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
-('DEFAULT_UNIT', N'cái');
--- So VND khach can chi de duoc cong 1 diem thanh vien (xem StoreConfigDAO.getPointRate()
--- va InvoiceDAO.createInvoice - tich diem tu dong khi lap hoa don co gan khach hang).
-('POINT_RATE', '10000');
+('DEFAULT_UNIT', N'cái'),
+('POINT_RATE', '10000'),
+('DEFAULT_MARGIN', '5000');
 GO
 
 UPDATE Products

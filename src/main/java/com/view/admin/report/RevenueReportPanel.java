@@ -6,6 +6,7 @@ import com.components.LoadingOverlay;
 import com.components.SectionHeader;
 import com.dao.RevenueReportDAO;
 import com.dao.RevenueReportDAO.CategoryProfit;
+import com.dao.RevenueReportDAO.DailyFinancePoint;
 import com.dao.RevenueReportDAO.DailyPoint;
 import com.dao.RevenueReportDAO.MonthlyCategoryTrend;
 import com.dao.RevenueReportDAO.PaymentSlice;
@@ -39,26 +40,11 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-/**
- * Trang "Bao cao doanh thu & loi nhuan": chon khoang thoi gian (co san preset
- * nhanh, dung chung cho ca 2 tab) roi chuyen doi giua 2 goc nhin:
- * <ul>
- *   <li><b>Doanh thu</b> - {@link RevenueReportTab}: tong quan + bieu do doanh
- *       thu theo ngay + doanh thu theo phuong thuc thanh toan + top san pham
- *       ban chay (doanh thu tinh theo Invoices.TotalAmount, DA GOM VAT).</li>
- *   <li><b>Loi nhuan</b> - {@link ProfitReportTab}: so sanh gia nhap/gia ban,
- *       loi nhuan gop theo ngay/danh muc/san pham (tinh tren co so CHUA VAT -
- *       xem ghi chu trong {@link RevenueReportDAO}).</li>
- * </ul>
- * Truoc day day la 2 trang rieng ("revenueReport" va "profitReport"), gop lai
- * thanh 1 de dung chung bo loc ngay va tranh nham lan vi ca 2 deu co the
- * "Tong doanh thu" nhung tinh tren 2 co so khac nhau (gom VAT hay khong).
- */
+
 public class RevenueReportPanel extends JPanel {
 
     private static final DateTimeFormatter FILE_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final String CARD_REVENUE = "revenue";
-    private static final String CARD_PROFIT = "profit";
     private static final String CARD_TREND = "trend";
 
     private final RevenueReportDAO dao = new RevenueReportDAO();
@@ -71,10 +57,8 @@ public class RevenueReportPanel extends JPanel {
     private final CardLayout cardLayout = new CardLayout();
     private JPanel cardContainer;
     private RevenueReportTab revenueTab;
-    private ProfitReportTab profitTab;
     private SalesTrendTab salesTrendTab;
     private JButton revenueTabButton;
-    private JButton profitTabButton;
     private JButton trendTabButton;
     private String activeCard = CARD_REVENUE;
 
@@ -103,13 +87,11 @@ public class RevenueReportPanel extends JPanel {
         topSection.add(buildFilterBar(), gbc);
 
         revenueTab = new RevenueReportTab();
-        profitTab = new ProfitReportTab();
         salesTrendTab = new SalesTrendTab();
 
         cardContainer = new JPanel(cardLayout);
         cardContainer.setOpaque(false);
         cardContainer.add(revenueTab, CARD_REVENUE);
-        cardContainer.add(profitTab, CARD_PROFIT);
         cardContainer.add(salesTrendTab, CARD_TREND);
 
         add(topSection, BorderLayout.NORTH);
@@ -120,17 +102,11 @@ public class RevenueReportPanel extends JPanel {
         toField = new DatePickerField(today);
         fromField.onChange(v -> loadData());
         toField.onChange(v -> loadData());
-        // fromField/toField duoc them vao filter bar o buildFilterBar() ben tren
-        // (goi truoc khi field duoc khoi tao) - nen gan lai o day roi revalidate.
         wireDatePickersIntoFilterBar();
 
         AutoRefresher.bind(this, DataChangedEvent.class, 400, this::loadData);
         loadData();
     }
-
-    // ---------------------------------------------------------------
-    // Header + tab toggle + filter bar
-    // ---------------------------------------------------------------
 
     private SectionHeader buildHeader() {
         SectionHeader header = new SectionHeader(FontAwesomeSolid.CHART_LINE, AppColor.ACCENT,
@@ -141,25 +117,14 @@ public class RevenueReportPanel extends JPanel {
         return header;
     }
 
-    /**
-     * Hang RIENG cho 2 nut chuyen tab "Doanh thu" / "Loi nhuan" - co truoc day
-     * nhet chung vao cuoi hang loc ngay (buildFilterBar), nhung hang do da rat
-     * chat (5 nut preset + 2 o chon ngay) va bi ep cung chieu cao 56px, nen
-     * khi FlowLayout xuong dong o man hinh hep, dong 2 (chua dung 2 nut nay)
-     * bi cat mat - nguoi dung chi thay tab Doanh thu ma khong thay duoc nut
-     * de bam sang Loi nhuan. Tach rieng ra 1 hang luon hien, khong phu thuoc
-     * be rong cua so, de dam bao 2 nut nay LUON nhin thay va bam duoc.
-     */
     private JPanel buildTabRow() {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 0));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        revenueTabButton = tabButton("Doanh thu", () -> switchTab(CARD_REVENUE));
-        profitTabButton = tabButton("Lợi nhuận", () -> switchTab(CARD_PROFIT));
+        revenueTabButton = tabButton("Doanh thu & Lợi nhuận", () -> switchTab(CARD_REVENUE));
         trendTabButton = tabButton("Xu hướng bán hàng", () -> switchTab(CARD_TREND));
         row.add(revenueTabButton);
-        row.add(profitTabButton);
         row.add(trendTabButton);
         updateTabButtonStyles();
 
@@ -186,7 +151,7 @@ public class RevenueReportPanel extends JPanel {
         fromLabel.setForeground(AppColor.TEXT_MUTED);
         bar.add(fromLabel);
 
-        filterBarDateSlot = bar; // placeholder ref de them fromField/toField sau khi khoi tao
+        filterBarDateSlot = bar;
         JLabel toLabel = new JLabel("Đến ngày");
         toLabel.setFont(AppFont.SMALL);
         toLabel.setForeground(AppColor.TEXT_MUTED);
@@ -202,17 +167,12 @@ public class RevenueReportPanel extends JPanel {
         return sep;
     }
 
-    /** DatePickerField duoc tao SAU buildFilterBar() (can LocalDate.now() 1 lan duy nhat o constructor) nen gan vao day. */
     private void wireDatePickersIntoFilterBar() {
         JPanel bar = (JPanel) filterBarDateSlot;
         bar.add(fromField);
         JLabel toLabel = (JLabel) bar.getClientProperty("toLabel");
         bar.add(toLabel);
         bar.add(toField);
-        // Không cần nút "Làm mới": AutoRefresher đã bind DataChangedEvent → loadData()
-        // (debounce 400ms). Mọi thay đổi đi qua DAO / OrderNotifyPoller / restore
-        // backup đều publish event và panel tự reload khi đang hiển thị.
-
         bar.revalidate();
         bar.repaint();
     }
@@ -226,7 +186,6 @@ public class RevenueReportPanel extends JPanel {
 
     private void updateTabButtonStyles() {
         styleTabButton(revenueTabButton, CARD_REVENUE.equals(activeCard));
-        styleTabButton(profitTabButton, CARD_PROFIT.equals(activeCard));
         styleTabButton(trendTabButton, CARD_TREND.equals(activeCard));
     }
 
@@ -247,10 +206,6 @@ public class RevenueReportPanel extends JPanel {
         return LocalDate.of(date.getYear(), quarterMonth, 1);
     }
 
-    // ---------------------------------------------------------------
-    // Tai du lieu (goi ca 2 bo DAO 1 luot de chuyen tab khong bi giat/reload)
-    // ---------------------------------------------------------------
-
     private static class ReportData {
         Summary summary;
         Summary previousSummary;
@@ -259,7 +214,7 @@ public class RevenueReportPanel extends JPanel {
         List<TopProduct> topProducts;
 
         ProfitSummary profitSummary;
-        List<DailyPoint> profitDaily;
+        List<DailyFinancePoint> financeDaily;
         List<CategoryProfit> categories;
         List<ProductProfit> topProductsProfit;
 
@@ -291,7 +246,7 @@ public class RevenueReportPanel extends JPanel {
                 data.topProducts = dao.getTopProducts(from, to, 10);
 
                 data.profitSummary = dao.getProfitSummary(from, to);
-                data.profitDaily = dao.getDailyProfit(from, to);
+                data.financeDaily = dao.getDailyFinance(from, to);
                 data.categories = dao.getProfitByCategory(from, to);
                 data.topProductsProfit = dao.getTopProductsByProfit(from, to, 10);
 
@@ -304,8 +259,10 @@ public class RevenueReportPanel extends JPanel {
                 loadingOverlay.stop();
                 try {
                     ReportData data = get();
-                    revenueTab.applyData(data.summary, data.previousSummary, data.daily, data.payments, data.topProducts);
-                    profitTab.applyData(data.profitSummary, data.profitDaily, data.categories, data.topProductsProfit);
+                    revenueTab.applyData(
+                            data.summary, data.previousSummary, data.daily,
+                            data.financeDaily, data.payments, data.topProducts,
+                            data.profitSummary, data.categories, data.topProductsProfit);
                     salesTrendTab.applyData(data.monthlyCategoryTrend);
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -316,37 +273,30 @@ public class RevenueReportPanel extends JPanel {
         worker.execute();
     }
 
-    // ---------------------------------------------------------------
-    // Xuat CSV / Excel - xuat theo tab dang xem (Doanh thu hoac Loi nhuan)
-    // ---------------------------------------------------------------
-
     private void exportReport(String format) {
         if (CARD_TREND.equals(activeCard)) {
             exportSalesTrend(format);
             return;
         }
 
-        boolean showingProfit = CARD_PROFIT.equals(activeCard);
-        List<DailyPoint> daily = showingProfit ? profitTab.getLastDaily() : revenueTab.getLastDaily();
+        List<DailyFinancePoint> daily = revenueTab.getLastFinanceDaily();
         if (daily.isEmpty()) {
             BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu để xuất trong khoảng thời gian đang chọn.");
             return;
         }
+        String[] headers = new String[]{"Ngày", "Số hóa đơn", "Thu (doanh thu)", "Chi - giá vốn",
+                "Chi - thiệt hại", "Tổng chi", "Lợi nhuận ròng"};
+        List<Object[]> rows = new ArrayList<>();
+        for (DailyFinancePoint p : daily) {
+            rows.add(new Object[]{p.date.format(FILE_DATE_FORMAT), p.invoiceCount,
+                    p.revenue.longValue(), p.cost.longValue(), p.disposalLoss.longValue(),
+                    p.totalExpense().longValue(), p.netProfit().longValue()});
+        }
 
-        String metric = showingProfit ? "loi_nhuan" : "doanh_thu";
-        String sheetName = showingProfit ? "Lợi nhuận" : "Doanh thu";
-        String valueColumn = showingProfit ? "Lợi nhuận" : "Doanh thu";
-
-        String defaultName = "bao_cao_" + metric + "_" + timestamp() + "." + format;
+        String defaultName = "bao_cao_doanh_thu_loi_nhuan_" + timestamp() + "." + format;
         File chosen = FileUtil.chooseSaveLocation(this, defaultName);
         if (chosen == null) return;
         File file = ensureExtension(chosen, format);
-
-        String[] headers = {"Ngày", "Số hóa đơn", valueColumn};
-        List<Object[]> rows = new ArrayList<>();
-        for (DailyPoint p : daily) {
-            rows.add(new Object[]{p.date.format(FILE_DATE_FORMAT), p.invoiceCount, p.revenue.longValue()});
-        }
 
         loadingOverlay.start("Đang xuất dữ liệu...");
         SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
@@ -355,7 +305,7 @@ public class RevenueReportPanel extends JPanel {
                 if ("csv".equals(format)) {
                     TableExportUtil.exportCsv(file, headers, rows);
                 } else {
-                    TableExportUtil.exportExcel(file, sheetName, headers, rows);
+                    TableExportUtil.exportExcel(file, "Doanh thu & Lợi nhuận", headers, rows);
                 }
                 return null;
             }
@@ -376,7 +326,6 @@ public class RevenueReportPanel extends JPanel {
         worker.execute();
     }
 
-    /** Xuat bang "Thang x Danh muc" (moi cot 1 danh muc, gia tri = so luong ban ra) cua tab Xu huong ban hang. */
     private void exportSalesTrend(String format) {
         MonthlyCategoryTrend trend = salesTrendTab.getLastTrend();
         if (trend == null || trend.months.isEmpty() || trend.series.isEmpty()) {
@@ -445,11 +394,6 @@ public class RevenueReportPanel extends JPanel {
         return new File(file.getParentFile(), base + "." + ext);
     }
 
-    // ---------------------------------------------------------------
-    // Component phu tro rieng cho trang nay
-    // ---------------------------------------------------------------
-
-    /** Nut "chip" bo tron cho cac preset khoang thoi gian (Hom nay/7 ngay qua...). */
     private JButton presetButton(String text, Runnable onClick) {
         JButton button = roundedChipButton(text);
         button.setForeground(AppColor.TEXT_SECONDARY);
@@ -462,7 +406,6 @@ public class RevenueReportPanel extends JPanel {
         return button;
     }
 
-    /** Nut "chip" bo tron dung lam tab chuyen doi Doanh thu / Loi nhuan (mau active/inactive do updateTabButtonStyles() dieu khien). */
     private JButton tabButton(String text, Runnable onClick) {
         JButton button = roundedChipButton(text);
         button.addActionListener(e -> onClick.run());
@@ -489,7 +432,6 @@ public class RevenueReportPanel extends JPanel {
         return button;
     }
 
-    /** Panel nen trang, bo goc - dung lam khung cho filter bar. */
     private static class RoundedPanel extends JPanel {
         RoundedPanel() {
             setOpaque(false);

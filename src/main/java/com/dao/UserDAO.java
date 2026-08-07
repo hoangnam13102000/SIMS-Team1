@@ -394,7 +394,7 @@ public class UserDAO extends BaseDAO<User> {
 
         String insertUserSql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?))";
-        String insertCustomerSql = "INSERT INTO Customers (CustomerID, MemberPoint) VALUES (?, 0)";
+        String insertCustomerSql = "INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint) VALUES (?, ?, 0)";
         String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID) VALUES (?, ?)";
 
         Connection con = null;

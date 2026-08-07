@@ -46,10 +46,14 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
 
     @Override
     protected String getOrderBy() {
-        // Lo het han/sap het han len truoc (dung tinh than FEFO) - lo khong co HSD xep sau cung.
-        // Cung HSD -> BatchID ASC (lo nhap truoc len truoc) de khop dung thu tu
-        // trigger trg_InvoiceDetails_CheckStock dung khi tru kho FEFO luc ban hang.
-        return "CASE WHEN b.ExpiryDate IS NULL THEN 1 ELSE 0 END, b.ExpiryDate ASC, b.BatchID ASC";
+        // Lo da ban het (RemainingQty <= 0) day xuong cuoi danh sach - khong con
+        // tac dung gi voi FEFO/nhap hang nua nen khong can uu tien hien thi truoc.
+        // Trong nhom con hang: lo het han/sap het han len truoc (dung tinh than FEFO)
+        // - lo khong co HSD xep sau cung. Cung HSD -> BatchID ASC (lo nhap truoc len
+        // truoc) de khop dung thu tu trigger trg_InvoiceDetails_CheckStock dung khi
+        // tru kho FEFO luc ban hang.
+        return "CASE WHEN b.RemainingQty <= 0 THEN 1 ELSE 0 END, "
+                + "CASE WHEN b.ExpiryDate IS NULL THEN 1 ELSE 0 END, b.ExpiryDate ASC, b.BatchID ASC";
     }
 
     @Override

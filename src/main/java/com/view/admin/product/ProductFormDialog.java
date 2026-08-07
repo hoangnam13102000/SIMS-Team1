@@ -4,6 +4,7 @@ import com.components.crud.BaseFormDialog;
 import com.components.crud.CrudMode;
 import com.dao.CategoryDAO;
 import com.dao.ProductDAO;
+import com.dao.StoreConfigDAO;
 import com.model.Category;
 import com.model.Product;
 import com.theme.AppColor;
@@ -19,6 +20,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -30,6 +32,8 @@ import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -50,6 +54,9 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
 
     private final ProductDAO productDAO;
     private final List<Category> categories;
+    private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
+    /** Chenh lech mac dinh he thong (StoreConfig.DEFAULT_MARGIN) - doc 1 lan luc mo form, chi dung de xem truoc (preview); gia tri THAT do trigger SQL tinh. */
+    private final BigDecimal defaultMargin = storeConfigDAO.getDefaultMargin();
 
     private JTextField productCodeField; // chỉ đọc, chỉ hiện khi Sửa
     private JTextField productNameField;
@@ -58,7 +65,10 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     private JComboBox<String> unitCombo;
     private JTextField weightVolumeField;
     private JTextField importPriceField;
+    private JCheckBox autoPriceCheckbox;
+    private JTextField marginField;
     private JTextField sellPriceField;
+    private JLabel priceHint;
     private JTextField stockField;
     private JTextField minStockField;
     private JComboBox<String> statusCombo;
@@ -260,13 +270,48 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         addSectionHeader(col, FontAwesomeSolid.DOLLAR_SIGN, "Giá & tồn kho");
 
         importPriceField = newTextField();
-        col.add(fieldGroupIcon(FontAwesomeSolid.ARROW_DOWN, "Giá nhập", true, wrapWithSuffix(importPriceField, "VNĐ")));
-        col.add(Box.createVerticalStrut(12));
+        importPriceField.setEditable(mode != CrudMode.ADD);
+        importPriceField.setFocusable(mode != CrudMode.ADD);
+        if (mode == CrudMode.ADD) {
+            importPriceField.setBackground(AppColor.BG_LIGHTER);
+            importPriceField.setText("0");
+        }
+        col.add(fieldGroupIcon(FontAwesomeSolid.ARROW_DOWN, "Giá nhập", mode != CrudMode.ADD, wrapWithSuffix(importPriceField, "VNĐ")));
+        col.add(Box.createVerticalStrut(4));
+        JLabel importPriceHint = new JLabel(mode == CrudMode.ADD
+                ? "Tự động lấy theo giá của lô hàng đầu tiên khi bạn tạo Phiếu nhập kho cho sản phẩm này (giá bán tạm hiển thị theo 0đ + chênh lệch cho tới lúc đó)."
+                : "Đã được đồng bộ từ lô hàng đầu tiên lúc nhập kho — có thể chỉnh tay nếu cần đặt lại giá tham chiếu.");
+        importPriceHint.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        importPriceHint.setForeground(AppColor.TEXT_MUTED);
+        importPriceHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        importPriceHint.setBorder(new EmptyBorder(0, 2, 0, 0));
+        col.add(importPriceHint);
+        col.add(Box.createVerticalStrut(10));
+
+        autoPriceCheckbox = new JCheckBox("Tự động tính giá bán theo giá nhập + chênh lệch", true);
+        autoPriceCheckbox.setOpaque(false);
+        autoPriceCheckbox.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        autoPriceCheckbox.setForeground(AppColor.TEXT_PRIMARY);
+        autoPriceCheckbox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        autoPriceCheckbox.setFocusPainted(false);
+        col.add(autoPriceCheckbox);
+        col.add(Box.createVerticalStrut(10));
+
+        marginField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.EQUALS, "Chênh lệch riêng cho SP này", false, wrapWithSuffix(marginField, "VNĐ")));
+        col.add(Box.createVerticalStrut(4));
+        JLabel marginHint = new JLabel("Để trống = dùng mặc định hệ thống (" + formatVnd(defaultMargin) + " đ, chỉnh ở Cài đặt)");
+        marginHint.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        marginHint.setForeground(AppColor.TEXT_MUTED);
+        marginHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        marginHint.setBorder(new EmptyBorder(0, 2, 0, 0));
+        col.add(marginHint);
+        col.add(Box.createVerticalStrut(10));
 
         sellPriceField = newTextField();
         col.add(fieldGroupIcon(FontAwesomeSolid.ARROW_UP, "Giá bán", true, wrapWithSuffix(sellPriceField, "VNĐ")));
         col.add(Box.createVerticalStrut(4));
-        JLabel priceHint = new JLabel("Giá bán ≥ giá nhập");
+        priceHint = new JLabel("Giá bán ≥ giá nhập");
         priceHint.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         priceHint.setForeground(AppColor.TEXT_MUTED);
         priceHint.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -274,8 +319,23 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.add(priceHint);
         col.add(Box.createVerticalStrut(12));
 
+        wireAutoPriceBehavior();
+
         stockField = newTextField();
-        col.add(fieldGroupIcon(FontAwesomeSolid.WAREHOUSE, "Tồn kho", true, stockField));
+        stockField.setEditable(false);
+        stockField.setFocusable(false);
+        stockField.setBackground(AppColor.BG_LIGHTER);
+        stockField.setText("0");
+        col.add(fieldGroupIcon(FontAwesomeSolid.WAREHOUSE, "Tồn kho", false, stockField));
+        col.add(Box.createVerticalStrut(4));
+        JLabel stockHint = new JLabel(mode == CrudMode.ADD
+                ? "Sản phẩm mới bắt đầu với tồn kho = 0. Sau khi thêm, tạo Phiếu nhập kho để nhập lô hàng đầu tiên."
+                : "Tồn kho được cộng/trừ tự động qua Phiếu nhập kho, Bán hàng, Đối soát kho theo từng lô — không sửa trực tiếp ở đây.");
+        stockHint.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        stockHint.setForeground(AppColor.TEXT_MUTED);
+        stockHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        stockHint.setBorder(new EmptyBorder(0, 2, 0, 0));
+        col.add(stockHint);
         col.add(Box.createVerticalStrut(12));
 
         minStockField = newTextField();
@@ -286,6 +346,62 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.add(fieldGroupIcon(FontAwesomeSolid.CHECK_CIRCLE, "Trạng thái", true, statusCombo));
 
         return col;
+    }
+
+    /**
+     * Gan hanh vi cho co che "Tu dong tinh gia ban":
+     * - Khi autoPriceCheckbox duoc chon: sellPriceField chi doc, hien gia tri
+     *   xem-truoc (preview) = ImportPrice + chenh lech hieu luc; marginField
+     *   duoc bat de nguoi dung dat rieng neu muon (de trong = dung mac dinh
+     *   he thong). Gia tri THAT SU van do trigger SQL trg_Products_SyncSellPrice
+     *   tinh lai ngay sau khi luu - o day chi la xem truoc cho khop.
+     * - Khi bo chon: sellPriceField mo lai de nhap tay (Auto = 0, DB se
+     *   khong ghi de SellPrice cua SP nay nua o cac lan nhap hang sau).
+     * Preview duoc tinh lai moi khi go Gia nhap hoac Chenh lech rieng.
+     */
+    private void wireAutoPriceBehavior() {
+        DocumentListener previewListener = new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { recomputeSellPricePreview(); }
+            @Override public void removeUpdate(DocumentEvent e) { recomputeSellPricePreview(); }
+            @Override public void changedUpdate(DocumentEvent e) { recomputeSellPricePreview(); }
+        };
+        importPriceField.getDocument().addDocumentListener(previewListener);
+        marginField.getDocument().addDocumentListener(previewListener);
+
+        autoPriceCheckbox.addItemListener(e -> {
+            applyAutoPriceFieldState();
+            recomputeSellPricePreview();
+        });
+
+        applyAutoPriceFieldState();
+        recomputeSellPricePreview();
+    }
+
+    private void applyAutoPriceFieldState() {
+        boolean auto = autoPriceCheckbox.isSelected();
+        sellPriceField.setEditable(!auto);
+        sellPriceField.setBackground(auto ? AppColor.BG_LIGHTER : AppColor.WHITE);
+        marginField.setEnabled(auto);
+        priceHint.setText(auto
+                ? "Tự động = giá nhập + chênh lệch (không cần chỉnh tay)"
+                : "Giá bán ≥ giá nhập");
+    }
+
+    /** Tinh xem-truoc Gia ban khi dang o che do Tu dong, dua tren Gia nhap + Chenh lech hieu luc dang go trong form. */
+    private void recomputeSellPricePreview() {
+        if (autoPriceCheckbox == null || !autoPriceCheckbox.isSelected()) return;
+        BigDecimal importPrice = parseAmount(importPriceField.getText());
+        if (importPrice == null) {
+            sellPriceField.setText("");
+            return;
+        }
+        BigDecimal margin = parseAmount(marginField.getText());
+        BigDecimal effectiveMargin = margin != null ? margin : defaultMargin;
+        sellPriceField.setText(importPrice.add(effectiveMargin).toPlainString());
+    }
+
+    private static String formatVnd(BigDecimal amount) {
+        return String.format("%,d", amount.longValueExact()).replace(',', '.');
     }
 
     // ---------------------------------------------------------------
@@ -460,7 +576,14 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         unitCombo.setSelectedItem(entity.getUnit() != null ? entity.getUnit() : "");
         weightVolumeField.setText(entity.getWeightVolume() != null ? entity.getWeightVolume() : "");
         importPriceField.setText(entity.getImportPrice() != null ? entity.getImportPrice().toPlainString() : "");
-        sellPriceField.setText(entity.getSellPrice() != null ? entity.getSellPrice().toPlainString() : "");
+        autoPriceCheckbox.setSelected(entity.isAutoPrice());
+        marginField.setText(entity.getMargin() != null ? entity.getMargin().toPlainString() : "");
+        applyAutoPriceFieldState();
+        // AutoPrice=false: giu nguyen SellPrice da luu (nguoi dung tu chinh); AutoPrice=true: preview se tu tinh lai ngay ben duoi.
+        if (!entity.isAutoPrice()) {
+            sellPriceField.setText(entity.getSellPrice() != null ? entity.getSellPrice().toPlainString() : "");
+        }
+        recomputeSellPricePreview();
         stockField.setText(String.valueOf(entity.getStock()));
         minStockField.setText(String.valueOf(entity.getMinStock()));
         statusCombo.setSelectedIndex(entity.isActive() ? 0 : 1);
@@ -510,13 +633,17 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
                 .required("Vui lòng nhập giá nhập.")
                 .rule(v -> isValidNonNegativeAmount(v) ? null : "Giá nhập phải là số nguyên không âm.");
 
+        String marginText = marginField.getText() == null ? "" : marginField.getText().trim();
+        if (!marginText.isEmpty()) {
+            validator.field(marginText)
+                    .rule(v -> isValidNonNegativeAmount(v) ? null : "Chênh lệch riêng phải là số nguyên không âm.");
+        }
+
         validator.field(sellPriceField.getText())
                 .required("Vui lòng nhập giá bán.")
                 .rule(v -> isValidNonNegativeAmount(v) ? null : "Giá bán phải là số nguyên không âm.");
 
-        validator.field(stockField.getText())
-                .required("Vui lòng nhập tồn kho.")
-                .rule(Rules.custom(ProductFormDialog::isValidNonNegativeInt, "Tồn kho phải là số nguyên không âm."));
+        // Tồn kho không còn là input thủ công (readonly) - luôn hợp lệ, không cần validate.
 
         validator.field(minStockField.getText())
                 .required("Vui lòng nhập tồn kho tối thiểu.")
@@ -548,9 +675,13 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         product.setWeightVolume(blankToNull(weightVolumeField.getText()));
         product.setDescription(blankToNull(descriptionArea.getText()));
 
-        product.setImportPrice(parseAmount(importPriceField.getText()));
+        product.setImportPrice(mode == CrudMode.ADD ? java.math.BigDecimal.ZERO : parseAmount(importPriceField.getText()));
         product.setSellPrice(parseAmount(sellPriceField.getText()));
-        product.setStock(Integer.parseInt(stockField.getText().trim()));
+        product.setMargin(parseAmount(marginField.getText())); // null neu de trong -> DB dung DEFAULT_MARGIN chung
+        product.setAutoPrice(autoPriceCheckbox.isSelected());
+        // Ton kho khong nhap tay: ADD luon = 0 (nhap hang qua Phieu nhap kho de tao lo dau tien);
+        // EDIT giu nguyen gia tri hien co trong DB (khong ghi de boi form) de khong lech voi InventoryBatch.
+        product.setStock(mode == CrudMode.ADD ? 0 : editingEntity.getStock());
         product.setMinStock(Integer.parseInt(minStockField.getText().trim()));
         product.setStatus(statusCombo.getSelectedIndex() == 1 ? "DISABLED" : "ACTIVE");
 

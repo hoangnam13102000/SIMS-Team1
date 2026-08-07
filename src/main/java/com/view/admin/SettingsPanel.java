@@ -20,22 +20,13 @@ import java.math.BigDecimal;
 import java.text.ParseException;
 import java.util.Map;
 
-/**
- * Trang "Cài đặt hệ thống" (chỉ ADMIN, quyền SETTINGS_MANAGE) - sửa các dòng
- * trong bảng StoreConfig (key-value, xem sql/SIMS.sql). Quan trọng nhất là
- * VAT_RATE (%) - dùng chung bởi cả POS (PosPanel) và giỏ hàng online
- * (CartPanel) thay vì hardcode.
- *
- * Sau khi lưu thành công, panel phát DataChangedEvent.CONFIG qua AppEventBus
- * để các màn hình khác (đang mở sẵn trong cùng phiên) tự nạp lại tỉ lệ VAT
- * mới mà không cần khởi động lại ứng dụng.
- */
 public class SettingsPanel extends JPanel {
 
     private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang tải cấu hình...");
 
     private JFormattedTextField vatRateField;
+    private JFormattedTextField defaultMarginField;
     private JTextField storeNameField;
     private JFormattedTextField returnPolicyDaysField;
     private JTextField defaultUnitField;
@@ -91,6 +82,12 @@ public class SettingsPanel extends JPanel {
         card.add(fieldGroup("Thuế GTGT - VAT (%)",
                 "Áp dụng cho hoá đơn tại quầy (POS) và đơn hàng đặt online. Ví dụ: 8 nghĩa là 8%.",
                 vatRateField));
+        card.add(Box.createVerticalStrut(16));
+
+        defaultMarginField = numberField();
+        card.add(fieldGroup("Chênh lệch giá bán mặc định (VNĐ)",
+                "Áp dụng cho SP không đặt chênh lệch riêng: Giá bán = Giá nhập + số này, tự động cập nhật mỗi khi nhập hàng làm đổi Giá nhập.",
+                defaultMarginField));
         card.add(Box.createVerticalStrut(16));
 
         returnPolicyDaysField = numberField();
@@ -191,6 +188,7 @@ public class SettingsPanel extends JPanel {
 
     private void applyToForm(Map<String, String> config) {
         vatRateField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_VAT_RATE), new BigDecimal("8")));
+        defaultMarginField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_DEFAULT_MARGIN), new BigDecimal("5000")));
         returnPolicyDaysField.setValue(parseOrDefault(config.get("RETURN_POLICY_DAYS"), 7));
         storeNameField.setText(config.getOrDefault("STORE_NAME", ""));
         defaultUnitField.setText(config.getOrDefault("DEFAULT_UNIT", ""));
@@ -219,6 +217,7 @@ public class SettingsPanel extends JPanel {
         // luc mat focus/Enter, chua chac da xay ra truoc khi bam nut Luu).
         try {
             vatRateField.commitEdit();
+            defaultMarginField.commitEdit();
             returnPolicyDaysField.commitEdit();
         } catch (ParseException ignored) {
             // Giu nguyen gia tri cu neu dang go do (khong parse duoc) - validate ben duoi se bat loi.
@@ -227,6 +226,11 @@ public class SettingsPanel extends JPanel {
         BigDecimal vatRate = toBigDecimal(vatRateField.getValue());
         if (vatRate == null || vatRate.compareTo(BigDecimal.ZERO) < 0 || vatRate.compareTo(new BigDecimal("100")) > 0) {
             BaseDialog.error(this, "Dữ liệu không hợp lệ", "Thuế VAT phải là số từ 0 đến 100.");
+            return;
+        }
+        BigDecimal defaultMargin = toBigDecimal(defaultMarginField.getValue());
+        if (defaultMargin == null || defaultMargin.compareTo(BigDecimal.ZERO) < 0) {
+            BaseDialog.error(this, "Dữ liệu không hợp lệ", "Chênh lệch giá bán mặc định phải là số không âm.");
             return;
         }
         Integer returnDays = toInteger(returnPolicyDaysField.getValue());
@@ -247,11 +251,14 @@ public class SettingsPanel extends JPanel {
 
         boolean confirmed = BaseDialog.confirm(this, "Xác nhận lưu",
                 "Áp dụng thuế VAT " + vatRate.stripTrailingZeros().toPlainString()
-                        + "% cho các hoá đơn/đơn hàng MỚI kể từ bây giờ (không ảnh hưởng hoá đơn đã lập)?");
+                        + "% cho các hoá đơn/đơn hàng MỚI kể từ bây giờ (không ảnh hưởng hoá đơn đã lập). "
+                        + "Chênh lệch giá bán mặc định mới (" + defaultMargin.stripTrailingZeros().toPlainString()
+                        + "đ) sẽ áp dụng ngay cho các SP dùng mức chênh lệch chung ở lần nhập hàng/sửa giá tiếp theo?");
         if (!confirmed) return;
 
         Map<String, String> values = Map.of(
                 StoreConfigDAO.KEY_VAT_RATE, vatRate.stripTrailingZeros().toPlainString(),
+                StoreConfigDAO.KEY_DEFAULT_MARGIN, defaultMargin.stripTrailingZeros().toPlainString(),
                 "RETURN_POLICY_DAYS", String.valueOf(returnDays),
                 "STORE_NAME", storeName,
                 "DEFAULT_UNIT", defaultUnit

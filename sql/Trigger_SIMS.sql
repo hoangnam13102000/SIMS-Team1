@@ -254,6 +254,12 @@ GO
 -- ---------------------------------------------------------------
 -- Nhap kho: moi dong PurchaseReceiptDetails sinh dung 1 lo
 -- InventoryBatch moi + cong kho Products.Stock + log IMPORT.
+-- Ngoai ra: neu day la LO DAU TIEN cua san pham (chua tung co dong
+-- nao trong InventoryBatch truoc do), dong bo Products.ImportPrice
+-- theo dung gia nhap cua lo nay (ADMIN khong can nhap tay luc tao SP
+-- nua - form Them san pham de ImportPrice = 0 cho toi khi co lo dau
+-- tien). Trigger trg_Products_SyncSellPrice se tu chay tiep de tinh
+-- lai SellPrice ngay sau buoc UPDATE ImportPrice nay.
 -- ---------------------------------------------------------------
 CREATE TRIGGER trg_PurchaseReceiptDetails_Insert
 ON PurchaseReceiptDetails
@@ -271,6 +277,20 @@ BEGIN
     JOIN Products p ON p.ProductID = i.ProductID
     JOIN PurchaseReceipts r ON r.ReceiptID = i.ReceiptID;
 
+    -- Xac dinh truoc (truoc khi INSERT InventoryBatch ben duoi) nhung
+    -- ProductID nao dang nhap LO DAU TIEN trong doi - lay dung 1 dong
+    -- (gia nhap dau tien) cho moi san pham neu 1 phieu nhap co nhieu
+    -- dong cung 1 san pham.
+    SELECT i.ProductID, i.ImportPrice
+    INTO #FirstBatchImportPrice
+    FROM (
+        SELECT i.ProductID, i.ImportPrice,
+               ROW_NUMBER() OVER (PARTITION BY i.ProductID ORDER BY i.ReceiptDetailID) AS rn
+        FROM inserted i
+        WHERE NOT EXISTS (SELECT 1 FROM InventoryBatch b WHERE b.ProductID = i.ProductID)
+    ) i
+    WHERE i.rn = 1;
+
     -- moi lan nhap = 1 lo moi
     INSERT INTO InventoryBatch (ProductID, SupplierID, ReceiptDetailID, LotNumber,
                                  ManufactureDate, ExpiryDate, ImportPrice, Quantity, RemainingQty)
@@ -281,6 +301,27 @@ BEGIN
 
     UPDATE p SET p.Stock = p.Stock + i.Quantity
     FROM Products p JOIN inserted i ON i.ProductID = p.ProductID;
+
+    -- QUAN TRONG: phai cap nhat ImportPrice VA SellPrice CUNG 1 cau
+    -- UPDATE, khong duoc de rieng 2 buoc - vi CHECK constraint
+    -- CK_Product_SellPrice (SellPrice >= ImportPrice) duoc kiem tra
+    -- ngay khi cau UPDATE nay chay xong, TRUOC khi trigger
+    -- trg_Products_SyncSellPrice (AFTER UPDATE) kip tinh lai SellPrice.
+    -- Neu AutoPrice = 1: tinh SellPrice = ImportPrice moi + chenh lech
+    -- hieu luc luon trong cau nay. Neu AutoPrice = 0 (da khoa gia tay)
+    -- ma ImportPrice lo dau tien lai cao hon SellPrice dang khoa thi
+    -- BO QUA dong bo cho san pham do (giu ImportPrice cu) de khong lam
+    -- hong phieu nhap kho - ADMIN tu dieu chinh gia thu cong sau.
+    UPDATE p
+    SET p.ImportPrice = fb.ImportPrice,
+        p.SellPrice = CASE WHEN p.AutoPrice = 1
+                            THEN fb.ImportPrice + ISNULL(p.Margin, dbo.fn_GetDefaultMargin())
+                            ELSE p.SellPrice END
+    FROM Products p
+    JOIN #FirstBatchImportPrice fb ON fb.ProductID = p.ProductID
+    WHERE p.AutoPrice = 1 OR fb.ImportPrice <= p.SellPrice;
+
+    DROP TABLE #FirstBatchImportPrice;
 END;
 GO
 
@@ -469,5 +510,62 @@ BEGIN
                 WHERE sa.ProductID = i.ProductID AND sa.Status <> 'RESOLVED'
           );
     END
+END;
+GO
+
+-- ---------------------------------------------------------------
+-- Dong bo Gia ban theo Gia nhap: Gia nhap doi theo thi truong nen
+-- thuong xuyen phai sua tay (tren phieu nhap, hoac sua truc tiep
+-- SP) - neu Gia ban van la truong doc lap thi de quen chinh, gay
+-- ban lo/lai qua it. Ham + trigger duoi day dua cong thuc gia
+-- xuong DATABASE de KHONG phu thuoc noi goi (PurchaseReceiptDAO
+-- nhap hang, ProductDAO sua SP, hay bat ky code moi nao sau nay).
+-- ---------------------------------------------------------------
+
+-- Chenh lech (VND) mac dinh khi 1 SP khong dat Margin rieng.
+-- Fallback 5000 neu StoreConfig thieu/loi/am (khong bao gio de
+-- trigger loi hoac ra gia am).
+CREATE OR ALTER FUNCTION dbo.fn_GetDefaultMargin()
+RETURNS DECIMAL(18,0)
+AS
+BEGIN
+    DECLARE @raw NVARCHAR(255);
+    DECLARE @margin DECIMAL(18,0);
+
+    SELECT @raw = ConfigValue FROM StoreConfig WHERE ConfigKey = 'DEFAULT_MARGIN';
+
+    IF @raw IS NULL OR TRY_CAST(@raw AS DECIMAL(18,0)) IS NULL OR TRY_CAST(@raw AS DECIMAL(18,0)) < 0
+        SET @margin = 5000;
+    ELSE
+        SET @margin = TRY_CAST(@raw AS DECIMAL(18,0));
+
+    RETURN @margin;
+END;
+GO
+
+-- Sau MOI INSERT/UPDATE tren Products, voi cac dong AutoPrice = 1,
+-- tinh lai SellPrice = ImportPrice + chenh lech hieu luc (Margin
+-- rieng cua SP, hoac fn_GetDefaultMargin() neu SP khong dat rieng).
+-- Dong AutoPrice = 0 (ADMIN da khoa gia tay, vd dot khuyen mai) bi
+-- bo qua - khong bao gio bi trigger ghi de.
+CREATE TRIGGER trg_Products_SyncSellPrice
+ON Products
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Voi INSERT, UPDATE(ImportPrice) luon TRUE nen luon vao nhanh
+    -- nay. Voi UPDATE thuong, dieu kien nay con giup tranh trigger
+    -- tu goi lai chinh no vo han lan (cau UPDATE ben duoi chi dung
+    -- vao SellPrice, khong dung ImportPrice/Margin/AutoPrice).
+    IF NOT (UPDATE(ImportPrice) OR UPDATE(Margin) OR UPDATE(AutoPrice))
+        RETURN;
+
+    UPDATE p
+    SET p.SellPrice = p.ImportPrice + ISNULL(p.Margin, dbo.fn_GetDefaultMargin())
+    FROM Products p
+    JOIN inserted i ON i.ProductID = p.ProductID
+    WHERE p.AutoPrice = 1;
 END;
 GO

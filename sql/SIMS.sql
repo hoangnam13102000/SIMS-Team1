@@ -85,14 +85,6 @@ CREATE TABLE Suppliers (
 );
 GO
 
--- Customers KE THUA Users (Class-Table Inheritance): moi Customer BAT BUOC
--- la 1 Users (Role = CUSTOMER). CustomerID dung lai chinh UserID (shared PK),
--- KHONG con IDENTITY rieng va KHONG con luu trung FullName/Phone/Email nua -
--- 3 truong nay lay thang tu Users. Cach nay cung loai bo luon loi cu: truoc
--- day Customers.Phone la UNIQUE nhung NULL (khach khong nhap SDT), ma SQL
--- Server chi cho phep DUY NHAT 1 dong NULL trong 1 cot UNIQUE => tu khach
--- thu 2 tro di dang ky se bi loi vi pham UNIQUE. Gio Phone chi con o Users
--- (khong UNIQUE) nen khong con van de nay.
 CREATE TABLE Customers (
     CustomerID      INT NOT NULL PRIMARY KEY,        -- = Users.UserID (1-1, ke thua)
     CustomerCode    VARCHAR(20) NOT NULL UNIQUE,    -- Ma khach hang: "CUS_" + UserID dem 4 so (vd CUS_0001) - dung lam ma vach the thanh vien
@@ -122,11 +114,6 @@ GO
 CREATE TABLE Products (
 
     ProductID       INT IDENTITY(1,1) PRIMARY KEY,
-    -- Ma san pham hien thi/tim kiem: "SP_" + ProductID dem 4 so (vd SP_0001).
-    -- Dung COMPUTED PERSISTED (giong VATAmount/LineTotal/Discrepancy o duoi)
-    -- thay vi tu sinh ben Java: SQL Server tu tinh ngay khi biet ProductID
-    -- (IDENTITY), luon nhat quan, khong can insert/update rieng, van UNIQUE
-    -- duoc vi la PERSISTED.
     ProductCode     AS ('SP_' + RIGHT('0000' + CAST(ProductID AS VARCHAR(10)), 4)) PERSISTED UNIQUE,
     ProductName     NVARCHAR(150) NOT NULL,
     CategoryID      INT NOT NULL FOREIGN KEY REFERENCES Categories(CategoryID),
@@ -136,6 +123,8 @@ CREATE TABLE Products (
     Description     NVARCHAR(1000) NULL,
     ImportPrice     DECIMAL(18,0) NOT NULL CHECK (ImportPrice >= 0),
     SellPrice       DECIMAL(18,0) NOT NULL,
+    Margin          DECIMAL(18,0) NULL CHECK (Margin IS NULL OR Margin >= 0), -- chenh lech rieng cua SP; NULL = dung DEFAULT_MARGIN chung
+    AutoPrice       BIT NOT NULL DEFAULT 1, -- 1 = tu dong tinh SellPrice theo cong thuc; 0 = ADMIN da khoa gia, nhap hang khong ghi de
     ImageUrl        NVARCHAR(500) NULL,
     Stock           INT NOT NULL DEFAULT 0 CHECK (Stock >= 0),
     MinStock        INT NOT NULL DEFAULT 5 CHECK (MinStock >= 0),

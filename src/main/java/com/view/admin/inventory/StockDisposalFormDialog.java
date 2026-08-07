@@ -66,6 +66,10 @@ public class StockDisposalFormDialog extends JDialog {
 
     private final StockDisposalDAO disposalDAO = new StockDisposalDAO();
     private final List<InventoryBatch> batches;
+    /** SP được mở sẵn từ nơi gọi khác (vd StockCountDialog khi kiểm kê thiếu hụt) — null nếu mở bình thường. */
+    private final Integer preselectProductId;
+    /** Số lượng gợi ý điền sẵn vào ô "Số lượng" khi mở sẵn theo sản phẩm — 0 nếu không có gợi ý. */
+    private final int suggestedQty;
 
     private JComboBox<String> reasonCombo;
     private JTextArea noteArea;
@@ -81,7 +85,24 @@ public class StockDisposalFormDialog extends JDialog {
     private BiConsumer<Integer, Integer> onSaved;
 
     public StockDisposalFormDialog(Frame owner) {
+        this(owner, null, 0);
+    }
+
+    /**
+     * Mở sẵn theo 1 sản phẩm cụ thể — dùng khi được gọi từ nơi khác đã biết rõ
+     * sản phẩm + số lượng cần hủy (vd StockCountDialog khi kiểm kê phát hiện
+     * thiếu hụt). Combo lô hàng vẫn hiển thị ĐẦY ĐỦ mọi lô như bình thường
+     * (không giới hạn), chỉ tự chọn sẵn lô đầu tiên của đúng sản phẩm đó +
+     * điền sẵn số lượng gợi ý, để người dùng vẫn có thể đổi sang lô khác nếu
+     * muốn (vd hủy đúng lô đã hết hạn thay vì lô mới nhất).
+     *
+     * @param preselectProductId ProductID cần chọn sẵn, null nếu mở bình thường
+     * @param suggestedQty       số lượng gợi ý điền sẵn, bỏ qua nếu <= 0
+     */
+    public StockDisposalFormDialog(Frame owner, Integer preselectProductId, int suggestedQty) {
         super(owner, "Lập phiếu tiêu hủy", Dialog.ModalityType.APPLICATION_MODAL);
+        this.preselectProductId = preselectProductId;
+        this.suggestedQty = suggestedQty;
         this.batches = disposalDAO.listDisposableBatches();
 
         setSize(1020, 700);
@@ -157,6 +178,10 @@ public class StockDisposalFormDialog extends JDialog {
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBorder(new EmptyBorder(16, 24, 8, 24));
 
+        if (preselectProductId != null) {
+            body.add(prefillBanner());
+            body.add(Box.createVerticalStrut(12));
+        }
         body.add(cardReason());
         body.add(Box.createVerticalStrut(12));
         body.add(cardAddLine());
@@ -170,6 +195,50 @@ public class StockDisposalFormDialog extends JDialog {
         outer.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         outer.getVerticalScrollBar().setUnitIncrement(16);
         return outer;
+    }
+
+    /** Banner nhỏ báo cho biết phiếu này được mở sẵn theo gợi ý từ Kiểm kê kho cuối ngày. */
+    private JPanel prefillBanner() {
+        JPanel card = new JPanel(new BorderLayout(10, 0)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                Color bg = AppColor.INFO_BG != null ? AppColor.INFO_BG : new Color(238, 242, 255);
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        card.setOpaque(false);
+        card.setBorder(new EmptyBorder(14, 18, 14, 18));
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+
+        String productName = null;
+        for (InventoryBatch b : batches) {
+            if (b.getProductId() == preselectProductId) {
+                productName = b.getProductName();
+                break;
+            }
+        }
+
+        Color infoColor = AppColor.INFO != null ? AppColor.INFO : new Color(79, 70, 229);
+        JLabel icon = new JLabel(FontIcon.of(FontAwesomeSolid.INFO_CIRCLE, 16, infoColor));
+
+        String msg = productName != null
+                ? "Được mở từ Kiểm kê kho cuối ngày — đã chọn sẵn lô của \"" + productName + "\""
+                        + (suggestedQty > 0 ? ", số lượng gợi ý " + suggestedQty : "")
+                        + ". Bạn có thể đổi sang lô khác nếu muốn hủy đúng lô cụ thể."
+                : "Được mở từ Kiểm kê kho cuối ngày với số lượng gợi ý " + suggestedQty + ".";
+        JLabel text = new JLabel("<html><body style='width: 640px'>" + msg + "</body></html>");
+        text.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        text.setForeground(AppColor.TEXT_SECONDARY);
+
+        card.add(icon, BorderLayout.WEST);
+        card.add(text, BorderLayout.CENTER);
+        return card;
     }
 
     private JPanel cardReason() {
@@ -251,7 +320,19 @@ public class StockDisposalFormDialog extends JDialog {
             }
         });
         if (batchCombo.getItemCount() > 0) {
-            batchCombo.setSelectedIndex(0);
+            int defaultIndex = 0;
+            if (preselectProductId != null) {
+                for (int i = 0; i < batches.size(); i++) {
+                    if (batches.get(i).getProductId() == preselectProductId) {
+                        defaultIndex = i;
+                        break;
+                    }
+                }
+            }
+            batchCombo.setSelectedIndex(defaultIndex);
+        }
+        if (suggestedQty > 0) {
+            qtyField.setText(String.valueOf(suggestedQty));
         }
 
         gc.gridx = 0; gc.gridy = 0; gc.weightx = 2.2;
