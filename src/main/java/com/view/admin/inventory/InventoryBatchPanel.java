@@ -7,8 +7,6 @@ import com.dao.CategoryDAO;
 import com.dao.InventoryBatchDAO;
 import com.model.Category;
 import com.model.InventoryBatch;
-import com.model.permission.AppPermission;
-import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
@@ -131,12 +129,14 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     @Override
     protected String getPageSubtitle() {
-        return "Theo dõi lô hàng theo hạn sử dụng (FEFO). Nhập kho qua phiếu nhập nhiều dòng.";
+        return "Theo dõi lô hàng theo hạn sử dụng (FEFO). Vào \"Quản lý nhập kho\" để lập phiếu nhập.";
     }
 
     @Override
     protected String getAddButtonLabel() {
-        return AuthService.getInstance().can(AppPermission.STOCK_IMPORT) ? "Lập phiếu nhập" : null;
+        // Trang này chỉ để theo dõi lô hàng (read-only), không tạo lô/nhập kho tại đây.
+        // Việc lập phiếu nhập thực hiện ở trang "Quản lý nhập kho" (PurchaseReceiptPanel).
+        return null;
     }
 
     @Override
@@ -223,7 +223,8 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     @Override
     protected void openForm(InventoryBatch item) {
-        openDialog(CrudMode.ADD, null);
+        // Không hỗ trợ thêm mới từ trang này (getAddButtonLabel() = null nên
+        // nút Add không hiển thị và hàm này thực tế không được gọi tới).
     }
 
     @Override
@@ -232,12 +233,6 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     private void openDialog(CrudMode mode, InventoryBatch item) {
         Window owner = SwingUtilities.getWindowAncestor(this);
         Frame frame = owner instanceof Frame ? (Frame) owner : null;
-        if (mode == CrudMode.ADD) {
-            PurchaseReceiptFormDialog dialog = new PurchaseReceiptFormDialog(frame);
-            dialog.onSaved((receiptId, lineCount) -> onDataChanged());
-            dialog.setVisible(true);
-            return;
-        }
         InventoryBatchFormDialog dialog = new InventoryBatchFormDialog(
                 frame, mode, item, batchDAO);
         dialog.onSaved(this::handleFormSaved);

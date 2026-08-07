@@ -52,7 +52,9 @@ public class MonthlyCategoryTrendPanel extends JComponent {
 
     public MonthlyCategoryTrendPanel() {
         setOpaque(false);
-        setPreferredSize(new java.awt.Dimension(10, 280));
+        // Chiều cao tối thiểu đủ để vẽ lưới + đường; tránh bị layout ép height ≈ 0.
+        setPreferredSize(new java.awt.Dimension(10, 300));
+        setMinimumSize(new java.awt.Dimension(100, 180));
         ToolTipManager.sharedInstance().registerComponent(this);
 
         addMouseMotionListener(new MouseMotionAdapter() {

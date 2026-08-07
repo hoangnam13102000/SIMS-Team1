@@ -131,9 +131,9 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
 
         layout.addSection(Lang.get("sidebar.section.warehouse"));
-        layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),
-                AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
+                AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+        layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE, new StockReconciliationPanel(),
                 AppPermission.STOCK_RECONCILE);

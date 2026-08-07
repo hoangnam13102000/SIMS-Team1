@@ -358,6 +358,23 @@ CREATE TABLE InvoiceDetailBatches (
 );
 GO
 
+-- Ghi vet lo hang lien quan toi tung dong Doi/Tra hang (giong vai
+-- tro cua InvoiceDetailBatches ben tren):
+--   - Voi dong Direction='IN' (khach tra hang): ghi lo nao da duoc
+--     CONG lai (lo goc da ban, hoac lo "hang tra" moi tao neu khong
+--     truy duoc lo goc).
+--   - Voi dong Direction='OUT' (giao hang doi moi): ghi lo nao da bi
+--     TRU theo FEFO.
+-- Duoc trigger trg_ReturnExchange_ApprovedStock (Trigger_SIMS.sql)
+-- ghi du lieu khi 1 yeu cau Doi/Tra chuyen sang APPROVED.
+CREATE TABLE ReturnExchangeDetailBatches (
+    ReturnDetailID  INT NOT NULL FOREIGN KEY REFERENCES ReturnExchangeDetails(ReturnDetailID),
+    BatchID         INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    PRIMARY KEY (ReturnDetailID, BatchID)
+);
+GO
+
 /* ============================================================
    IX. NHAT KY HE THONG (AUDIT LOG)
    ============================================================ */

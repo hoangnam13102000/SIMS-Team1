@@ -101,6 +101,67 @@ public class InventoryReportDAO {
         }
     }
 
+    /**
+     * 1 dong du lieu ton kho HIEN TAI cua 1 san pham, kem canh bao han su
+     * dung gan nhat trong so cac lo con hang (ACTIVE, RemainingQty > 0) cua
+     * san pham do - dung cho bieu do "Ton kho theo san pham" o trang bao
+     * cao, giup nhin ra ngay san pham nao dang ton nhieu/it VA co lo sap/da
+     * het han can xu ly.
+     */
+    public static class ProductStock {
+        public final int productId;
+        public final String productName;
+        public final int stock;
+        public final int minStock;
+        /** Ngay HSD gan nhat trong cac lo con hang cua SP nay; null = khong co lo nao co HSD (hoac SP het hang). */
+        public final LocalDate nearestExpiry;
+        /** true neu co it nhat 1 lo con hang DA qua HSD (chua duoc dong bo sang EXPIRED/xu ly). */
+        public final boolean hasExpiredBatch;
+
+        public ProductStock(int productId, String productName, int stock, int minStock,
+                             LocalDate nearestExpiry, boolean hasExpiredBatch) {
+            this.productId = productId;
+            this.productName = productName;
+            this.stock = stock;
+            this.minStock = minStock;
+            this.nearestExpiry = nearestExpiry;
+            this.hasExpiredBatch = hasExpiredBatch;
+        }
+    }
+
+    /**
+     * Ton kho hien tai cua TUNG san pham (Products.Stock), kem HSD gan nhat
+     * trong cac lo InventoryBatch con hang - de ve bieu do cot "Ton kho theo
+     * san pham" va to mau canh bao truc tiep tren bieu do (khong can mo
+     * rieng trang Quan ly lo hang). Sap xep giam dan theo ton kho.
+     */
+    public List<ProductStock> getProductStockOverview() {
+        String sql = "SELECT TOP 20 p.ProductID, p.ProductName, p.Stock, p.MinStock, "
+                + "MIN(CASE WHEN b.Status <> 'DEPLETED' AND b.RemainingQty > 0 THEN b.ExpiryDate END) AS NearestExpiry, "
+                + "MAX(CASE WHEN b.Status <> 'DEPLETED' AND b.RemainingQty > 0 "
+                + "         AND b.ExpiryDate IS NOT NULL AND b.ExpiryDate < CAST(GETDATE() AS DATE) "
+                + "     THEN 1 ELSE 0 END) AS HasExpired "
+                + "FROM Products p LEFT JOIN InventoryBatch b ON b.ProductID = p.ProductID "
+                + "GROUP BY p.ProductID, p.ProductName, p.Stock, p.MinStock "
+                + "ORDER BY p.Stock DESC, p.ProductName ASC";
+
+        List<ProductStock> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                java.sql.Date exp = rs.getDate("NearestExpiry");
+                list.add(new ProductStock(rs.getInt("ProductID"), rs.getString("ProductName"),
+                        rs.getInt("Stock"), rs.getInt("MinStock"),
+                        exp != null ? exp.toLocalDate() : null,
+                        rs.getInt("HasExpired") == 1));
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "InventoryReportDAO.getProductStockOverview", e);
+        }
+        return list;
+    }
+
     // ---------------------------------------------------------------
     // Tong quan
     // ---------------------------------------------------------------

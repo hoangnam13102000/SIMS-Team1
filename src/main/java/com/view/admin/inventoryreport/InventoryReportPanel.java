@@ -7,10 +7,12 @@ import com.components.SectionHeader;
 import com.components.StatCard;
 import com.components.dashboard.DashboardCard;
 import com.components.report.MonthlyCategoryTrendPanel;
+import com.components.report.ProductStockChartPanel;
 import com.dao.InventoryReportDAO;
 import com.dao.InventoryReportDAO.CategoryStock;
 import com.dao.InventoryReportDAO.OverallSummary;
 import com.dao.InventoryReportDAO.PriceRangeStock;
+import com.dao.InventoryReportDAO.ProductStock;
 import com.dao.RevenueReportDAO.CategorySeries;
 import com.dao.RevenueReportDAO.MonthlyCategoryTrend;
 import com.event.AutoRefresher;
@@ -66,6 +68,7 @@ public class InventoryReportPanel extends JPanel {
     private JComponent filterBarDateSlot;
     private MonthlyCategoryTrendPanel trendChartPanel;
     private JPanel trendLegendPanel;
+    private ProductStockChartPanel stockChartPanel;
 
     private List<CategoryStock> lastCategoryStocks = new ArrayList<>();
 
@@ -78,6 +81,8 @@ public class InventoryReportPanel extends JPanel {
 
         ScrollableColumn content = new ScrollableColumn();
         content.add(buildStatsRow());
+        content.add(Box.createVerticalStrut(AppSpacing.LG));
+        content.add(buildStockChartCard());
         content.add(Box.createVerticalStrut(AppSpacing.LG));
         content.add(buildBreakdownRow());
         content.add(Box.createVerticalStrut(AppSpacing.LG));
@@ -169,13 +174,52 @@ public class InventoryReportPanel extends JPanel {
         return card;
     }
 
+    /**
+     * Card bieu do cot "Ton kho theo san pham" - moi cot la 1 san pham, mau
+     * cot canh bao truc tiep neu san pham dang het hang / co lo sap het han /
+     * co lo da het han con ton (xem {@link ProductStockChartPanel}).
+     */
+    /**
+     * Card biểu đồ cột "Tồn kho theo sản phẩm" - mỗi cột là 1 sản phẩm (top 20),
+     * màu cột cảnh báo trực tiếp nếu sản phẩm đang hết hàng / có lô sắp hết hạn /
+     * có lô đã hết hạn còn tồn (xem {@link ProductStockChartPanel}).
+     */
+    private DashboardCard buildStockChartCard() {
+        DashboardCard card = new DashboardCard("Tồn kho theo sản phẩm",
+                "Số lượng tồn hiện tại của từng sản phẩm (top 20) - cột tô màu cảnh báo nếu có lô sắp/đã hết hạn hoặc đã hết hàng",
+                FontAwesomeSolid.CHART_BAR, AppColor.ACCENT);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setPreferredSize(new Dimension(10, 400));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 400));
+        card.setMinimumSize(new Dimension(200, 320));
+
+        stockChartPanel = new ProductStockChartPanel();
+
+        JPanel legend = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, AppSpacing.XS));
+        legend.setOpaque(false);
+        legend.setAlignmentX(Component.LEFT_ALIGNMENT);
+        legend.add(legendDot("Còn hàng, bình thường", AppColor.ACCENT));
+        legend.add(legendDot("Sắp hết hạn / dưới tồn tối thiểu", AppColor.WARNING));
+        legend.add(legendDot("Có lô đã hết hạn còn tồn", AppColor.ERROR));
+        legend.add(legendDot("Đã hết hàng", AppColor.TEXT_MUTED));
+
+        JPanel body = new JPanel(new BorderLayout(0, AppSpacing.SM));
+        body.setOpaque(false);
+        body.add(stockChartPanel, BorderLayout.CENTER);
+        body.add(legend, BorderLayout.SOUTH);
+
+        card.getContentPanel().add(body, BorderLayout.CENTER);
+        return card;
+    }
+
     private DashboardCard buildTrendCard() {
         DashboardCard card = new DashboardCard("Xu hướng tồn kho theo tháng & danh mục",
                 "Số lượng tồn kho cuối mỗi tháng của từng danh mục (vd: lượng cà phê bột thay đổi theo tháng)",
                 FontAwesomeSolid.CHART_LINE, AppColor.ACCENT);
         card.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.setPreferredSize(new Dimension(10, 500));
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 500));
+        card.setPreferredSize(new Dimension(10, 520));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 520));
+        card.setMinimumSize(new Dimension(200, 400));
 
         trendChartPanel = new MonthlyCategoryTrendPanel();
 
@@ -251,6 +295,7 @@ public class InventoryReportPanel extends JPanel {
         OverallSummary summary;
         List<CategoryStock> categories;
         List<PriceRangeStock> priceRanges;
+        List<ProductStock> productStocks;
     }
 
     private void loadSnapshot() {
@@ -262,6 +307,7 @@ public class InventoryReportPanel extends JPanel {
                 data.summary = dao.getOverallSummary();
                 data.categories = dao.getStockByCategory();
                 data.priceRanges = dao.getStockByPriceRange();
+                data.productStocks = dao.getProductStockOverview();
                 return data;
             }
 
@@ -274,6 +320,7 @@ public class InventoryReportPanel extends JPanel {
                     lastCategoryStocks = data.categories;
                     renderCategoryList(data.categories);
                     renderPriceRangeList(data.priceRanges);
+                    stockChartPanel.setData(data.productStocks);
                 } catch (Exception e) {
                     e.printStackTrace();
                     BaseDialog.error(InventoryReportPanel.this, "Lỗi", "Không thể tải báo cáo: " + e.getMessage());
@@ -601,6 +648,14 @@ public class InventoryReportPanel extends JPanel {
                     new EmptyBorder(4, 10, 4, 10)));
         });
         return chip;
+    }
+
+    /** Chu thich dang tinh (khong bam duoc): 1 dau cham mau + nhan, dung cho legend cua bieu do cot ton kho. */
+    private JLabel legendDot(String label, Color color) {
+        JLabel dot = new JLabel("\u25CF  " + label);
+        dot.setFont(AppFont.SMALL);
+        dot.setForeground(color);
+        return dot;
     }
 
     private static JScrollPane plainScroll(JComponent view) {
