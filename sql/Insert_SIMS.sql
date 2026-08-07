@@ -461,3 +461,13 @@ WHERE r.RoleCode <> 'CUSTOMER'
         SELECT 1 FROM Employees e WHERE e.UserID = u.UserID
       );
 GO
+
+-- Hash BCrypt cost 12 cho password: 123456
+UPDATE Users 
+SET PasswordHash = '$2a$12$rULa7sQqQB78UAMj4a.8IOPHPuspkHU2zffYsu75HhmFDVGPl3csS'
+WHERE Username IN ('salesmgr', 'invmgr');
+
+-- Cập nhật staff01 và staff02 với password 123456 (BCrypt cost 12)
+UPDATE Users 
+SET PasswordHash = '$2a$12$rULa7sQqQB78UAMj4a.8IOPHPuspkHU2zffYsu75HhmFDVGPl3csS'
+WHERE Username IN ('staff01', 'staff02');

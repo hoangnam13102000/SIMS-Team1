@@ -3,12 +3,7 @@ package com.model;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/**
- * Đơn hàng online do khách tự đặt ở ClientMainFrame (giỏ hàng -> thanh
- * toán). Tách riêng khỏi {@link Invoice} vì Invoices gắn với ca làm việc
- * (ShiftID) + nhân viên lập (CreatedBy) tại quầy - không có ở luồng đặt
- * hàng online. Xem sql/Orders_SIMS.sql.
- */
+
 public class Order {
 
     private int orderId;
@@ -31,6 +26,10 @@ public class Order {
 
     private String orderStatus; // NEW | CONFIRMED | SHIPPING | COMPLETED | CANCELLED
     private boolean seenByAdmin;
+
+    private LocalDateTime completedAt; // set khi chuyen sang COMPLETED - dung tinh han 1 ngay duoc bam "Tra hang"
+    private Integer invoiceId;         // hoa don duoc tu dong lap khi COMPLETED (null neu chua/khong co)
+    private boolean returnRequested;   // da co yeu cau doi/tra PENDING/APPROVED gan voi hoa don nay chua
 
     private int itemCount;
 
@@ -85,9 +84,28 @@ public class Order {
     public int getItemCount() { return itemCount; }
     public void setItemCount(int itemCount) { this.itemCount = itemCount; }
 
+    public LocalDateTime getCompletedAt() { return completedAt; }
+    public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
+
+    public Integer getInvoiceId() { return invoiceId; }
+    public void setInvoiceId(Integer invoiceId) { this.invoiceId = invoiceId; }
+
+    public boolean isReturnRequested() { return returnRequested; }
+    public void setReturnRequested(boolean returnRequested) { this.returnRequested = returnRequested; }
+
     public boolean isCancelled() { return "CANCELLED".equalsIgnoreCase(orderStatus); }
     public boolean isConfirmed() { return "CONFIRMED".equalsIgnoreCase(orderStatus); }
     public boolean isShipping() { return "SHIPPING".equalsIgnoreCase(orderStatus); }
     public boolean isCompleted() { return "COMPLETED".equalsIgnoreCase(orderStatus); }
     public boolean isPaid() { return "PAID".equalsIgnoreCase(paymentStatus); }
+
+    /**
+     * Nut "Trả hàng" phía khách chỉ hiện khi: đơn đã COMPLETED, có hóa đơn đi
+     * kèm (mọi đơn COMPLETED đều có - xem OrderDAO), còn trong vòng 1 ngày kể
+     * từ lúc hoàn thành, và chưa có yêu cầu đổi/trả nào đang PENDING/APPROVED.
+     */
+    public boolean canRequestReturn() {
+        return isCompleted() && invoiceId != null && !returnRequested && completedAt != null
+                && completedAt.plusDays(1).isAfter(LocalDateTime.now());
+    }
 }

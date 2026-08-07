@@ -39,8 +39,11 @@ public class OrderDAO extends BaseDAO<Order> {
     protected String getColumns() {
         return "o.OrderID, o.OrderCode, o.CustomerID, o.CustomerName, o.CustomerEmail, o.CustomerPhone, "
                 + "o.ShippingAddress, o.CreatedAt, o.SubTotal, o.TotalAmount, o.PaymentMethod, o.PaymentStatus, "
-                + "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, "
-                + "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount";
+                + "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, o.CompletedAt, o.InvoiceID, "
+                + "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount, "
+                + "CASE WHEN EXISTS (SELECT 1 FROM ReturnExchanges r "
+                + "WHERE r.InvoiceID = o.InvoiceID AND r.Status IN ('PENDING', 'APPROVED')) "
+                + "THEN 1 ELSE 0 END AS ReturnRequested";
     }
 
     @Override
@@ -75,6 +78,14 @@ public class OrderDAO extends BaseDAO<Order> {
         order.setPayPalCaptureId(rs.getString("PayPalCaptureID"));
         order.setOrderStatus(rs.getString("OrderStatus"));
         order.setSeenByAdmin(rs.getBoolean("SeenByAdmin"));
+
+        Timestamp completedAt = rs.getTimestamp("CompletedAt");
+        order.setCompletedAt(completedAt != null ? completedAt.toLocalDateTime() : null);
+
+        int invoiceId = rs.getInt("InvoiceID");
+        order.setInvoiceId(rs.wasNull() ? null : invoiceId);
+        order.setReturnRequested(rs.getBoolean("ReturnRequested"));
+
         order.setItemCount(rs.getInt("ItemCount"));
         return order;
     }
@@ -201,16 +212,20 @@ public class OrderDAO extends BaseDAO<Order> {
                 .replace("_", "\\_")
                 .replace("[", "\\[");
     }
-    
-    /**
-     * Toàn bộ đơn hàng của 1 khách (trang Lịch sử mua hàng ở client).
-     */
-    public List<Order> getByCustomerId(int customerId) {
-        return getByCondition("o.CustomerID = " + customerId);
-    }
+
     /** Danh sách đơn CHƯA được admin xem (dùng cho polling chuông thông báo). */
     public List<Order> getUnseenOrders() {
         return getByCondition("o.SeenByAdmin = 0");
+    }
+
+    /**
+     * Toàn bộ đơn hàng của 1 khách (dùng cho trang "Lịch sử mua hàng" ở
+     * client) - customerId luôn là int lấy từ AuthService.getCurrentUser()
+     * nên nối chuỗi trực tiếp an toàn (không phải input tự do của người
+     * dùng như từ khóa tìm kiếm).
+     */
+    public List<Order> getByCustomerId(int customerId) {
+        return getByCondition("o.CustomerID = " + customerId);
     }
 
     public int countUnseen() {
@@ -270,9 +285,8 @@ public class OrderDAO extends BaseDAO<Order> {
      * InventoryTransactions để có dấu vết kiểm toán. Nếu không đủ hàng cho
      * bất kỳ dòng nào, KHÔNG trừ dòng nào cả (all-or-nothing) và trả về lý do
      * cụ thể. SHIPPING và COMPLETED không đụng tới kho (đã trừ xong từ bước
-     * CONFIRMED). Khi chuyển sang COMPLETED, đơn COD/CASH còn PaymentStatus
-     * = PENDING sẽ được đánh dấu PAID (đã thu tiền khi giao hàng xong).
-     * Toàn bộ nằm trong 1 transaction để tránh lệch kho nếu có lỗi giữa chừng.
+     * CONFIRMED). Toàn bộ nằm trong 1 transaction để tránh lệch kho nếu có
+     * lỗi giữa chừng.
      *
      * @param actorUserId UserID của admin đang thao tác - dùng làm CreatedBy khi ghi InventoryTransactions.
      */
@@ -297,19 +311,16 @@ public class OrderDAO extends BaseDAO<Order> {
                     restoreStockFEFO(con, orderId, actorUserId);
                 }
 
-                // Khi hoàn thành đơn COD (tiền mặt khi nhận hàng): coi như đã thu tiền,
-                // đồng bộ PaymentStatus = PAID. PayPal đã PAID từ lúc capture, không đụng.
                 if ("COMPLETED".equals(newStatus)) {
                     try (PreparedStatement ps = con.prepareStatement(
-                            "UPDATE Orders SET OrderStatus = ?, "
-                                    + "PaymentStatus = CASE "
-                                    + "WHEN PaymentMethod IN ('COD', 'CASH') AND PaymentStatus = 'PENDING' "
-                                    + "THEN 'PAID' ELSE PaymentStatus END "
-                                    + "WHERE OrderID = ?")) {
+                            "UPDATE Orders SET OrderStatus = ?, CompletedAt = GETDATE() WHERE OrderID = ?")) {
                         ps.setString(1, newStatus);
                         ps.setInt(2, orderId);
                         ps.executeUpdate();
                     }
+                    // Tu dong lap hoa don tuong ung (khong dung kho, chi de tai su dung
+                    // luong doi/tra hien co cho hoa don tai quay) - xem javadoc method.
+                    createInvoiceForCompletedOrder(con, orderId, actorUserId);
                 } else {
                     try (PreparedStatement ps = con.prepareStatement(
                             "UPDATE Orders SET OrderStatus = ? WHERE OrderID = ?")) {
@@ -332,6 +343,150 @@ public class OrderDAO extends BaseDAO<Order> {
             AppLogger.getInstance().error(ErrorCode.ORDER_STATUS_UPDATE_FAIL, "OrderDAO.updateOrderStatus - " + orderId, e);
             return StatusUpdateResult.fail("Đã xảy ra lỗi hệ thống. Vui lòng thử lại.");
         }
+    }
+
+    /**
+     * Tu dong lap 1 hoa don (Invoices + InvoiceDetails) ngay khi don online
+     * chuyen sang COMPLETED, roi gan lai Orders.InvoiceID - CHI de tai su
+     * dung nguyen luong đổi/trả (ReturnExchanges) da co san cho hoa don ban
+     * tai quay, KHONG dung de tru kho (kho da tru xong tu buoc CONFIRMED).
+     * <p>
+     * Orders.InvoiceID phai duoc UPDATE xong TRUOC khi insert InvoiceDetails,
+     * vi trg_InvoiceDetails_CheckStock (Trigger_SIMS.sql) dua vao chinh cot
+     * nay de biet dong nao la "bản sao" khong can tru kho lai.
+     */
+    private void createInvoiceForCompletedOrder(Connection con, int orderId, int actorUserId) throws SQLException {
+        Integer customerId = null;
+        String paymentMethod;
+        String payPalOrderId = null;
+        String payPalCaptureId = null;
+        java.math.BigDecimal vatRate;
+        java.math.BigDecimal subTotal;
+        java.math.BigDecimal totalAmount;
+
+        String selectSql = "SELECT CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
+                + "VATRate, SubTotal, TotalAmount FROM Orders WHERE OrderID = ?";
+        try (PreparedStatement ps = con.prepareStatement(selectSql)) {
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) throw new SQLException("Không tìm thấy đơn hàng để lập hóa đơn.");
+                int cust = rs.getInt("CustomerID");
+                if (!rs.wasNull()) customerId = cust;
+                paymentMethod = "PAYPAL".equals(rs.getString("PaymentMethod")) ? "PAYPAL" : "CASH";
+                payPalOrderId = rs.getString("PayPalOrderID");
+                payPalCaptureId = rs.getString("PayPalCaptureID");
+                vatRate = rs.getBigDecimal("VATRate");
+                subTotal = rs.getBigDecimal("SubTotal");
+                totalAmount = rs.getBigDecimal("TotalAmount");
+            }
+        }
+
+        int shiftId = new ShiftDAO().getOrOpenShiftId(actorUserId);
+        if (shiftId == -1) throw new SQLException("Không mở được ca làm việc để lập hóa đơn cho đơn hàng.");
+
+        int invoiceId;
+        String insertInvoiceSql = "INSERT INTO Invoices "
+                + "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
+                + "VATRate, SubTotal, TotalAmount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement ps = con.prepareStatement(insertInvoiceSql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, "TMP-" + System.nanoTime());
+            ps.setInt(2, shiftId);
+            ps.setInt(3, actorUserId);
+            if (customerId != null) ps.setInt(4, customerId); else ps.setNull(4, Types.INTEGER);
+            ps.setString(5, paymentMethod);
+            if (payPalOrderId != null) ps.setString(6, payPalOrderId); else ps.setNull(6, Types.VARCHAR);
+            if (payPalCaptureId != null) ps.setString(7, payPalCaptureId); else ps.setNull(7, Types.VARCHAR);
+            ps.setBigDecimal(8, vatRate);
+            ps.setBigDecimal(9, subTotal);
+            ps.setBigDecimal(10, totalAmount);
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (!keys.next()) throw new SQLException("Không lấy được InvoiceID vừa tạo.");
+                invoiceId = keys.getInt(1);
+            }
+        }
+
+        String invoiceCode = "HD-ONL-" + java.time.LocalDate.now().format(
+                java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")) + "-" + String.format("%04d", invoiceId);
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE Invoices SET InvoiceCode = ? WHERE InvoiceID = ?")) {
+            ps.setString(1, invoiceCode);
+            ps.setInt(2, invoiceId);
+            ps.executeUpdate();
+        }
+
+        // Gan Orders.InvoiceID TRUOC khi insert InvoiceDetails (xem javadoc o tren).
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE Orders SET InvoiceID = ? WHERE OrderID = ?")) {
+            ps.setInt(1, invoiceId);
+            ps.setInt(2, orderId);
+            ps.executeUpdate();
+        }
+
+        List<OrderDetail> items = getDetailsForUpdate(con, orderId);
+        String insertDetailSql = "INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) "
+                + "SELECT ?, od.ProductID, ?, od.UnitPrice FROM OrderDetails od WHERE od.OrderDetailID = ?";
+        for (OrderDetail item : items) {
+            try (PreparedStatement ps = con.prepareStatement(insertDetailSql)) {
+                ps.setInt(1, invoiceId);
+                ps.setInt(2, item.getQuantity());
+                ps.setInt(3, item.getOrderDetailId());
+                ps.executeUpdate();
+            }
+        }
+    }
+
+    /**
+     * Khách tự bấm "Trả hàng" ở trang lịch sử mua hàng (chỉ trong 1 ngày kể
+     * từ lúc đơn COMPLETED - xem {@link Order#canRequestReturn()}) - tạo
+     * thẳng 1 yêu cầu RETURN cho TOÀN BỘ các dòng của đơn (Direction=IN),
+     * gửi ngay vào bảng đổi/trả hiện có của nhân viên bán hàng
+     * ({@link com.view.admin.returnexchange.ReturnExchangePanel}) - tái sử
+     * dụng nguyên {@link ReturnExchangeDAO#createReturnExchange} vì
+     * Customers.CustomerID = Users.UserID (1-1) nên dùng thẳng làm CreatedBy.
+     *
+     * @return null nếu thành công; ngược lại là lý do thất bại để hiển thị cho khách.
+     */
+    public String requestReturn(int orderId, int customerId, String reason) {
+        if (reason == null || reason.trim().isEmpty()) {
+            return "Vui lòng nhập lý do trả hàng.";
+        }
+
+        Order order = getById(orderId);
+        if (order == null) return "Không tìm thấy đơn hàng.";
+        if (order.getCustomerId() == null || order.getCustomerId() != customerId) {
+            return "Đơn hàng không thuộc về tài khoản này.";
+        }
+        if (!order.canRequestReturn()) {
+            return "Đơn hàng không còn ở trong thời hạn được trả hàng (1 ngày kể từ lúc hoàn thành).";
+        }
+
+        List<OrderDetail> lines = getDetailsByOrderId(orderId);
+        if (lines.isEmpty()) return "Đơn hàng không có sản phẩm nào.";
+
+        com.model.ReturnExchange header = new com.model.ReturnExchange();
+        header.setInvoiceId(order.getInvoiceId());
+        header.setType(com.model.ReturnExchange.TYPE_RETURN);
+        header.setReason(reason.trim());
+        header.setCreatedBy(customerId);
+
+        List<com.model.ReturnExchangeDetail> details = new ArrayList<>();
+        for (OrderDetail line : lines) {
+            com.model.ReturnExchangeDetail d = new com.model.ReturnExchangeDetail();
+            d.setProductId(line.getProductId());
+            d.setProductName(line.getProductName());
+            d.setQuantity(line.getQuantity());
+            d.setDirection(com.model.ReturnExchangeDetail.DIRECTION_IN);
+            d.setUnitPrice(line.getUnitPrice());
+            details.add(d);
+        }
+
+        return new ReturnExchangeDAO().createReturnExchange(header, details);
+    }
+
+    private Order getById(int orderId) {
+        List<Order> list = getByCondition("o.OrderID = " + orderId);
+        return list.isEmpty() ? null : list.get(0);
     }
 
     /** Các bước chuyển trạng thái hợp lệ - hủy chỉ cho phép ở NEW/CONFIRMED, SHIPPING/COMPLETED là 1 chiều. */

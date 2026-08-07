@@ -1,16 +1,26 @@
 /* ============================================================
    IX. TRIGGER - HIEN THUC HOA NGUYEN TAC NGHIEP VU (R1, R3, R4, R5)
    (R2 da lam bang CHECK CONSTRAINT trong SIMS.sql)
-
-   File nay la BAN CUOI CUNG, da gop toan bo cac lan sua (FEFO,
-   InventoryBatch, huy hoa don hoan dung lo, dieu chinh hoa don khi
-   doi/tra duoc duyet...) - KHONG con dang CREATE roi ALTER lai nhieu
-   lan nhu file cu. Truoc khi chay file nay, phai da chay xong buoc
-   "DROP TRIGGER IF EXISTS ..." (Buoc 1) va SIMS.sql (dung schema co
-   InventoryBatch, InvoiceDetailBatches, PurchaseReceiptDetails da co
-   LotNumber/ManufactureDate/ExpiryDate, Shifts...).
    ============================================================ */
 USE SIMS_DB;
+GO
+
+CREATE OR ALTER FUNCTION dbo.fn_GetDefaultMargin()
+RETURNS DECIMAL(18,0)
+AS
+BEGIN
+    DECLARE @raw NVARCHAR(255);
+    DECLARE @margin DECIMAL(18,0);
+
+    SELECT @raw = ConfigValue FROM StoreConfig WHERE ConfigKey = 'DEFAULT_MARGIN';
+
+    IF @raw IS NULL OR TRY_CAST(@raw AS DECIMAL(18,0)) IS NULL OR TRY_CAST(@raw AS DECIMAL(18,0)) < 0
+        SET @margin = 5000;
+    ELSE
+        SET @margin = TRY_CAST(@raw AS DECIMAL(18,0));
+
+    RETURN @margin;
+END;
 GO
 
 -- ---------------------------------------------------------------
@@ -25,10 +35,15 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- R1: chan neu san pham het hang (chi tinh cac lo con han, chua het han)
+    -- R1: chan neu san pham het hang (chi tinh cac lo con han, chua het han) -
+    -- KHONG ap dung cho dong thuoc hoa don duoc TU DONG sinh tu don online da
+    -- COMPLETED (Orders.InvoiceID da tro ve hoa don nay), vi kho da tru xong
+    -- roi tu luc don duoc CONFIRMED (xem OrderDAO#deductStockFEFO) - dong nay
+    -- chi la BAN SAO de tai su dung luong doi/tra, khong duoc tru kho lan nua.
     IF EXISTS (
         SELECT 1 FROM inserted i
-        WHERE ISNULL((SELECT SUM(b.RemainingQty) FROM InventoryBatch b
+        WHERE NOT EXISTS (SELECT 1 FROM Orders o WHERE o.InvoiceID = i.InvoiceID)
+          AND ISNULL((SELECT SUM(b.RemainingQty) FROM InventoryBatch b
                        WHERE b.ProductID = i.ProductID AND b.Status = 'ACTIVE'
                          AND (b.ExpiryDate IS NULL OR b.ExpiryDate >= CAST(GETDATE() AS DATE))), 0) = 0
     )
@@ -37,6 +52,13 @@ BEGIN
         RETURN;
     END
 
+    -- Cac dong thuoc hoa don sinh tu don online: insert nguyen van, KHONG dung
+    -- FEFO/tru kho/ghi InventoryTransactions (da lam roi o buoc CONFIRMED).
+    INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice)
+    SELECT i.InvoiceID, i.ProductID, i.Quantity, i.UnitPrice
+    FROM inserted i
+    WHERE EXISTS (SELECT 1 FROM Orders o WHERE o.InvoiceID = i.InvoiceID);
+
     DECLARE @InvoiceID INT, @ProductID INT, @Quantity INT, @UnitPrice DECIMAL(18,0), @CreatedBy INT;
     DECLARE @Available INT, @QtyToSell INT, @StockBefore INT, @NewDetailID INT;
     DECLARE @Remaining INT, @BatchID INT, @BatchRemain INT, @Take INT;
@@ -44,7 +66,8 @@ BEGIN
     DECLARE line_cursor CURSOR LOCAL FAST_FORWARD FOR
         SELECT i.InvoiceID, i.ProductID, i.Quantity, i.UnitPrice, inv.CreatedBy
         FROM inserted i
-        JOIN Invoices inv ON inv.InvoiceID = i.InvoiceID;
+        JOIN Invoices inv ON inv.InvoiceID = i.InvoiceID
+        WHERE NOT EXISTS (SELECT 1 FROM Orders o WHERE o.InvoiceID = i.InvoiceID);
 
     OPEN line_cursor;
     FETCH NEXT FROM line_cursor INTO @InvoiceID, @ProductID, @Quantity, @UnitPrice, @CreatedBy;
@@ -659,40 +682,13 @@ END;
 GO
 
 -- ---------------------------------------------------------------
--- Dong bo Gia ban theo Gia nhap: Gia nhap doi theo thi truong nen
--- thuong xuyen phai sua tay (tren phieu nhap, hoac sua truc tiep
--- SP) - neu Gia ban van la truong doc lap thi de quen chinh, gay
--- ban lo/lai qua it. Ham + trigger duoi day dua cong thuc gia
--- xuong DATABASE de KHONG phu thuoc noi goi (PurchaseReceiptDAO
--- nhap hang, ProductDAO sua SP, hay bat ky code moi nao sau nay).
--- ---------------------------------------------------------------
-
--- Chenh lech (VND) mac dinh khi 1 SP khong dat Margin rieng.
--- Fallback 5000 neu StoreConfig thieu/loi/am (khong bao gio de
--- trigger loi hoac ra gia am).
-CREATE OR ALTER FUNCTION dbo.fn_GetDefaultMargin()
-RETURNS DECIMAL(18,0)
-AS
-BEGIN
-    DECLARE @raw NVARCHAR(255);
-    DECLARE @margin DECIMAL(18,0);
-
-    SELECT @raw = ConfigValue FROM StoreConfig WHERE ConfigKey = 'DEFAULT_MARGIN';
-
-    IF @raw IS NULL OR TRY_CAST(@raw AS DECIMAL(18,0)) IS NULL OR TRY_CAST(@raw AS DECIMAL(18,0)) < 0
-        SET @margin = 5000;
-    ELSE
-        SET @margin = TRY_CAST(@raw AS DECIMAL(18,0));
-
-    RETURN @margin;
-END;
-GO
-
 -- Sau MOI INSERT/UPDATE tren Products, voi cac dong AutoPrice = 1,
 -- tinh lai SellPrice = ImportPrice + chenh lech hieu luc (Margin
 -- rieng cua SP, hoac fn_GetDefaultMargin() neu SP khong dat rieng).
 -- Dong AutoPrice = 0 (ADMIN da khoa gia tay, vd dot khuyen mai) bi
--- bo qua - khong bao gio bi trigger ghi de.
+-- bo qua - khong bao gio bi trigger ghi de. (Ham fn_GetDefaultMargin
+-- da duoc dinh nghia o dau file.)
+-- ---------------------------------------------------------------
 CREATE TRIGGER trg_Products_SyncSellPrice
 ON Products
 AFTER INSERT, UPDATE

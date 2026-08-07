@@ -20,17 +20,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * DAO xu ly nghiep vu doi/tra hang (xem bang ReturnExchanges/ReturnExchangeDetails
- * trong sql/SIMS.sql va trigger trg_ReturnExchange_ApprovedStock trong
- * sql/Trigger_SIMS.sql - trigger do la noi THUC SU cong/tru kho + dieu
- * chinh lai hoa don goc khi 1 yeu cau chuyen sang APPROVED).
- * <p>
- * DAO nay chi lo: (1) tao yeu cau + validate nghiep vu (khong tra vuot so
- * da ban, khong doi vuot ton kho hien co), (2) chuyen trang thai
- * PENDING -> APPROVED/REJECTED (R4: don gia tri lon phai duoc Quan ly ban
- * hang duyet - don nho tu dong duyet ngay boi chinh NV tao don).
- */
 public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
 
     /**
@@ -39,7 +28,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
      * TODO: chuyen vao bang StoreConfig khi co DAO rieng (xem TODO tuong
      * tu voi VAT_RATE trong PosPanel#payWithPayPalThenCreateInvoice).
      */
-    public static final BigDecimal APPROVAL_THRESHOLD = new BigDecimal("500000");
+    public static final BigDecimal APPROVAL_THRESHOLD = new BigDecimal("0");
 
     private static final String BASE_TABLE =
             "ReturnExchanges r "

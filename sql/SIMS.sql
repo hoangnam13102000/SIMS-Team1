@@ -435,7 +435,11 @@ CREATE TABLE Orders (
     PayPalCaptureID VARCHAR(50) NULL,
     OrderStatus     VARCHAR(20) NOT NULL DEFAULT 'NEW'
                     CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED')),
-    SeenByAdmin     BIT NOT NULL DEFAULT 0
+    SeenByAdmin     BIT NOT NULL DEFAULT 0,
+    CompletedAt     DATETIME NULL,        -- moc thoi gian chuyen sang COMPLETED - dung tinh han 1 ngay duoc bam "Tra hang"
+    InvoiceID       INT NULL FOREIGN KEY REFERENCES Invoices(InvoiceID)
+                    -- Hoa don duoc TU DONG lap khi don chuyen sang COMPLETED (xem OrderDAO#createInvoiceForCompletedOrder),
+                    -- de tai su dung nguyen luong doi/tra (ReturnExchanges) da co san cho hoa don tai quay.
 );
 GO
 
@@ -454,6 +458,9 @@ GO
 CREATE INDEX IX_Orders_SeenByAdmin ON Orders(SeenByAdmin, CreatedAt);
 GO
 
+-- 1 hoa don chi duoc sinh ra tu toi da 1 don hang (tranh link nham/link 2 lan do loi ung dung)
+CREATE UNIQUE INDEX UX_Orders_InvoiceID ON Orders(InvoiceID) WHERE InvoiceID IS NOT NULL;
+GO
 /* ============================================================
    XI. CAU HINH HE THONG
    ============================================================ */

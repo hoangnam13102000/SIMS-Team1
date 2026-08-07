@@ -28,7 +28,20 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Trang "Lịch sử mua hàng" phía khách — search autocomplete + hủy đơn NEW/CONFIRMED.
+ * Trang "Lịch sử mua hàng" ở phía khách hàng (client) - chỉ hiển thị các đơn
+ * hàng ({@link Order}) do CHÍNH khách đang đăng nhập đặt (Orders.CustomerID
+ * = UserID hiện tại, xem cách gán ở {@link CartPanel#persistOrderAndFinish}).
+ * <p>
+ * Đồng bộ giao diện với các trang client khác (thẻ bo góc trắng viền mờ như
+ * {@link CartPanel}/{@link ProfilePanel}, AppColor/AppFont/AppSpacing dùng
+ * chung, {@link EmptyState} khi chưa có đơn nào), gồm 2 tính năng chính:
+ * <ul>
+ *   <li>Tra cứu hóa đơn (mã đơn) bằng {@link BaseSearch} có autocomplete -
+ *   gợi ý được nạp sẵn từ chính danh sách đơn của khách, lọc tại chỗ.</li>
+ *   <li>Hủy đơn hàng - chỉ khả dụng khi đơn đang ở trạng thái NEW/CONFIRMED
+ *   (đúng luật nghiệp vụ trong {@code OrderDAO.updateOrderStatus}), gọi lại
+ *   DAO dùng chung với phía admin để đảm bảo hoàn kho/luật hủy nhất quán.</li>
+ * </ul>
  */
 public class OrderHistoryPanel extends JPanel {
 
@@ -81,9 +94,12 @@ public class OrderHistoryPanel extends JPanel {
         loadOrders();
     }
 
+    /** Gọi lại mỗi khi trang được mở (từ dropdown tài khoản) để luôn thấy đơn mới nhất/trạng thái mới nhất. */
     public void refresh() {
         loadOrders();
     }
+
+    // ==================== Nạp dữ liệu ====================
 
     private void loadOrders() {
         int customerId = AuthService.getInstance().getCurrentUser().getUserId();
@@ -119,6 +135,8 @@ public class OrderHistoryPanel extends JPanel {
         rowsContainer.repaint();
     }
 
+    // ==================== Header (tiêu đề + ô tra cứu) ====================
+
     private JPanel buildHeaderBlock() {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
@@ -129,6 +147,7 @@ public class OrderHistoryPanel extends JPanel {
         title.setForeground(AppColor.TEXT_TITLE);
         wrapper.add(title, BorderLayout.WEST);
         wrapper.add(searchBar, BorderLayout.EAST);
+
         return wrapper;
     }
 
@@ -143,6 +162,8 @@ public class OrderHistoryPanel extends JPanel {
         return wrapper;
     }
 
+    // ==================== 1 dòng đơn hàng ====================
+
     private JPanel buildOrderRow(Order order) {
         JPanel card = new JPanel(new BorderLayout(AppSpacing.LG, 0));
         card.setBackground(AppColor.WHITE);
@@ -156,6 +177,7 @@ public class OrderHistoryPanel extends JPanel {
         card.add(new JLabel(loadOrderThumb(order)), BorderLayout.WEST);
         card.add(buildRowCenter(order), BorderLayout.CENTER);
         card.add(buildRowEast(order), BorderLayout.EAST);
+
         return card;
     }
 
@@ -217,6 +239,16 @@ public class OrderHistoryPanel extends JPanel {
             cancelButton.addActionListener(e -> handleCancel(order));
             buttons.add(cancelButton);
         }
+        if (order.canRequestReturn()) {
+            JButton returnButton = smallButton("Trả hàng", AppColor.ERROR_BG, AppColor.ERROR);
+            returnButton.addActionListener(e -> handleReturnRequest(order));
+            buttons.add(returnButton);
+        } else if (order.isReturnRequested()) {
+            JLabel returnedTag = new JLabel("Đã gửi yêu cầu trả hàng");
+            returnedTag.setFont(AppFont.SMALL);
+            returnedTag.setForeground(AppColor.TEXT_MUTED);
+            buttons.add(returnedTag);
+        }
 
         east.add(total);
         east.add(Box.createVerticalStrut(8));
@@ -234,6 +266,8 @@ public class OrderHistoryPanel extends JPanel {
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
         return button;
     }
+
+    // ==================== Hủy đơn ====================
 
     private boolean isCancellable(Order order) {
         String status = order.getOrderStatus();
@@ -256,6 +290,32 @@ public class OrderHistoryPanel extends JPanel {
         BaseDialog.success(this, "Thành công", "Đã hủy đơn hàng " + order.getOrderCode() + ".");
         loadOrders();
     }
+
+    // ==================== Trả hàng ====================
+
+    /**
+     * Chỉ khả dụng trong 1 ngày kể từ lúc đơn COMPLETED ({@link Order#canRequestReturn()}) -
+     * yêu cầu được gửi thẳng vào bảng đổi/trả của nhân viên bán hàng ngay khi
+     * khách xác nhận (xem {@link OrderDAO#requestReturn}).
+     */
+    private void handleReturnRequest(Order order) {
+        String reason = BaseDialog.inputText(this, "Trả hàng " + order.getOrderCode(),
+                "Lý do trả hàng:", "", "Gửi yêu cầu");
+        if (reason == null) return; // bấm Hủy
+
+        int userId = AuthService.getInstance().getCurrentUser().getUserId();
+        String error = orderDAO.requestReturn(order.getOrderId(), userId, reason);
+        if (error != null) {
+            BaseDialog.error(this, "Không thể gửi yêu cầu", error);
+            return;
+        }
+
+        BaseDialog.success(this, "Thành công",
+                "Đã gửi yêu cầu trả hàng cho đơn " + order.getOrderCode() + ". Nhân viên sẽ xử lý sớm nhất.");
+        loadOrders();
+    }
+
+    // ==================== Dialog xem chi tiết ====================
 
     private void showDetailDialog(Order order) {
         JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), "Chi tiết đơn hàng",
@@ -342,6 +402,14 @@ public class OrderHistoryPanel extends JPanel {
             });
             footer.add(cancelButton);
         }
+        if (order.canRequestReturn()) {
+            JButton returnButton = smallButton("Trả hàng", AppColor.ERROR_BG, AppColor.ERROR);
+            returnButton.addActionListener(e -> {
+                dialog.dispose();
+                handleReturnRequest(order);
+            });
+            footer.add(returnButton);
+        }
 
         JButton closeButton = new JButton("Đóng");
         closeButton.setFont(AppFont.BUTTON);
@@ -381,6 +449,7 @@ public class OrderHistoryPanel extends JPanel {
         lineTotal.setFont(AppFont.SMALL_BOLD);
         lineTotal.setForeground(AppColor.TEXT_SECONDARY);
         line.add(lineTotal, BorderLayout.EAST);
+
         return line;
     }
 
@@ -401,6 +470,7 @@ public class OrderHistoryPanel extends JPanel {
         valueComp.setFont(AppFont.SMALL_BOLD);
         valueComp.setForeground(AppColor.TEXT_PRIMARY);
         row.add(valueComp, BorderLayout.CENTER);
+
         return row;
     }
 
@@ -411,6 +481,8 @@ public class OrderHistoryPanel extends JPanel {
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
         return sep;
     }
+
+    // ==================== Badge trạng thái (đồng bộ nhãn/màu với OrderPanel bên admin) ====================
 
     private JLabel statusBadge(String status) {
         String label = orderStatusLabel(status);
@@ -453,7 +525,7 @@ public class OrderHistoryPanel extends JPanel {
             case "CONFIRMED": return AppColor.INFO;
             case "SHIPPING": return AppColor.ACCENT;
             case "CANCELLED": return AppColor.ERROR;
-            default: return AppColor.WARNING;
+            default: return AppColor.WARNING; // NEW
         }
     }
 
@@ -476,6 +548,9 @@ public class OrderHistoryPanel extends JPanel {
         }
     }
 
+    // ==================== Ảnh thumbnail (giống style CartPanel/ClientHeader) ====================
+
+    /** Anh sản phẩm đầu tiên trong đơn (đại diện cho cả đơn ở dòng danh sách). */
     private ImageIcon loadOrderThumb(Order order) {
         List<OrderDetail> details = orderDAO.getDetailsByOrderId(order.getOrderId());
         String imageUrl = details.isEmpty() ? null : details.get(0).getProductImageUrl();
