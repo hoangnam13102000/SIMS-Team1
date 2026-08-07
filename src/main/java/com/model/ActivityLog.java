@@ -12,16 +12,28 @@ public class ActivityLog {
     public static final String ACTION_LOGOUT = "LOGOUT";
     public static final String ACTION_STATUS_CHANGE = "STATUS_CHANGE";
     public static final String ACTION_PASSWORD_RESET = "PASSWORD_RESET";
+    public static final String ACTION_RESTORE = "RESTORE";
+    public static final String ACTION_PERMANENT_DELETE = "PERMANENT_DELETE";
 
     public static final String ENTITY_PHONE = "PHONE";
     public static final String ENTITY_CATEGORY = "CATEGORY";
     public static final String ENTITY_ORDER = "ORDER";
     public static final String ENTITY_USER = "USER";
+    public static final String ENTITY_CUSTOMER = "CUSTOMER";
+    public static final String ENTITY_SUPPLIER = "SUPPLIER";
+    public static final String ENTITY_EMPLOYEE = "EMPLOYEE";
+    public static final String ENTITY_PRODUCT = "PRODUCT";
+    public static final String ENTITY_INVENTORY_BATCH = "INVENTORY_BATCH";
+    public static final String ENTITY_INVOICE = "INVOICE";
+    public static final String ENTITY_PURCHASE_RECEIPT = "PURCHASE_RECEIPT";
+    public static final String ENTITY_STOCK_ALERT = "STOCK_ALERT";
 
     private int logId;
     private String username;
     private String action;
     private String entityType;
+    /** ID cua ban ghi bi tac dong trong bang entityType - null neu khong xac dinh duoc (vd LOGIN/LOGOUT). */
+    private Integer recordId;
     private String description;
     private Date createdAt;
     /** Snapshot JSON cua entity TRUOC thay doi - null neu khong ap dung (vd CREATE, LOGIN...). */
@@ -40,6 +52,9 @@ public class ActivityLog {
 
     public String getEntityType() { return entityType; }
     public void setEntityType(String entityType) { this.entityType = entityType; }
+
+    public Integer getRecordId() { return recordId; }
+    public void setRecordId(Integer recordId) { this.recordId = recordId; }
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

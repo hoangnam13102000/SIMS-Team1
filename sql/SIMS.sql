@@ -2,6 +2,8 @@
    SIMS - Sales and Inventory Management System (Connect Mart)
    Schema hoan chinh, T-SQL (SQL Server)
    ============================================================ */
+USE master;
+GO
 
 IF DB_ID('SIMS_DB') IS NOT NULL
 BEGIN
@@ -93,6 +95,7 @@ GO
 -- (khong UNIQUE) nen khong con van de nay.
 CREATE TABLE Customers (
     CustomerID      INT NOT NULL PRIMARY KEY,        -- = Users.UserID (1-1, ke thua)
+    CustomerCode    VARCHAR(20) NOT NULL UNIQUE,    -- Ma khach hang: "CUS_" + UserID dem 4 so (vd CUS_0001) - dung lam ma vach the thanh vien
     MemberPoint     INT NOT NULL DEFAULT 0,
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     CONSTRAINT FK_Customers_Users
@@ -117,10 +120,20 @@ CREATE TABLE Employees (
 );
 GO
 CREATE TABLE Products (
-    
+
     ProductID       INT IDENTITY(1,1) PRIMARY KEY,
+    -- Ma san pham hien thi/tim kiem: "SP_" + ProductID dem 4 so (vd SP_0001).
+    -- Dung COMPUTED PERSISTED (giong VATAmount/LineTotal/Discrepancy o duoi)
+    -- thay vi tu sinh ben Java: SQL Server tu tinh ngay khi biet ProductID
+    -- (IDENTITY), luon nhat quan, khong can insert/update rieng, van UNIQUE
+    -- duoc vi la PERSISTED.
+    ProductCode     AS ('SP_' + RIGHT('0000' + CAST(ProductID AS VARCHAR(10)), 4)) PERSISTED UNIQUE,
     ProductName     NVARCHAR(150) NOT NULL,
     CategoryID      INT NOT NULL FOREIGN KEY REFERENCES Categories(CategoryID),
+    Brand           NVARCHAR(100) NULL,               -- Thuong hieu: Vinamilk, TH True Milk...
+    Unit            NVARCHAR(30)  NULL,                -- Don vi tinh: Kg, Hop, Chai, Goi...
+    WeightVolume    NVARCHAR(50)  NULL,                -- Khoi luong/dung tich: 180ml, 500g, 1kg...
+    Description     NVARCHAR(1000) NULL,
     ImportPrice     DECIMAL(18,0) NOT NULL CHECK (ImportPrice >= 0),
     SellPrice       DECIMAL(18,0) NOT NULL,
     ImageUrl        NVARCHAR(500) NULL,
@@ -128,6 +141,8 @@ CREATE TABLE Products (
     MinStock        INT NOT NULL DEFAULT 5 CHECK (MinStock >= 0),
     Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                         CHECK (Status IN ('ACTIVE', 'DISABLED')),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    UpdatedAt       DATETIME NULL,                     -- app tu set = GETDATE() moi lan UPDATE (xem ProductDAO.update())
     CONSTRAINT CK_Product_SellPrice CHECK (SellPrice >= ImportPrice)  -- R2
 );
 GO
@@ -173,7 +188,9 @@ CREATE TABLE Invoices (
     VATAmount       AS (SubTotal * VATRate / 100) PERSISTED,
     TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,   -- SubTotal + VATAmount, duy tri qua trigger/app
     PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'CASH'
-                        CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','MOMO','CARD')),
+                        CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','PAYPAL','CARD')),
+    PayPalOrderID   VARCHAR(50) NULL,     -- id don PayPal (Orders v2 API), chi co khi PaymentMethod = PAYPAL
+    PayPalCaptureID VARCHAR(50) NULL,     -- id giao dich sau khi capture thanh cong
     Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'          -- R3: soft-delete
                         CHECK (Status IN ('ACTIVE', 'CANCELLED')),
     CancelReason    NVARCHAR(255) NULL,
@@ -244,7 +261,10 @@ CREATE TABLE PurchaseReceiptDetails (
     ReceiptID       INT NOT NULL FOREIGN KEY REFERENCES PurchaseReceipts(ReceiptID),
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
     Quantity        INT NOT NULL CHECK (Quantity > 0),
-    ImportPrice     DECIMAL(18,0) NOT NULL
+    ImportPrice     DECIMAL(18,0) NOT NULL,
+    LotNumber       NVARCHAR(50) NULL,     -- so lo tren bao bi (co the trung giua cac lan nhap khac nhau)
+    ManufactureDate DATE NULL,
+    ExpiryDate      DATE NULL
 );
 GO
 
@@ -264,14 +284,31 @@ CREATE TABLE ExceptionReports (
 );
 GO
 
+-- NV ban hang bao cao cho Quan ly kho khi phat hien SP het hang (Stock = 0)
+-- hoac sap het (Stock <= MinStock). Quan ly kho xem o trang "Canh bao ton kho"
+-- (StockAlertPanel) de len ke hoach nhap hang bo sung.
 CREATE TABLE StockAlerts (
     AlertID         INT IDENTITY(1,1) PRIMARY KEY,
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
-    Message         NVARCHAR(255) NOT NULL,
-    RecipientRoleID INT NOT NULL FOREIGN KEY REFERENCES Roles(RoleID),
-    IsRead          BIT NOT NULL DEFAULT 0,
-    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+    AlertType       VARCHAR(20) NOT NULL
+                        CHECK (AlertType IN ('LOW_STOCK', 'OUT_OF_STOCK')),
+    StockAtReport   INT NOT NULL,           -- ton kho tai thoi diem bao cao (luu lai de doi chieu sau)
+    Note            NVARCHAR(255) NULL,     -- ghi chu tuy chon cua NV bao cao
+    ReportedBy      INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    Status          VARCHAR(20) NOT NULL DEFAULT 'NEW'
+                        CHECK (Status IN ('NEW', 'PLANNED', 'RESOLVED')),
+                        -- NEW: moi bao cao, chua xu ly
+                        -- PLANNED: quan ly kho da len ke hoach nhap hang bo sung
+                        -- RESOLVED: da nhap hang xong / het van de
+    SeenByInventoryManager BIT NOT NULL DEFAULT 0,  -- da xem/danh dau doc chuong hay chua
+    ResolvedBy      INT NULL FOREIGN KEY REFERENCES Users(UserID),
+    ResolvedAt      DATETIME NULL
 );
+GO
+CREATE INDEX IX_StockAlerts_Seen ON StockAlerts(SeenByInventoryManager, CreatedAt);
+GO
+CREATE INDEX IX_StockAlerts_Product_Status ON StockAlerts(ProductID, Status);
 GO
 
 /* ============================================================
@@ -283,7 +320,7 @@ CREATE TABLE InventoryTransactions (
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
     TransactionType VARCHAR(20) NOT NULL
                         CHECK (TransactionType IN ('IMPORT','SALE','SALE_CANCEL',
-                                                    'RETURN_IN','RETURN_OUT','RECONCILE_ADJUST')),
+                                                    'RETURN_IN','RETURN_OUT','RECONCILE_ADJUST','DISPOSAL')),
     Direction       VARCHAR(3) NOT NULL CHECK (Direction IN ('IN','OUT')),
     Quantity        INT NOT NULL CHECK (Quantity > 0),
     StockBefore     INT NOT NULL,
@@ -296,6 +333,40 @@ CREATE TABLE InventoryTransactions (
 );
 GO
 CREATE INDEX IX_InvTrans_Product_Date ON InventoryTransactions(ProductID, CreatedAt);
+GO
+
+CREATE TABLE InventoryBatch (
+    BatchID         INT IDENTITY(1,1) PRIMARY KEY,
+    BatchCode       AS ('LOT_' + RIGHT('000000' + CAST(BatchID AS VARCHAR(10)), 6)) PERSISTED UNIQUE,
+    LotNumber       NVARCHAR(50) NULL,
+    ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
+    SupplierID      INT NOT NULL FOREIGN KEY REFERENCES Suppliers(SupplierID),
+    ReceiptDetailID INT NULL UNIQUE FOREIGN KEY REFERENCES PurchaseReceiptDetails(ReceiptDetailID),
+    ManufactureDate DATE NULL,
+    ExpiryDate      DATE NULL,
+    ImportDate      DATETIME NOT NULL DEFAULT GETDATE(),
+    ImportPrice     DECIMAL(18,0) NOT NULL CHECK (ImportPrice >= 0),
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    RemainingQty    INT NOT NULL CHECK (RemainingQty >= 0),
+    Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+                        CHECK (Status IN ('ACTIVE','EXPIRED','DEPLETED')),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT CK_Batch_RemainingLEQty CHECK (RemainingQty <= Quantity),
+
+    CONSTRAINT CK_Batch_Dates CHECK (ManufactureDate IS NULL OR ExpiryDate IS NULL OR ExpiryDate > ManufactureDate)
+);
+GO
+CREATE INDEX IX_InventoryBatch_FEFO ON InventoryBatch(ProductID, ExpiryDate)
+    INCLUDE (RemainingQty, Status);
+GO
+
+
+CREATE TABLE InvoiceDetailBatches (
+    InvoiceDetailID INT NOT NULL FOREIGN KEY REFERENCES InvoiceDetails(InvoiceDetailID),
+    BatchID         INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    PRIMARY KEY (InvoiceDetailID, BatchID)
+);
 GO
 
 /* ============================================================
@@ -318,6 +389,8 @@ GO
 CREATE INDEX IX_AuditLogs_User_Date ON AuditLogs(UserID, CreatedAt);
 GO
 
+
+
 /* ============================================================
    X. DOI CHIEU KHO CUOI NGAY
    ============================================================ */
@@ -334,6 +407,47 @@ CREATE TABLE StockReconciliation (
 );
 GO
 
+
+CREATE TABLE Orders (
+    OrderID         INT IDENTITY(1,1) PRIMARY KEY,
+    OrderCode       AS ('DH' + RIGHT('0000' + CAST(OrderID AS VARCHAR(10)), 4)) PERSISTED,
+    CustomerID      INT NULL FOREIGN KEY REFERENCES Customers(CustomerID),
+    CustomerName    NVARCHAR(150) NOT NULL,
+    CustomerEmail   VARCHAR(150) NOT NULL,
+    CustomerPhone   VARCHAR(20)  NULL,
+    ShippingAddress NVARCHAR(255) NOT NULL,
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    SubTotal        DECIMAL(18,0) NOT NULL DEFAULT 0,
+    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8,   -- lấy từ StoreConfig VAT_RATE
+    VATAmount       AS (SubTotal * VATRate / 100) PERSISTED,
+    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,   -- SubTotal + VATAmount, duy tri qua app (giong Invoices)
+    PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'COD'
+                        CHECK (PaymentMethod IN ('COD', 'PAYPAL')),
+    PaymentStatus   VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                        CHECK (PaymentStatus IN ('PENDING', 'PAID', 'FAILED')),
+    PayPalOrderID   VARCHAR(50) NULL,
+    PayPalCaptureID VARCHAR(50) NULL,
+    OrderStatus     VARCHAR(20) NOT NULL DEFAULT 'NEW'
+                    CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED')),
+    SeenByAdmin     BIT NOT NULL DEFAULT 0
+);
+GO
+
+CREATE TABLE OrderDetails (
+    OrderDetailID   INT IDENTITY(1,1) PRIMARY KEY,
+    OrderID         INT NOT NULL FOREIGN KEY REFERENCES Orders(OrderID),
+    ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
+    ProductName     NVARCHAR(150) NOT NULL,   -- luu lai ten tai thoi diem dat (phong khi san pham doi ten/xoa sau nay)
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    UnitPrice       DECIMAL(18,0) NOT NULL,
+    LineTotal       AS (Quantity * UnitPrice) PERSISTED
+);
+GO
+
+
+CREATE INDEX IX_Orders_SeenByAdmin ON Orders(SeenByAdmin, CreatedAt);
+GO
+
 /* ============================================================
    XI. CAU HINH HE THONG
    ============================================================ */
@@ -342,4 +456,49 @@ CREATE TABLE StoreConfig (
     ConfigKey       VARCHAR(50) PRIMARY KEY,
     ConfigValue     NVARCHAR(255) NOT NULL
 );
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'OrderDetailBatches')
+BEGIN
+    CREATE TABLE OrderDetailBatches (
+        OrderDetailID   INT NOT NULL FOREIGN KEY REFERENCES OrderDetails(OrderDetailID),
+        BatchID         INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+        Quantity        INT NOT NULL CHECK (Quantity > 0),
+        PRIMARY KEY (OrderDetailID, BatchID)
+    );
+END
+GO
+
+IF OBJECT_ID('StockDisposalDetails', 'U') IS NOT NULL DROP TABLE StockDisposalDetails;
+IF OBJECT_ID('StockDisposals', 'U') IS NOT NULL DROP TABLE StockDisposals;
+GO
+
+CREATE TABLE StockDisposals (
+    DisposalID      INT IDENTITY(1,1) PRIMARY KEY,
+    DisposalCode    AS ('TH_' + RIGHT('000000' + CAST(DisposalID AS VARCHAR(10)), 6)) PERSISTED UNIQUE,
+    Reason          VARCHAR(20) NOT NULL
+                        CHECK (Reason IN ('EXPIRED','DAMAGED','QUALITY','OTHER')),
+    Status          VARCHAR(20) NOT NULL DEFAULT 'COMPLETED'
+                        CHECK (Status IN ('COMPLETED','CANCELLED')),
+    TotalLossAmount DECIMAL(18,0) NOT NULL DEFAULT 0 CHECK (TotalLossAmount >= 0),
+    Note            NVARCHAR(500) NULL,
+    CreatedBy       INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+    CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+);
+GO
+CREATE INDEX IX_StockDisposals_CreatedAt ON StockDisposals(CreatedAt DESC);
+GO
+
+CREATE TABLE StockDisposalDetails (
+    DisposalDetailID INT IDENTITY(1,1) PRIMARY KEY,
+    DisposalID       INT NOT NULL FOREIGN KEY REFERENCES StockDisposals(DisposalID),
+    ProductID        INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
+    BatchID          INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+    Quantity         INT NOT NULL CHECK (Quantity > 0),
+    UnitCost         DECIMAL(18,0) NOT NULL CHECK (UnitCost >= 0),
+    LineLossAmount   AS (Quantity * UnitCost) PERSISTED,
+    CONSTRAINT UQ_Disposal_Batch UNIQUE (DisposalID, BatchID)
+);
+GO
+CREATE INDEX IX_StockDisposalDetails_Product ON StockDisposalDetails(ProductID);
 GO

@@ -17,16 +17,21 @@ import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
+import java.awt.Dimension;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
+import javax.swing.JComboBox;
+import javax.swing.BorderFactory;
 
 
 public class UserAccountPanel extends BaseCrudPanel<User> {
 
     private final UserDAO userDAO = new UserDAO();
     private AutoRowNumber stt;
+    private JComboBox<String> roleFilter;
+    private Role selectedRole;
 
     public UserAccountPanel() {
         super();
@@ -54,6 +59,7 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         table.setColumnWidths(50, 115, 115, 180, 150, 130, 115);
         table.setColumnMinWidths(45, 90, 85, 90, 110, 100, 95);
 
+        setupRoleFilter();
         initialLoad();
     }
 
@@ -71,7 +77,7 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     protected String getPageSubtitle() { return "Quản lý tài khoản người dùng và phân quyền trong hệ thống"; }
 
     @Override
-    protected String getAddButtonLabel() { return "Thêm tài khoản"; }
+    protected String getAddButtonLabel() { return null; }
 
     @Override
     protected String[] getColumnNames() {
@@ -108,12 +114,13 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
 
     @Override
     protected PaginationHelper.PaginationResult<User> fetchPage(int page, int pageSize) {
-        return userDAO.getPaged(page, pageSize);
+        String keyword = searchBar != null && searchBar.getText() != null ? searchBar.getText().trim() : "";
+        return userDAO.filterByRole(keyword, selectedRole, page, pageSize);
     }
 
     @Override
     protected PaginationHelper.PaginationResult<User> searchPage(String keyword, int page, int pageSize) {
-        return userDAO.search(keyword, page, pageSize);
+        return userDAO.filterByRole(keyword, selectedRole, page, pageSize);
     }
 
     @Override
@@ -139,7 +146,7 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     protected boolean deleteItem(User item) { return false; }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo tên đăng nhập, họ tên, email..."; }
+    protected String getSearchPlaceholder() { return "Tìm theo mã NV (tên đăng nhập), họ tên, email..."; }
 
     /**
      * Goi y autocomplete gom ho ten VA ten dang nhap cua toan bo tai khoan -
@@ -147,6 +154,34 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
      * BaseCrudPanel goi tren 1 background thread (SwingWorker) nen truy van
      * userDAO.getAll() (blocking) o day an toan, khong lam treo UI.
      */
+    private void setupRoleFilter() {
+        roleFilter = new JComboBox<>(new String[]{"Tất cả vai trò", "Quản trị viên", "Quản lý bán hàng", "Quản lý kho", "Nhân viên bán hàng", "Khách hàng"});
+        roleFilter.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 13));
+        roleFilter.setBackground(AppColor.WHITE);
+        roleFilter.setForeground(AppColor.TEXT_PRIMARY);
+        roleFilter.setPreferredSize(new Dimension(190, 38));
+        roleFilter.setFocusable(false);
+        roleFilter.setToolTipText("Lọc danh sách theo vai trò");
+        roleFilter.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
+
+        roleFilter.addActionListener(e -> {
+            selectedRole = roleFromFilterIndex(roleFilter.getSelectedIndex());
+            applyFilters();
+        });
+        addToolbarFilter(roleFilter);
+    }
+
+    private Role roleFromFilterIndex(int index) {
+        switch (index) {
+            case 1: return Role.ADMIN;
+            case 2: return Role.SALES_MANAGER;
+            case 3: return Role.INVENTORY_MANAGER;
+            case 4: return Role.SALES_STAFF;
+            case 5: return Role.CUSTOMER;
+            default: return null;
+        }
+    }
+
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
         List<String> names = new ArrayList<>();
@@ -237,6 +272,8 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         if (!confirmed) return;
 
         if (userDAO.setLocked(item.getUserId(), true)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\"");
             BaseDialog.success(this, "Thành công", "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {
@@ -249,6 +286,8 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         if (item == null) return;
 
         if (userDAO.setLocked(item.getUserId(), false)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\"");
             BaseDialog.success(this, "Thành công", "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {

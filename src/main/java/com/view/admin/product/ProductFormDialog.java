@@ -20,15 +20,23 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
+import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Frame;
+import java.awt.GridLayout;
 import java.io.File;
 import java.math.BigDecimal;
 import java.util.List;
@@ -37,19 +45,24 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
 
     private static final String UPLOAD_DIR = "uploads/products";
     private static final String[] STATUS_LABELS = {"Đang bán", "Ngừng bán"};
-    /** Preview ảnh lớn bên trái — đồng bộ với layout dialog chi tiết. */
-    private static final int PREVIEW_SIZE = 240;
+    private static final String[] UNIT_SUGGESTIONS = {"Cái", "Kg", "Hộp", "Chai", "Gói", "Lốc", "Thùng", "Lon"};
+    private static final int PREVIEW_SIZE = 140;
 
     private final ProductDAO productDAO;
     private final List<Category> categories;
 
+    private JTextField productCodeField; // chỉ đọc, chỉ hiện khi Sửa
     private JTextField productNameField;
     private JComboBox<Category> categoryCombo;
+    private JTextField brandField;
+    private JComboBox<String> unitCombo;
+    private JTextField weightVolumeField;
     private JTextField importPriceField;
     private JTextField sellPriceField;
     private JTextField stockField;
     private JTextField minStockField;
     private JComboBox<String> statusCombo;
+    private JTextArea descriptionArea;
 
     private JLabel imagePreviewLabel;
     private JLabel imageHintLabel;
@@ -65,31 +78,51 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     }
 
     @Override
-    protected int getDialogWidth() { return 780; }
+    protected int getDialogWidth() {
+        return 900;
+    }
 
     @Override
-    protected int getDialogHeight() { return 520; }
+    protected int getDialogHeight() {
+        return mode == CrudMode.ADD ? 540 : 560;
+    }
 
     /**
-     * Layout ngang giống ProductDetailDialog:
-     *  - Trái: ảnh lớn + nút chọn ảnh
-     *  - Phải: tên, danh mục, giá, tồn kho, trạng thái
+     * Layout ngang:
+     *  - (EDIT) thẻ Mã SP full-width phía trên
+     *  - 3 cột: Ảnh | Thông tin sản phẩm | Giá & tồn kho
      */
     @Override
     protected void buildFields(JPanel panel) {
-        // BaseFormDialog dùng BoxLayout Y trên panel — bọc 1 hàng ngang.
-        JPanel row = new JPanel();
-        row.setOpaque(false);
-        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        if (mode == CrudMode.EDIT) {
+            productCodeField = newTextField();
+            productCodeField.setEnabled(false);
+            panel.add(buildCodeCard());
+            panel.add(Box.createVerticalStrut(14));
+        }
 
-        row.add(buildImageColumn());
-        row.add(Box.createHorizontalStrut(24));
-        row.add(buildFieldsColumn());
+        JPanel columns = new JPanel();
+        columns.setOpaque(false);
+        columns.setLayout(new BoxLayout(columns, BoxLayout.X_AXIS));
+        columns.setAlignmentX(Component.LEFT_ALIGNMENT);
+        columns.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-        panel.add(row);
+        columns.add(buildImageColumn());
+        columns.add(Box.createHorizontalStrut(20));
+        columns.add(buildInfoColumn());
+        columns.add(Box.createHorizontalStrut(20));
+        columns.add(buildPriceStockColumn());
+        panel.add(columns);
+
+        if (categories.isEmpty()) {
+            panel.add(Box.createVerticalStrut(12));
+            panel.add(infoBanner("Chưa có danh mục nào — vui lòng tạo danh mục trước khi thêm sản phẩm."));
+        }
     }
+
+    // ---------------------------------------------------------------
+    // Cột 1 — Ảnh sản phẩm
+    // ---------------------------------------------------------------
 
     private JPanel buildImageColumn() {
         JPanel col = new JPanel();
@@ -97,9 +130,10 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
         col.setAlignmentY(Component.TOP_ALIGNMENT);
 
-        JLabel caption = fieldLabel("Hình ảnh sản phẩm");
-        caption.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel caption = iconFieldLabel(FontAwesomeSolid.IMAGE, "Hình ảnh", false);
+        caption.setAlignmentX(Component.CENTER_ALIGNMENT);
         col.add(caption);
+        col.add(Box.createVerticalStrut(8));
 
         imagePreviewLabel = new JLabel();
         imagePreviewLabel.setHorizontalAlignment(JLabel.CENTER);
@@ -108,7 +142,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         imagePreviewLabel.setMinimumSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
         imagePreviewLabel.setBorder(new LineBorder(AppColor.BORDER, 1, true));
         imagePreviewLabel.setIcon(ImageUtil.loadIcon(null, PREVIEW_SIZE, PREVIEW_SIZE));
-        imagePreviewLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        imagePreviewLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         col.add(imagePreviewLabel);
         col.add(Box.createVerticalStrut(12));
 
@@ -119,57 +153,18 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         chooseButton.setForeground(AppColor.ACCENT);
         chooseButton.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(AppColor.ACCENT, 1, true),
-                new EmptyBorder(8, 16, 8, 16)));
-        chooseButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+                new EmptyBorder(8, 14, 8, 14)));
+        chooseButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         chooseButton.addActionListener(e -> chooseImage());
         col.add(chooseButton);
         col.add(Box.createVerticalStrut(8));
 
-        imageHintLabel = hintLabel("Chưa chọn ảnh (tùy chọn)");
-        imageHintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        imageHintLabel = new JLabel("Tùy chọn · tối đa 5MB");
+        imageHintLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        imageHintLabel.setForeground(AppColor.TEXT_MUTED);
+        imageHintLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         col.add(imageHintLabel);
 
-        return col;
-    }
-
-    private JPanel buildFieldsColumn() {
-        JPanel col = new JPanel();
-        col.setOpaque(false);
-        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
-        col.setAlignmentY(Component.TOP_ALIGNMENT);
-        col.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        productNameField = addTextField(col, "Tên sản phẩm", true);
-
-        categoryCombo = addComboBox(col, "Danh mục", categories.toArray(new Category[0]));
-        categoryCombo.setRenderer((list, value, index, isSelected, cellHasFocus) -> {
-            JLabel label = new JLabel(value == null ? "" : value.getCategoryName());
-            label.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-            label.setOpaque(true);
-            label.setBackground(isSelected ? AppColor.ACCENT : AppColor.WHITE);
-            label.setForeground(isSelected ? java.awt.Color.WHITE : AppColor.TEXT_PRIMARY);
-            label.setBorder(new EmptyBorder(4, 8, 4, 8));
-            return label;
-        });
-        if (categories.isEmpty()) {
-            col.add(hintLabel("Chưa có danh mục nào - vui lòng tạo danh mục trước khi thêm sản phẩm."));
-        }
-
-        importPriceField = newTextField();
-        sellPriceField = newTextField();
-        fieldRow(col,
-                fieldGroup("Giá nhập (VNĐ)", true, importPriceField),
-                fieldGroup("Giá bán (VNĐ)", true, sellPriceField));
-        col.add(hintLabel("Giá bán phải lớn hơn hoặc bằng giá nhập."));
-        col.add(Box.createVerticalStrut(8));
-
-        stockField = newTextField();
-        minStockField = newTextField();
-        fieldRow(col,
-                fieldGroup("Tồn kho", true, stockField),
-                fieldGroup("Tồn kho tối thiểu", true, minStockField));
-
-        statusCombo = addComboBox(col, "Trạng thái", STATUS_LABELS);
         return col;
     }
 
@@ -192,15 +187,284 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         showMessage(null);
     }
 
+    // ---------------------------------------------------------------
+    // Cột 2 — Thông tin sản phẩm
+    // ---------------------------------------------------------------
+
+    private JPanel buildInfoColumn() {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setAlignmentY(Component.TOP_ALIGNMENT);
+        col.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        addSectionHeader(col, FontAwesomeSolid.BOX, "Thông tin sản phẩm");
+
+        productNameField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.TAG, "Tên sản phẩm", true, productNameField));
+        col.add(Box.createVerticalStrut(12));
+
+        categoryCombo = newComboBox(categories.toArray(new Category[0]));
+        categoryCombo.setRenderer((list, value, index, isSelected, cellHasFocus) -> {
+            JLabel label = new JLabel(value == null ? "" : value.getCategoryName());
+            label.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            label.setOpaque(true);
+            label.setBackground(isSelected ? AppColor.ACCENT : AppColor.WHITE);
+            label.setForeground(isSelected ? Color.WHITE : AppColor.TEXT_PRIMARY);
+            label.setBorder(new EmptyBorder(4, 8, 4, 8));
+            return label;
+        });
+        col.add(fieldGroupIcon(FontAwesomeSolid.LAYER_GROUP, "Danh mục", true, categoryCombo));
+        col.add(Box.createVerticalStrut(12));
+
+        brandField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.COPYRIGHT, "Thương hiệu", false, brandField));
+        col.add(Box.createVerticalStrut(12));
+
+        unitCombo = newUnitCombo();
+        weightVolumeField = newTextField();
+        JPanel unitRow = new JPanel(new GridLayout(1, 2, 12, 0));
+        unitRow.setOpaque(false);
+        unitRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        unitRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 64));
+        unitRow.add(fieldGroupIcon(FontAwesomeSolid.RULER, "Đơn vị tính", false, unitCombo));
+        unitRow.add(fieldGroupIcon(FontAwesomeSolid.BALANCE_SCALE, "Khối lượng / Dung tích", false, weightVolumeField));
+        col.add(unitRow);
+        col.add(Box.createVerticalStrut(12));
+
+        descriptionArea = new JTextArea(3, 20);
+        descriptionArea.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        descriptionArea.setLineWrap(true);
+        descriptionArea.setWrapStyleWord(true);
+        descriptionArea.setBorder(new EmptyBorder(8, 10, 8, 10));
+        JScrollPane descScroll = new JScrollPane(descriptionArea);
+        descScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        descScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        descScroll.setBorder(new LineBorder(AppColor.BORDER, 1, true));
+        col.add(fieldGroupIcon(FontAwesomeSolid.ALIGN_LEFT, "Mô tả sản phẩm", false, descScroll));
+
+        return col;
+    }
+
+    // ---------------------------------------------------------------
+    // Cột 3 — Giá & tồn kho
+    // ---------------------------------------------------------------
+
+    private JPanel buildPriceStockColumn() {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setAlignmentY(Component.TOP_ALIGNMENT);
+        col.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        addSectionHeader(col, FontAwesomeSolid.DOLLAR_SIGN, "Giá & tồn kho");
+
+        importPriceField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.ARROW_DOWN, "Giá nhập", true, wrapWithSuffix(importPriceField, "VNĐ")));
+        col.add(Box.createVerticalStrut(12));
+
+        sellPriceField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.ARROW_UP, "Giá bán", true, wrapWithSuffix(sellPriceField, "VNĐ")));
+        col.add(Box.createVerticalStrut(4));
+        JLabel priceHint = new JLabel("Giá bán ≥ giá nhập");
+        priceHint.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        priceHint.setForeground(AppColor.TEXT_MUTED);
+        priceHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        priceHint.setBorder(new EmptyBorder(0, 2, 0, 0));
+        col.add(priceHint);
+        col.add(Box.createVerticalStrut(12));
+
+        stockField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.WAREHOUSE, "Tồn kho", true, stockField));
+        col.add(Box.createVerticalStrut(12));
+
+        minStockField = newTextField();
+        col.add(fieldGroupIcon(FontAwesomeSolid.EXCLAMATION_TRIANGLE, "Tồn kho tối thiểu", true, minStockField));
+        col.add(Box.createVerticalStrut(12));
+
+        statusCombo = newComboBox(STATUS_LABELS);
+        col.add(fieldGroupIcon(FontAwesomeSolid.CHECK_CIRCLE, "Trạng thái", true, statusCombo));
+
+        return col;
+    }
+
+    // ---------------------------------------------------------------
+    // Helpers UI (cùng phong cách EmployeeFormDialog)
+    // ---------------------------------------------------------------
+
+    private JComboBox<String> newUnitCombo() {
+        JComboBox<String> combo = new JComboBox<>(UNIT_SUGGESTIONS);
+        combo.setEditable(true);
+        combo.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        combo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        combo.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        combo.setBackground(AppColor.WHITE);
+        return combo;
+    }
+
+    private <E> JComboBox<E> newComboBox(E[] items) {
+        JComboBox<E> combo = new JComboBox<>(items);
+        combo.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        combo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        combo.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        combo.setBackground(AppColor.WHITE);
+        return combo;
+    }
+
+    private void addSectionHeader(JPanel panel, FontAwesomeSolid iconType, String text) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+
+        FontIcon icon = FontIcon.of(iconType, 13);
+        icon.setIconColor(AppColor.ACCENT);
+        JLabel iconLabel = new JLabel(icon);
+
+        JLabel textLabel = new JLabel(text.toUpperCase());
+        textLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        textLabel.setForeground(AppColor.ACCENT);
+        textLabel.setBorder(new EmptyBorder(0, 8, 0, 10));
+
+        JSeparator sep = new JSeparator(SwingConstants.HORIZONTAL);
+        sep.setForeground(AppColor.BORDER);
+        sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        sep.setAlignmentY(Component.CENTER_ALIGNMENT);
+
+        row.add(iconLabel);
+        row.add(textLabel);
+        row.add(sep);
+
+        panel.add(row);
+        panel.add(Box.createVerticalStrut(12));
+    }
+
+    private JLabel iconFieldLabel(FontAwesomeSolid iconType, String text, boolean required) {
+        FontIcon icon = FontIcon.of(iconType, 12);
+        icon.setIconColor(AppColor.TEXT_MUTED_ALT);
+
+        String html = "<html>" + text
+                + (required ? " <font color='" + toHex(AppColor.ERROR) + "'>*</font>" : "")
+                + "</html>";
+        JLabel label = new JLabel(html, icon, SwingConstants.LEFT);
+        label.setIconTextGap(6);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        label.setForeground(AppColor.TEXT_MUTED);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        label.setBorder(new EmptyBorder(0, 2, 4, 0));
+        return label;
+    }
+
+    private JPanel fieldGroupIcon(FontAwesomeSolid iconType, String label, boolean required, JComponent field) {
+        JPanel group = new JPanel();
+        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
+        group.setOpaque(false);
+        group.setAlignmentX(Component.LEFT_ALIGNMENT);
+        group.add(iconFieldLabel(iconType, label, required));
+        field.setAlignmentX(Component.LEFT_ALIGNMENT);
+        group.add(field);
+        return group;
+    }
+
+    private JPanel wrapWithSuffix(JTextField field, String suffix) {
+        field.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 0));
+
+        JLabel suffixLabel = new JLabel(suffix);
+        suffixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        suffixLabel.setForeground(AppColor.TEXT_MUTED);
+        suffixLabel.setBorder(new EmptyBorder(0, 6, 0, 10));
+
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(true);
+        wrapper.setBackground(AppColor.WHITE);
+        wrapper.setBorder(new LineBorder(AppColor.BORDER, 1, true));
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        wrapper.add(field, BorderLayout.CENTER);
+        wrapper.add(suffixLabel, BorderLayout.EAST);
+        return wrapper;
+    }
+
+    /** Thẻ chỉ đọc hiển thị Mã SP khi Sửa. */
+    private JPanel buildCodeCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(AppColor.BG_LIGHTER);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(8, 16, 8, 16)));
+
+        productCodeField.setBorder(BorderFactory.createEmptyBorder());
+        productCodeField.setOpaque(false);
+        productCodeField.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        productCodeField.setDisabledTextColor(AppColor.TEXT_PRIMARY);
+
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.HASHTAG, 11);
+        icon.setIconColor(AppColor.TEXT_MUTED);
+        JLabel label = new JLabel("Mã sản phẩm", icon, SwingConstants.LEFT);
+        label.setIconTextGap(5);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        label.setForeground(AppColor.TEXT_MUTED);
+
+        JPanel inner = new JPanel();
+        inner.setOpaque(false);
+        inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
+        inner.add(label);
+        inner.add(Box.createVerticalStrut(2));
+        inner.add(productCodeField);
+        card.add(inner, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel infoBanner(String text) {
+        JPanel banner = new JPanel(new BorderLayout(10, 0));
+        banner.setBackground(AppColor.INFO_BG);
+        banner.setAlignmentX(Component.LEFT_ALIGNMENT);
+        banner.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+        banner.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.INFO, 1, true),
+                new EmptyBorder(10, 12, 10, 12)));
+
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.INFO_CIRCLE, 15);
+        icon.setIconColor(AppColor.INFO);
+        JLabel iconLabel = new JLabel(icon);
+        iconLabel.setVerticalAlignment(SwingConstants.TOP);
+
+        JLabel textLabel = new JLabel("<html>" + text + "</html>");
+        textLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        textLabel.setForeground(AppColor.TEXT_PRIMARY);
+
+        banner.add(iconLabel, BorderLayout.WEST);
+        banner.add(textLabel, BorderLayout.CENTER);
+        return banner;
+    }
+
+    private static String toHex(Color c) {
+        return String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue());
+    }
+
+    // ---------------------------------------------------------------
+    // Fill / Validate / Collect / Persist
+    // ---------------------------------------------------------------
+
     @Override
     protected void fillForm(Product entity) {
+        if (productCodeField != null) {
+            productCodeField.setText(entity.getProductCode());
+        }
         productNameField.setText(entity.getProductName());
         selectCategoryById(entity.getCategoryId());
+        brandField.setText(entity.getBrand() != null ? entity.getBrand() : "");
+        unitCombo.setSelectedItem(entity.getUnit() != null ? entity.getUnit() : "");
+        weightVolumeField.setText(entity.getWeightVolume() != null ? entity.getWeightVolume() : "");
         importPriceField.setText(entity.getImportPrice() != null ? entity.getImportPrice().toPlainString() : "");
         sellPriceField.setText(entity.getSellPrice() != null ? entity.getSellPrice().toPlainString() : "");
         stockField.setText(String.valueOf(entity.getStock()));
         minStockField.setText(String.valueOf(entity.getMinStock()));
         statusCombo.setSelectedIndex(entity.isActive() ? 0 : 1);
+        descriptionArea.setText(entity.getDescription() != null ? entity.getDescription() : "");
 
         if (entity.getImageUrl() != null && !entity.getImageUrl().isBlank()) {
             imagePreviewLabel.setIcon(ImageUtil.loadIcon(entity.getImageUrl(), PREVIEW_SIZE, PREVIEW_SIZE));
@@ -229,6 +493,18 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         validator.field(productNameField.getText())
                 .required("Vui lòng nhập tên sản phẩm.")
                 .maxLength(150, "Tên sản phẩm tối đa 150 ký tự.");
+
+        validator.field(brandField.getText())
+                .maxLength(100, "Thương hiệu tối đa 100 ký tự.");
+
+        validator.field(String.valueOf(unitCombo.getEditor().getItem()))
+                .maxLength(30, "Đơn vị tính tối đa 30 ký tự.");
+
+        validator.field(weightVolumeField.getText())
+                .maxLength(50, "Khối lượng/dung tích tối đa 50 ký tự.");
+
+        validator.field(descriptionArea.getText())
+                .maxLength(1000, "Mô tả tối đa 1000 ký tự.");
 
         validator.field(importPriceField.getText())
                 .required("Vui lòng nhập giá nhập.")
@@ -267,25 +543,37 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         product.setCategoryId(selectedCategory.getCategoryId());
         product.setCategoryName(selectedCategory.getCategoryName());
 
+        product.setBrand(blankToNull(brandField.getText()));
+        product.setUnit(blankToNull(String.valueOf(unitCombo.getEditor().getItem())));
+        product.setWeightVolume(blankToNull(weightVolumeField.getText()));
+        product.setDescription(blankToNull(descriptionArea.getText()));
+
         product.setImportPrice(parseAmount(importPriceField.getText()));
         product.setSellPrice(parseAmount(sellPriceField.getText()));
         product.setStock(Integer.parseInt(stockField.getText().trim()));
         product.setMinStock(Integer.parseInt(minStockField.getText().trim()));
         product.setStatus(statusCombo.getSelectedIndex() == 1 ? "DISABLED" : "ACTIVE");
 
-        if (pendingImageFile != null) {
-            File saved = FileUtil.copyToDirectory(pendingImageFile, UPLOAD_DIR);
-            product.setImageUrl(saved != null ? saved.getPath() : currentImageUrl);
-        } else {
-            product.setImageUrl(currentImageUrl);
-        }
+        // Copy ảnh để ở persist() (chạy background) — tránh đơ UI trên EDT
+        product.setImageUrl(currentImageUrl);
 
         return product;
     }
 
     @Override
     protected boolean persist(Product entity, CrudMode mode) {
+        // File I/O chạy trên SwingWorker (BaseFormDialog) — không block EDT
+        if (pendingImageFile != null) {
+            File saved = FileUtil.copyToDirectory(pendingImageFile, UPLOAD_DIR);
+            entity.setImageUrl(saved != null ? saved.getPath() : currentImageUrl);
+        }
         return mode == CrudMode.ADD ? productDAO.insert(entity) : productDAO.update(entity);
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static boolean isValidNonNegativeAmount(String value) {

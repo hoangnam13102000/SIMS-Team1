@@ -138,10 +138,15 @@ GO
 -- Customers gio ke thua Users (CustomerID = UserID), nen chi con insert
 -- CustomerID (tro toi tai khoan da tao o buoc 4) + MemberPoint rieng cua
 -- ho so khach hang. FullName/Phone/Email lay thang tu Users, khong luu trung.
-INSERT INTO Customers (CustomerID, MemberPoint) VALUES
-((SELECT UserID FROM Users WHERE Username = 'lan.nguyen'), 120),
-((SELECT UserID FROM Users WHERE Username = 'hung.tran'),   35),
-((SELECT UserID FROM Users WHERE Username = 'khach_le'),     0);   -- dai dien cho khach vang lai khong luu thong tin
+INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint)
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 120
+FROM Users WHERE Username = 'lan.nguyen'
+UNION ALL
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 35
+FROM Users WHERE Username = 'hung.tran'
+UNION ALL
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 0   -- dai dien cho khach vang lai khong luu thong tin
+FROM Users WHERE Username = 'khach_le';
 GO
 
 -- ---- 10. Shift ----
@@ -293,6 +298,9 @@ INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái');
+-- So VND khach can chi de duoc cong 1 diem thanh vien (xem StoreConfigDAO.getPointRate()
+-- va InvoiceDAO.createInvoice - tich diem tu dong khi lap hoa don co gan khach hang).
+('POINT_RATE', '10000');
 GO
 
 UPDATE Products
@@ -318,3 +326,134 @@ WHERE ProductName = N'Nước suối 500ml';
 UPDATE Products
 SET ImageUrl = 'uploads/products/ca-phe-bot.jpg'
 WHERE ProductName = N'Cà phê bột 500g';
+
+-- ---- Quyen han moi ----
+INSERT INTO Permissions (PermissionCode, Description) VALUES
+('ORDER_VIEW',   N'Xem đơn hàng online từ khách'),
+('ORDER_MANAGE', N'Xác nhận / hủy đơn hàng online từ khách');
+GO
+
+-- ADMIN da co san TAT CA quyen qua cau insert blanket trong Insert_SIMS.sql
+-- (SELECT ... FROM Permissions) - chi can cap them cho ADMIN neu bang da
+-- duoc seed truoc do (script nay co the chay sau khi da co du lieu):
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode IN ('ORDER_VIEW', 'ORDER_MANAGE')
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+
+-- Nhan vien ban hang cung duoc xem + xac nhan don online
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'SALES_STAFF' AND p.PermissionCode IN ('ORDER_VIEW', 'ORDER_MANAGE')
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO
+
+-- ---- Quyen "Sao luu & Khoi phuc" - chi ADMIN ----
+INSERT INTO Permissions (PermissionCode, Description) VALUES
+('BACKUP_MANAGE', N'Xem trang Sao lưu & Khôi phục, tự sao lưu / khôi phục DB từ file backup');
+GO
+ 
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'BACKUP_MANAGE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO
+
+-- ---- Quyen "Doi/tra hang" (R4) ----
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'RETURN_EXCHANGE_CREATE', N'Tạo yêu cầu đổi/trả hàng cho hóa đơn'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'RETURN_EXCHANGE_CREATE');
+
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'RETURN_EXCHANGE_APPROVE', N'Duyệt / từ chối yêu cầu đổi/trả hàng giá trị lớn'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'RETURN_EXCHANGE_APPROVE');
+GO
+
+-- ---- Quyen "Bao cao ngoai le" (NVBH gui -> QL Ban hang xu ly) ----
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'EXCEPTION_REPORT_CREATE', N'Gửi báo cáo ngoại lệ cho Quản lý bán hàng'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'EXCEPTION_REPORT_CREATE');
+
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'EXCEPTION_REPORT_HANDLE', N'Xem và xử lý báo cáo ngoại lệ từ nhân viên bán hàng'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'EXCEPTION_REPORT_HANDLE');
+GO
+
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode IN ('EXCEPTION_REPORT_CREATE', 'EXCEPTION_REPORT_HANDLE')
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+
+-- Nhan vien ban hang: gui bao cao ngoai le
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'SALES_STAFF' AND p.PermissionCode = 'EXCEPTION_REPORT_CREATE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+
+-- Quan ly ban hang: xem va xu ly bao cao ngoai le
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'SALES_MANAGER' AND p.PermissionCode = 'EXCEPTION_REPORT_HANDLE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO
+
+-- ---- Quyen "Cai dat he thong" (sua VAT_RATE va cac cau hinh StoreConfig khac) - chi ADMIN ----
+INSERT INTO Permissions (PermissionCode, Description)
+SELECT 'SETTINGS_MANAGE', N'Xem và sửa trang Cài đặt hệ thống (VAT, tên cửa hàng, chính sách đổi trả...)'
+WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'SETTINGS_MANAGE');
+GO
+
+INSERT INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r CROSS JOIN Permissions p
+WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'SETTINGS_MANAGE'
+  AND NOT EXISTS (
+        SELECT 1 FROM RolePermissions rp
+        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
+      );
+GO
+
+
+/* ============================================================
+   Migration: Backfill Employees.EmployeeID cho cac tai khoan
+   nhan vien da ton tai TRUOC KHI co thay doi nay trong UserDAO
+   (register()/createByAdmin() truoc day KHONG insert vao bang
+   Employees cho bat ky role nao, chi Customers cho Role.CUSTOMER).
+
+   Chay 1 LAN sau khi da cap nhat code UserDAO.java. An toan de
+   chay lai nhieu lan (idempotent) nho dieu kien NOT EXISTS.
+   ============================================================ */
+
+INSERT INTO Employees (UserID, EmployeeID)
+SELECT u.UserID, 'EMP_' + RIGHT('0000' + CAST(u.UserID AS VARCHAR(10)), 4)
+FROM Users u
+JOIN Roles r ON u.RoleID = r.RoleID
+WHERE r.RoleCode <> 'CUSTOMER'
+  AND NOT EXISTS (
+        SELECT 1 FROM Employees e WHERE e.UserID = u.UserID
+      );
+GO

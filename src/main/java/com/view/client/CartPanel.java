@@ -2,10 +2,14 @@ package com.view.client;
 
 import com.components.BaseDialog;
 import com.components.EmptyState;
+import com.dao.OrderDAO;
 import com.i18n.Lang;
 import com.model.CartItem;
+import com.model.Order;
+import com.model.OrderDetail;
 import com.service.AuthService;
 import com.service.CartService;
+import com.service.payment.PayPalService;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppSpacing;
@@ -22,7 +26,11 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 
 public class CartPanel extends JPanel {
 
@@ -545,8 +553,11 @@ public class CartPanel extends JPanel {
         contentLayout.show(contentArea, "items");
     }
 
+    private final OrderDAO orderDAO = new OrderDAO();
+
     private void handleCheckout() {
         String name = nameField.getText() == null ? "" : nameField.getText().trim();
+        String phone = phoneField.getText() == null ? "" : phoneField.getText().trim();
         String email = emailField.getText() == null ? "" : emailField.getText().trim();
         String address = addressField.getText() == null ? "" : addressField.getText().trim();
 
@@ -559,17 +570,186 @@ public class CartPanel extends JPanel {
             return;
         }
 
+        List<CartItem> cartItems = CartService.getInstance().getItems();
+        if (cartItems.isEmpty()) return;
         long total = CartService.getInstance().getTotal();
-        PaymentDialog.Method method = PaymentDialog.show(this, CartService.getInstance().getItems(), total);
+        PaymentDialog.Method method = PaymentDialog.show(this, cartItems, total);
         if (method == null) return;
 
-        // He thong chua co bang Orders/checkout that su - mo phong 1 buoc dat
-        // hang don gian: xac nhan -> bao thanh cong -> xoa gio hang. Khi ghep
-        // OrderService/OrderDAO that, thay doan nay bang luu don hang voi
-        // name/phone/email/address da nhap o form ben tren.
-        CartService.getInstance().clear();
-        BaseDialog.success(this, Lang.get("cart.checkout.success.title"), Lang.get("cart.checkout.success.message"));
-        if (onCheckoutSuccess != null) onCheckoutSuccess.run();
+        List<OrderDetail> details = new ArrayList<>();
+        BigDecimal subTotal = BigDecimal.ZERO;
+        for (CartItem item : cartItems) {
+            BigDecimal unitPrice = item.getProduct().getSellPrice();
+            details.add(new OrderDetail(item.getProduct().getProductId(), item.getProduct().getProductName(),
+                    item.getQuantity(), unitPrice));
+            subTotal = subTotal.add(unitPrice.multiply(BigDecimal.valueOf(item.getQuantity())));
+        }
+
+        Order order = new Order();
+        if (AuthService.getInstance().isLoggedIn()) {
+            order.setCustomerId(AuthService.getInstance().getCurrentUser().getUserId());
+        }
+        order.setCustomerName(name);
+        order.setCustomerEmail(email);
+        order.setCustomerPhone(phone.isEmpty() ? null : phone);
+        order.setShippingAddress(address);
+        order.setSubTotal(subTotal);
+        order.setTotalAmount(subTotal);
+        order.setOrderStatus("NEW");
+
+        if (method == PaymentDialog.Method.COD) {
+            order.setPaymentMethod("COD");
+            order.setPaymentStatus("PENDING");
+            persistOrderAndFinish(order, details);
+        } else {
+            order.setPaymentMethod("PAYPAL");
+            payWithPayPalThenPersist(order, details, subTotal);
+        }
+    }
+
+    /** Luu don xuong DB (nen luon chay o background thread - la thao tac DB blocking). */
+    private void persistOrderAndFinish(Order order, List<OrderDetail> details) {
+        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Boolean doInBackground() {
+                return orderDAO.createOrder(order, details);
+            }
+
+            @Override
+            protected void done() {
+                boolean ok;
+                try {
+                    ok = get();
+                } catch (Exception e) {
+                    ok = false;
+                }
+                if (ok) {
+                    CartService.getInstance().clear();
+                    BaseDialog.success(CartPanel.this, Lang.get("cart.checkout.success.title"),
+                            Lang.get("cart.checkout.success.message"));
+                    if (onCheckoutSuccess != null) onCheckoutSuccess.run();
+                } else {
+                    BaseDialog.error(CartPanel.this, Lang.get("payment.error.title"), Lang.get("payment.order.save.failed"));
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    /**
+     * Luong PayPal that: mo 1 server cuc bo tam thoi de nhan redirect, tao
+     * don PayPal (Orders v2), mo trinh duyet cho khach dang nhap/approve,
+     * cho ket qua roi capture (chot giao dich) - tat ca chay o background
+     * thread, hien 1 dialog "dang cho" trong luc do. Chi luu don xuong DB
+     * SAU KHI capture thanh cong (PaymentStatus = PAID).
+     */
+    private void payWithPayPalThenPersist(Order order, List<OrderDetail> details, BigDecimal totalVnd) {
+        PayPalService payPalService = new PayPalService();
+        @SuppressWarnings("unchecked")
+        SwingWorker<PayPalService.CaptureResult, Void>[] workerRef = new SwingWorker[1];
+        JDialog waitingDialog = buildPayPalWaitingDialog(() -> {
+            if (workerRef[0] != null) workerRef[0].cancel(true);
+        });
+
+        SwingWorker<PayPalService.CaptureResult, Void> worker = new SwingWorker<>() {
+            @Override
+            protected PayPalService.CaptureResult doInBackground() throws Exception {
+                PayPalService.LocalCallbackServer server = payPalService.startLocalCallbackServer();
+                try {
+                    PayPalService.CreatedOrder created = payPalService.createOrder(
+                            totalVnd, "SIMS-" + System.currentTimeMillis(), server.returnUrl(), server.cancelUrl());
+                    order.setPayPalOrderId(created.payPalOrderId());
+                    payPalService.openApprovalPage(created.approveUrl());
+
+                    PayPalService.ApprovalResult approval = server.await(Duration.ofMinutes(5));
+                    if (!approval.approved()) return new PayPalService.CaptureResult(false, null, "CANCELLED");
+                    return payPalService.captureOrder(created.payPalOrderId());
+                } finally {
+                    server.stop();
+                }
+            }
+
+            @Override
+            protected void done() {
+                waitingDialog.dispose();
+                if (isCancelled()) return;
+                try {
+                    PayPalService.CaptureResult result = get();
+                    if (result.success()) {
+                        order.setPaymentStatus("PAID");
+                        order.setPayPalCaptureId(result.captureId());
+                        persistOrderAndFinish(order, details);
+                    } else if (!"CANCELLED".equals(result.status())) {
+                        BaseDialog.error(CartPanel.this, Lang.get("payment.error.title"), Lang.get("payment.paypal.failed"));
+                    }
+                } catch (CancellationException ignored) {
+                    // Nguoi dung tu bam Huy tren dialog cho - khong bao loi.
+                } catch (Exception e) {
+                    BaseDialog.error(CartPanel.this, Lang.get("payment.error.title"), Lang.get("payment.paypal.failed"));
+                }
+            }
+        };
+        workerRef[0] = worker;
+        worker.execute();
+        waitingDialog.setVisible(true); // modal - chan toi khi worker goi dispose() trong done()
+    }
+
+    /**
+     * Dialog modal "Đang chờ thanh toán PayPal..." kèm nút Hủy.
+     * @param onCancel callback khi người dùng bấm Hủy (thường dùng để cancel SwingWorker).
+     */
+    private JDialog buildPayPalWaitingDialog(Runnable onCancel) {
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), Lang.get("payment.paypal.waiting.title"),
+                Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setResizable(false);
+
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBackground(AppColor.WHITE);
+        body.setBorder(new EmptyBorder(28, 32, 20, 32));
+
+        JLabel icon = new JLabel(FontIcon.of(FontAwesomeSolid.EXTERNAL_LINK_ALT, 28, AppColor.ACCENT_HOVER));
+        icon.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel title = new JLabel(Lang.get("payment.paypal.waiting.title"));
+        title.setFont(AppFont.HEADING_MD);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel message = new JLabel("<html><div style='text-align:center;width:280px'>"
+                + Lang.get("payment.paypal.waiting.message") + "</div></html>");
+        message.setFont(AppFont.BODY);
+        message.setForeground(AppColor.TEXT_SECONDARY);
+        message.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JProgressBar progress = new JProgressBar();
+        progress.setIndeterminate(true);
+        progress.setAlignmentX(Component.CENTER_ALIGNMENT);
+        progress.setMaximumSize(new Dimension(260, 6));
+
+        JButton cancel = new JButton(Lang.get("payment.cancel"));
+        cancel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        cancel.setFocusPainted(false);
+        cancel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cancel.addActionListener(e -> {
+            if (onCancel != null) onCancel.run();
+            dialog.dispose();
+        });
+
+        body.add(icon);
+        body.add(Box.createVerticalStrut(12));
+        body.add(title);
+        body.add(Box.createVerticalStrut(8));
+        body.add(message);
+        body.add(Box.createVerticalStrut(16));
+        body.add(progress);
+        body.add(Box.createVerticalStrut(16));
+        body.add(cancel);
+
+        dialog.getContentPane().add(body);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        return dialog;
     }
 
     // ==================== Helper: card/label style dung chung (giong ProfilePanel) ====================

@@ -30,9 +30,9 @@ import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.i18n.Lang;
 import com.model.ActivityLog;
+
 public class LoginFrame extends JFrame {
 
-   
     private RoundedField usernameField;
     private RoundedPasswordField passwordField;
     private JCheckBox rememberCheckBox;
@@ -42,6 +42,14 @@ public class LoginFrame extends JFrame {
     private final UserDAO userDAO = new UserDAO();
 
     public LoginFrame() {
+        this(null);
+    }
+
+    /**
+     * @param prefillUsername nếu khác null/blank thì điền sẵn vào ô username
+     *                        (dùng sau đăng ký thành công hoặc reset mật khẩu).
+     */
+    public LoginFrame(String prefillUsername) {
         setTitle(AppConstant.APP_TITLE_LOGIN);
         setSize(1000, 620);
         setMinimumSize(new Dimension(860, 560));
@@ -71,6 +79,12 @@ public class LoginFrame extends JFrame {
         gbc.gridx = 1;
         gbc.weightx = 0.58;
         add(buildLoginForm(), gbc);
+
+        if (prefillUsername != null && !prefillUsername.isBlank()) {
+            usernameField.setText(prefillUsername.trim());
+            SwingUtilities.invokeLater(
+                    () -> passwordField.getPasswordField().requestFocusInWindow());
+        }
 
         setVisible(true);
     }
@@ -203,7 +217,7 @@ public class LoginFrame extends JFrame {
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.CENTER;
         panel.add(form, gbc);
-        
+
         return panel;
     }
 
@@ -248,20 +262,19 @@ public class LoginFrame extends JFrame {
     private JComponent createEyeToggle() {
         final Icon eyeOpenIcon = createEyeIcon(FontAwesomeSolid.EYE);
         final Icon eyeClosedIcon = createEyeIcon(FontAwesomeSolid.EYE_SLASH);
-        
+
         JLabel toggle = new JLabel(eyeOpenIcon);
         toggle.setVerticalAlignment(SwingConstants.CENTER);
         toggle.setToolTipText(Lang.get("login.password.show"));
         toggle.setCursor(new Cursor(Cursor.HAND_CURSOR));
         toggle.addMouseListener(new MouseAdapter() {
             private boolean isShowing = false;
-            
+
             @Override
             public void mouseClicked(MouseEvent e) {
-                // ✅ Lấy trực tiếp từ RoundedPasswordField, không cần cast
                 JPasswordField pf = passwordField.getPasswordField();
                 isShowing = !isShowing;
-                
+
                 if (isShowing) {
                     pf.setEchoChar((char) 0);
                     toggle.setIcon(eyeClosedIcon);
@@ -308,20 +321,20 @@ public class LoginFrame extends JFrame {
             protected void done() {
                 loginButton.setEnabled(true);
                 try {
-                	User user = get();
-                	if (user == null) {
-                	    User existing = userDAO.findByUsername(username);
-                	    if (existing != null && existing.isLocked()) {
-                	        errorLabel.setText(Lang.get("login.error.locked"));
-                	    } else if (existing != null && existing.isDisabled()) {
-                	        errorLabel.setText(Lang.get("login.error.disabled"));
-                	    } else {
-                	        errorLabel.setText(Lang.get("login.error.wrongCredentials"));
-                	    }
-                	    AppLogger.getInstance().log(username, ActivityLog.ACTION_LOGIN_FAILED,
-                	            ActivityLog.ENTITY_USER, "Đăng nhập thất bại với tên đăng nhập \"" + username + "\"");
-                	    return;
-                	}
+                    User user = get();
+                    if (user == null) {
+                        User existing = userDAO.findByUsername(username);
+                        if (existing != null && existing.isLocked()) {
+                            errorLabel.setText(Lang.get("login.error.locked"));
+                        } else if (existing != null && existing.isDisabled()) {
+                            errorLabel.setText(Lang.get("login.error.disabled"));
+                        } else {
+                            errorLabel.setText(Lang.get("login.error.wrongCredentials"));
+                        }
+                        AppLogger.getInstance().log(username, ActivityLog.ACTION_LOGIN_FAILED,
+                                ActivityLog.ENTITY_USER, "Đăng nhập thất bại với tên đăng nhập \"" + username + "\"");
+                        return;
+                    }
                     AuthService.getInstance().setCurrentUser(user);
                     AppLogger.getInstance().log(user.getUsername(), ActivityLog.ACTION_LOGIN,
                             ActivityLog.ENTITY_USER, user.getFullName() + " đã đăng nhập");

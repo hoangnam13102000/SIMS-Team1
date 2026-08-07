@@ -324,28 +324,56 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         return "EMP_" + String.format("%04d", userId);
     }
 
+    /** Tong do dai username mong muon: toi thieu 5, toi da 8 ky tu. */
+    private static final int USERNAME_MIN_LEN = 5;
+    private static final int USERNAME_MAX_LEN = 8;
+    /** Do dai hau to hex ban dau (du 16^3 = 4096 to hop cho lan thu dau). */
+    private static final int USERNAME_INITIAL_SUFFIX_LEN = 3;
+
     /**
-     * Ghep username tu ho ten (bo dau, chu thuong, khong khoang trang) + 8 ky
-     * tu hex ngau nhien - vua du duy nhat, vua ngan gon de nhan vien de dang
-     * nhap. Kiem tra trung (xac suat cuc thap nhung van phong thu) va sinh
-     * lai hau to moi neu trung, toi da vai lan thu.
+     * Ghep username tu vai ky tu dau cua ho ten (bo dau, chu thuong, khong
+     * khoang trang) + hau to hex ngau nhien, tong do dai gioi han 5-8 ky tu
+     * de nhan vien de nho/de nhap. Neu trung, tang do dai hau to (va rut ngan
+     * phan ten tuong ung) de tang so to hop trong khi van giu tong do dai
+     * <= USERNAME_MAX_LEN, thu lai toi da vai lan.
      */
     private String generateUniqueUsername(String fullName) {
-        String base = slugify(fullName);
-        String suffix = randomHexSuffix();
-        String candidate = base + suffix;
+        String fullSlug = slugify(fullName);
+
+        int suffixLen = USERNAME_INITIAL_SUFFIX_LEN;
+        String candidate = buildUsername(fullSlug, suffixLen);
 
         int attempt = 0;
         while (userDAO.usernameExists(candidate) && attempt < 5) {
-            suffix = randomHexSuffix();
-            candidate = base + suffix;
+            // Tang do dai hau to de giam xac suat trung, nhung khong vuot qua
+            // USERNAME_MAX_LEN (buildUsername tu rut ngan phan ten neu can).
+            suffixLen = Math.min(suffixLen + 1, USERNAME_MAX_LEN - 1);
+            candidate = buildUsername(fullSlug, suffixLen);
             attempt++;
         }
         return candidate;
     }
 
-    private String randomHexSuffix() {
-        return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toLowerCase();
+    /**
+     * Ghep phan ten (rut gon vua du de tong do dai nam trong khoang
+     * [USERNAME_MIN_LEN, USERNAME_MAX_LEN]) voi hau to hex ngau nhien co do
+     * dai suffixLen.
+     */
+    private String buildUsername(String fullSlug, int suffixLen) {
+        int maxBaseLen = Math.max(1, USERNAME_MAX_LEN - suffixLen);
+        int baseLen = Math.min(maxBaseLen, fullSlug.length());
+        String base = fullSlug.substring(0, baseLen);
+
+        // Dam bao tong do dai >= USERNAME_MIN_LEN ngay ca khi ten qua ngan
+        // (vd sau khi slugify chi con 1-2 ky tu) bang cach keo dai hau to.
+        int effectiveSuffixLen = Math.max(suffixLen, USERNAME_MIN_LEN - baseLen);
+
+        return base + randomHexSuffix(effectiveSuffixLen);
+    }
+
+    private String randomHexSuffix(int length) {
+        String hex = UUID.randomUUID().toString().replace("-", "");
+        return hex.substring(0, Math.min(length, hex.length())).toLowerCase();
     }
 
     /** Bo dau tieng Viet, chuyen chu thuong, chi giu a-z0-9, gioi han 20 ky tu. */
@@ -369,5 +397,37 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         public boolean emailSent = false;
         public String rawPassword;
         public String emailError;
+    }
+
+    /** Lọc theo vai trò, đồng thời hỗ trợ từ khóa tìm kiếm hiện tại. */
+    public com.utils.PaginationHelper.PaginationResult<Employee> filterByRole(
+            String keyword, Role role, int pageNumber, int pageSize) {
+        StringBuilder where = new StringBuilder();
+        java.util.List<Object> params = new java.util.ArrayList<>();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String escaped = keyword.trim()
+                    .replace("[", "[[]")
+                    .replace("%", "[%]")
+                    .replace("_", "[_]");
+            String like = "%" + escaped + "%";
+            String[] columns = getSearchableColumns();
+            where.append("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) where.append(" OR ");
+                where.append(columns[i]).append(" LIKE ?");
+                params.add(like);
+            }
+            where.append(")");
+        }
+
+        if (role != null) {
+            if (where.length() > 0) where.append(" AND ");
+            where.append("r.RoleCode = ?");
+            params.add(role.name());
+        }
+
+        if (where.length() == 0) return getPaged(pageNumber, pageSize);
+        return getPaged(pageNumber, pageSize, where.toString(), params.toArray());
     }
 }

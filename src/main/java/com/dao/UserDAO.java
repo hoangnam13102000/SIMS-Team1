@@ -2,6 +2,8 @@ package com.dao;
 
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
+import com.event.AppEventBus;
+import com.event.DataChangedEvent;
 import com.model.Role;
 import com.model.User;
 import com.utils.DBConnection;
@@ -50,12 +52,15 @@ public class UserDAO extends BaseDAO<User> {
     @Override
     protected String getColumns() {
         return "u.UserID, u.Username, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
-                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode";
+                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode, e.EmployeeID";
     }
 
     @Override
     protected String getJoinClause() {
-        return "JOIN Roles r ON u.RoleID = r.RoleID";
+        // LEFT JOIN: khong phai User nao cung co ho so Employees (vd Role.CUSTOMER
+        // khong co dong tuong ung trong Employees, chi co trong Customers).
+        return "JOIN Roles r ON u.RoleID = r.RoleID "
+                + "LEFT JOIN Employees e ON u.UserID = e.UserID";
     }
 
     @Override
@@ -70,7 +75,7 @@ public class UserDAO extends BaseDAO<User> {
 
     @Override
     protected String[] getSearchableColumns() {
-        return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone"};
+        return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone", "e.EmployeeID"};
     }
 
     /**
@@ -390,6 +395,7 @@ public class UserDAO extends BaseDAO<User> {
         String insertUserSql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?))";
         String insertCustomerSql = "INSERT INTO Customers (CustomerID, MemberPoint) VALUES (?, 0)";
+        String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID) VALUES (?, ?)";
 
         Connection con = null;
         try {
@@ -420,6 +426,7 @@ public class UserDAO extends BaseDAO<User> {
             if (user.getRole() == Role.CUSTOMER) {
                 try (PreparedStatement cps = con.prepareStatement(insertCustomerSql)) {
                     cps.setInt(1, user.getUserId());
+                    cps.setString(2, generateCustomerCode(user.getUserId()));
                     int customerAffected = cps.executeUpdate();
                     if (customerAffected == 0) {
                         con.rollback();
@@ -428,9 +435,24 @@ public class UserDAO extends BaseDAO<User> {
                         return false;
                     }
                 }
+            } else {
+                // Moi role con lai (ADMIN, SALES_MANAGER, INVENTORY_MANAGER, SALES_STAFF)
+                // deu la nhan vien - tao ho so Employees tuong ung de co "ma nhan vien".
+                try (PreparedStatement eps = con.prepareStatement(insertEmployeeSql)) {
+                    eps.setInt(1, user.getUserId());
+                    eps.setString(2, generateEmployeeCode(user.getUserId()));
+                    int employeeAffected = eps.executeUpdate();
+                    if (employeeAffected == 0) {
+                        con.rollback();
+                        AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
+                                "UserDAO.register - khong the tao Employees cho userId=" + user.getUserId(), null);
+                        return false;
+                    }
+                }
             }
 
             con.commit();
+            AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.USER));
             return true;
 
         } catch (Exception e) {
@@ -471,7 +493,25 @@ public class UserDAO extends BaseDAO<User> {
         user.setStatus(rs.getString("Status"));
         java.sql.Timestamp createdAt = rs.getTimestamp("CreatedAt");
         if (createdAt != null) user.setCreatedAt(createdAt.toLocalDateTime());
+        user.setEmployeeCode(readEmployeeCodeIfPresent(rs));
         return user;
+    }
+
+    /**
+     * Doc cot EmployeeID (tu LEFT JOIN Employees) neu co trong ResultSet.
+     * Mot vai truy van thu cong khac trong DAO nay (login/findByUsername/
+     * findForPasswordReset) khong SELECT cot nay - rs.getString() se nem
+     * SQLException "column not found" thay vi tra ve null nhu voi cot NULL
+     * that su, nen phai tu kiem tra qua ResultSetMetaData truoc khi doc.
+     */
+    private String readEmployeeCodeIfPresent(ResultSet rs) throws SQLException {
+        java.sql.ResultSetMetaData meta = rs.getMetaData();
+        for (int i = 1; i <= meta.getColumnCount(); i++) {
+            if ("EmployeeID".equalsIgnoreCase(meta.getColumnLabel(i))) {
+                return rs.getString(i);
+            }
+        }
+        return null;
     }
 
     public Map<String, Role> findRolesByUsernames(Collection<String> usernames) {
@@ -565,7 +605,8 @@ public class UserDAO extends BaseDAO<User> {
 
         String sql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, RoleID, Status) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?), 'ACTIVE')";
-        String insertCustomerSql = "INSERT INTO Customers (CustomerID, MemberPoint) VALUES (?, 0)";
+        String insertCustomerSql = "INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint) VALUES (?, ?, 0)";
+        String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID) VALUES (?, ?)";
 
         Connection con = null;
         try {
@@ -596,6 +637,7 @@ public class UserDAO extends BaseDAO<User> {
             if (user.getRole() == Role.CUSTOMER) {
                 try (PreparedStatement cps = con.prepareStatement(insertCustomerSql)) {
                     cps.setInt(1, user.getUserId());
+                    cps.setString(2, generateCustomerCode(user.getUserId()));
                     if (cps.executeUpdate() == 0) {
                         con.rollback();
                         AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
@@ -603,9 +645,21 @@ public class UserDAO extends BaseDAO<User> {
                         return false;
                     }
                 }
+            } else {
+                try (PreparedStatement eps = con.prepareStatement(insertEmployeeSql)) {
+                    eps.setInt(1, user.getUserId());
+                    eps.setString(2, generateEmployeeCode(user.getUserId()));
+                    if (eps.executeUpdate() == 0) {
+                        con.rollback();
+                        AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
+                                "UserDAO.createByAdmin - khong the tao Employees cho userId=" + user.getUserId(), null);
+                        return false;
+                    }
+                }
             }
 
             con.commit();
+            AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.USER));
             return true;
 
         } catch (Exception e) {
@@ -632,22 +686,121 @@ public class UserDAO extends BaseDAO<User> {
         }
     }
 
-    /** Admin cập nhật họ tên/email/sđt/vai trò/trạng thái của 1 tài khoản (không đổi mật khẩu ở đây - xem {@link #resetPassword}). */
+    /**
+     * Admin cập nhật họ tên/email/sđt/vai trò/trạng thái của 1 tài khoản
+     * (không đổi mật khẩu ở đây - xem {@link #resetPassword}).
+     * <p>
+     * Khi đổi vai trò: đồng bộ hồ sơ {@code Employees}/{@code Customers}
+     * (trước đây chỉ UPDATE Users.RoleID nên NV chuyển sang Khách hàng vẫn
+     * còn dòng trong Employees và hiện ở trang Quản lý nhân viên).
+     */
     public boolean updateByAdmin(User user) {
-        String sql = "UPDATE Users SET FullName = ?, Email = ?, Phone = ?, "
+        String updateUserSql = "UPDATE Users SET FullName = ?, Email = ?, Phone = ?, "
                 + "RoleID = (SELECT RoleID FROM Roles WHERE RoleCode = ?), Status = ? WHERE UserID = ?";
-        try (Connection con = DBConnection.getConnection();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, user.getFullName());
-            ps.setString(2, user.getEmail());
-            ps.setString(3, user.getPhone());
-            ps.setString(4, user.getRole().name());
-            ps.setString(5, user.getStatus());
-            ps.setInt(6, user.getUserId());
-            return ps.executeUpdate() > 0;
+        String selectRoleSql = "SELECT r.RoleCode FROM Users u JOIN Roles r ON u.RoleID = r.RoleID WHERE u.UserID = ?";
+        String deleteEmployeeSql = "DELETE FROM Employees WHERE UserID = ?";
+        String deleteCustomerSql = "DELETE FROM Customers WHERE CustomerID = ?";
+        String insertCustomerSql = "INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint) "
+                + "SELECT ?, ?, 0 WHERE NOT EXISTS (SELECT 1 FROM Customers WHERE CustomerID = ?)";
+        String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID) "
+                + "SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM Employees WHERE UserID = ?)";
+
+        Connection con = null;
+        try {
+            con = DBConnection.getConnection();
+            con.setAutoCommit(false);
+
+            Role oldRole = null;
+            try (PreparedStatement ps = con.prepareStatement(selectRoleSql)) {
+                ps.setInt(1, user.getUserId());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        try {
+                            oldRole = Role.valueOf(rs.getString("RoleCode"));
+                        } catch (IllegalArgumentException ignored) {
+                            oldRole = null;
+                        }
+                    }
+                }
+            }
+
+            try (PreparedStatement ps = con.prepareStatement(updateUserSql)) {
+                ps.setString(1, user.getFullName());
+                ps.setString(2, user.getEmail());
+                ps.setString(3, user.getPhone());
+                ps.setString(4, user.getRole().name());
+                ps.setString(5, user.getStatus());
+                ps.setInt(6, user.getUserId());
+                if (ps.executeUpdate() == 0) {
+                    con.rollback();
+                    return false;
+                }
+            }
+
+            Role newRole = user.getRole();
+            boolean wasCustomer = oldRole == Role.CUSTOMER;
+            boolean isCustomer = newRole == Role.CUSTOMER;
+
+            if (isCustomer) {
+                // NV / admin → Khách hàng: bỏ hồ sơ nhân viên, đảm bảo có Customers
+                try (PreparedStatement ps = con.prepareStatement(deleteEmployeeSql)) {
+                    ps.setInt(1, user.getUserId());
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = con.prepareStatement(insertCustomerSql)) {
+                    ps.setInt(1, user.getUserId());
+                    ps.setString(2, generateCustomerCode(user.getUserId()));
+                    ps.setInt(3, user.getUserId());
+                    ps.executeUpdate();
+                }
+            } else {
+                // Khách hàng → NV (hoặc đổi giữa các role NV): bỏ Customers nếu được,
+                // đảm bảo có Employees
+                if (wasCustomer || oldRole == null) {
+                    try (PreparedStatement ps = con.prepareStatement(deleteCustomerSql)) {
+                        ps.setInt(1, user.getUserId());
+                        ps.executeUpdate();
+                    } catch (SQLException fkEx) {
+                        // Còn hóa đơn/đơn hàng tham chiếu Customers → giữ hồ sơ KH,
+                        // vẫn tạo Employees để role nghiệp vụ hoạt động.
+                        AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                                "UserDAO.updateByAdmin - khong xoa duoc Customers (co the con hoa don) userId="
+                                        + user.getUserId(), fkEx);
+                    }
+                }
+                try (PreparedStatement ps = con.prepareStatement(insertEmployeeSql)) {
+                    ps.setInt(1, user.getUserId());
+                    ps.setString(2, generateEmployeeCode(user.getUserId()));
+                    ps.setInt(3, user.getUserId());
+                    ps.executeUpdate();
+                }
+            }
+
+            con.commit();
+            AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.USER));
+            return true;
         } catch (Exception e) {
-            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "UserDAO.updateByAdmin - userId=" + user.getUserId(), e);
+            if (con != null) {
+                try {
+                    con.rollback();
+                } catch (SQLException rollbackEx) {
+                    AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                            "UserDAO.updateByAdmin - rollback that bai", rollbackEx);
+                }
+            }
+            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                    "UserDAO.updateByAdmin - userId=" + user.getUserId(), e);
             return false;
+        } finally {
+            if (con != null) {
+                try {
+                    con.setAutoCommit(true);
+                    con.close();
+                } catch (SQLException closeEx) {
+                    AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                            "UserDAO.updateByAdmin - dong connection that bai", closeEx);
+                }
+            }
         }
     }
 
@@ -659,7 +812,11 @@ public class UserDAO extends BaseDAO<User> {
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, userId);
-            return ps.executeUpdate() > 0;
+            boolean ok = ps.executeUpdate() > 0;
+            if (ok) {
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.USER));
+            }
+            return ok;
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "UserDAO.setLocked - userId=" + userId, e);
             return false;
@@ -669,5 +826,66 @@ public class UserDAO extends BaseDAO<User> {
     /** Admin đặt lại mật khẩu cho 1 tài khoản mà không cần biết mật khẩu cũ. */
     public boolean resetPassword(int userId, String newRawPassword) {
         return changePassword(userId, newRawPassword);
+    }
+
+    /** Lọc theo vai trò, đồng thời hỗ trợ từ khóa tìm kiếm hiện tại. */
+    public com.utils.PaginationHelper.PaginationResult<User> filterByRole(
+            String keyword, Role role, int pageNumber, int pageSize) {
+        StringBuilder where = new StringBuilder();
+        java.util.List<Object> params = new java.util.ArrayList<>();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String escaped = keyword.trim()
+                    .replace("[", "[[]")
+                    .replace("%", "[%]")
+                    .replace("_", "[_]");
+            String like = "%" + escaped + "%";
+            String[] columns = getSearchableColumns();
+            where.append("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) where.append(" OR ");
+                where.append(columns[i]).append(" LIKE ?");
+                params.add(like);
+            }
+            where.append(")");
+        }
+
+        if (role != null) {
+            if (where.length() > 0) where.append(" AND ");
+            where.append("r.RoleCode = ?");
+            params.add(role.name());
+        }
+
+        if (where.length() == 0) return getPaged(pageNumber, pageSize);
+        return getPaged(pageNumber, pageSize, where.toString(), params.toArray());
+    }
+
+    /**
+     * Danh sách tài khoản nhân viên (không phải CUSTOMER), đang ACTIVE, chưa bị xóa.
+     * Dùng cho chat nội bộ giữa các tài khoản admin/staff.
+     */
+    public List<User> findActiveStaff() {
+        String sql = "SELECT " + getColumns() + " FROM " + getTableName() + " " + getJoinClause()
+                + " WHERE u.IsDeleted = 0 AND u.Status = 'ACTIVE' AND r.RoleCode <> 'CUSTOMER'"
+                + " ORDER BY u.FullName ASC, u.Username ASC";
+        List<User> result = new java.util.ArrayList<>();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                result.add(mapUser(rs));
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "UserDAO.findActiveStaff", e);
+        }
+        return result;
+    }
+
+    private String generateCustomerCode(int userId) {
+        return "CUS_" + String.format("%04d", userId);
+    }
+
+    private String generateEmployeeCode(int userId) {
+        return "EMP_" + String.format("%04d", userId);
     }
 }

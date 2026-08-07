@@ -27,6 +27,7 @@ import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.BorderLayout;
@@ -511,23 +512,33 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
             employee.setStatus("ACTIVE");
         }
 
-        if (pendingAvatarFile != null) {
-            File saved = FileUtil.copyToDirectory(pendingAvatarFile, UPLOAD_DIR);
-            employee.setAvatarUrl(saved != null ? saved.getPath() : currentAvatarUrl);
-        } else {
-            employee.setAvatarUrl(currentAvatarUrl);
-        }
+        // Copy avatar để ở persist() (background) — tránh đơ UI trên EDT
+        employee.setAvatarUrl(currentAvatarUrl);
         return employee;
     }
 
     @Override
     protected boolean persist(Employee entity, CrudMode mode) {
+        // File I/O + DB + gửi email chạy trên SwingWorker — không block EDT
+        if (pendingAvatarFile != null) {
+            File saved = FileUtil.copyToDirectory(pendingAvatarFile, UPLOAD_DIR);
+            entity.setAvatarUrl(saved != null ? saved.getPath() : currentAvatarUrl);
+        }
         if (mode == CrudMode.ADD) {
             EmployeeDAO.EmployeeCreationResult result = employeeDAO.createEmployee(entity);
             if (!result.success) {
                 return false;
             }
-            showCreationResult(entity, result);
+            // Dialog Swing phải chạy trên EDT (persist có thể đang ở background thread)
+            if (SwingUtilities.isEventDispatchThread()) {
+                showCreationResult(entity, result);
+            } else {
+                try {
+                    SwingUtilities.invokeAndWait(() -> showCreationResult(entity, result));
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
             return true;
         }
         return employeeDAO.updateByAdmin(entity);

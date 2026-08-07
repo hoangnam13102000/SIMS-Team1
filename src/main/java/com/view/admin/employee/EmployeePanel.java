@@ -17,10 +17,13 @@ import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
+import java.awt.Dimension;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
+import javax.swing.JComboBox;
+import javax.swing.BorderFactory;
 
 /**
  * Trang Quản lý nhân viên - dựa trên bảng Employees (kế thừa Users, xem
@@ -34,6 +37,8 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     private final EmployeeDAO employeeDAO = new EmployeeDAO();
     private AutoRowNumber stt;
+    private JComboBox<String> roleFilter;
+    private Role selectedRole;
 
     public EmployeePanel() {
         super();
@@ -62,6 +67,7 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         table.setColumnWidths(45, 110, 110, 110, 150, 120, 145, 115);
         table.setColumnMinWidths(40, 85, 85, 90, 110, 95, 140, 110);
 
+        setupRoleFilter();
         initialLoad();
     }
 
@@ -116,12 +122,13 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected PaginationHelper.PaginationResult<Employee> fetchPage(int page, int pageSize) {
-        return employeeDAO.getPaged(page, pageSize);
+        String keyword = searchBar != null && searchBar.getText() != null ? searchBar.getText().trim() : "";
+        return employeeDAO.filterByRole(keyword, selectedRole, page, pageSize);
     }
 
     @Override
     protected PaginationHelper.PaginationResult<Employee> searchPage(String keyword, int page, int pageSize) {
-        return employeeDAO.search(keyword, page, pageSize);
+        return employeeDAO.filterByRole(keyword, selectedRole, page, pageSize);
     }
 
     @Override
@@ -149,6 +156,34 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo mã NV, tên đăng nhập, họ tên, email..."; }
 
+    private void setupRoleFilter() {
+        roleFilter = new JComboBox<>(new String[]{"Tất cả vai trò", "Quản trị viên", "Quản lý bán hàng", "Quản lý kho", "Nhân viên bán hàng"});
+        roleFilter.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 13));
+        roleFilter.setBackground(AppColor.WHITE);
+        roleFilter.setForeground(AppColor.TEXT_PRIMARY);
+        roleFilter.setPreferredSize(new Dimension(190, 38));
+        roleFilter.setFocusable(false);
+        roleFilter.setToolTipText("Lọc danh sách theo vai trò");
+        roleFilter.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
+
+        roleFilter.addActionListener(e -> {
+            selectedRole = roleFromFilterIndex(roleFilter.getSelectedIndex());
+            applyFilters();
+        });
+        addToolbarFilter(roleFilter);
+    }
+
+    private Role roleFromFilterIndex(int index) {
+        switch (index) {
+            case 1: return Role.ADMIN;
+            case 2: return Role.SALES_MANAGER;
+            case 3: return Role.INVENTORY_MANAGER;
+            case 4: return Role.SALES_STAFF;
+            
+            default: return null;
+        }
+    }
+
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
         List<String> names = new ArrayList<>();
@@ -159,14 +194,49 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
             if (e.getUsername() != null && !e.getUsername().isBlank()) {
                 names.add(e.getUsername());
             }
+            if (e.getEmployeeId() != null && !e.getEmployeeId().isBlank()) {
+                names.add(e.getEmployeeId());
+            }
         }
         return new ArrayList<>(new LinkedHashSet<>(names));
     }
 
-    /** Giống UserAccountPanel/CustomerPanel: chưa có nơi nào publish DataChangedEvent cho Users nên reload() trực tiếp sau mỗi thao tác. */
+    /**
+     * Giống UserAccountPanel/CustomerPanel: chưa có nơi nào publish DataChangedEvent
+     * cho Users/Employees nên reload() trực tiếp sau mỗi thao tác.
+     */
     @Override
     protected void onDataChanged() {
         reload();
+    }
+
+    /**
+     * Sau khi thêm nhân viên mới:
+     * <ul>
+     *   <li>Không hiện dialog "Đã thêm nhân viên mới" (EmployeeFormDialog đã báo
+     *       chi tiết mã NV / username / mật khẩu-email).</li>
+     *   <li>Xóa bộ lọc vai trò + ô tìm kiếm và về trang 1 — vì danh sách ORDER BY
+     *       UserID DESC, nhân viên vừa tạo luôn nằm trang đầu. Nếu giữ nguyên
+     *       trang/filter hiện tại thì bảng trông như "không auto-refresh".</li>
+     * </ul>
+     * Khi sửa: giữ hành vi mặc định (thông báo + reload trang hiện tại).
+     */
+    @Override
+    protected void handleFormSaved(Employee item, CrudMode mode) {
+        if (mode == CrudMode.ADD) {
+            selectedRole = null;
+            if (roleFilter != null) {
+                roleFilter.setSelectedIndex(0);
+            }
+            if (searchBar != null) {
+                searchBar.setText("");
+            }
+            // applyFilters() luôn load trang 1 (không giữ page cũ)
+            applyFilters();
+            return;
+        }
+        BaseDialog.success(this, "Thành công", "Đã cập nhật " + getEntityLabel());
+        onDataChanged();
     }
 
     // ---------------------------------------------------------------
@@ -233,6 +303,8 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         if (!confirmed) return;
 
         if (employeeDAO.setLocked(item.getUserId(), true)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\"");
             BaseDialog.success(this, "Thành công", "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {
@@ -245,6 +317,8 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         if (item == null) return;
 
         if (employeeDAO.setLocked(item.getUserId(), false)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\"");
             BaseDialog.success(this, "Thành công", "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\".");
             onDataChanged();
         } else {

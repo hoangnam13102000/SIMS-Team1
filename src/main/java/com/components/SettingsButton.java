@@ -24,6 +24,8 @@ public class SettingsButton extends JPanel {
 
     private static final int SIZE = 52;
     private static final int MARGIN = 24;
+    /** Chieu rong dong menu: vua khop nhan dai nhat (khong cat chu, khong thua trang). */
+    private static final int MENU_ROW_WIDTH = 310;
 
     private boolean hover = false;
     private boolean showOrderMuteOption = true;
@@ -101,43 +103,37 @@ public class SettingsButton extends JPanel {
         card.setBackground(AppColor.WHITE);
         card.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-            new EmptyBorder(8, 8, 8, 8)
+            new EmptyBorder(12, 10, 12, 10)
         ));
 
         card.add(buildSectionTitle(Lang.get("settings.section.appearance")));
         card.add(buildThemeOption(Lang.get("settings.theme.light"), FontAwesomeSolid.SUN, ThemeMode.LIGHT, tm, popup));
-        card.add(Box.createVerticalStrut(2));
+        card.add(Box.createVerticalStrut(4));
         card.add(buildThemeOption(Lang.get("settings.theme.dark"), FontAwesomeSolid.MOON, ThemeMode.DARK, tm, popup));
 
-        card.add(Box.createVerticalStrut(6));
+        card.add(Box.createVerticalStrut(10));
         card.add(buildDivider());
-        card.add(Box.createVerticalStrut(4));
+        card.add(Box.createVerticalStrut(8));
 
         card.add(buildSectionTitle(Lang.get("settings.section.notification")));
         card.add(buildToggleRow(Lang.get("settings.notification.sound"), FontAwesomeSolid.VOLUME_UP,
             ns.isSoundEnabled(), ns::setSoundEnabled));
 
         if (showOrderMuteOption) {
-            card.add(Box.createVerticalStrut(2));
+            card.add(Box.createVerticalStrut(4));
             card.add(buildToggleRow(Lang.get("settings.notification.muteOrders"), FontAwesomeSolid.BELL_SLASH,
                 ns.isOrdersMuted(), ns::setOrdersMuted));
-
-            JLabel hint = new JLabel("<html><div style='width:170px'>" + Lang.get("settings.notification.muteOrders.hint") + "</div></html>");
-            hint.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-            hint.setForeground(AppColor.TEXT_MUTED);
-            hint.setBorder(new EmptyBorder(4, 10, 2, 8));
-            card.add(hint);
         }
 
-        card.add(Box.createVerticalStrut(6));
+        card.add(Box.createVerticalStrut(10));
         card.add(buildDivider());
-        card.add(Box.createVerticalStrut(4));
+        card.add(Box.createVerticalStrut(8));
 
         // ==== Ngôn ngữ / Language ====
         LanguageManager lm = LanguageManager.getInstance();
         card.add(buildSectionTitle(Lang.get("settings.section.language")));
         card.add(buildLanguageOption(Lang.get("settings.language.vi"), new Locale("vi"), lm, popup));
-        card.add(Box.createVerticalStrut(2));
+        card.add(Box.createVerticalStrut(4));
         card.add(buildLanguageOption(Lang.get("settings.language.en"), Locale.ENGLISH, lm, popup));
 
         popup.add(card);
@@ -149,7 +145,7 @@ public class SettingsButton extends JPanel {
         JLabel title = new JLabel(text);
         title.setFont(new Font("Segoe UI", Font.BOLD, 12));
         title.setForeground(AppColor.TEXT_MUTED);
-        title.setBorder(new EmptyBorder(2, 8, 8, 8));
+        title.setBorder(new EmptyBorder(4, 8, 10, 8));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
         return title;
     }
@@ -168,15 +164,18 @@ public class SettingsButton extends JPanel {
         JPanel row = new JPanel(new BorderLayout(10, 0));
         row.setOpaque(true);
         row.setBackground(active ? AppColor.ACCENT_SELECTION_BG : AppColor.WHITE);
-        row.setBorder(new EmptyBorder(8, 10, 8, 10));
+        row.setBorder(new EmptyBorder(10, 12, 10, 12));
         row.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        row.setMaximumSize(new Dimension(220, 40));
-        row.setPreferredSize(new Dimension(200, 36));
+        row.setMaximumSize(new Dimension(MENU_ROW_WIDTH, 46));
+        row.setPreferredSize(new Dimension(MENU_ROW_WIDTH, 42));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         FontIcon icon = FontIcon.of(iconType, 14);
         icon.setIconColor(active ? AppColor.ACCENT : AppColor.TEXT_MUTED);
         JLabel iconLabel = new JLabel(icon);
+        iconLabel.setPreferredSize(new Dimension(24, 20));
+        iconLabel.setMinimumSize(new Dimension(24, 20));
+        iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
 
         JLabel text = new JLabel(label);
         text.setFont(new Font("Segoe UI", active ? Font.BOLD : Font.PLAIN, 13));
@@ -220,15 +219,18 @@ public class SettingsButton extends JPanel {
         JPanel row = new JPanel(new BorderLayout(10, 0));
         row.setOpaque(true);
         row.setBackground(active ? AppColor.ACCENT_SELECTION_BG : AppColor.WHITE);
-        row.setBorder(new EmptyBorder(8, 10, 8, 10));
+        row.setBorder(new EmptyBorder(10, 12, 10, 12));
         row.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        row.setMaximumSize(new Dimension(220, 40));
-        row.setPreferredSize(new Dimension(200, 36));
+        row.setMaximumSize(new Dimension(MENU_ROW_WIDTH, 46));
+        row.setPreferredSize(new Dimension(MENU_ROW_WIDTH, 42));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         FontIcon icon = FontIcon.of(FontAwesomeSolid.GLOBE, 14);
         icon.setIconColor(active ? AppColor.ACCENT : AppColor.TEXT_MUTED);
         JLabel iconLabel = new JLabel(icon);
+        iconLabel.setPreferredSize(new Dimension(24, 20));
+        iconLabel.setMinimumSize(new Dimension(24, 20));
+        iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
 
         JLabel text = new JLabel(label);
         text.setFont(new Font("Segoe UI", active ? Font.BOLD : Font.PLAIN, 13));
@@ -275,30 +277,56 @@ public class SettingsButton extends JPanel {
         JPanel row = new JPanel(new BorderLayout(10, 0));
         row.setOpaque(true);
         row.setBackground(AppColor.WHITE);
-        row.setBorder(new EmptyBorder(8, 10, 8, 8));
+        row.setBorder(new EmptyBorder(10, 14, 10, 12));
         row.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        row.setMaximumSize(new Dimension(220, 40));
-        row.setPreferredSize(new Dimension(200, 36));
+        row.setMaximumSize(new Dimension(MENU_ROW_WIDTH, 48));
+        row.setPreferredSize(new Dimension(MENU_ROW_WIDTH, 44));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        FontIcon icon = FontIcon.of(iconType, 14);
+        // O chua icon co dinh: JLabel khong bi ep size -> FontIcon ve day du, khong cat.
+        FontIcon icon = FontIcon.of(iconType, 16);
         icon.setIconColor(AppColor.TEXT_MUTED);
         JLabel iconLabel = new JLabel(icon);
+        JPanel iconBox = new JPanel(new GridBagLayout());
+        iconBox.setOpaque(false);
+        iconBox.setPreferredSize(new Dimension(32, 24));
+        iconBox.setMinimumSize(new Dimension(32, 24));
+        iconBox.setMaximumSize(new Dimension(32, 24));
+        iconBox.add(iconLabel);
 
         JLabel text = new JLabel(label);
-        text.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        text.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         text.setForeground(AppColor.TEXT_PRIMARY);
 
-        JPanel left = new JPanel(new BorderLayout(8, 0));
+        JPanel left = new JPanel(new BorderLayout(12, 0));
         left.setOpaque(false);
-        left.add(iconLabel, BorderLayout.WEST);
+        left.add(iconBox, BorderLayout.WEST);
         left.add(text, BorderLayout.CENTER);
 
         ToggleSwitch toggle = new ToggleSwitch(initialValue);
         toggle.onChange(onChange);
 
+        // Boc ToggleSwitch bang FlowLayout (thay vi GridBagLayout truoc day):
+        // FlowLayout KHONG bao gio keo gian/bop nho component con - no luon
+        // giu component o dung getPreferredSize() va chi can giua theo chieu
+        // doc. Day la mot trong nhung nguyen nhan khien icon bi cat: khi
+        // GridBagLayout long trong BorderLayout.EAST ket hop voi Windows
+        // display scaling (125%/150%), ToggleSwitch co the nhan duoc bien
+        // width/height nho hon 46x26 thiet ke, khien phan pill/nut tron bi
+        // Swing clip cung theo bounds (nhin nhu "bi cat ngang"). FlowLayout
+        // tranh rui ro nay; ben canh do ToggleSwitch.paintComponent() cung
+        // da duoc sua de tu gioi han ve trong kich thuoc THAT cua no du co
+        // bi bop nho di nua (xem ToggleSwitch.java).
+        JPanel toggleWrap = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        toggleWrap.setOpaque(false);
+        Dimension toggleSize = toggle.getPreferredSize();
+        toggleWrap.setPreferredSize(toggleSize);
+        toggleWrap.setMinimumSize(toggleSize);
+        toggleWrap.setMaximumSize(toggleSize);
+        toggleWrap.add(toggle);
+
         row.add(left, BorderLayout.CENTER);
-        row.add(toggle, BorderLayout.EAST);
+        row.add(toggleWrap, BorderLayout.EAST);
 
         MouseAdapter clickThrough = new MouseAdapter() {
             @Override

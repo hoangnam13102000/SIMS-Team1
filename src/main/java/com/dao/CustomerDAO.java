@@ -29,7 +29,7 @@ public class CustomerDAO extends SoftDeleteDAO<Customer> {
     @Override
     protected String getColumns() {
         return "u.UserID, u.Username, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
-                + "u.IsLocked, u.Status, c.MemberPoint, c.CreatedAt";
+                + "u.IsLocked, u.Status, c.CustomerCode, c.MemberPoint, c.CreatedAt";
     }
 
     @Override
@@ -61,6 +61,7 @@ public class CustomerDAO extends SoftDeleteDAO<Customer> {
     protected Customer mapResultSet(ResultSet rs) throws SQLException {
         Customer customer = new Customer();
         customer.setCustomerId(rs.getInt("UserID"));
+        customer.setCustomerCode(rs.getString("CustomerCode"));
         customer.setUsername(rs.getString("Username"));
         customer.setFullName(rs.getString("FullName"));
         customer.setEmail(rs.getString("Email"));
@@ -75,7 +76,33 @@ public class CustomerDAO extends SoftDeleteDAO<Customer> {
 
     @Override
     protected String[] getSearchableColumns() {
-        return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone"};
+        return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone", "c.CustomerCode"};
+    }
+
+    /**
+     * Tim 1 khach hang khop CHINH XAC theo CustomerCode (vd "CUS_0007") - dung
+     * cho POS khi quet ma vach/the thanh vien. CustomerCode la ma ON DINH,
+     * KHONG doi ngay ca khi doi CustomerID noi bo (khong ap dung o day vi
+     * CustomerID = UserID co dinh, nhung tach rieng CustomerCode van tot hon
+     * vi khong lo ID noi bo tang dan ra ngoai the in). Giong het pattern
+     * ProductDAO.findActiveByCode - so sanh khong phan biet hoa/thuong va tu
+     * dong bo qua khach da xoa mem (IsDeleted = 1).
+     */
+    public Customer findByCode(String customerCode) {
+        if (customerCode == null || customerCode.isBlank()) return null;
+        String sql = "SELECT " + getColumns() + " FROM " + getTableName()
+                + " WHERE UPPER(c.CustomerCode) = UPPER(?) AND u.IsDeleted = 0";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, customerCode.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? mapResultSet(rs) : null;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "CustomerDAO.findByCode - customerCode=" + customerCode, e);
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------

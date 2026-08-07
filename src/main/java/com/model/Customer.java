@@ -12,6 +12,7 @@ import java.util.Date;
 public class Customer {
 
     private int customerId; // = User.userId
+    private String customerCode; // "CUS_" + customerId dem 4 so (vd CUS_0001) - dung lam ma vach the thanh vien
     private String username;
     private String fullName;
     private String email;
@@ -24,6 +25,9 @@ public class Customer {
 
     public int getCustomerId() { return customerId; }
     public void setCustomerId(int customerId) { this.customerId = customerId; }
+
+    public String getCustomerCode() { return customerCode; }
+    public void setCustomerCode(String customerCode) { this.customerCode = customerCode; }
 
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
@@ -60,6 +64,7 @@ public class Customer {
     public String toString() {
         return "Customer{" +
                 "customerId=" + customerId +
+                ", customerCode='" + customerCode + '\'' +
                 ", username='" + username + '\'' +
                 ", fullName='" + fullName + '\'' +
                 ", memberPoint=" + memberPoint +

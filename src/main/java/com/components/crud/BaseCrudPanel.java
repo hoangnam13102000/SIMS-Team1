@@ -49,8 +49,10 @@ public abstract class BaseCrudPanel<T> extends JPanel {
     protected List<T> currentPageData;
 
     private JPanel dataContainer;
+    private JPanel toolbarLeft;
     private CardLayout dataCardLayout;
     private EmptyState emptyState;
+    private JPanel statsCardsRow;
 
     protected BaseCrudPanel() {
         setLayout(new BorderLayout());
@@ -80,7 +82,48 @@ public abstract class BaseCrudPanel<T> extends JPanel {
 
         loadingOverlay = new LoadingOverlay("Đang tải dữ liệu...");
 
-        add(buildPageHeader(), BorderLayout.NORTH);
+        JPanel topSection = new JPanel();
+        topSection.setLayout(new BoxLayout(topSection, BoxLayout.Y_AXIS));
+        topSection.setOpaque(false);
+        topSection.add(buildPageHeader());
+
+        // Hàng StatCard (tùy chọn) - rỗng/ẩn cho đến khi maybeBuildStatsCards()
+        // được gọi từ initialLoad(), xem giải thích ở buildStatsCards().
+        // Override preferred/max size để BoxLayout.Y_AXIS luôn giãn full chiều ngang
+        // (tránh khoảng trắng thừa bên trái khi preferred width < parent width).
+        statsCardsRow = new JPanel(new GridLayout(1, 0, 16, 0)) {
+            @Override
+            public Dimension getPreferredSize() {
+                Dimension d = super.getPreferredSize();
+                Container parent = getParent();
+                if (parent != null && parent.getWidth() > 0) {
+                    d.width = parent.getWidth();
+                } else {
+                    d.width = Math.max(d.width, Short.MAX_VALUE / 2);
+                }
+                return d;
+            }
+
+            @Override
+            public Dimension getMaximumSize() {
+                Dimension pref = getPreferredSize();
+                return new Dimension(Integer.MAX_VALUE, pref.height);
+            }
+
+            @Override
+            public Dimension getMinimumSize() {
+                Dimension d = super.getMinimumSize();
+                d.width = 0;
+                return d;
+            }
+        };
+        statsCardsRow.setOpaque(false);
+        statsCardsRow.setBorder(new EmptyBorder(0, 0, 16, 0));
+        statsCardsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        statsCardsRow.setVisible(false);
+        topSection.add(statsCardsRow);
+
+        add(topSection, BorderLayout.NORTH);
         add(buildTableCard(buildToolbar()), BorderLayout.CENTER);
         AutoRefresher.bind(this, DataChangedEvent.class, 400, this::reload);
     }
@@ -88,6 +131,7 @@ public abstract class BaseCrudPanel<T> extends JPanel {
     /** Gọi ở cuối constructor của subclass để tải dữ liệu lần đầu. */
     protected void initialLoad() {
         maybeAddTrashButton();
+        maybeBuildStatsCards();
         loadData(1, defaultPageSize());
         loadAutocompleteSuggestionsAsync();
     }
@@ -281,6 +325,10 @@ public abstract class BaseCrudPanel<T> extends JPanel {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
         wrapper.setBorder(new EmptyBorder(0, 0, 16, 0));
+        // Cùng LEFT_ALIGNMENT + max full-width với statsCardsRow để BoxLayout
+        // không căn giữa / chừa khoảng trống ngang.
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         wrapper.add(header, BorderLayout.CENTER);
         return wrapper;
     }
@@ -303,10 +351,41 @@ public abstract class BaseCrudPanel<T> extends JPanel {
         pageHeader.addOverflowAction("Thùng rác", FontAwesomeSolid.TRASH, this::openTrash);
     }
 
+    /**
+     * Hook: subclass muốn hiển thị vài StatCard tổng quan (vd "Tổng số",
+     * "Hôm nay", "Cảnh báo"...) ngay dưới tiêu đề trang thì override hàm
+     * này và trả về danh sách JComponent (thường là {@link com.components.StatCard}).
+     * Trả về null/rỗng (mặc định) nếu không cần.
+     * <p>
+     * QUAN TRỌNG: giống {@link #maybeAddTrashButton()}, hàm này CHỈ được gọi
+     * từ {@link #initialLoad()} (cuối constructor subclass, SAU KHI field
+     * riêng như DAO đã được gán) - không gọi trực tiếp từ constructor của
+     * BaseCrudPanel vì lúc đó field subclass chưa khởi tạo xong.
+     */
+    protected List<JComponent> buildStatsCards() { return null; }
+
+    private void maybeBuildStatsCards() {
+        List<JComponent> cards = buildStatsCards();
+        if (statsCardsRow == null || cards == null || cards.isEmpty()) return;
+        statsCardsRow.removeAll();
+        statsCardsRow.setLayout(new GridLayout(1, cards.size(), 16, 0));
+        for (JComponent c : cards) {
+            // Mỗi card giãn đều theo cột GridLayout
+            c.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+            statsCardsRow.add(c);
+        }
+        statsCardsRow.setVisible(true);
+        statsCardsRow.revalidate();
+        statsCardsRow.repaint();
+    }
+
     private JPanel buildToolbar() {
         JPanel toolbar = new JPanel(new BorderLayout());
         toolbar.setOpaque(false);
         toolbar.setBorder(new EmptyBorder(14, 16, 14, 16));
+
+        toolbarLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        toolbarLeft.setOpaque(false);
 
         if (getSearchPlaceholder() != null) {
             searchBar = new BaseSearch(getSearchPlaceholder());
@@ -315,14 +394,37 @@ public abstract class BaseCrudPanel<T> extends JPanel {
             } else {
                 searchBar.onSearch(this::searchItem);
             }
-            toolbar.add(searchBar, BorderLayout.WEST);
+            toolbarLeft.add(searchBar);
         }
+        toolbar.add(toolbarLeft, BorderLayout.WEST);
 
         countLabel = new JLabel();
         countLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         countLabel.setForeground(AppColor.TEXT_MUTED);
         toolbar.add(countLabel, BorderLayout.EAST);
         return toolbar;
+    }
+
+    /**
+     * Thêm control lọc bên cạnh ô tìm kiếm. Gọi từ constructor của subclass
+     * sau super() và trước initialLoad().
+     */
+    protected void addToolbarFilter(Component component) {
+        if (toolbarLeft != null && component != null) {
+            toolbarLeft.add(component);
+            toolbarLeft.revalidate();
+            toolbarLeft.repaint();
+        }
+    }
+
+    /** Áp dụng lại search + các bộ lọc của subclass và quay về trang đầu. */
+    protected void applyFilters() {
+        String keyword = searchBar != null && searchBar.getText() != null ? searchBar.getText().trim() : "";
+        if (!keyword.isEmpty()) {
+            searchItem(keyword);
+        } else {
+            loadData(1, showPagination() ? pagination.getPageSize() : Integer.MAX_VALUE);
+        }
     }
 
     private JPanel buildTableCard(JPanel toolbar) {
@@ -454,7 +556,7 @@ public abstract class BaseCrudPanel<T> extends JPanel {
         }
         afterRender(result);
     }
-    
+
     protected void afterRender(PaginationHelper.PaginationResult<T> result) {
     }
 
@@ -496,6 +598,8 @@ public abstract class BaseCrudPanel<T> extends JPanel {
 
         boolean ok = deleteItem(item);
         if (ok) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_DELETE,
+                    "Đã xóa " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\"", item, null);
             BaseDialog.success(this, "Thành công", "Đã xóa " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\"");
             // Chi can onDataChanged() - AutoRefresher da bind(DataChangedEvent -> reload())
             // o constructor, tu goi reload() (debounce 400ms). Goi reload() them o day
@@ -515,13 +619,32 @@ public abstract class BaseCrudPanel<T> extends JPanel {
         TrashConfig<T> trash = getTrashConfig();
         if (trash == null) return;
 
+        java.util.function.Function<T, Boolean> restoreWrapped = item -> {
+            boolean ok = trash.restore().apply(item);
+            if (ok) {
+                com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_RESTORE,
+                        "Đã khôi phục " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\" từ thùng rác",
+                        null, item);
+            }
+            return ok;
+        };
+        java.util.function.Function<T, Boolean> hardDeleteWrapped = trash.hardDelete() == null ? null : item -> {
+            boolean ok = trash.hardDelete().apply(item);
+            if (ok) {
+                com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_PERMANENT_DELETE,
+                        "Đã xóa vĩnh viễn " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\"",
+                        item, null);
+            }
+            return ok;
+        };
+
         com.components.TrashDialog.show(
                 SwingUtilities.getWindowAncestor(this),
                 "Thùng rác - " + getEntityLabel(),
                 trash.fetchDeleted(),
                 this::getItemDisplayName,
-                trash.restore(),
-                trash.hardDelete(),
+                restoreWrapped,
+                hardDeleteWrapped,
                 this::onDataChanged
         );
     }
@@ -529,13 +652,24 @@ public abstract class BaseCrudPanel<T> extends JPanel {
     /**
      * Helper để subclass gắn làm {@link CrudCallback} cho BaseFormDialog:
      * {@code dialog.onSaved(this::handleFormSaved);}
+     * <p>
+     * Sau ADD: xóa keyword tìm kiếm và về trang 1 (bản ghi mới thường nằm đầu
+     * danh sách theo ORDER BY id DESC). Sau EDIT: reload đúng trang đang xem.
+     * Subclass có thể override (vd EmployeePanel bỏ dialog generic vì form đã
+     * hiện thông báo chi tiết riêng).
      */
     protected void handleFormSaved(T item, CrudMode mode) {
         BaseDialog.success(this, "Thành công",
                 mode == CrudMode.ADD ? "Đã thêm " + getEntityLabel() + " mới" : "Đã cập nhật " + getEntityLabel());
-        // Chi can onDataChanged() - AutoRefresher tu goi reload(), tranh loadingOverlay
-        // hien 2 lan lien tiep (xem giai thich chi tiet o deleteRow()).
-        onDataChanged();
+        if (mode == CrudMode.ADD) {
+            if (searchBar != null) {
+                searchBar.setText("");
+            }
+            // Về trang 1 để thấy bản ghi vừa thêm (tránh giữ page cũ / keyword lọc mất dòng mới)
+            applyFilters();
+        } else {
+            onDataChanged();
+        }
     }
 
     // ---------------------------------------------------------------

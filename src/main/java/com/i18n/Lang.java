@@ -26,13 +26,18 @@ public final class Lang {
 
     private static final String BASE_NAME = "i18n.messages";
 
-    private static volatile ResourceBundle bundle = ResourceBundle.getBundle(BASE_NAME, new Locale("vi"));
+    /** Khong fallback sang locale he thong (thuong la en) - tranh UI lan lon EN/VI. */
+    private static final ResourceBundle.Control NO_FALLBACK =
+            ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES);
+
+    private static volatile ResourceBundle bundle =
+            ResourceBundle.getBundle(BASE_NAME, new Locale("vi"), NO_FALLBACK);
 
     private Lang() {
     }
 
     public static synchronized void setLocale(Locale locale) {
-        bundle = ResourceBundle.getBundle(BASE_NAME, locale);
+        bundle = ResourceBundle.getBundle(BASE_NAME, locale, NO_FALLBACK);
     }
 
     /** Lay chuoi da dich theo key. Neu thieu key, tra ve chinh key (kem dau

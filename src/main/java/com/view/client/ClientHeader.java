@@ -46,12 +46,14 @@ public class ClientHeader extends JPanel {
     private JPanel navPanel;
     private JPanel accountBadge;
     private JTextField searchField;
+    private JLabel clearSearchButton;
     private JComponent searchBarAnchor;
 
     private Consumer<String> navigateListener;
     private Consumer<String> searchListener;
     private BiConsumer<Integer, String> categorySelectListener;
     private Runnable profileListener;
+    private Runnable orderHistoryListener;
     private Runnable logoutListener;
     private Runnable cartListener;
     private CartIconButton cartButton;
@@ -208,9 +210,9 @@ public class ClientHeader extends JPanel {
             }
         });
         searchField.getDocument().addDocumentListener(new DocumentListener() {
-            @Override public void insertUpdate(DocumentEvent e) { scheduleSuggest(); }
-            @Override public void removeUpdate(DocumentEvent e) { scheduleSuggest(); }
-            @Override public void changedUpdate(DocumentEvent e) { scheduleSuggest(); }
+            @Override public void insertUpdate(DocumentEvent e) { scheduleSuggest(); updateClearButtonVisibility(); }
+            @Override public void removeUpdate(DocumentEvent e) { scheduleSuggest(); updateClearButtonVisibility(); }
+            @Override public void changedUpdate(DocumentEvent e) { scheduleSuggest(); updateClearButtonVisibility(); }
         });
         searchField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override
@@ -221,10 +223,35 @@ public class ClientHeader extends JPanel {
             }
         });
 
+        // Nut X clear - chi hien khi o search co text
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearSearchButton = new JLabel(clearIcon);
+        clearSearchButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearSearchButton.setBorder(new EmptyBorder(0, 6, 0, 8));
+        clearSearchButton.setVisible(false);
+        clearSearchButton.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                clearSearch();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                ((FontIcon) clearSearchButton.getIcon()).setIconColor(AppColor.TEXT_PRIMARY);
+                clearSearchButton.repaint();
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                ((FontIcon) clearSearchButton.getIcon()).setIconColor(AppColor.TEXT_MUTED);
+                clearSearchButton.repaint();
+            }
+        });
+
         JPanel fieldWrapper = new JPanel(new BorderLayout());
         fieldWrapper.setOpaque(false);
         fieldWrapper.add(searchIconLabel, BorderLayout.WEST);
         fieldWrapper.add(searchField, BorderLayout.CENTER);
+        fieldWrapper.add(clearSearchButton, BorderLayout.EAST);
 
         initSuggestPopup();
 
@@ -266,6 +293,30 @@ public class ClientHeader extends JPanel {
         button.setContentAreaFilled(false);
         rounded.add(button, BorderLayout.CENTER);
         return rounded;
+    }
+
+
+    private void clearSearch() {
+        searchField.setText("");
+        hideSuggestions();
+        updateClearButtonVisibility();
+        searchField.requestFocusInWindow();
+        if (searchListener != null) {
+            searchListener.accept("");
+        }
+    }
+
+    private void updateClearButtonVisibility() {
+        if (clearSearchButton == null || searchField == null) return;
+        boolean hasText = searchField.getText() != null && !searchField.getText().isEmpty();
+        if (clearSearchButton.isVisible() != hasText) {
+            clearSearchButton.setVisible(hasText);
+            Container parent = clearSearchButton.getParent();
+            if (parent != null) {
+                parent.revalidate();
+                parent.repaint();
+            }
+        }
     }
 
     private void triggerSearch() {
@@ -1318,6 +1369,10 @@ public class ClientHeader extends JPanel {
             if (profileListener != null) profileListener.run();
         }));
         card.add(Box.createVerticalStrut(6));
+        card.add(buildMenuRow("Lịch sử mua hàng", FontAwesomeSolid.RECEIPT, AppColor.TEXT_PRIMARY, popup, () -> {
+            if (orderHistoryListener != null) orderHistoryListener.run();
+        }));
+        card.add(Box.createVerticalStrut(6));
         card.add(buildDivider());
         card.add(Box.createVerticalStrut(6));
         card.add(buildMenuRow(Lang.get("client.header.logout"), FontAwesomeSolid.SIGN_OUT_ALT, AppColor.ERROR, popup, () -> {
@@ -1463,6 +1518,10 @@ public class ClientHeader extends JPanel {
 
     public void onProfile(Runnable listener) {
         this.profileListener = listener;
+    }
+
+    public void onOrderHistory(Runnable listener) {
+        this.orderHistoryListener = listener;
     }
 
     public void onLogout(Runnable listener) {

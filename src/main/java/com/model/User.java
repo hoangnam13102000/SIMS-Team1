@@ -13,6 +13,7 @@ public class User {
     private int failedLoginCount;
     private String status; // ACTIVE | DISABLED
     private java.time.LocalDateTime createdAt;
+    private String employeeCode; // "EMP_0001" - null neu Role.CUSTOMER (khong co ho so Employees)
     public User() {
     }
 
@@ -56,6 +57,9 @@ public class User {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getEmployeeCode() { return employeeCode; }
+    public void setEmployeeCode(String employeeCode) { this.employeeCode = employeeCode; }
 
     public boolean isDisabled() {
         return "DISABLED".equalsIgnoreCase(status);

@@ -6,6 +6,7 @@ import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.DateUtil;
 import com.utils.ImageUtil;
+import com.utils.NumberUtil;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -14,24 +15,19 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 
 /**
  * Dialog xem nhanh (chỉ đọc) thông tin 1 khách hàng, mở từ nút "Xem chi tiết"
- * (icon mắt) trong {@link CustomerPanel}. Khác {@link CustomerFormDialog}:
- * dialog này KHÔNG có field chỉnh sửa - chỉ trình bày lại dữ liệu đã có theo
- * bố cục thẻ thông tin (avatar + badge + các dòng icon/label/giá trị), dùng
- * khi người dùng chỉ muốn xem nhanh mà không cần mở form sửa.
+ * (icon mắt) trong {@link CustomerPanel}. Layout ngang giống {@code EmployeeDetailDialog}:
+ * avatar lớn bên trái, badge + lưới thông tin 2 cột bên phải. Không có nút X
+ * trên header vì footer đã có nút "Đóng".
  * <p>
  * "Tổng đơn hàng" / "Tổng chi tiêu": ứng dụng hiện CHƯA có module Đơn hàng
- * (không có bảng/DAO Orders), nên 2 chỉ số này tạm hiển thị "0" làm chỗ trống
- * placeholder - khi nào có OrderDAO thật, chỉ cần thay 2 dòng gọi infoRow()
- * bên dưới bằng số liệu thật thay vì sửa lại UI dialog.
+ * đầy đủ cho thống kê theo KH, nên 2 chỉ số này tạm hiển thị "0" làm placeholder.
  */
 public class CustomerDetailDialog extends JDialog {
 
-    private static final int AVATAR_SIZE = 56;
+    private static final int AVATAR_SIZE = 140;
     private static final int ICON_BOX_SIZE = 40;
 
     public CustomerDetailDialog(Frame owner, Customer customer) {
@@ -47,12 +43,12 @@ public class CustomerDetailDialog extends JDialog {
         getRootPane().registerKeyboardAction(e -> dispose(),
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
 
-        setSize(460, 620);
+        setSize(720, 480);
         setLocationRelativeTo(owner);
     }
 
     // ---------------------------------------------------------------
-    // Header: tiêu đề + nút đóng (X)
+    // Header: chỉ tiêu đề (không nút X — footer đã có "Đóng")
     // ---------------------------------------------------------------
 
     private JPanel buildHeader() {
@@ -60,115 +56,121 @@ public class CustomerDetailDialog extends JDialog {
         header.setBackground(AppColor.WHITE);
         header.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
-                new EmptyBorder(18, 24, 18, 20)));
+                new EmptyBorder(18, 24, 18, 24)));
 
         JLabel title = new JLabel("Chi tiết khách hàng");
         title.setFont(AppFont.DIALOG_TITLE);
         title.setForeground(AppColor.TEXT_PRIMARY);
         header.add(title, BorderLayout.CENTER);
-        header.add(buildCloseButton(), BorderLayout.EAST);
         return header;
     }
 
-    private JComponent buildCloseButton() {
-        FontIcon icon = FontIcon.of(FontAwesomeSolid.TIMES, 16);
-        icon.setIconColor(AppColor.TEXT_MUTED);
-        JLabel close = new JLabel(icon);
-        close.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        close.setBorder(new EmptyBorder(4, 4, 4, 4));
-        close.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) { dispose(); }
-            @Override public void mouseEntered(MouseEvent e) { icon.setIconColor(AppColor.TEXT_PRIMARY); close.repaint(); }
-            @Override public void mouseExited(MouseEvent e) { icon.setIconColor(AppColor.TEXT_MUTED); close.repaint(); }
-        });
-        return close;
-    }
-
     // ---------------------------------------------------------------
-    // Body: avatar + tên/username + badge + các dòng thông tin
+    // Body (layout ngang): avatar trái | badge + lưới info phải
     // ---------------------------------------------------------------
 
     private JComponent buildBody(Customer customer) {
-        JPanel body = new JPanel();
-        body.setBackground(AppColor.WHITE);
-        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.setBorder(new EmptyBorder(22, 24, 8, 24));
+        JPanel root = new JPanel(new BorderLayout(24, 0));
+        root.setBackground(AppColor.WHITE);
+        root.setBorder(new EmptyBorder(22, 24, 12, 24));
 
-        body.add(buildIdentitySection(customer));
-        body.add(Box.createVerticalStrut(18));
-        body.add(buildDivider());
-        body.add(Box.createVerticalStrut(18));
+        root.add(buildAvatarColumn(customer), BorderLayout.WEST);
+        root.add(buildInfoColumn(customer), BorderLayout.CENTER);
 
-        body.add(infoRow(FontAwesomeSolid.ENVELOPE, "Email", emptyDash(customer.getEmail())));
-        body.add(Box.createVerticalStrut(16));
-        body.add(infoRow(FontAwesomeSolid.PHONE_ALT, "Số điện thoại", emptyDash(customer.getPhone())));
-        body.add(Box.createVerticalStrut(16));
-        body.add(infoRow(FontAwesomeSolid.SHOPPING_BAG, "Tổng đơn hàng", "0 đơn"));
-        body.add(Box.createVerticalStrut(16));
-        body.add(infoRow(FontAwesomeSolid.DOLLAR_SIGN, "Tổng chi tiêu", "0 đ"));
-        body.add(Box.createVerticalStrut(16));
-        body.add(infoRow(FontAwesomeSolid.CALENDAR_ALT, "Ngày tham gia",
-                customer.getCreatedAt() != null ? DateUtil.formatDate(customer.getCreatedAt()) : "-"));
-
-        JScrollPane scroll = new JScrollPane(body);
+        JScrollPane scroll = new JScrollPane(root);
         scroll.setBorder(null);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getViewport().setBackground(AppColor.WHITE);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         return scroll;
     }
 
-    private JPanel buildIdentitySection(Customer customer) {
-        JPanel section = new JPanel(new BorderLayout(16, 0));
-        section.setOpaque(false);
-        section.setAlignmentX(Component.LEFT_ALIGNMENT);
-        // KHONG gioi han chieu cao = AVATAR_SIZE (56px): khoi text ben phai co
-        // 3 dong (ten + username + hang badge) can nhieu hon 56px, neu ep max
-        // height = 56 thi BoxLayout (Y_AXIS) se CAT phan duoi (StatBadge bi mat
-        // 1 phan) vi BorderLayout khong tu cuon. De rong (Integer.MAX_VALUE) de
-        // JPanel tu lay chieu cao theo preferred size that su cua noi dung.
-        section.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+    /** Cột trái: avatar lớn + tên + username. */
+    private JComponent buildAvatarColumn(Customer customer) {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setPreferredSize(new Dimension(AVATAR_SIZE + 8, 0));
 
-        String name = customer.getFullName() != null && !customer.getFullName().isBlank()
-                ? customer.getFullName() : customer.getUsername();
+        String name = displayName(customer);
         ImageIcon avatarIcon = ImageUtil.circularIcon(customer.getAvatarUrl(), AVATAR_SIZE, name);
-        section.add(new JLabel(avatarIcon), BorderLayout.WEST);
 
-        JPanel textPanel = new JPanel();
-        textPanel.setOpaque(false);
-        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+        JLabel avatarLabel = new JLabel(avatarIcon);
+        avatarLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        col.add(avatarLabel);
+        col.add(Box.createVerticalStrut(14));
 
         JLabel nameLabel = new JLabel(name);
         nameLabel.setFont(AppFont.HEADING_MD);
         nameLabel.setForeground(AppColor.TEXT_PRIMARY);
-        nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        textPanel.add(nameLabel);
+        nameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        col.add(nameLabel);
+        col.add(Box.createVerticalStrut(4));
 
         JLabel usernameLabel = new JLabel("@" + customer.getUsername());
         usernameLabel.setFont(AppFont.BODY);
         usernameLabel.setForeground(AppColor.TEXT_MUTED);
-        usernameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        textPanel.add(Box.createVerticalStrut(2));
-        textPanel.add(usernameLabel);
+        usernameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        col.add(usernameLabel);
+
+        return col;
+    }
+
+    /** Cột phải: badge + lưới thông tin 2 cột. */
+    private JComponent buildInfoColumn(Customer customer) {
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setBorder(new EmptyBorder(0, 4, 0, 0));
 
         JPanel badgeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         badgeRow.setOpaque(false);
         badgeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        badgeRow.setBorder(new EmptyBorder(6, 0, 0, 0));
         badgeRow.add(new StatBadge("Khách hàng", AppColor.ACCENT));
         badgeRow.add(customer.isDisabled()
                 ? new StatBadge("Vô hiệu hóa", AppColor.ERROR)
                 : new StatBadge("Hoạt động", AppColor.SUCCESS));
-        textPanel.add(badgeRow);
+        if (customer.isLocked()) {
+            badgeRow.add(new StatBadge("Đang khóa", AppColor.WARNING));
+        }
+        col.add(badgeRow);
+        col.add(Box.createVerticalStrut(16));
+        col.add(buildDivider());
+        col.add(Box.createVerticalStrut(16));
+        col.add(buildInfoGrid(customer));
 
-        section.add(textPanel, BorderLayout.CENTER);
-        return section;
+        return col;
     }
 
-    /** 1 dòng thông tin: icon vuông bo góc bên trái, nhãn nhỏ + giá trị đậm bên phải (giống hình mẫu). */
+    /** Lưới 2 cột: mã KH / email / SĐT / điểm TV / tổng đơn / tổng chi tiêu / ngày tham gia. */
+    private JComponent buildInfoGrid(Customer customer) {
+        JPanel grid = new JPanel(new GridLayout(0, 2, 16, 14));
+        grid.setOpaque(false);
+        grid.setAlignmentX(Component.LEFT_ALIGNMENT);
+        grid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 280));
+
+        grid.add(infoRow(FontAwesomeSolid.ID_CARD, "Mã khách hàng", emptyDash(customer.getCustomerCode())));
+        grid.add(infoRow(FontAwesomeSolid.ENVELOPE, "Email", emptyDash(customer.getEmail())));
+        grid.add(infoRow(FontAwesomeSolid.PHONE_ALT, "Số điện thoại", emptyDash(customer.getPhone())));
+        grid.add(infoRow(FontAwesomeSolid.STAR, "Điểm thành viên",
+                NumberUtil.formatThousands(customer.getMemberPoint())));
+        grid.add(infoRow(FontAwesomeSolid.SHOPPING_BAG, "Tổng đơn hàng", "0 đơn"));
+        grid.add(infoRow(FontAwesomeSolid.DOLLAR_SIGN, "Tổng chi tiêu", "0 đ"));
+        grid.add(infoRow(FontAwesomeSolid.CALENDAR_ALT, "Ngày tham gia",
+                customer.getCreatedAt() != null ? DateUtil.formatDate(customer.getCreatedAt()) : "-"));
+        grid.add(Box.createGlue());
+
+        return grid;
+    }
+
+    private String displayName(Customer customer) {
+        return customer.getFullName() != null && !customer.getFullName().isBlank()
+                ? customer.getFullName() : customer.getUsername();
+    }
+
     private JPanel infoRow(FontAwesomeSolid iconType, String label, String value) {
-        JPanel row = new JPanel(new BorderLayout(14, 0));
+        JPanel row = new JPanel(new BorderLayout(12, 0));
         row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ICON_BOX_SIZE));
 
         row.add(iconBox(iconType), BorderLayout.WEST);
@@ -194,7 +196,6 @@ public class CustomerDetailDialog extends JDialog {
         return row;
     }
 
-    /** O vuong bo goc nen nhat, chua icon - dung chung cho tat ca dong thong tin. */
     private JComponent iconBox(FontAwesomeSolid iconType) {
         JPanel box = new JPanel(new GridBagLayout()) {
             @Override

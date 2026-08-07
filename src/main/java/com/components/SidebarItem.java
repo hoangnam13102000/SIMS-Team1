@@ -10,19 +10,6 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
-/**
- * Một item trong Sidebar, bao gồm icon, label và badge.
- * <p>
- * Mau chu/icon dung rieng cho Sidebar (KHONG dung AppColor theo theme sang/toi
- * chung cua app nua) - vi nen Sidebar luon co dinh 1 mau toi (BG_COLOR ben
- * Sidebar.java), neu dung mau theo theme sang thi luc app o che do sang, chu
- * muc khong active se qua sang (gan nhu trang), khong con "mo" di duoc nhu
- * mong muon. Dung mau trang voi alpha (do trong suot) khac nhau theo trang
- * thai de dam bao luon mo/dam dung y bat ke theme toan app dang la gi:
- *  - Active: trang 100% + nen accent + chu dam.
- *  - Hover (khong active): trang ~65% - sang len chut de goi y bam duoc.
- *  - Mac dinh (khong active, khong hover): trang ~35% - MO ro rang so voi active.
- */
 public class SidebarItem extends JPanel {
 
     // ===== MÀU SẮC =====
@@ -48,8 +35,12 @@ public class SidebarItem extends JPanel {
     public SidebarItem(String key, String text, FontAwesomeSolid iconType) {
         this.key = key;
 
-        setLayout(new FlowLayout(FlowLayout.LEFT, 12, 10));
+        // BorderLayout: icon trai, label giua (co the rut ngan), badge phai.
+        // Tranh FlowLayout xuong dong khi nhan dai -> bi cat vi chieu cao co dinh.
+        setLayout(new BorderLayout(10, 0));
         setOpaque(false);
+        setPreferredSize(new Dimension(10, ITEM_HEIGHT));
+        setMinimumSize(new Dimension(10, ITEM_HEIGHT));
         setMaximumSize(new Dimension(Integer.MAX_VALUE, ITEM_HEIGHT));
         setCursor(new Cursor(Cursor.HAND_CURSOR));
         setBorder(new EmptyBorder(0, 20, 0, 12));
@@ -58,8 +49,10 @@ public class SidebarItem extends JPanel {
         icon = FontIcon.of(iconType, ICON_SIZE);
         icon.setIconColor(INACTIVE_TEXT);
         iconLabel = new JLabel(icon);
+        iconLabel.setPreferredSize(new Dimension(22, ICON_SIZE + 4));
+        iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
 
-        // Label
+        // Label — 1 dong, khong wrap
         label = new JLabel(text);
         label.setFont(AppFont.BODY);
         label.setForeground(INACTIVE_TEXT);
@@ -67,10 +60,9 @@ public class SidebarItem extends JPanel {
         // Badge
         badge = new SidebarBadge();
 
-        // Add components
-        add(iconLabel);
-        add(label);
-        add(badge);
+        add(iconLabel, BorderLayout.WEST);
+        add(label, BorderLayout.CENTER);
+        add(badge, BorderLayout.EAST);
 
         // Mouse events
         addMouseListener(new MouseAdapter() {

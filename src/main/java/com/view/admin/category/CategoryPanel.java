@@ -245,6 +245,8 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
         if (!confirmed) return;
 
         if (deleteItem(item)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_DELETE,
+                    "Đã xóa " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\"", item, null);
             BaseDialog.success(this, "Thành công", "Đã xóa " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\"");
             onDataChanged();
         } else {
@@ -261,6 +263,8 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
 
         item.setStatus("DISABLED");
         if (categoryDAO.updateCategory(item)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã vô hiệu hóa danh mục \"" + item.getCategoryName() + "\"");
             BaseDialog.success(this, "Thành công", "Đã vô hiệu hóa danh mục \"" + item.getCategoryName() + "\".");
             onDataChanged();
         } else {
@@ -271,6 +275,8 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
     private void enableCategory(Category item) {
         item.setStatus("ACTIVE");
         if (categoryDAO.updateCategory(item)) {
+            com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
+                    "Đã kích hoạt lại danh mục \"" + item.getCategoryName() + "\"");
             BaseDialog.success(this, "Thành công", "Đã kích hoạt lại danh mục \"" + item.getCategoryName() + "\".");
             onDataChanged();
         } else {

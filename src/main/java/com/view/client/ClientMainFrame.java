@@ -4,11 +4,13 @@ import com.components.BaseDialog;
 import com.components.SettingsButton;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
+import com.model.Product;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
 import com.view.layouts.Footer;
+import com.ws.ChatClient;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -16,7 +18,6 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-
 
 public class ClientMainFrame extends JFrame {
 
@@ -39,6 +40,7 @@ public class ClientMainFrame extends JFrame {
         buildContent();
 
         SettingsButton.attach(this, 76, false);
+        ChatWidget.install(this);
 
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
         LanguageManager.getInstance().addRebuildListener(onLangChanged);
@@ -48,6 +50,7 @@ public class ClientMainFrame extends JFrame {
             public void windowClosed(WindowEvent e) {
                 ThemeManager.getInstance().removeRebuildListener(onThemeChanged);
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
+                ChatClient.getInstance().disconnect();
                 AuthService.getInstance().logout();
                 new LoginFrame();
             }
@@ -56,7 +59,6 @@ public class ClientMainFrame extends JFrame {
         setVisible(true);
     }
 
-    /** Xay (hoac xay lai) toan bo noi dung ben trong frame - header + cac trang + footer. */
     private void buildContent() {
         getContentPane().removeAll();
         getContentPane().setBackground(AppColor.PAGE_BG);
@@ -67,6 +69,7 @@ public class ClientMainFrame extends JFrame {
         header = new ClientHeader();
 
         ProfilePanel profilePanel = new ProfilePanel();
+        OrderHistoryPanel orderHistoryPanel = new OrderHistoryPanel();
         profilePanel.onSaved(() -> {
             header.refreshAccountLabel();
             setTitle("SIMS - " + AuthService.getInstance().getCurrentUser().getFullName());
@@ -74,8 +77,7 @@ public class ClientMainFrame extends JFrame {
 
         HomePanel homePanel = new HomePanel();
         ProductsPanel productsPanel = new ProductsPanel();
-        AboutPanel aboutPanel = new AboutPanel();
-        ContactPanel contactPanel = new ContactPanel();
+        ProductDetailPanel productDetailPanel = new ProductDetailPanel();
 
         CartPanel cartPanel = new CartPanel();
         cartPanel.onCheckoutSuccess(() -> showPage("home"));
@@ -84,15 +86,33 @@ public class ClientMainFrame extends JFrame {
             productsPanel.showAll();
         });
 
+        java.util.function.Consumer<Product> openProductDetail = product -> {
+            productDetailPanel.showProduct(product);
+            showPage("productDetail");
+        };
+        homePanel.onProductClick(openProductDetail);
+        homePanel.onShopNow(() -> {
+            showPage("products");
+            productsPanel.showAll();
+        });
+        productsPanel.onProductClick(openProductDetail);
+        productDetailPanel.onRelatedProductClick(openProductDetail);
+        productDetailPanel.onBack(() -> showPage("products"));
+        productDetailPanel.onBuyNow(() -> {
+            showPage("cart");
+            cartPanel.loadCart();
+        });
+
         addPage("home", Lang.get("client.nav.home"), FontAwesomeSolid.HOME, homePanel);
         header.addCategoriesDropdown(Lang.get("client.nav.categories"), FontAwesomeSolid.TAGS);
         addPage("products", Lang.get("client.nav.products"), FontAwesomeSolid.STORE, productsPanel);
-        addPage("about", Lang.get("client.nav.about"), FontAwesomeSolid.INFO_CIRCLE, aboutPanel);
-        addPage("contact", Lang.get("client.nav.contact"), FontAwesomeSolid.ENVELOPE, contactPanel);
-        contentPanel.add(profilePanel, "profile"); // trang profile chi vao qua dropdown tai khoan
-        contentPanel.add(cartPanel, "cart"); // trang gio hang chi vao qua icon gio hang tren header
-        
-        // Chon 1 danh muc trong dropdown "Danh muc" tren nav -> sang trang San pham, loc san theo danh muc do
+        addPage("about", Lang.get("client.nav.about"), FontAwesomeSolid.INFO_CIRCLE, new AboutPanel());
+        addPage("contact", Lang.get("client.nav.contact"), FontAwesomeSolid.ENVELOPE, new ContactPanel());
+        contentPanel.add(profilePanel, "profile");
+        contentPanel.add(orderHistoryPanel, "orderHistory");
+        contentPanel.add(cartPanel, "cart");
+        contentPanel.add(productDetailPanel, "productDetail");
+
         header.onCategorySelect((categoryId, categoryName) -> {
             showPage("products");
             productsPanel.filterByCategory(categoryId, categoryName);
@@ -109,6 +129,10 @@ public class ClientMainFrame extends JFrame {
             homePanel.search(keyword);
         });
         header.onProfile(() -> showPage("profile"));
+        header.onOrderHistory(() -> {
+            orderHistoryPanel.refresh();
+            showPage("orderHistory");
+        });
         header.onCartClick(() -> {
             showPage("cart");
             cartPanel.loadCart();
@@ -151,7 +175,6 @@ public class ClientMainFrame extends JFrame {
             AppColor.ERROR_HOVER,
             FontAwesomeSolid.SIGN_OUT_ALT
         );
-
         if (confirmed) {
             dispose();
         }
