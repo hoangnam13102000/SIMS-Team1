@@ -154,7 +154,7 @@ public class Header extends JPanel {
         bellIcon = new BellIcon();
         bellIcon.setPreferredSize(new Dimension(38, 38));
         bellIcon.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        bellIcon.setToolTipText(Lang.get("admin.header.notifications"));
+        bellIcon.setToolTipText(bellTooltip());
 
         bellIcon.addMouseListener(new MouseAdapter() {
             @Override
@@ -332,7 +332,10 @@ public class Header extends JPanel {
     /** Xoa 1 thong bao (do bam nut x hoac vuot qua nguong) khoi danh sach + goi callback ra ngoai. */
     private void dismissNotification(NotificationItem item) {
         notifications.remove(item);
-        if (bellIcon != null) bellIcon.repaint();
+        if (bellIcon != null) {
+            bellIcon.setToolTipText(bellTooltip());
+            bellIcon.repaint();
+        }
         rebuildNotificationRows();
         if (notificationDismissListener != null) notificationDismissListener.accept(item);
     }
@@ -509,7 +512,10 @@ public class Header extends JPanel {
     public void setNotifications(List<NotificationItem> items) {
         notifications.clear();
         if (items != null) notifications.addAll(items);
-        if (bellIcon != null) bellIcon.repaint();
+        if (bellIcon != null) {
+            bellIcon.setToolTipText(bellTooltip());
+            bellIcon.repaint();
+        }
         if (notificationPopup != null && notificationPopup.isVisible()) {
             rebuildNotificationRows();
         }
@@ -520,14 +526,20 @@ public class Header extends JPanel {
      * Cham do khi ve dua vao !notifications.isEmpty().
      */
     public void setNotificationBadge(boolean hasUnread) {
-        if (bellIcon != null) bellIcon.repaint();
+        if (bellIcon != null) {
+            bellIcon.setToolTipText(bellTooltip());
+            bellIcon.repaint();
+        }
     }
 
     public void upsertNotification(NotificationItem item) {
         if (item == null) return;
         notifications.removeIf(n -> item.getId().equals(n.getId()));
         notifications.add(0, item);
-        if (bellIcon != null) bellIcon.repaint();
+        if (bellIcon != null) {
+            bellIcon.setToolTipText(bellTooltip());
+            bellIcon.repaint();
+        }
         if (notificationPopup != null && notificationPopup.isVisible()) {
             rebuildNotificationRows();
         }
@@ -540,6 +552,13 @@ public class Header extends JPanel {
         if (notificationPopup != null && notificationPopup.isVisible()) {
             rebuildNotificationRows();
         }
+    }
+
+    /** Tooltip phan anh dung trang thai hien tai cua chuong. */
+    private String bellTooltip() {
+        return notifications.isEmpty()
+            ? Lang.get("admin.header.notifications.empty")
+            : Lang.get("admin.header.notifications");
     }
 
     /** Neu duoc gan, bam chuong se chay callback nay thay vi mo dropdown mac dinh. */
