@@ -49,7 +49,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
 
     @Override
     protected String getColumns() {
-        return "r.ReturnID, r.InvoiceID, inv.InvoiceCode, r.Type, r.Reason, r.TotalValue, "
+        return "r.ReturnID, r.InvoiceID, inv.InvoiceCode, r.Type, r.Reason, r.RejectionReason, r.TotalValue, "
                 + "r.RequiresApproval, r.Status, r.ApprovedBy, au.FullName AS ApprovedByName, r.ApprovedAt, "
                 + "r.CreatedBy, u.FullName AS CreatedByName, r.CreatedAt";
     }
@@ -70,6 +70,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         re.setInvoiceCode(rs.getString("InvoiceCode"));
         re.setType(rs.getString("Type"));
         re.setReason(rs.getString("Reason"));
+        re.setRejectionReason(rs.getString("RejectionReason"));
         re.setTotalValue(rs.getBigDecimal("TotalValue"));
         re.setRequiresApproval(rs.getBoolean("RequiresApproval"));
         re.setStatus(rs.getString("Status"));
@@ -428,13 +429,17 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
     }
 
     /** Tu choi 1 yeu cau dang PENDING - khong dong/tru kho gi ca (giu nguyen nhu truoc khi tao yeu cau). */
-    public String reject(int returnId, int approverId) {
-        String sql = "UPDATE ReturnExchanges SET Status = 'REJECTED', ApprovedBy = ?, ApprovedAt = GETDATE() "
+    public String reject(int returnId, int approverId, String rejectionReason) {
+        if (rejectionReason == null || rejectionReason.isBlank()) {
+            return "Vui lòng nhập lý do từ chối.";
+        }
+        String sql = "UPDATE ReturnExchanges SET Status = 'REJECTED', RejectionReason = ?, ApprovedBy = ?, ApprovedAt = GETDATE() "
                 + "WHERE ReturnID = ? AND Status = 'PENDING'";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, approverId);
-            ps.setInt(2, returnId);
+            ps.setString(1, rejectionReason.trim());
+            ps.setInt(2, approverId);
+            ps.setInt(3, returnId);
             int affected = ps.executeUpdate();
             if (affected == 0) {
                 return "Yêu cầu này không còn ở trạng thái chờ duyệt.";

@@ -26,7 +26,8 @@ public class ReturnExchange {
     private String invoiceCode;
 
     private String type;          // RETURN | EXCHANGE
-    private String reason;        // R4: bat buoc
+    private String reason;        // R4: ly do khach hang
+    private String rejectionReason; // ly do nhan vien tu choi
     private BigDecimal totalValue; // gia tri hang khach tra (tong Direction=IN * UnitPrice)
     private boolean requiresApproval;
     private String status;        // PENDING | APPROVED | REJECTED
@@ -56,6 +57,9 @@ public class ReturnExchange {
 
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 
     public BigDecimal getTotalValue() { return totalValue; }
     public void setTotalValue(BigDecimal totalValue) { this.totalValue = totalValue; }

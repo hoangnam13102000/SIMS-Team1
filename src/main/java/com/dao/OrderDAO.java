@@ -42,14 +42,16 @@ public class OrderDAO extends BaseDAO<Order> {
                 + "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, o.CompletedAt, o.InvoiceID, "
                 + "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount, "
                 + "CASE WHEN EXISTS (SELECT 1 FROM ReturnExchanges r "
-                + "WHERE r.InvoiceID = o.InvoiceID AND r.Status IN ('PENDING', 'APPROVED')) "
+                + "WHERE r.InvoiceID = o.InvoiceID) "
                 + "THEN 1 ELSE 0 END AS ReturnRequested, "
                 + "(SELECT TOP 1 r.Status FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
                 + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnStatus, "
                 + "(SELECT TOP 1 r.Type FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
                 + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnType, "
                 + "(SELECT TOP 1 r.TotalValue FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
-                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnValue";
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnValue, "
+                + "(SELECT TOP 1 r.RejectionReason FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnRejectionReason";
     }
 
     @Override
@@ -94,6 +96,7 @@ public class OrderDAO extends BaseDAO<Order> {
         order.setLatestReturnStatus(rs.getString("LatestReturnStatus"));
         order.setLatestReturnType(rs.getString("LatestReturnType"));
         order.setLatestReturnValue(rs.getBigDecimal("LatestReturnValue"));
+        order.setLatestReturnRejectionReason(rs.getString("LatestReturnRejectionReason"));
 
         order.setItemCount(rs.getInt("ItemCount"));
         return order;

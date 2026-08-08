@@ -336,16 +336,32 @@ public class OrderHistoryPanel extends JPanel {
             returnButton.addActionListener(e -> handleReturnRequest(order));
             buttons.add(returnButton);
         } else if (order.getLatestReturnStatus() != null) {
-            JLabel returnedTag = new JLabel(returnResultShortLabel(order.getLatestReturnStatus()));
-            returnedTag.setFont(AppFont.SMALL_BOLD);
-            returnedTag.setForeground(returnResultColor(order.getLatestReturnStatus()));
-            buttons.add(returnedTag);
+            if ("REJECTED".equalsIgnoreCase(order.getLatestReturnStatus())) {
+                JButton rejectedButton = smallButton("Đã từ chối", AppColor.ERROR_BG, AppColor.ERROR);
+                rejectedButton.setToolTipText("Bấm để xem lý do từ chối");
+                rejectedButton.addActionListener(e -> showRejectionReason(order));
+                buttons.add(rejectedButton);
+            } else {
+                JLabel returnedTag = new JLabel(returnResultShortLabel(order.getLatestReturnStatus()));
+                returnedTag.setFont(AppFont.SMALL_BOLD);
+                returnedTag.setForeground(returnResultColor(order.getLatestReturnStatus()));
+                buttons.add(returnedTag);
+            }
         }
 
         east.add(total);
         east.add(Box.createVerticalStrut(8));
         east.add(buttons);
         return east;
+    }
+
+
+    private void showRejectionReason(Order order) {
+        String reason = order.getLatestReturnRejectionReason();
+        if (reason == null || reason.isBlank()) {
+            reason = "Nhân viên chưa cung cấp lý do từ chối.";
+        }
+        BaseDialog.info(this, "Lý do từ chối trả hàng", reason);
     }
 
     private JButton smallButton(String text, Color bg, Color fg) {

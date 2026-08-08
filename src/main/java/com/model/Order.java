@@ -33,6 +33,7 @@ public class Order {
     private String latestReturnStatus; // PENDING | APPROVED | REJECTED - yeu cau gan nhat
     private String latestReturnType;   // RETURN | EXCHANGE
     private BigDecimal latestReturnValue;
+    private String latestReturnRejectionReason;
 
     private int itemCount;
 
@@ -104,6 +105,9 @@ public class Order {
 
     public BigDecimal getLatestReturnValue() { return latestReturnValue; }
     public void setLatestReturnValue(BigDecimal latestReturnValue) { this.latestReturnValue = latestReturnValue; }
+
+    public String getLatestReturnRejectionReason() { return latestReturnRejectionReason; }
+    public void setLatestReturnRejectionReason(String latestReturnRejectionReason) { this.latestReturnRejectionReason = latestReturnRejectionReason; }
 
     public boolean isCancelled() { return "CANCELLED".equalsIgnoreCase(orderStatus); }
     public boolean isConfirmed() { return "CONFIRMED".equalsIgnoreCase(orderStatus); }

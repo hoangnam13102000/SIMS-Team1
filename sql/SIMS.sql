@@ -205,7 +205,8 @@ CREATE TABLE ReturnExchanges (
     ReturnID        INT IDENTITY(1,1) PRIMARY KEY,
     InvoiceID       INT NOT NULL FOREIGN KEY REFERENCES Invoices(InvoiceID),
     Type            VARCHAR(20) NOT NULL CHECK (Type IN ('RETURN', 'EXCHANGE')),
-    Reason          NVARCHAR(255) NOT NULL,               -- R4: bat buoc ghi ro ly do
+    Reason          NVARCHAR(255) NOT NULL,               -- Ly do khach hang
+    RejectionReason NVARCHAR(500) NULL,                    -- Ly do nhan vien tu choi
     TotalValue      DECIMAL(18,0) NOT NULL DEFAULT 0,
     RequiresApproval BIT NOT NULL DEFAULT 0,               -- R4: gia tri lon can duyet
     Status          VARCHAR(20) NOT NULL DEFAULT 'PENDING'
