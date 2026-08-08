@@ -10,6 +10,7 @@ import com.model.permission.AppPermission;
 import com.service.AuthService;
 import com.service.OrderNotifyPoller;
 import com.service.StockAlertNotifyPoller;
+import com.service.ReturnExchangeNotifyPoller;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
@@ -50,12 +51,14 @@ public class AdminMainFrame extends JFrame {
     private MainLayout layout;
     private final List<NotificationItem> orderNotifications = new ArrayList<>();
     private final List<NotificationItem> chatNotifications = new ArrayList<>();
+    private final List<NotificationItem> returnNotifications = new ArrayList<>();
     private ChatPanel chatPanelRef;
     private String currentPageKey = "dashboard";
     private final Runnable onThemeChanged = this::rebuildContent;
     private final Runnable onLangChanged = this::rebuildContent;
     private final OrderNotifyPoller orderNotifyPoller = new OrderNotifyPoller();
     private final StockAlertNotifyPoller stockAlertNotifyPoller = new StockAlertNotifyPoller();
+    private final ReturnExchangeNotifyPoller returnExchangeNotifyPoller = new ReturnExchangeNotifyPoller(this::onNewReturnNotifications);
 
     public AdminMainFrame() {
         setTitle(Lang.get("admin.frame.title"));
@@ -86,6 +89,7 @@ public class AdminMainFrame extends JFrame {
 
         stockAlertNotifyPoller.onUnseenChanged((count, preview) -> layout.setBadge("stockAlerts", count));
         stockAlertNotifyPoller.start();
+        returnExchangeNotifyPoller.start();
 
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
         LanguageManager.getInstance().addRebuildListener(onLangChanged);
@@ -97,6 +101,7 @@ public class AdminMainFrame extends JFrame {
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
                 orderNotifyPoller.stop();
                 stockAlertNotifyPoller.stop();
+                returnExchangeNotifyPoller.stop();
                 ChatClient.getInstance().disconnect();
                 AuthService.getInstance().logout();
                 new LoginFrame();
@@ -194,6 +199,8 @@ public class AdminMainFrame extends JFrame {
                 layout.showPage("orders");
             } else if (item.getType() == NotificationItem.Type.STOCK) {
                 layout.showPage("stockAlerts");
+            } else if (item.getType() == NotificationItem.Type.RETURN) {
+                layout.showPage("returnExchange");
             }
         });
         layout.getHeader().onNotificationDismiss(this::dismissNotificationSource);
@@ -204,8 +211,10 @@ public class AdminMainFrame extends JFrame {
             } catch (Exception ignored) {}
             orderNotifications.clear();
             chatNotifications.clear();
+            returnNotifications.clear();
             layout.setBadge("orders", 0);
             layout.setBadge("chat", 0);
+            layout.setBadge("returnExchange", 0);
             refreshHeaderNotifications();
         });
         refreshHeaderNotifications();
@@ -250,11 +259,25 @@ public class AdminMainFrame extends JFrame {
         return items;
     }
 
+    private void onNewReturnNotifications(List<NotificationItem> items) {
+        if (items == null || items.isEmpty()) return;
+        for (NotificationItem item : items) {
+            returnNotifications.removeIf(n -> n.getId().equals(item.getId()));
+            returnNotifications.add(0, item);
+        }
+        refreshHeaderNotifications();
+    }
+
     private void refreshHeaderNotifications() {
         if (layout == null || layout.getHeader() == null) return;
         List<NotificationItem> merged = new ArrayList<>();
         merged.addAll(chatNotifications);
         merged.addAll(orderNotifications);
+        merged.addAll(returnNotifications);
+
+        // Badge Đổi / trả hàng dùng cùng SidebarBadge với các mục khác.
+        // Số badge phản ánh đúng số thông báo hoàn trả online chưa được xử lý/dismiss.
+        layout.setBadge("returnExchange", returnNotifications.size());
         layout.getHeader().setNotifications(merged);
     }
 
@@ -265,6 +288,9 @@ public class AdminMainFrame extends JFrame {
                 chatPanelRef.markNotificationRead(item.getId());
             }
             chatNotifications.removeIf(n -> item.getId().equals(n.getId()));
+        } else if (item.getType() == NotificationItem.Type.RETURN) {
+            returnNotifications.removeIf(n -> item.getId().equals(n.getId()));
+            layout.setBadge("returnExchange", returnNotifications.size());
         } else if (item.getType() == NotificationItem.Type.ORDER) {
             Integer orderId = item.getRefId();
             if (orderId != null) {

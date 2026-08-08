@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
  */
 public class NotificationItem {
 
-    public enum Type { ORDER, INVOICE, STOCK, MESSAGE, SYSTEM }
+    public enum Type { ORDER, INVOICE, STOCK, MESSAGE, RETURN, SYSTEM }
 
     private final String id;
     private final Type type;

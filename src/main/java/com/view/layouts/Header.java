@@ -232,6 +232,7 @@ public class Header extends JPanel {
             case INVOICE: return new Color(217, 119, 6);    // amber-600
             case STOCK: return new Color(220, 38, 38);       // red-600
             case MESSAGE: return new Color(5, 150, 105);     // emerald-600 (ACCENT_COLOR)
+            case RETURN: return new Color(124, 58, 237);      // violet-600
             default: return new Color(100, 116, 139);        // slate-500
         }
     }
@@ -242,6 +243,7 @@ public class Header extends JPanel {
             case INVOICE: return FontAwesomeSolid.FILE_INVOICE;
             case STOCK: return FontAwesomeSolid.EXCLAMATION_TRIANGLE;
             case MESSAGE: return FontAwesomeSolid.COMMENT_DOTS;
+            case RETURN: return FontAwesomeSolid.EXCHANGE_ALT;
             default: return FontAwesomeSolid.BELL;
         }
     }

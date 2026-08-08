@@ -51,6 +51,34 @@ BEGIN
     );
 END
 GO
+IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'admin2')
+BEGIN
+    INSERT INTO Users
+    (
+        Username,
+        PasswordHash,
+        FullName,
+        Email,
+        Phone,
+        RoleID,
+        IsLocked,
+        FailedLoginCount,
+        Status
+    )
+    VALUES
+    (
+        'admin2',
+        '$2a$12$bu9a8NWQ5nLvEzmP9KmDbOmZxADF8e83Lrf/w60dhBTXaUyxRl4zi',
+        N'Quản trị viên hệ thống 2',
+        'admin2@sims.local',
+        NULL,
+        (SELECT RoleID FROM Roles WHERE RoleCode = 'ADMIN'),
+        0,
+        0,
+        'ACTIVE'
+    );
+END
+GO
 
 /* ---- 3) (Tuy chon) Vi du them 1 vai tro moi cho tung nhom quyen sau nay ----
    Khi ban gan quyen chi tiet (AppPermission) cho tung Role trong

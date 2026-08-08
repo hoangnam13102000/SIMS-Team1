@@ -416,12 +416,60 @@ BEGIN
             -- hoa don goc (InvoiceID + ProductID), gioi han theo
             -- so luong tung lo da bi tru cho hoa don do.
             -- --------------------------------------------------
+            /*
+             * Nguon LOT goc co 2 truong hop:
+             *  1) Hoa don ban tai quay: InvoiceDetailBatches luu LOT da lay.
+             *  2) Hoa don tao tu don online: kho da tru tu OrderDetailBatches,
+             *     sau do InvoiceDetails chi la ban sao nen khong co
+             *     InvoiceDetailBatches.
+             *
+             * Neu co InvoiceDetailBatches cho hoa don thi uu tien nguon nay;
+             * neu khong thi lay truc tiep OrderDetailBatches qua Orders.InvoiceID.
+             * Nhung lan tra truoc (APPROVED) van duoc tru ra de khong cong qua
+             * so luong ban dau cua tung LOT.
+             */
             DECLARE origin_cursor CURSOR LOCAL FAST_FORWARD FOR
-                SELECT idb.BatchID, idb.Quantity
-                FROM InvoiceDetailBatches idb
-                JOIN InvoiceDetails dt ON dt.InvoiceDetailID = idb.InvoiceDetailID
-                WHERE dt.InvoiceID = @InvoiceID AND dt.ProductID = @ProductID
-                ORDER BY idb.BatchID;
+                WITH OriginBatches AS (
+                    SELECT idb.BatchID, idb.Quantity AS OriginQty
+                    FROM InvoiceDetailBatches idb
+                    JOIN InvoiceDetails dt ON dt.InvoiceDetailID = idb.InvoiceDetailID
+                    WHERE dt.InvoiceID = @InvoiceID
+                      AND dt.ProductID = @ProductID
+
+                    UNION ALL
+
+                    SELECT odb.BatchID, odb.Quantity AS OriginQty
+                    FROM Orders o
+                    JOIN OrderDetails od ON od.OrderID = o.OrderID
+                    JOIN OrderDetailBatches odb ON odb.OrderDetailID = od.OrderDetailID
+                    WHERE o.InvoiceID = @InvoiceID
+                      AND od.ProductID = @ProductID
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM InvoiceDetailBatches idb2
+                          JOIN InvoiceDetails dt2 ON dt2.InvoiceDetailID = idb2.InvoiceDetailID
+                          WHERE dt2.InvoiceID = @InvoiceID
+                            AND dt2.ProductID = @ProductID
+                      )
+                ),
+                RemainingByBatch AS (
+                    SELECT reb.BatchID, SUM(reb.Quantity) AS ReturnedQty
+                    FROM ReturnExchangeDetailBatches reb
+                    JOIN ReturnExchangeDetails rd2
+                      ON rd2.ReturnDetailID = reb.ReturnDetailID
+                    JOIN ReturnExchanges r2
+                      ON r2.ReturnID = rd2.ReturnID
+                    WHERE rd2.ProductID = @ProductID
+                      AND r2.InvoiceID = @InvoiceID
+                      AND r2.Status = 'APPROVED'
+                    GROUP BY reb.BatchID
+                )
+                SELECT ob.BatchID,
+                       ob.OriginQty - ISNULL(rb.ReturnedQty, 0) AS ReturnableBatchQty
+                FROM OriginBatches ob
+                LEFT JOIN RemainingByBatch rb ON rb.BatchID = ob.BatchID
+                WHERE ob.OriginQty - ISNULL(rb.ReturnedQty, 0) > 0
+                ORDER BY ob.BatchID;
 
             OPEN origin_cursor;
             FETCH NEXT FROM origin_cursor INTO @BatchID, @BatchQty;
@@ -432,13 +480,21 @@ BEGIN
 
                 UPDATE InventoryBatch
                 SET RemainingQty = RemainingQty + @Take,
-                    Status = CASE WHEN Status = 'DEPLETED' THEN 'ACTIVE' ELSE Status END
-                WHERE BatchID = @BatchID;
+                    Status = CASE
+                        WHEN Status = 'DEPLETED' THEN 'ACTIVE'
+                        ELSE Status
+                    END
+                WHERE BatchID = @BatchID
+                  AND RemainingQty + @Take <= Quantity;
 
-                INSERT INTO ReturnExchangeDetailBatches (ReturnDetailID, BatchID, Quantity)
-                VALUES (@ReturnDetailID, @BatchID, @Take);
+                IF @@ROWCOUNT = 1
+                BEGIN
+                    INSERT INTO ReturnExchangeDetailBatches (ReturnDetailID, BatchID, Quantity)
+                    VALUES (@ReturnDetailID, @BatchID, @Take);
 
-                SET @Remaining -= @Take;
+                    SET @Remaining -= @Take;
+                END
+
                 FETCH NEXT FROM origin_cursor INTO @BatchID, @BatchQty;
             END
 

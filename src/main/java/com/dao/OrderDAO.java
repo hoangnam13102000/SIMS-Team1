@@ -43,7 +43,13 @@ public class OrderDAO extends BaseDAO<Order> {
                 + "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount, "
                 + "CASE WHEN EXISTS (SELECT 1 FROM ReturnExchanges r "
                 + "WHERE r.InvoiceID = o.InvoiceID AND r.Status IN ('PENDING', 'APPROVED')) "
-                + "THEN 1 ELSE 0 END AS ReturnRequested";
+                + "THEN 1 ELSE 0 END AS ReturnRequested, "
+                + "(SELECT TOP 1 r.Status FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnStatus, "
+                + "(SELECT TOP 1 r.Type FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnType, "
+                + "(SELECT TOP 1 r.TotalValue FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnValue";
     }
 
     @Override
@@ -85,6 +91,9 @@ public class OrderDAO extends BaseDAO<Order> {
         int invoiceId = rs.getInt("InvoiceID");
         order.setInvoiceId(rs.wasNull() ? null : invoiceId);
         order.setReturnRequested(rs.getBoolean("ReturnRequested"));
+        order.setLatestReturnStatus(rs.getString("LatestReturnStatus"));
+        order.setLatestReturnType(rs.getString("LatestReturnType"));
+        order.setLatestReturnValue(rs.getBigDecimal("LatestReturnValue"));
 
         order.setItemCount(rs.getInt("ItemCount"));
         return order;

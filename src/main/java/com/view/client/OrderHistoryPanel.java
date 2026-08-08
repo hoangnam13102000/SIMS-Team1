@@ -58,6 +58,13 @@ public class OrderHistoryPanel extends JPanel {
     private List<Order> allOrders = new ArrayList<>();
     private String currentKeyword = "";
 
+    // Tự động kiểm tra dữ liệu mới khi khách đang ở trang lịch sử.
+    // Poll nhẹ mỗi 3 giây để nhận biết hóa đơn/trạng thái trả hàng vừa cập nhật.
+    private static final int AUTO_REFRESH_INTERVAL_MS = 3000;
+    private final Timer autoRefreshTimer;
+    private boolean autoRefreshInProgress = false;
+    private String lastOrdersFingerprint = "";
+
     public OrderHistoryPanel() {
         setLayout(new BorderLayout());
         setBackground(AppColor.PAGE_BG);
@@ -92,6 +99,20 @@ public class OrderHistoryPanel extends JPanel {
         add(scroll, BorderLayout.CENTER);
 
         loadOrders();
+
+        // Khi đang đứng ở trang này, tự kiểm tra dữ liệu mới từ DB.
+        // Không rebuild giao diện nếu dữ liệu không thay đổi để tránh nhấp nháy.
+        autoRefreshTimer = new Timer(AUTO_REFRESH_INTERVAL_MS, e -> autoRefreshIfChanged());
+        autoRefreshTimer.setRepeats(true);
+        autoRefreshTimer.start();
+
+        // Dừng timer khi panel bị loại khỏi giao diện để không giữ tài nguyên/DB polling.
+        addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.DISPLAYABILITY_CHANGED) != 0
+                    && !isDisplayable()) {
+                autoRefreshTimer.stop();
+            }
+        });
     }
 
     /** Gọi lại mỗi khi trang được mở (từ dropdown tài khoản) để luôn thấy đơn mới nhất/trạng thái mới nhất. */
@@ -104,6 +125,7 @@ public class OrderHistoryPanel extends JPanel {
     private void loadOrders() {
         int customerId = AuthService.getInstance().getCurrentUser().getUserId();
         allOrders = orderDAO.getByCustomerId(customerId);
+        lastOrdersFingerprint = buildOrdersFingerprint(allOrders);
 
         List<String> suggestions = allOrders.stream()
                 .map(Order::getOrderCode)
@@ -113,6 +135,68 @@ public class OrderHistoryPanel extends JPanel {
         searchBar.setSuggestions(suggestions);
 
         applyFilter();
+    }
+
+    /**
+     * Kiểm tra thay đổi ở background để không khóa EDT khi DB đang truy vấn.
+     * Bao gồm trạng thái hóa đơn/đơn hàng và kết quả đổi trả, nên khi nhân viên
+     * duyệt trả hàng thì trang khách tự cập nhật mà không cần mở lại trang.
+     */
+    private void autoRefreshIfChanged() {
+        if (!isShowing() || autoRefreshInProgress) return;
+
+        autoRefreshInProgress = true;
+        int customerId = AuthService.getInstance().getCurrentUser().getUserId();
+
+        SwingWorker<List<Order>, Void> worker = new SwingWorker<>() {
+            @Override
+            protected List<Order> doInBackground() {
+                return orderDAO.getByCustomerId(customerId);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    List<Order> latestOrders = get();
+                    String latestFingerprint = buildOrdersFingerprint(latestOrders);
+
+                    if (!latestFingerprint.equals(lastOrdersFingerprint)) {
+                        allOrders = latestOrders;
+                        lastOrdersFingerprint = latestFingerprint;
+
+                        List<String> suggestions = latestOrders.stream()
+                                .map(Order::getOrderCode)
+                                .filter(code -> code != null && !code.isBlank())
+                                .collect(Collectors.toCollection(LinkedHashSet::new))
+                                .stream().collect(Collectors.toList());
+                        searchBar.setSuggestions(suggestions);
+
+                        applyFilter();
+                    }
+                } catch (Exception ignored) {
+                    // Không làm gián đoạn trang nếu DB tạm thời không truy cập được.
+                } finally {
+                    autoRefreshInProgress = false;
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private String buildOrdersFingerprint(List<Order> orders) {
+        StringBuilder fingerprint = new StringBuilder();
+        for (Order order : orders) {
+            fingerprint.append(order.getOrderId()).append('|')
+                    .append(order.getInvoiceId()).append('|')
+                    .append(order.getOrderStatus()).append('|')
+                    .append(order.getPaymentStatus()).append('|')
+                    .append(order.getLatestReturnStatus()).append('|')
+                    .append(order.getLatestReturnType()).append('|')
+                    .append(order.getLatestReturnValue()).append('|')
+                    .append(order.getItemCount()).append('|')
+                    .append(order.getTotalAmount()).append(';');
+        }
+        return fingerprint.toString();
     }
 
     private void applyFilter() {
@@ -212,6 +296,14 @@ public class OrderHistoryPanel extends JPanel {
         center.add(line1);
         center.add(dateLabel);
         center.add(itemsLabel);
+        if (order.getLatestReturnStatus() != null) {
+            JLabel returnLabel = new JLabel(returnResultText(order));
+            returnLabel.setFont(AppFont.SMALL_BOLD);
+            returnLabel.setForeground(returnResultColor(order.getLatestReturnStatus()));
+            returnLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            returnLabel.setBorder(new EmptyBorder(4, 2, 0, 0));
+            center.add(returnLabel);
+        }
         return center;
     }
 
@@ -243,10 +335,10 @@ public class OrderHistoryPanel extends JPanel {
             JButton returnButton = smallButton("Trả hàng", AppColor.ERROR_BG, AppColor.ERROR);
             returnButton.addActionListener(e -> handleReturnRequest(order));
             buttons.add(returnButton);
-        } else if (order.isReturnRequested()) {
-            JLabel returnedTag = new JLabel("Đã gửi yêu cầu trả hàng");
-            returnedTag.setFont(AppFont.SMALL);
-            returnedTag.setForeground(AppColor.TEXT_MUTED);
+        } else if (order.getLatestReturnStatus() != null) {
+            JLabel returnedTag = new JLabel(returnResultShortLabel(order.getLatestReturnStatus()));
+            returnedTag.setFont(AppFont.SMALL_BOLD);
+            returnedTag.setForeground(returnResultColor(order.getLatestReturnStatus()));
             buttons.add(returnedTag);
         }
 
@@ -348,6 +440,12 @@ public class OrderHistoryPanel extends JPanel {
         body.add(infoLine("Địa chỉ giao hàng", order.getShippingAddress()));
         body.add(infoLine("Phương thức thanh toán", paymentMethodLabel(order.getPaymentMethod())));
         body.add(infoLine("Trạng thái thanh toán", paymentStatusLabel(order.getPaymentStatus())));
+        if (order.getLatestReturnStatus() != null) {
+            body.add(infoLine("Kết quả trả hàng", returnResultText(order)));
+            if (order.getLatestReturnValue() != null) {
+                body.add(infoLine("Giá trị hàng trả", NumberUtil.formatThousands(order.getLatestReturnValue().longValue()) + " đ"));
+            }
+        }
         body.add(Box.createVerticalStrut(10));
         body.add(divider());
         body.add(Box.createVerticalStrut(10));
@@ -480,6 +578,31 @@ public class OrderHistoryPanel extends JPanel {
         sep.setAlignmentX(Component.LEFT_ALIGNMENT);
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
         return sep;
+    }
+
+    private String returnResultText(Order order) {
+        String type = "EXCHANGE".equalsIgnoreCase(order.getLatestReturnType()) ? "Đổi hàng" : "Trả hàng";
+        return type + ": " + returnResultShortLabel(order.getLatestReturnStatus());
+    }
+
+    private String returnResultShortLabel(String status) {
+        if (status == null) return "-";
+        switch (status.toUpperCase()) {
+            case "PENDING": return "Đang xử lý";
+            case "APPROVED": return "Đã duyệt";
+            case "REJECTED": return "Từ chối";
+            default: return status;
+        }
+    }
+
+    private Color returnResultColor(String status) {
+        if (status == null) return AppColor.TEXT_MUTED;
+        switch (status.toUpperCase()) {
+            case "APPROVED": return AppColor.SUCCESS;
+            case "REJECTED": return AppColor.ERROR;
+            case "PENDING": return AppColor.WARNING;
+            default: return AppColor.TEXT_MUTED;
+        }
     }
 
     // ==================== Badge trạng thái (đồng bộ nhãn/màu với OrderPanel bên admin) ====================
