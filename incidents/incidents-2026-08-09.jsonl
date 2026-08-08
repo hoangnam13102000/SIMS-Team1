@@ -1,0 +1,2 @@
+{"timestamp":"2026-08-08T18:29:06.794912800Z","type":"BACKUP_SUCCEEDED","severity":"LOW","source":"BackupManager","message":"Backup thanh cong bang sqlserver-native -> backup_20260809-012906_sqlserver-native.bak.enc (12870188 bytes, PT0.4744999S)","stackTrace":""}
+{"timestamp":"2026-08-08T18:32:41.577457Z","type":"BACKUP_SUCCEEDED","severity":"LOW","source":"BackupManager","message":"Backup thanh cong bang sqlserver-native -> backup_20260809-013241_sqlserver-native.bak.enc (12870188 bytes, PT0.4668523S)","stackTrace":""}

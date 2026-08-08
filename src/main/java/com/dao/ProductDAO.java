@@ -193,7 +193,11 @@ public class ProductDAO extends BaseDAO<Product> {
     }
 
     public List<Product> findActive(String keyword, Integer categoryId) {
-        StringBuilder sql = new StringBuilder(BASE_SELECT).append("WHERE p.Status = 'ACTIVE' ");
+        // Chi lay san pham dang ACTIVE va thuoc category cung dang ACTIVE.
+        // Neu category cha bi vo hieu hoa thi san pham con khong duoc phep
+        // hien thi/ban, tranh truong hop tat category nhung san pham van ban duoc.
+        StringBuilder sql = new StringBuilder(BASE_SELECT)
+                .append("WHERE p.Status = 'ACTIVE' AND c.Status = 'ACTIVE' ");
         List<Object> params = new ArrayList<>();
 
         String trimmedKeyword = keyword == null ? "" : keyword.trim();
@@ -231,7 +235,10 @@ public class ProductDAO extends BaseDAO<Product> {
 
     public Product findActiveByCode(String code) {
         if (code == null || code.isBlank()) return null;
-        String sql = BASE_SELECT + "WHERE p.Status = 'ACTIVE' AND UPPER(p.ProductCode) = UPPER(?)";
+        // Ap dung dieu kien tuong tu findActive(): khong tra ve san pham neu
+        // category cha da bi vo hieu hoa, du quet trung ma vach.
+        String sql = BASE_SELECT
+                + "WHERE p.Status = 'ACTIVE' AND c.Status = 'ACTIVE' AND UPPER(p.ProductCode) = UPPER(?)";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, code.trim());

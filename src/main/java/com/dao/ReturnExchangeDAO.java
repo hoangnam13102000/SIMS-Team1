@@ -23,12 +23,13 @@ import java.util.Map;
 public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
 
     /**
-     * Nguong gia tri (VND) duoc coi la "lon" theo R4 - tu dong yeu cau
-     * Quan ly ban hang duyet truoc khi kho/hoa don goc duoc dieu chinh.
-     * TODO: chuyen vao bang StoreConfig khi co DAO rieng (xem TODO tuong
-     * tu voi VAT_RATE trong PosPanel#payWithPayPalThenCreateInvoice).
+     * Nguon doc nguong gia tri (VND) duoc coi la "lon" theo R4 - tu dong yeu
+     * cau Quan ly ban hang duyet truoc khi kho/hoa don goc duoc dieu chinh.
+     * Doc dong tu StoreConfig (KEY_APPROVAL_THRESHOLD) thay vi hang so cung,
+     * cho phep ADMIN chinh nguong nay tu trang Cai dat ma khong can sua code
+     * (cung mo hinh voi VAT_RATE trong PosPanel).
      */
-    public static final BigDecimal APPROVAL_THRESHOLD = new BigDecimal("0");
+    private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
 
     private static final String BASE_TABLE =
             "ReturnExchanges r "
@@ -190,7 +191,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
      *   khong vuot ton kho hien co cua san pham moi.</li>
      *   <li>INSERT header (Status=PENDING) + tung dong ReturnExchangeDetails.</li>
      *   <li>Tinh TotalValue (tong gia tri hang IN - khach tra) va
-     *   RequiresApproval theo {@link #APPROVAL_THRESHOLD} (R4).</li>
+     *   RequiresApproval theo nguong {@link StoreConfigDAO#getApprovalThreshold()} (R4).</li>
      *   <li>Neu KHONG can duyet: tu dong chuyen luon sang APPROVED ngay
      *   trong transaction nay (ApprovedBy = nguoi tao) - trigger
      *   trg_ReturnExchange_ApprovedStock se cong/tru kho + dieu chinh hoa
@@ -279,7 +280,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                 for (ReturnExchangeDetail d : details) {
                     if (d.isIn()) totalValue = totalValue.add(d.getLineTotal());
                 }
-                boolean requiresApproval = totalValue.compareTo(APPROVAL_THRESHOLD) > 0;
+                boolean requiresApproval = totalValue.compareTo(storeConfigDAO.getApprovalThreshold()) > 0;
 
                 // 4) insert header
                 int returnId;

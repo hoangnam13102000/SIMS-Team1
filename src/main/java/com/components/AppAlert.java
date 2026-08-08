@@ -155,6 +155,10 @@ public final class AppAlert {
         int x = ownerLoc.x + owner.getWidth() - toast.getWidth() - MARGIN_RIGHT;
         toast.setLocation(x, y);
 
+        // setOpacity() co the nem UnsupportedOperationException/IllegalArgumentException tren
+        // he thong khong ho tro per-pixel translucency (vd 1 so config Linux/X11) - im lang bo
+        // qua la CO CHU DICH: toast van hien thi binh thuong (chi mat hieu ung fade), khong anh
+        // huong chuc nang, va day la hieu ung tham my chay lien tuc nen khong dang ghi log.
         try { toast.setOpacity(0f); } catch (Exception ignored) {}
         toast.setVisible(true);
 
@@ -166,7 +170,7 @@ public final class AppAlert {
                 opacity[0] = 1f;
                 timer.stop();
             }
-            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {}
+            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {} // xem ghi chu o tren
         });
         timer.start();
     }
@@ -185,7 +189,7 @@ public final class AppAlert {
                 reflow(owner, siblings);
                 return;
             }
-            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {}
+            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {} // xem ghi chu o positionAndFadeIn()
         });
         timer.start();
     }

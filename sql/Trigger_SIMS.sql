@@ -5,6 +5,7 @@
 USE SIMS_DB;
 GO
 
+
 CREATE OR ALTER FUNCTION dbo.fn_GetDefaultMargin()
 RETURNS DECIMAL(18,0)
 AS

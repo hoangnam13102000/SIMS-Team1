@@ -20,6 +20,10 @@ public final class DataChangedEvent {
      * can reload.
      */
     public static final String USER = "USER";
+    /** Danh muc san pham (Categories) vua them/sua/xoa. */
+    public static final String CATEGORY = "CATEGORY";
+    /** San pham (Products) vua them/sua/xoa. */
+    public static final String PRODUCT = "PRODUCT";
     /** Dùng khi restore / thao tác ghi đè toàn bộ DB — mọi panel đều reload. */
     public static final String ALL = "ALL";
 

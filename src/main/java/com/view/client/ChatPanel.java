@@ -5,6 +5,9 @@ import com.service.AuthService;
 import com.utils.FileUtil;
 import com.ws.ChatClient;
 import com.ws.ChatImageUtil;
+import com.model.chat.ChatHistoryMessage;
+import com.service.ChatHistoryService;
+import com.utils.ImageUtil;
 import com.ws.ChatMessage;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -103,6 +106,7 @@ public class ChatPanel extends JPanel {
         add(inputBar, BorderLayout.SOUTH);
 
         addWelcomeBubble();
+        loadPersistedHistory();
 
         ChatClient chatClient = ChatClient.getInstance();
         chatClient.addMessageListener(messageListener);
@@ -198,6 +202,49 @@ public class ChatPanel extends JPanel {
         FontIcon icon = FontIcon.of(type, size);
         icon.setIconColor(color);
         return icon;
+    }
+
+
+    /**
+     * Nạp lịch sử chat khách ↔ hỗ trợ từ DB (không gồm chatbot AI).
+     * Chạy nền để không block UI.
+     */
+    private void loadPersistedHistory() {
+        if (!AuthService.getInstance().isLoggedIn()) return;
+        final int customerUserId = AuthService.getInstance().getCurrentUser().getUserId();
+        new javax.swing.SwingWorker<java.util.List<ChatHistoryMessage>, Void>() {
+            @Override
+            protected java.util.List<ChatHistoryMessage> doInBackground() {
+                return ChatHistoryService.getInstance().loadCustomerHistory(customerUserId, 150);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    java.util.List<ChatHistoryMessage> rows = get();
+                    if (rows == null || rows.isEmpty()) return;
+                    // Xóa bubble chào nếu đã có lịch sử thật
+                    messagesContainer.removeAll();
+                    for (ChatHistoryMessage h : rows) {
+                        boolean mine = h.getSenderUserId() == customerUserId;
+                        java.awt.image.BufferedImage image = null;
+                        if (h.hasImage()) {
+                            image = ImageUtil.readSafe(h.getImagePath());
+                        }
+                        String time = h.getCreatedAt() != null
+                                ? TIME_FORMAT.format(java.sql.Timestamp.valueOf(h.getCreatedAt()))
+                                : TIME_FORMAT.format(new java.util.Date());
+                        addBubble(h.getBodyText(), image, mine, time);
+                    }
+                    messagesContainer.revalidate();
+                    messagesContainer.repaint();
+                } catch (Exception e) {
+                    com.core.log.AppLogger.getInstance().error(
+                            com.core.log.ErrorCode.DB_QUERY_FAIL,
+                            "Client ChatPanel.loadPersistedHistory", e);
+                }
+            }
+        }.execute();
     }
 
     private void addWelcomeBubble() {

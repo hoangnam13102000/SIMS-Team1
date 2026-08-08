@@ -1,5 +1,8 @@
 package com.ws;
 
+import com.core.log.AppLogger;
+import com.core.log.ErrorCode;
+import com.service.ChatHistoryService;
 import com.google.gson.Gson;
 import com.utils.NetworkErrorNotifier;
 import org.java_websocket.WebSocket;
@@ -45,7 +48,10 @@ public class ChatServer {
         Properties props = new Properties();
         try (InputStream in = ChatServer.class.getClassLoader().getResourceAsStream("ws.properties")) {
             if (in != null) props.load(in);
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            AppLogger.getInstance().error(ErrorCode.WS_SERVER_START_FAIL,
+                    "ChatServer.loadPort - khong doc duoc ws.properties, dung cong mac dinh", e);
+        }
         return Integer.parseInt(props.getProperty("WS_CHAT_PORT", "8890"));
     }
 
@@ -59,7 +65,12 @@ public class ChatServer {
 
     public synchronized void stopServer() {
         if (server == null) return;
-        try { server.stop(500); } catch (Exception ignored) {}
+        try {
+            server.stop(500);
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.WS_SERVER_START_FAIL,
+                    "ChatServer.stopServer - loi khi dung WebSocket server", e);
+        }
         server = null;
         connectionsByUserId.clear();
         sessionByConnection.clear();
@@ -71,19 +82,45 @@ public class ChatServer {
     public void removeListener(Consumer<ChatMessage> listener) { listeners.remove(listener); }
 
     public boolean sendToCustomer(int userId, String adminName, String text) {
+        return sendToCustomer(userId, adminName, text, 0);
+    }
+
+    /**
+     * Gửi tin nhắn NV -> khách. Luôn lưu vào lịch sử (DB) dù khách có đang online hay không,
+     * để tin nhắn không bị mất và khách sẽ thấy lại khi họ kết nối lại / mở lại chat.
+     * Trả về true nếu gửi realtime thành công (khách đang online), false nếu khách offline
+     * (tin nhắn vẫn được lưu, chỉ là chưa hiển thị ngay cho khách).
+     */
+    public boolean sendToCustomer(int userId, String adminName, String text, int staffSenderUserId) {
+        ChatMessage msg = ChatMessage.chatFromAdmin(userId, adminName, text);
         WebSocket conn = connectionsByUserId.get(userId);
-        if (conn == null || !conn.isOpen()) return false;
-        conn.send(GSON.toJson(ChatMessage.chatFromAdmin(userId, adminName, text)));
-        return true;
+        boolean delivered = conn != null && conn.isOpen();
+        if (delivered) {
+            conn.send(GSON.toJson(msg));
+        }
+        if (text != null && !text.isBlank()) {
+            ChatHistoryService.getInstance().saveCustomerChatAsync(msg, staffSenderUserId);
+        }
+        return delivered;
     }
 
     public boolean sendImageToCustomer(int userId, String adminName, String text,
                                        String imageBase64, String imageMime) {
-        WebSocket conn = connectionsByUserId.get(userId);
-        if (conn == null || !conn.isOpen()) return false;
+        return sendImageToCustomer(userId, adminName, text, imageBase64, imageMime, 0);
+    }
+
+    /** Gửi ảnh NV -> khách. Cũng luôn lưu lịch sử như {@link #sendToCustomer}. */
+    public boolean sendImageToCustomer(int userId, String adminName, String text,
+                                       String imageBase64, String imageMime, int staffSenderUserId) {
         if (imageBase64 == null || imageBase64.isBlank()) return false;
-        conn.send(GSON.toJson(ChatMessage.imageFromAdmin(userId, adminName, text, imageBase64, imageMime)));
-        return true;
+        ChatMessage msg = ChatMessage.imageFromAdmin(userId, adminName, text, imageBase64, imageMime);
+        WebSocket conn = connectionsByUserId.get(userId);
+        boolean delivered = conn != null && conn.isOpen();
+        if (delivered) {
+            conn.send(GSON.toJson(msg));
+        }
+        ChatHistoryService.getInstance().saveCustomerChatAsync(msg, staffSenderUserId);
+        return delivered;
     }
 
     public java.util.Set<Integer> onlineCustomerIds() {
@@ -123,7 +160,14 @@ public class ChatServer {
             if (excludeUserId != null && excludeUserId.equals(e.getKey())) continue;
             WebSocket conn = e.getValue();
             if (conn != null && conn.isOpen()) {
-                try { conn.send(json); } catch (Exception ignored) {}
+                try {
+                    conn.send(json);
+                } catch (Exception ex) {
+                    // 1 client roi mang giua chung khong duoc lam hong broadcast cho cac client
+                    // con lai, nhung van ghi log de phat hien neu 1 client cu the loi lien tuc.
+                    AppLogger.getInstance().error(ErrorCode.WS_MESSAGE_FAIL,
+                            "ChatServer.broadcastToStaff - gui that bai toi staff userId=" + e.getKey(), ex);
+                }
             }
         }
     }
@@ -166,7 +210,12 @@ public class ChatServer {
                     WebSocket old = staffConnections.put(chatMessage.userId, conn);
                     if (old != null && old != conn) {
                         staffSessionByConnection.remove(old);
-                        try { old.close(); } catch (Exception ignored) {}
+                        try {
+                            old.close();
+                        } catch (Exception e) {
+                            AppLogger.getInstance().error(ErrorCode.WS_MESSAGE_FAIL,
+                                    "ChatServer.onMessage(staffJoin) - loi dong ket noi cu userId=" + chatMessage.userId, e);
+                        }
                     }
                     staffSessionByConnection.put(conn, chatMessage);
                     broadcastToStaff(chatMessage, chatMessage.userId);
@@ -192,6 +241,8 @@ public class ChatServer {
                     sendToStaff(chatMessage.toUserId, chatMessage);
                     sendToStaff(chatMessage.userId, chatMessage);
                     dispatch(chatMessage);
+                    // Lưu lịch sử chat nội bộ NV–NV (không liên quan chatbot AI)
+                    ChatHistoryService.getInstance().saveStaffDmAsync(chatMessage);
                     return;
                 }
 
@@ -199,9 +250,25 @@ public class ChatServer {
                     connectionsByUserId.remove(chatMessage.userId, conn);
                     sessionByConnection.remove(conn);
                 }
+
+                // Lưu lịch sử khách ↔ hỗ trợ (chỉ tin CHAT có nội dung/ảnh)
+                if (chatMessage.isChat()
+                        && ((chatMessage.text != null && !chatMessage.text.isBlank())
+                            || chatMessage.hasImage())) {
+                    int staffSenderId = 0;
+                    if (chatMessage.fromAdmin) {
+                        ChatMessage staffSession = staffSessionByConnection.get(conn);
+                        if (staffSession != null) {
+                            staffSenderId = staffSession.userId;
+                        }
+                    }
+                    ChatHistoryService.getInstance().saveCustomerChatAsync(chatMessage, staffSenderId);
+                }
+
                 dispatch(chatMessage);
             } catch (Exception e) {
-                e.printStackTrace();
+                AppLogger.getInstance().error(ErrorCode.WS_MESSAGE_FAIL,
+                        "ChatServer.onMessage - khong xu ly duoc payload chat", e);
             }
         }
 
@@ -210,19 +277,25 @@ public class ChatServer {
             if (NetworkErrorNotifier.isBindFailure(ex)) {
                 // Cong da bi process khac giu. Khong popup: dung che do client.
                 if (bindFailureNotified.compareAndSet(false, true)) {
-                    System.out.println("[ChatServer] Cong " + port
-                            + " da bi chiem - bo qua bind, dung che do client"
-                            + " (ket noi toi WS_HOST trong ws.properties).");
+                    AppLogger.getInstance().error(ErrorCode.WS_SERVER_START_FAIL,
+                            "ChatServer - cong " + port + " da bi chiem, bo qua bind, dung che do client"
+                                    + " (ket noi toi WS_HOST trong ws.properties).", ex);
                     synchronized (ChatServer.this) {
                         if (server == this) {
-                            try { stop(0); } catch (Exception ignored) {}
+                            try {
+                                stop(0);
+                            } catch (Exception stopEx) {
+                                AppLogger.getInstance().error(ErrorCode.WS_SERVER_START_FAIL,
+                                        "ChatServer - loi khi dung server sau bind failure", stopEx);
+                            }
                             server = null;
                         }
                     }
                 }
                 return;
             }
-            ex.printStackTrace();
+            AppLogger.getInstance().error(ErrorCode.WS_CONNECTION_FAIL,
+                    "ChatServer.onError - loi ket noi tu client", ex);
         }
 
         @Override public void onStart() {}

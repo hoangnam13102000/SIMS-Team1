@@ -257,7 +257,8 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
 
     private void disableCategory(Category item) {
         boolean confirmed = BaseDialog.confirm(this, "Vô hiệu hóa danh mục",
-                "Vô hiệu hóa danh mục \"" + item.getCategoryName() + "\"? Danh mục này sẽ không còn hiển thị cho khách hàng.",
+                "Vô hiệu hóa danh mục \"" + item.getCategoryName() + "\"? Danh mục này sẽ không còn hiển thị cho khách hàng, "
+                        + "và TẤT CẢ sản phẩm thuộc danh mục này sẽ không thể bán được (kể cả tại quầy POS) cho đến khi kích hoạt lại.",
                 "Vô hiệu hóa", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.TOGGLE_OFF);
         if (!confirmed) return;
 

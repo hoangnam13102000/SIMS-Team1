@@ -5,6 +5,8 @@ import com.backup.BackupStrategy;
 import com.backup.DatabaseConnectionProvider;
 import com.backup.RestoreStrategy;
 import com.backup.dialect.SqlDialect;
+import com.core.log.AppLogger;
+import com.core.log.ErrorCode;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -27,16 +29,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Backup/Restore hoan toan qua JDBC chuan - chay duoc voi bat ky DB nao co
- * JDBC driver, ke ca khi khong co quyen BACKUP DATABASE (DB cloud/managed).
- * Dinh dang file: MOI dong la 1 lenh SQL hoan chinh (khong xuong dong giua
- * chung 1 lenh) - nho vay restore chi can doc tung dong va thuc thi, khong
- * can bo phan tich cu phap SQL de vo.
- *
- * Han che da biet: khong dump index phu / FOREIGN KEY / trigger / view /
- * stored procedure. Dung lam phuong an du phong cho strategy native.
- */
 public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrategy {
 
     private static final String NAME = "jdbc-sql-dump";
@@ -306,9 +298,20 @@ public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrateg
         });
     }
 
+    /**
+     * Thuc thi 1 cau lenh "best-effort" trong luc restore (vd bat/tat FK,
+     * IDENTITY_INSERT ON/OFF) - co the loi vo hai o vai bang/dialect nhat
+     * dinh nen KHONG duoc lam gian doan toan bo qua trinh restore. Van ghi
+     * log WARN/DEBUG lai (khong phai im lang hoan toan) de con truy vet neu
+     * restore ra ket qua khong nhu mong doi.
+     */
     private void safeExecute(Connection conn, String sql) {
-        try (Statement stmt = conn.createStatement()) { stmt.execute(sql); }
-        catch (SQLException ignored) {}
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute(sql);
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.BACKUP_FAIL,
+                    "JdbcSqlDumpBackupStrategy.safeExecute - bo qua loi khi chay: " + sql, e);
+        }
     }
 
     public static Set<String> noExclusions() { return new LinkedHashSet<>(); }

@@ -1,6 +1,10 @@
 package com.view.admin;
 
 import com.dao.UserDAO;
+import com.model.chat.ChatConversation;
+import com.model.chat.ChatHistoryMessage;
+import com.service.ChatHistoryService;
+import com.utils.ImageUtil;
 import com.model.Role;
 import com.model.User;
 import com.service.AuthService;
@@ -29,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +50,13 @@ public class ChatPanel extends JPanel {
     private static final int IMAGE_MAX_W = 240;
 
     private final Map<Integer, String> onlineCustomers = new LinkedHashMap<>();
+    /** Tên khách hàng đã biết (kể cả khi khách đang offline), lấy từ lịch sử DB. */
+    private final Map<Integer, String> customerDisplayNames = new LinkedHashMap<>();
+    /** Tất cả customerId từng có hội thoại (online hoặc đã lưu DB) để hiển thị trong danh sách bên trái. */
+    private final Set<Integer> knownCustomerIds = new LinkedHashSet<>();
+    /** Tránh gọi DB lại nhiều lần khi bấm chọn lại cùng 1 khách/đồng nghiệp. */
+    private final Set<Integer> customerHistoryLoaded = new HashSet<>();
+    private final Set<Integer> staffHistoryLoaded = new HashSet<>();
     private final Map<Integer, List<ChatMessage>> customerConversations = new LinkedHashMap<>();
     private final Map<Integer, Boolean> customerUnread = new LinkedHashMap<>();
     private final Map<Integer, String> customerLastPreview = new LinkedHashMap<>();
@@ -193,6 +205,7 @@ public class ChatPanel extends JPanel {
         add(conversationCard, BorderLayout.CENTER);
 
         loadStaffDirectory();
+        loadKnownCustomerThreads();
         refreshCustomerListVisual();
         refreshStaffListVisual();
 
@@ -216,11 +229,19 @@ public class ChatPanel extends JPanel {
         if (notificationId.startsWith("chat-c-")) {
             try {
                 clearCustomerUnread(Integer.parseInt(notificationId.substring("chat-c-".length())));
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException e) {
+                // notificationId khong dung dinh dang "chat-c-{userId}" nhu ky vong - co the do noi
+                // sinh notification khac dang sinh sai id. Ghi log de phat hien loi o noi sinh ra id.
+                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.UI_ACTION_FAIL,
+                        "ChatPanel.markNotificationRead - id khach hang khong hop le: " + notificationId, e);
+            }
         } else if (notificationId.startsWith("chat-s-")) {
             try {
                 clearStaffUnread(Integer.parseInt(notificationId.substring("chat-s-".length())));
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException e) {
+                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.UI_ACTION_FAIL,
+                        "ChatPanel.markNotificationRead - id nhan vien khong hop le: " + notificationId, e);
+            }
         }
     }
 
@@ -253,7 +274,7 @@ public class ChatPanel extends JPanel {
         for (Map.Entry<Integer, Boolean> e : customerUnread.entrySet()) {
             if (!Boolean.TRUE.equals(e.getValue())) continue;
             int uid = e.getKey();
-            String name = onlineCustomers.getOrDefault(uid, "Khách hàng #" + uid);
+            String name = customerDisplayName(uid);
             String preview = customerLastPreview.getOrDefault(uid, "Tin nhắn mới");
             long ts = customerLastTime.getOrDefault(uid, System.currentTimeMillis());
             items.add(new com.model.NotificationItem(
@@ -345,19 +366,42 @@ public class ChatPanel extends JPanel {
         }
     }
 
+    /**
+     * Nạp danh sách khách hàng đã từng có hội thoại hỗ trợ (kể cả khách hiện không online),
+     * để nhân viên vẫn thấy và chọn được họ trong danh sách bên trái.
+     */
+    private void loadKnownCustomerThreads() {
+        for (ChatConversation c : ChatHistoryService.getInstance().listRecentCustomerThreads(100)) {
+            Integer customerId = c.getCustomerUserId();
+            if (customerId != null) knownCustomerIds.add(customerId);
+        }
+    }
+
     private void selectCustomer(int userId) {
         selectedCustomerId = userId;
         selectedStaffId = null;
         customerUnread.put(userId, false);
         customerList.repaint();
         notifyUnreadCountChanged();
-        String name = onlineCustomers.getOrDefault(userId, "Khách hàng #" + userId);
+        String name = customerDisplayName(userId);
         conversationTitle.setText(name + " (#" + userId + ")");
         boolean online = onlineCustomers.containsKey(userId);
         conversationStatus.setText(online ? "Đang trực tuyến" : "Đã ngắt kết nối");
         conversationStatus.setForeground(online ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
-        setInputEnabled(online);
+        // Vẫn cho nhập/gửi khi khách offline: tin nhắn sẽ được lưu lại và khách thấy
+        // ngay khi họ mở lại chat, thay vì chặn nhân viên nhắn tin lúc khách không hoạt động.
+        setInputEnabled(true);
+        ensureCustomerHistoryLoaded(userId);
         renderConversation(customerConversations.getOrDefault(userId, new ArrayList<>()), true);
+    }
+
+    /** Tên hiển thị của khách: ưu tiên tên online hiện tại, sau đó tên đã biết từ lịch sử, cuối cùng là mã số. */
+    private String customerDisplayName(int userId) {
+        String online = onlineCustomers.get(userId);
+        if (online != null && !online.isBlank()) return online;
+        String known = customerDisplayNames.get(userId);
+        if (known != null && !known.isBlank()) return known;
+        return "Khách hàng #" + userId;
     }
 
     private void selectStaff(int userId) {
@@ -374,7 +418,103 @@ public class ChatPanel extends JPanel {
         conversationStatus.setText(online ? "Đang trực tuyến" : "Ngoại tuyến");
         conversationStatus.setForeground(online ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
         setInputEnabled(true);
+        ensureStaffHistoryLoaded(userId);
         renderConversation(staffConversations.getOrDefault(userId, new ArrayList<>()), false);
+    }
+
+    /**
+     * Nạp lịch sử chat khách–NV từ DB (bảng ChatMessages qua ChatHistoryService) vào bộ nhớ,
+     * để nhân viên đọc được tin nhắn cũ kể cả khi khách hiện đang không hoạt động (offline).
+     * Chỉ nạp 1 lần cho mỗi khách trong phiên làm việc này.
+     */
+    private void ensureCustomerHistoryLoaded(int userId) {
+        if (!customerHistoryLoaded.add(userId)) return;
+        List<ChatHistoryMessage> history = ChatHistoryService.getInstance().loadCustomerHistory(userId, 200);
+        if (history.isEmpty()) return;
+
+        knownCustomerIds.add(userId);
+        List<ChatMessage> existing = customerConversations.computeIfAbsent(userId, k -> new ArrayList<>());
+        long earliestExisting = existing.isEmpty() ? Long.MAX_VALUE : existing.get(0).timestamp;
+
+        List<ChatMessage> older = new ArrayList<>();
+        String lastCustomerName = null;
+        for (ChatHistoryMessage h : history) {
+            ChatMessage cm = toCustomerChatMessage(h, userId);
+            if (!h.isFromStaff() && h.getSenderName() != null && !h.getSenderName().isBlank()) {
+                lastCustomerName = h.getSenderName();
+            }
+            if (cm.timestamp < earliestExisting) older.add(cm);
+        }
+        existing.addAll(0, older);
+        if (lastCustomerName != null && !onlineCustomers.containsKey(userId)) {
+            customerDisplayNames.put(userId, lastCustomerName);
+        }
+    }
+
+    /**
+     * Nạp lịch sử chat nội bộ (DM giữa 2 nhân viên) từ DB, để đọc được tin nhắn cũ
+     * kể cả khi đồng nghiệp hiện đang ngoại tuyến.
+     */
+    private void ensureStaffHistoryLoaded(int userId) {
+        if (!staffHistoryLoaded.add(userId)) return;
+        List<ChatHistoryMessage> history = ChatHistoryService.getInstance().loadStaffDmHistory(myUserId, userId, 200);
+        if (history.isEmpty()) return;
+
+        List<ChatMessage> existing = staffConversations.computeIfAbsent(userId, k -> new ArrayList<>());
+        long earliestExisting = existing.isEmpty() ? Long.MAX_VALUE : existing.get(0).timestamp;
+
+        List<ChatMessage> older = new ArrayList<>();
+        for (ChatHistoryMessage h : history) {
+            ChatMessage cm = toStaffChatMessage(h, userId);
+            if (cm.timestamp < earliestExisting) older.add(cm);
+        }
+        existing.addAll(0, older);
+    }
+
+    private ChatMessage toCustomerChatMessage(ChatHistoryMessage h, int customerUserId) {
+        ChatMessage cm = new ChatMessage();
+        cm.type = "CHAT";
+        cm.userId = customerUserId;
+        cm.userName = h.getSenderName();
+        cm.text = h.getBodyText();
+        cm.fromAdmin = h.isFromStaff();
+        cm.timestamp = toEpochMillis(h.getCreatedAt());
+        attachHistoryImage(cm, h);
+        return cm;
+    }
+
+    private ChatMessage toStaffChatMessage(ChatHistoryMessage h, int peerUserId) {
+        ChatMessage cm = new ChatMessage();
+        cm.type = "STAFF_CHAT";
+        cm.staff = true;
+        cm.userId = h.getSenderUserId() > 0 ? h.getSenderUserId() : peerUserId;
+        cm.toUserId = cm.userId == myUserId ? peerUserId : myUserId;
+        cm.userName = h.getSenderName();
+        cm.text = h.getBodyText();
+        cm.timestamp = toEpochMillis(h.getCreatedAt());
+        attachHistoryImage(cm, h);
+        return cm;
+    }
+
+    private static long toEpochMillis(java.time.LocalDateTime dt) {
+        if (dt == null) return System.currentTimeMillis();
+        return dt.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+    }
+
+    /** Đọc ảnh đã lưu trên đĩa (ImagePath) và mã hoá lại base64 chỉ để hiển thị lịch sử. */
+    private void attachHistoryImage(ChatMessage cm, ChatHistoryMessage h) {
+        if (!h.hasImage()) return;
+        try {
+            File imgFile = new File(h.getImagePath());
+            if (!imgFile.isFile()) return;
+            ChatImageUtil.EncodedImage encoded = ChatImageUtil.encodeForChat(imgFile);
+            if (encoded != null) {
+                cm.imageBase64 = encoded.base64;
+                cm.imageMime = encoded.mime;
+            }
+        } catch (Exception ignored) {
+            // Không có ảnh cũng không sao — vẫn hiển thị được phần text của tin nhắn.
+        }
     }
 
     private void clearConversation(String title) {
@@ -401,16 +541,13 @@ public class ChatPanel extends JPanel {
         if (selectedCustomerId == null) return;
         String text = inputField.getText() == null ? "" : inputField.getText().trim();
         if (text.isEmpty()) return;
-        boolean sent = ChatServer.getInstance().sendToCustomer(selectedCustomerId, myName, text);
+        // Không cần quan tâm khách có đang online hay không: sendToCustomer() luôn lưu lịch sử,
+        // khách offline vẫn sẽ thấy tin nhắn này khi họ mở lại chat, nên không cần popup báo.
+        ChatServer.getInstance().sendToCustomer(selectedCustomerId, myName, text, myUserId);
         ChatMessage record = ChatMessage.chatFromAdmin(selectedCustomerId, myName, text);
         customerConversations.computeIfAbsent(selectedCustomerId, k -> new ArrayList<>()).add(record);
         addBubble(text, null, true, TIME_FORMAT.format(new Date(record.timestamp)));
         inputField.setText("");
-        if (!sent) {
-            JOptionPane.showMessageDialog(this,
-                    "Khách hàng đã ngắt kết nối, không gửi được tin nhắn này.",
-                    "Không gửi được", JOptionPane.WARNING_MESSAGE);
-        }
     }
 
     private void sendStaffReply() {
@@ -476,7 +613,7 @@ public class ChatPanel extends JPanel {
                     staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
                 } else {
                     sent = ChatServer.getInstance().sendImageToCustomer(
-                            targetId, myName, caption.isEmpty() ? null : caption, encoded.base64, encoded.mime);
+                            targetId, myName, caption.isEmpty() ? null : caption, encoded.base64, encoded.mime, myUserId);
                     record = ChatMessage.imageFromAdmin(targetId, myName,
                             caption.isEmpty() ? null : caption, encoded.base64, encoded.mime);
                     customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
@@ -488,7 +625,9 @@ public class ChatPanel extends JPanel {
                             TIME_FORMAT.format(new Date(record.timestamp)));
                     inputField.setText("");
                 }
-                if (!sent) {
+                // Chỉ báo lỗi khi gửi nội bộ NV-NV thất bại thật sự (không có nơi lưu tạm).
+                // Với khách hàng, sendImageToCustomer() đã lưu lịch sử nên không cần popup dù khách offline.
+                if (!sent && forStaff) {
                     JOptionPane.showMessageDialog(ChatPanel.this,
                             "Không gửi được ảnh (đối phương offline hoặc mất kết nối).",
                             "Không gửi được", JOptionPane.WARNING_MESSAGE);
@@ -500,6 +639,7 @@ public class ChatPanel extends JPanel {
     private void onServerEvent(ChatMessage message) {
         if (message.isJoin()) {
             onlineCustomers.put(message.userId, message.userName);
+            knownCustomerIds.add(message.userId);
             customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>());
             refreshCustomerListVisual();
             if (!staffTabActive && selectedCustomerId != null && selectedCustomerId == message.userId)
@@ -513,6 +653,7 @@ public class ChatPanel extends JPanel {
             customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>()).add(message);
             onlineCustomers.putIfAbsent(message.userId,
                     message.userName != null ? message.userName : ("Khách #" + message.userId));
+            knownCustomerIds.add(message.userId);
             String preview = previewOf(message);
             customerLastPreview.put(message.userId, preview);
             customerLastTime.put(message.userId,
@@ -598,9 +739,17 @@ public class ChatPanel extends JPanel {
 
     private void refreshCustomerListVisual() {
         Integer prev = selectedCustomerId;
+        List<Integer> ordered = new ArrayList<>();
+        // Khách đang online hiển thị trước, sau đó tới khách đã từng chat nhưng hiện offline
+        // (trước đây danh sách chỉ lấy từ onlineCustomers nên khách vừa ngắt kết nối sẽ biến mất
+        // khỏi danh sách và nhân viên không thể bấm vào để xem lại tin nhắn cũ của họ).
+        for (Integer id : onlineCustomers.keySet()) ordered.add(id);
+        for (Integer id : knownCustomerIds) {
+            if (!onlineCustomers.containsKey(id)) ordered.add(id);
+        }
         customerListModel.clear();
-        for (Integer userId : onlineCustomers.keySet()) customerListModel.addElement(userId);
-        if (prev != null && onlineCustomers.containsKey(prev)) customerList.setSelectedValue(prev, false);
+        for (Integer id : ordered) customerListModel.addElement(id);
+        if (prev != null && ordered.contains(prev)) customerList.setSelectedValue(prev, false);
     }
 
     private void refreshStaffListVisual() {
@@ -833,7 +982,7 @@ public class ChatPanel extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<? extends Integer> list, Integer userId,
                                                       int index, boolean isSelected, boolean cellHasFocus) {
-            nameLabel.setText(onlineCustomers.getOrDefault(userId, "Khách #" + userId));
+            nameLabel.setText(customerDisplayName(userId));
             nameLabel.setForeground(AppColor.TEXT_PRIMARY);
             dot.setForeground(onlineCustomers.containsKey(userId) ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
             unreadDot.setVisible(Boolean.TRUE.equals(customerUnread.get(userId)));

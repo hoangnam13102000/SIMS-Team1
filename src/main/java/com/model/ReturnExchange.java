@@ -3,15 +3,6 @@ package com.model;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/**
- * Yeu cau doi/tra hang gan voi 1 hoa don da lap (xem bang ReturnExchanges
- * trong sql/SIMS.sql). R4: bat buoc co ly do; don gia tri lon (xem
- * {@link com.dao.ReturnExchangeDAO#APPROVAL_THRESHOLD}) phai duoc Quan ly
- * ban hang duyet (RequiresApproval = true) truoc khi kho/hoa don goc duoc
- * dieu chinh - viec cong/tru kho that su do trigger
- * trg_ReturnExchange_ApprovedStock (sql/Trigger_SIMS.sql) dam nhiem ngay
- * khi Status chuyen sang APPROVED.
- */
 public class ReturnExchange {
 
     public static final String TYPE_RETURN = "RETURN";

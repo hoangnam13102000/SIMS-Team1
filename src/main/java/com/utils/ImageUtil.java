@@ -84,7 +84,12 @@ public final class ImageUtil {
             File f = new File(c);
             try {
                 f = f.getCanonicalFile();
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                // getCanonicalFile() chi loi trong truong hop hiem (vd loi I/O khi resolve
+                // symlink) - f goc (chua canonical hoa) van dung duoc cho isFile() ben duoi,
+                // va day chi la 1 trong nhieu candidate path dang thu nen khong log moi lan
+                // (vong lap nay von di se co nhieu candidate khong ton tai, la binh thuong).
+            }
             if (f.isFile()) return f;
         }
         return null;

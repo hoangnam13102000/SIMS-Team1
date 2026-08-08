@@ -18,15 +18,14 @@ public class StoreConfigDAO {
     public static final String KEY_VAT_RATE = "VAT_RATE";
     /** So VND khach can chi de duoc cong 1 diem thanh vien (vd "10000" = 10.000d/diem). */
     public static final String KEY_POINT_RATE = "POINT_RATE";
-    /**
-     * Chenh lech (VND) mac dinh giua SellPrice va ImportPrice khi 1 SP
-     * KHONG dat Margin rieng (Products.Margin = NULL). Dung boi trigger
-     * SQL trg_Products_SyncSellPrice (xem sql/Trigger_SIMS.sql) - moi lan
-     * ImportPrice/Margin/AutoPrice cua SP thay doi (nhap hang qua
-     * PurchaseReceiptDAO, hoac sua tay qua ProductDAO), SellPrice duoc
-     * DATABASE tu tinh lai theo dung gia tri nay, khong can nho chinh tay.
-     */
     public static final String KEY_DEFAULT_MARGIN = "DEFAULT_MARGIN";
+    /**
+     * Nguong gia tri (VND) cua tong hang IN (khach tra) trong 1 phieu doi/tra
+     * ke tu do BAT BUOC Quan ly ban hang duyet truoc khi kho/hoa don goc duoc
+     * dieu chinh (R4). Dung boi ReturnExchangeDAO#createReturnExchange -
+     * xem StoreConfigDAO.getApprovalThreshold().
+     */
+    public static final String KEY_APPROVAL_THRESHOLD = "RETURN_APPROVAL_THRESHOLD";
 
     /** Giá trị mặc định khi bảng chưa được seed hoặc đọc lỗi - khớp DEFAULT 8 của cột Invoices.VATRate. */
     private static final BigDecimal DEFAULT_VAT_RATE = new BigDecimal("8");
@@ -34,6 +33,8 @@ public class StoreConfigDAO {
     private static final BigDecimal DEFAULT_POINT_RATE = new BigDecimal("10000");
     /** Mac dinh 5.000d neu chua cau hinh / cau hinh loi - phai KHOP voi fallback trong fn_GetDefaultMargin() (SQL). */
     private static final BigDecimal DEFAULT_MARGIN = new BigDecimal("5000");
+    /** Mac dinh 0d (moi phieu doi/tra co gia tri > 0 deu can duyet) neu chua cau hinh / cau hinh loi. */
+    private static final BigDecimal DEFAULT_APPROVAL_THRESHOLD = new BigDecimal("0");
 
     /** Đọc tỉ lệ VAT hiện hành (%). Không bao giờ trả về null - fallback DEFAULT_VAT_RATE nếu thiếu/lỗi. */
     public BigDecimal getVatRate() {
@@ -84,6 +85,24 @@ public class StoreConfigDAO {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "StoreConfigDAO.getDefaultMargin - gia tri DEFAULT_MARGIN khong hop le: " + raw, e);
             return DEFAULT_MARGIN;
+        }
+    }
+
+    /**
+     * Đọc ngưỡng giá trị (VND) buộc phải có Quản lý bán hàng duyệt trước khi
+     * phiếu đổi/trả được áp dụng vào kho/hoá đơn gốc (R4, KEY_APPROVAL_THRESHOLD).
+     * Không bao giờ trả về null/âm - fallback DEFAULT_APPROVAL_THRESHOLD nếu thiếu/lỗi/âm.
+     */
+    public BigDecimal getApprovalThreshold() {
+        String raw = getValue(KEY_APPROVAL_THRESHOLD, null);
+        if (raw == null || raw.isBlank()) return DEFAULT_APPROVAL_THRESHOLD;
+        try {
+            BigDecimal threshold = new BigDecimal(raw.trim());
+            return threshold.signum() >= 0 ? threshold : DEFAULT_APPROVAL_THRESHOLD;
+        } catch (NumberFormatException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StoreConfigDAO.getApprovalThreshold - gia tri RETURN_APPROVAL_THRESHOLD khong hop le: " + raw, e);
+            return DEFAULT_APPROVAL_THRESHOLD;
         }
     }
 

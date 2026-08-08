@@ -298,13 +298,18 @@ GO
 -- DEFAULT_MARGIN: chenh lech (VND) mac dinh giua SellPrice va ImportPrice khi
 -- 1 SP khong dat Margin rieng (xem StoreConfigDAO.getDefaultMargin() va
 -- trigger trg_Products_SyncSellPrice trong Trigger_SIMS.sql).
+-- RETURN_APPROVAL_THRESHOLD: nguong gia tri (VND) tong hang IN cua 1 phieu
+-- doi/tra ke tu do bat buoc Quan ly ban hang duyet truoc khi kho/hoa don goc
+-- duoc dieu chinh (R4, xem StoreConfigDAO.getApprovalThreshold() va
+-- ReturnExchangeDAO.createReturnExchange).
 INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('VAT_RATE', '8'),
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái'),
 ('POINT_RATE', '10000'),
-('DEFAULT_MARGIN', '5000');
+('DEFAULT_MARGIN', '5000'),
+('RETURN_APPROVAL_THRESHOLD', '0');
 GO
 
 UPDATE Products

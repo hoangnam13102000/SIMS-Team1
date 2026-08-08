@@ -30,6 +30,7 @@ public class SettingsPanel extends JPanel {
     private JTextField storeNameField;
     private JFormattedTextField returnPolicyDaysField;
     private JTextField defaultUnitField;
+    private JFormattedTextField approvalThresholdField;
     private JButton saveButton;
 
     public SettingsPanel() {
@@ -94,6 +95,13 @@ public class SettingsPanel extends JPanel {
         card.add(fieldGroup("Số ngày được đổi/trả hàng",
                 "Số ngày kể từ ngày mua khách được phép đổi/trả sản phẩm.",
                 returnPolicyDaysField));
+        card.add(Box.createVerticalStrut(16));
+
+        approvalThresholdField = numberField();
+        card.add(fieldGroup("Ngưỡng giá trị cần duyệt đổi/trả (VNĐ)",
+                "Phiếu đổi/trả có tổng giá trị hàng khách trả lớn hơn số này sẽ ở trạng thái \"Chờ duyệt\", "
+                        + "cần Quản lý bán hàng duyệt trước khi kho/hoá đơn gốc được điều chỉnh. Để 0 nghĩa là mọi phiếu đều cần duyệt.",
+                approvalThresholdField));
         card.add(Box.createVerticalStrut(16));
 
         storeNameField = textField();
@@ -190,6 +198,7 @@ public class SettingsPanel extends JPanel {
         vatRateField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_VAT_RATE), new BigDecimal("8")));
         defaultMarginField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_DEFAULT_MARGIN), new BigDecimal("5000")));
         returnPolicyDaysField.setValue(parseOrDefault(config.get("RETURN_POLICY_DAYS"), 7));
+        approvalThresholdField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_APPROVAL_THRESHOLD), new BigDecimal("0")));
         storeNameField.setText(config.getOrDefault("STORE_NAME", ""));
         defaultUnitField.setText(config.getOrDefault("DEFAULT_UNIT", ""));
     }
@@ -219,6 +228,7 @@ public class SettingsPanel extends JPanel {
             vatRateField.commitEdit();
             defaultMarginField.commitEdit();
             returnPolicyDaysField.commitEdit();
+            approvalThresholdField.commitEdit();
         } catch (ParseException ignored) {
             // Giu nguyen gia tri cu neu dang go do (khong parse duoc) - validate ben duoi se bat loi.
         }
@@ -236,6 +246,11 @@ public class SettingsPanel extends JPanel {
         Integer returnDays = toInteger(returnPolicyDaysField.getValue());
         if (returnDays == null || returnDays < 0) {
             BaseDialog.error(this, "Dữ liệu không hợp lệ", "Số ngày đổi/trả phải là số nguyên không âm.");
+            return;
+        }
+        BigDecimal approvalThreshold = toBigDecimal(approvalThresholdField.getValue());
+        if (approvalThreshold == null || approvalThreshold.compareTo(BigDecimal.ZERO) < 0) {
+            BaseDialog.error(this, "Dữ liệu không hợp lệ", "Ngưỡng giá trị cần duyệt đổi/trả phải là số không âm.");
             return;
         }
         String storeName = storeNameField.getText().trim();
@@ -259,6 +274,7 @@ public class SettingsPanel extends JPanel {
         Map<String, String> values = Map.of(
                 StoreConfigDAO.KEY_VAT_RATE, vatRate.stripTrailingZeros().toPlainString(),
                 StoreConfigDAO.KEY_DEFAULT_MARGIN, defaultMargin.stripTrailingZeros().toPlainString(),
+                StoreConfigDAO.KEY_APPROVAL_THRESHOLD, approvalThreshold.stripTrailingZeros().toPlainString(),
                 "RETURN_POLICY_DAYS", String.valueOf(returnDays),
                 "STORE_NAME", storeName,
                 "DEFAULT_UNIT", defaultUnit

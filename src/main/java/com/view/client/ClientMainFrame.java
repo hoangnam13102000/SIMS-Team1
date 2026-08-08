@@ -39,8 +39,10 @@ public class ClientMainFrame extends JFrame {
 
         buildContent();
 
-        SettingsButton.attach(this, 76, false);
+        // 2 bong bóng: Chat (60) + khe 16 + AI (60) + khe 16 → Settings không bị đè
+        SettingsButton.attach(this, 60 + 16 + 60 + 16, false);
         ChatWidget.install(this);
+        AiAssistantWidget.install(this);
 
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
         LanguageManager.getInstance().addRebuildListener(onLangChanged);

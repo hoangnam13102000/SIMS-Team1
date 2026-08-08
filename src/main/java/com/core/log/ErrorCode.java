@@ -35,6 +35,9 @@ public enum ErrorCode {
  // ==== Hóa đơn bán hàng (POS) ====
     INVOICE_CREATE_FAIL("ERR-INV-001", "Lập hóa đơn bán hàng thất bại"),
 
+    
+ // ==== Trợ lý AI (Gemini) ====
+    AI_CHAT_FAIL("ERR-AI-001", "Gọi trợ lý AI thất bại"),
     // ==== Đổi/trả hàng ====
     RETURN_CREATE_FAIL("ERR-RET-001", "Tạo yêu cầu đổi/trả hàng thất bại"),
     RETURN_STATUS_UPDATE_FAIL("ERR-RET-002", "Cập nhật trạng thái yêu cầu đổi/trả hàng thất bại"),

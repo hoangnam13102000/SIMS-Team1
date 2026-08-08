@@ -74,7 +74,8 @@ public class AdminMainFrame extends JFrame {
         }
         buildContent();
 
-        SettingsButton.attach(this);
+        // Lui Settings sang trái để không đè bong bóng AI (60px) + khe 16px
+        SettingsButton.attach(this, 60 + 16, true);
 
         orderNotifyPoller.onUnseenChanged((count, preview) -> {
             layout.setBadge("orders", count);
@@ -104,6 +105,7 @@ public class AdminMainFrame extends JFrame {
         });
 
         setVisible(true);
+        AdminAiAssistantWidget.install(this);
     }
 
     private void buildContent() {
@@ -201,7 +203,12 @@ public class AdminMainFrame extends JFrame {
             if (chatPanelRef != null) chatPanelRef.clearAllUnread();
             try {
                 new com.dao.OrderDAO().markAllSeen();
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                // Badge tren UI van duoc xoa ngay ben duoi du DB update loi (trai nghiem nguoi
+                // dung uu tien hon), nhung phai ghi log vi cho toi lan sau se lai bao "chua xem".
+                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.ORDER_STATUS_UPDATE_FAIL,
+                        "AdminMainFrame.onClearAllNotifications - markAllSeen that bai", e);
+            }
             orderNotifications.clear();
             chatNotifications.clear();
             layout.setBadge("orders", 0);
@@ -270,7 +277,10 @@ public class AdminMainFrame extends JFrame {
             if (orderId != null) {
                 try {
                     new com.dao.OrderDAO().markSeen(orderId);
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.ORDER_STATUS_UPDATE_FAIL,
+                            "AdminMainFrame - markSeen that bai, orderId=" + orderId, e);
+                }
             }
             orderNotifications.removeIf(n -> item.getId().equals(n.getId()));
             layout.setBadge("orders", orderNotifications.size());

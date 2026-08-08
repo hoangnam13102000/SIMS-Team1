@@ -515,3 +515,68 @@ CREATE TABLE StockDisposalDetails (
 GO
 CREATE INDEX IX_StockDisposalDetails_Product ON StockDisposalDetails(ProductID);
 GO
+
+/* ============================================================
+   SIMS - chat real-time
+   ============================================================ */
+
+IF OBJECT_ID('dbo.ChatMessages', 'U') IS NOT NULL DROP TABLE dbo.ChatMessages;
+IF OBJECT_ID('dbo.ChatConversations', 'U') IS NOT NULL DROP TABLE dbo.ChatConversations;
+GO
+
+CREATE TABLE ChatConversations (
+    ConversationID      INT IDENTITY(1,1) PRIMARY KEY,
+    -- CUSTOMER_SUPPORT | STAFF_DM
+    ConversationType    VARCHAR(20)  NOT NULL
+        CHECK (ConversationType IN ('CUSTOMER_SUPPORT', 'STAFF_DM')),
+    -- Khách (Users.UserID role CUSTOMER). NULL nếu STAFF_DM
+    CustomerUserID      INT NULL
+        FOREIGN KEY REFERENCES Users(UserID),
+    -- Cặp NV cho STAFF_DM: luôn lưu UserID nhỏ hơn vào A, lớn hơn vào B
+    StaffUserIdA        INT NULL
+        FOREIGN KEY REFERENCES Users(UserID),
+    StaffUserIdB        INT NULL
+        FOREIGN KEY REFERENCES Users(UserID),
+    CreatedAt           DATETIME NOT NULL DEFAULT GETDATE(),
+    LastMessageAt       DATETIME NOT NULL DEFAULT GETDATE(),
+    IsClosed            BIT NOT NULL DEFAULT 0
+);
+GO
+
+-- Mỗi khách chỉ 1 hội thoại hỗ trợ đang mở
+CREATE UNIQUE INDEX UX_ChatConv_Customer_Open
+    ON ChatConversations (CustomerUserID)
+    WHERE ConversationType = 'CUSTOMER_SUPPORT' AND CustomerUserID IS NOT NULL AND IsClosed = 0;
+GO
+
+-- Mỗi cặp NV chỉ 1 hội thoại DM
+CREATE UNIQUE INDEX UX_ChatConv_StaffPair
+    ON ChatConversations (StaffUserIdA, StaffUserIdB)
+    WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA IS NOT NULL AND StaffUserIdB IS NOT NULL;
+GO
+
+CREATE TABLE ChatMessages (
+    MessageID           INT IDENTITY(1,1) PRIMARY KEY,
+    ConversationID      INT NOT NULL
+        FOREIGN KEY REFERENCES ChatConversations(ConversationID),
+    SenderUserID        INT NOT NULL
+        FOREIGN KEY REFERENCES Users(UserID),
+    SenderName          NVARCHAR(100) NOT NULL,
+    -- true = tin từ phía nhân viên (trong hội thoại khách)
+    FromStaff           BIT NOT NULL DEFAULT 0,
+    BodyText            NVARCHAR(MAX) NULL,
+    -- Ảnh lưu file local (uploads/chat/...), KHÔNG lưu base64 trong DB
+    ImagePath           NVARCHAR(500) NULL,
+    ImageMime           VARCHAR(50) NULL,
+    CreatedAt           DATETIME NOT NULL DEFAULT GETDATE(),
+    IsReadByPeer        BIT NOT NULL DEFAULT 0
+);
+GO
+
+CREATE INDEX IX_ChatMessages_Conversation_Created
+    ON ChatMessages (ConversationID, CreatedAt);
+GO
+
+CREATE INDEX IX_ChatMessages_Sender
+    ON ChatMessages (SenderUserID, CreatedAt DESC);
+GO

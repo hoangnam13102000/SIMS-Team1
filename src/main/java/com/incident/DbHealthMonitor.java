@@ -46,7 +46,16 @@ public class DbHealthMonitor {
             if (incidentAlreadyRaised.compareAndSet(1, 0) && previousFailures > 0) {
                 IncidentLogger.getInstance().medium(IncidentType.OTHER, "DbHealthMonitor",
                         "Da ket noi lai duoc DB sau " + previousFailures + " lan kiem tra that bai lien tiep.");
-                if (onRecovered != null) try { onRecovered.run(); } catch (Exception ignored) {}
+                if (onRecovered != null) {
+                    try {
+                        onRecovered.run();
+                    } catch (Exception e) {
+                        // Callback UI (vd cap nhat trang thai ket noi tren giao dien) loi khong duoc lam
+                        // hong vong lap giam sat DB, nhung van phai ghi lai de biet callback dang loi.
+                        IncidentLogger.getInstance().low(IncidentType.OTHER, "DbHealthMonitor",
+                                "Callback onRecovered loi: " + e.getMessage());
+                    }
+                }
             }
             return;
         }
@@ -54,7 +63,14 @@ public class DbHealthMonitor {
         if (failures >= consecutiveFailureThreshold && incidentAlreadyRaised.compareAndSet(0, 1)) {
             IncidentLogger.getInstance().critical(IncidentType.DB_CONNECTION_LOST, "DbHealthMonitor",
                     "Mat ket noi DB " + failures + " lan kiem tra lien tiep - nghi ngo bi tan cong/sap/mat du lieu.", null);
-            if (onSustainedOutage != null) try { onSustainedOutage.run(); } catch (Exception ignored) {}
+            if (onSustainedOutage != null) {
+                try {
+                    onSustainedOutage.run();
+                } catch (Exception e) {
+                    IncidentLogger.getInstance().low(IncidentType.OTHER, "DbHealthMonitor",
+                            "Callback onSustainedOutage loi: " + e.getMessage());
+                }
+            }
         }
     }
 

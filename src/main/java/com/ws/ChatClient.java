@@ -1,5 +1,7 @@
 package com.ws;
 
+import com.core.log.AppLogger;
+import com.core.log.ErrorCode;
 import com.google.gson.Gson;
 
 import java.io.IOException;
@@ -78,7 +80,12 @@ public class ChatClient {
         Properties props = new Properties();
         try (InputStream in = ChatClient.class.getClassLoader().getResourceAsStream("ws.properties")) {
             if (in != null) props.load(in);
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            // Khong doc duoc ws.properties -> dung fallback WS_HOST/WS_CHAT_PORT ben duoi,
+            // nhung van ghi log de biet file config bi thieu/sai quyen thay vi im lang dung sai host.
+            AppLogger.getInstance().error(ErrorCode.WS_CONNECTION_FAIL,
+                    "ChatClient.attemptConnect - khong doc duoc ws.properties, dung gia tri mac dinh", e);
+        }
         String host = props.getProperty("WS_HOST", "localhost");
         int port = Integer.parseInt(props.getProperty("WS_CHAT_PORT", "8890"));
 
@@ -102,7 +109,10 @@ public class ChatClient {
                     try {
                         ChatMessage chatMessage = GSON.fromJson(message, ChatMessage.class);
                         if (chatMessage != null) notifyMessage(chatMessage);
-                    } catch (Exception e) { e.printStackTrace(); }
+                    } catch (Exception e) {
+                        AppLogger.getInstance().error(ErrorCode.WS_MESSAGE_FAIL,
+                                "ChatClient.onMessage - khong parse duoc payload chat", e);
+                    }
                 }
 
                 @Override
@@ -113,13 +123,15 @@ public class ChatClient {
 
                 @Override
                 public void onError(Exception ex) {
-                    System.out.println("[ChatClient] Loi ket noi chat: " + ex.getMessage());
+                    AppLogger.getInstance().error(ErrorCode.WS_CONNECTION_FAIL,
+                            "ChatClient - loi ket noi chat (se tu dong thu lai)", ex);
                 }
             };
             client.connect();
         } catch (Exception e) {
             connectAttemptInFlight = false;
-            System.out.println("[ChatClient] Khong the khoi tao ket noi chat: " + e.getMessage());
+            AppLogger.getInstance().error(ErrorCode.WS_CONNECTION_FAIL,
+                    "ChatClient.attemptConnect - khong the khoi tao ket noi chat", e);
         }
     }
 
@@ -179,7 +191,12 @@ public class ChatClient {
                 else client.send(GSON.toJson(ChatMessage.leave(userId, userName)));
             }
             client.close();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            // Dong ket noi luc thoat/dang xuat - khong can chan nguoi dung, nhung ghi log de
+            // phan biet voi truong hop mat ket noi bat thuong luc dang chat.
+            AppLogger.getInstance().error(ErrorCode.WS_CONNECTION_FAIL,
+                    "ChatClient.disconnect - loi khi dong ket noi chat", e);
+        }
         client = null;
     }
 
