@@ -70,15 +70,18 @@ public final class AiToolExecutor {
             JsonObject args = parseArgs(argsJson);
             return switch (tool) {
                 case SEARCH_PRODUCTS -> searchProducts(args, isCustomer);
+                case FIND_SIMILAR_PRODUCTS -> findSimilarProducts(args, isCustomer);
+                case IMPORT_EXCEL -> importExcel(args, isCustomer);
                 case GET_PRODUCT_DETAIL -> getProductDetail(args, isCustomer);
                 case GET_STOCK_STATUS -> getStockStatus(args, isCustomer);
                 case GET_EMPLOYEE_SALARY -> getEmployeeSalary(args);
                 case GET_REVENUE_SUMMARY -> getRevenueSummary(args);
                 case SEARCH_ORDERS -> searchOrders(args);
                 case GET_ORDER_DETAIL -> getOrderDetail(args);
+                case UPDATE_ORDER_STATUS -> updateOrderStatus(args);
                 case SEARCH_INVOICES -> searchInvoices(args);
                 case GET_INVOICE_DETAIL -> getInvoiceDetail(args);
-                case LIST_CATEGORIES -> listCategories(args);
+                case LIST_CATEGORIES -> listCategories(args, isCustomer);
                 case CREATE_CATEGORY -> createCategory(args);
                 case CREATE_PRODUCT -> createProduct(args);
                 case CREATE_EMPLOYEE -> createEmployee(args);
@@ -118,15 +121,135 @@ public final class AiToolExecutor {
         if (list == null || list.isEmpty()) {
             return "Không tìm thấy sản phẩm nào khớp với \"" + keyword + "\".";
         }
+        return formatProductList("Tìm thấy", list, isCustomer);
+    }
+
+    /**
+     * Tìm SP tương tự từ mô tả ảnh: keywords → (không có) gợi ý cùng danh mục.
+     */
+    private String findSimilarProducts(JsonObject args, boolean isCustomer) {
+        String keywords = text(args, "keywords").trim();
+        String categoryHint = text(args, "category_hint").trim();
+        if (keywords.isBlank()) {
+            return "Thiếu keywords. Hãy mô tả sản phẩm nhìn thấy trên ảnh (tên/loại/thương hiệu).";
+        }
+
+        // 1) Tìm theo cụm keywords đầy đủ
+        List<Product> matched = productDAO.searchActive(keywords);
+        if (matched == null) matched = List.of();
+
+        // 2) Nếu không có: thử từng token có nghĩa (>= 2 ký tự)
+        if (matched.isEmpty()) {
+            String[] tokens = keywords.split("[\\s,;/|+]+");
+            java.util.LinkedHashMap<Integer, Product> byId = new java.util.LinkedHashMap<>();
+            for (String token : tokens) {
+                String t = token.trim();
+                if (t.length() < 2) continue;
+                List<Product> part = productDAO.searchActive(t);
+                if (part == null) continue;
+                for (Product p : part) {
+                    byId.putIfAbsent(p.getProductId(), p);
+                }
+            }
+            matched = new java.util.ArrayList<>(byId.values());
+        }
+
+        if (!matched.isEmpty()) {
+            return formatProductList(
+                    "Có sản phẩm tương tự với mô tả \"" + keywords + "\"",
+                    matched, isCustomer);
+        }
+
+        // 3) Không khớp → gợi ý cùng danh mục
+        Category cat = null;
+        if (!categoryHint.isBlank()) {
+            cat = findCategoryByName(categoryHint);
+            if (cat == null) {
+                cat = findBestCategoryPartial(categoryHint);
+            }
+        }
+        if (cat == null) {
+            cat = findBestCategoryPartial(keywords);
+        }
+
+        if (cat != null && cat.isActive()) {
+            List<Product> sameCat = productDAO.findActiveByCategory(cat.getCategoryId());
+            if (sameCat != null && !sameCat.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Không tìm thấy sản phẩm khớp với \"").append(keywords).append("\".\n");
+                sb.append("Gợi ý sản phẩm khác cùng danh mục \"").append(cat.getCategoryName())
+                        .append("\":\n");
+                sb.append(formatProductListBody(sameCat, isCustomer));
+                return sb.toString().trim();
+            }
+            return "Không tìm thấy sản phẩm khớp với \"" + keywords + "\". "
+                    + "Danh mục \"" + cat.getCategoryName() + "\" hiện chưa có sản phẩm đang bán.";
+        }
+
+        // 4) Không đoán được danh mục → vài SP đang bán bất kỳ (fallback nhẹ)
+        List<Product> any = productDAO.findAllActive();
+        if (any != null && !any.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Không tìm thấy sản phẩm khớp với \"").append(keywords).append("\" ");
+            sb.append("và không xác định được danh mục tương ứng.\n");
+            sb.append("Một số sản phẩm đang bán tại cửa hàng:\n");
+            sb.append(formatProductListBody(any, isCustomer));
+            return sb.toString().trim();
+        }
+
+        return "Không tìm thấy sản phẩm nào khớp với \"" + keywords
+                + "\" và cửa hàng hiện chưa có sản phẩm đang bán.";
+    }
+
+    private Category findBestCategoryPartial(String text) {
+        if (text == null || text.isBlank()) return null;
+        List<Category> all = categoryDAO.findAll();
+        if (all == null || all.isEmpty()) return null;
+
+        String lower = text.toLowerCase();
+        Category best = null;
+        int bestScore = 0;
+        for (Category c : all) {
+            if (c.getCategoryName() == null || !c.isActive()) continue;
+            String name = c.getCategoryName().toLowerCase();
+            int score = 0;
+            if (lower.contains(name) || name.contains(lower)) {
+                score = name.length();
+            } else {
+                for (String token : lower.split("[\\s,;/|+]+")) {
+                    if (token.length() >= 2 && name.contains(token)) {
+                        score = Math.max(score, token.length());
+                    }
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = c;
+            }
+        }
+        return bestScore > 0 ? best : null;
+    }
+
+    private String formatProductList(String title, List<Product> list, boolean isCustomer) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Tìm thấy ").append(Math.min(list.size(), MAX_PRODUCT_RESULTS))
-                .append(" sản phẩm (tối đa ").append(MAX_PRODUCT_RESULTS).append("):\n");
+        int n = Math.min(list.size(), MAX_PRODUCT_RESULTS);
+        sb.append(title).append(" (").append(n)
+                .append(" kết quả, tối đa ").append(MAX_PRODUCT_RESULTS).append("):\n");
+        sb.append(formatProductListBody(list, isCustomer));
+        return sb.toString().trim();
+    }
+
+    private String formatProductListBody(List<Product> list, boolean isCustomer) {
+        StringBuilder sb = new StringBuilder();
         int i = 0;
         for (Product p : list) {
             if (i++ >= MAX_PRODUCT_RESULTS) break;
             sb.append("- ").append(p.getProductCode())
-                    .append(" | ").append(p.getProductName())
-                    .append(" | Giá: ").append(formatMoney(p.getSellPrice()));
+                    .append(" | ").append(p.getProductName());
+            if (p.getCategoryName() != null && !p.getCategoryName().isBlank()) {
+                sb.append(" | DM: ").append(p.getCategoryName());
+            }
+            sb.append(" | Giá: ").append(formatMoney(p.getSellPrice()));
             if (!isCustomer && canSeeNumericStock()) {
                 sb.append(" | Tồn: ").append(p.getStock());
             } else {
@@ -137,7 +260,68 @@ public final class AiToolExecutor {
                 sb.append("[[IMG:").append(p.getImageUrl().trim()).append("]]\n");
             }
         }
-        return sb.toString().trim();
+        return sb.toString();
+    }
+
+    private String importExcel(JsonObject args, boolean isCustomer) {
+        if (isCustomer) {
+            return "KHÔNG ĐỦ THẨM QUYỀN: Chỉ nhân viên mới được import Excel.";
+        }
+        String entityStr = text(args, "entity_type");
+        AiExcelImportService.EntityType type = AiExcelImportService.EntityType.AUTO;
+        if (!entityStr.isBlank()) {
+            try {
+                type = AiExcelImportService.EntityType.valueOf(entityStr.trim().toUpperCase(Locale.ROOT));
+            } catch (Exception e) {
+                return "entity_type không hợp lệ. Dùng AUTO, CATEGORY, PRODUCT, EMPLOYEE, CUSTOMER.";
+            }
+        }
+
+        AiExcelImportService importer = new AiExcelImportService();
+
+        // Nhiều path: file_paths (JSON array) hoặc file_path phân tách ; ,
+        java.util.List<java.io.File> files = new java.util.ArrayList<>();
+        if (args.has("file_paths") && args.get("file_paths").isJsonArray()) {
+            for (com.google.gson.JsonElement el : args.getAsJsonArray("file_paths")) {
+                String p = el.getAsString();
+                if (p != null && !p.isBlank()) {
+                    java.io.File f = resolveImportFile(p.trim());
+                    if (f != null) files.add(f);
+                }
+            }
+        }
+        String path = text(args, "file_path");
+        if (!path.isBlank()) {
+            for (String part : path.split("[;,]")) {
+                String p = part.trim();
+                if (p.isEmpty()) continue;
+                java.io.File f = resolveImportFile(p);
+                if (f != null) files.add(f);
+            }
+        }
+        if (!files.isEmpty()) {
+            if (files.size() == 1) return importer.importFile(files.get(0), type);
+            return importer.importMany(files, type);
+        }
+
+        String b64 = text(args, "file_base64");
+        if (!b64.isBlank()) {
+            try {
+                byte[] bytes = java.util.Base64.getDecoder().decode(b64);
+                return importer.importBytes(bytes, text(args, "file_name"), type);
+            } catch (Exception e) {
+                return "file_base64 không hợp lệ: " + e.getMessage();
+            }
+        }
+        return "Thiếu file_path / file_paths hoặc file_base64. "
+                + "Hãy đính kèm một hoặc nhiều file .xlsx/.docx rồi gọi lại tool.";
+    }
+
+    private static java.io.File resolveImportFile(String path) {
+        java.io.File f = new java.io.File(path);
+        if (f.isFile()) return f;
+        f = new java.io.File(System.getProperty("user.dir"), path);
+        return f.isFile() ? f : null;
     }
 
     private String getProductDetail(JsonObject args, boolean isCustomer) {
@@ -268,26 +452,27 @@ public final class AiToolExecutor {
         return sb.toString().trim();
     }
 
+    /** Tìm 1 đơn hàng theo mã, ưu tiên khớp tuyệt đối trước khi fallback về kết quả đầu tiên - dùng chung cho get_order_detail và update_order_status. */
+    private Order resolveOrderByCode(String code) {
+        if (code == null || code.isBlank()) return null;
+        PaginationHelper.PaginationResult<Order> page =
+                orderDAO.getPagedFiltered(1, 5, code, null, null);
+        List<Order> list = page != null ? page.getData() : null;
+        if (list == null || list.isEmpty()) return null;
+        for (Order o : list) {
+            if (o.getOrderCode() != null
+                    && o.getOrderCode().equalsIgnoreCase(code.trim())) {
+                return o;
+            }
+        }
+        return list.get(0);
+    }
+
     private String getOrderDetail(JsonObject args) {
         String code = text(args, "order_code");
         if (code.isBlank()) return "Thiếu order_code.";
 
-        PaginationHelper.PaginationResult<Order> page =
-                orderDAO.getPagedFiltered(1, 5, code, null, null);
-        List<Order> list = page != null ? page.getData() : null;
-        Order order = null;
-        if (list != null) {
-            for (Order o : list) {
-                if (o.getOrderCode() != null
-                        && o.getOrderCode().equalsIgnoreCase(code.trim())) {
-                    order = o;
-                    break;
-                }
-            }
-            if (order == null && !list.isEmpty()) {
-                order = list.get(0);
-            }
-        }
+        Order order = resolveOrderByCode(code);
         if (order == null) {
             return "Không tìm thấy đơn hàng mã \"" + code + "\".";
         }
@@ -319,6 +504,73 @@ public final class AiToolExecutor {
             }
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * Xác nhận / chuyển trạng thái đơn hàng qua chatbot. Toàn bộ luật nghiệp
+     * vụ (bước chuyển hợp lệ, trừ/hoàn kho FEFO, tự lập hóa đơn khi COMPLETED)
+     * nằm ở {@link OrderDAO#updateOrderStatus(int, String, int, boolean)} -
+     * hàm này chỉ tra đơn theo mã, dịch action sang OrderStatus, và trả lời
+     * bằng tiếng Việt dễ đọc. Quyền ORDER_MANAGE đã được AiTool/AiToolExecutor.execute
+     * kiểm tra trước khi gọi tới đây, nhưng vẫn re-check tại đây theo đúng
+     * nguyên tắc "không bao giờ tin tưởng model" của lớp này.
+     */
+    private String updateOrderStatus(JsonObject args) {
+        if (!PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE)) {
+            return "KHÔNG ĐỦ THẨM QUYỀN: Bạn cần quyền ORDER_MANAGE để xác nhận/chuyển trạng thái đơn hàng "
+                    + "(chỉ ORDER_VIEW thì chỉ được xem, không được sửa).";
+        }
+
+        String code = text(args, "order_code");
+        String actionStr = text(args, "action");
+        if (code.isBlank()) return "Thiếu order_code.";
+        if (actionStr.isBlank()) return "Thiếu action. Chỉ nhận: CONFIRM, SHIP, COMPLETE hoặc CANCEL.";
+
+        Order order = resolveOrderByCode(code);
+        if (order == null) {
+            return "Không tìm thấy đơn hàng mã \"" + code + "\".";
+        }
+
+        String newStatus = switch (actionStr.trim().toUpperCase(Locale.ROOT)) {
+            case "CONFIRM" -> "CONFIRMED";
+            case "SHIP" -> "SHIPPING";
+            case "COMPLETE" -> "COMPLETED";
+            case "CANCEL" -> "CANCELLED";
+            default -> null;
+        };
+        if (newStatus == null) {
+            return "action \"" + actionStr + "\" không hợp lệ. Chỉ nhận: CONFIRM, SHIP, COMPLETE hoặc CANCEL.";
+        }
+        if (newStatus.equals(order.getOrderStatus())) {
+            return "Đơn hàng " + order.getOrderCode() + " đã ở trạng thái " + statusLabel(newStatus) + " rồi, không cần cập nhật.";
+        }
+
+        var currentUser = AuthService.getInstance().getCurrentUser();
+        int actorUserId = currentUser != null ? currentUser.getUserId() : 0;
+
+        OrderDAO.StatusUpdateResult result =
+                orderDAO.updateOrderStatus(order.getOrderId(), newStatus, actorUserId, true);
+        if (!result.success) {
+            return "Không thể chuyển đơn " + order.getOrderCode() + " sang " + statusLabel(newStatus)
+                    + ": " + result.errorMessage;
+        }
+
+        String extra = "COMPLETED".equals(newStatus) ? " Hóa đơn tương ứng đã được tự động lập." : "";
+        return "Đã chuyển đơn hàng " + order.getOrderCode() + " từ " + statusLabel(order.getOrderStatus())
+                + " sang " + statusLabel(newStatus) + " thành công." + extra
+                + " Thông báo đã được gửi tới các tài khoản có quyền quản lý đơn hàng đang đăng nhập.";
+    }
+
+    private static String statusLabel(String status) {
+        if (status == null) return "—";
+        return switch (status) {
+            case "NEW" -> "Mới";
+            case "CONFIRMED" -> "Đã xác nhận";
+            case "SHIPPING" -> "Đang giao";
+            case "COMPLETED" -> "Hoàn thành";
+            case "CANCELLED" -> "Đã hủy";
+            default -> status;
+        };
     }
 
     // ==================== INVOICES (POS) ====================
@@ -402,7 +654,7 @@ public final class AiToolExecutor {
 
     // ==================== CATEGORIES ====================
 
-    private String listCategories(JsonObject args) {
+    private String listCategories(JsonObject args, boolean isCustomer) {
         String keyword = text(args, "keyword").toLowerCase();
         List<Category> list = categoryDAO.findAll();
         if (list == null || list.isEmpty()) {
@@ -411,16 +663,26 @@ public final class AiToolExecutor {
         StringBuilder sb = new StringBuilder("Danh sách danh mục:\n");
         int n = 0;
         for (Category c : list) {
+            // Khách chỉ thấy danh mục ACTIVE
+            if (isCustomer && (c.getStatus() == null || !"ACTIVE".equalsIgnoreCase(c.getStatus()))) {
+                continue;
+            }
             if (!keyword.isBlank() && (c.getCategoryName() == null
                     || !c.getCategoryName().toLowerCase().contains(keyword))) {
                 continue;
             }
             n++;
-            sb.append("- ID=").append(c.getCategoryId())
-                    .append(" | ").append(c.getCategoryName())
-                    .append(" | ").append(nullToDash(c.getStatus()))
-                    .append(" | SP đang bán: ").append(c.getActiveProductCount())
-                    .append('\n');
+            if (isCustomer) {
+                sb.append("- ").append(c.getCategoryName())
+                        .append(" | SP đang bán: ").append(c.getActiveProductCount())
+                        .append('\n');
+            } else {
+                sb.append("- ID=").append(c.getCategoryId())
+                        .append(" | ").append(c.getCategoryName())
+                        .append(" | ").append(nullToDash(c.getStatus()))
+                        .append(" | SP đang bán: ").append(c.getActiveProductCount())
+                        .append('\n');
+            }
         }
         if (n == 0) {
             return "Không có danh mục khớp \"" + text(args, "keyword") + "\".";

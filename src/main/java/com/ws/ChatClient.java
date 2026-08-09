@@ -176,6 +176,21 @@ public class ChatClient {
         return true;
     }
 
+    public boolean sendFile(String text, String fileBase64, String fileName, String fileMime) {
+        if (client == null || !client.isOpen()) return false;
+        if (fileBase64 == null || fileBase64.isBlank() || fileName == null || fileName.isBlank()) return false;
+        client.send(GSON.toJson(ChatMessage.file(userId, userName, text, fileBase64, fileName, fileMime)));
+        return true;
+    }
+
+    public boolean sendStaffFile(int toUserId, String text, String fileBase64, String fileName, String fileMime) {
+        if (client == null || !client.isOpen() || !staffMode) return false;
+        if (fileBase64 == null || fileBase64.isBlank() || fileName == null || fileName.isBlank()) return false;
+        client.send(GSON.toJson(ChatMessage.staffFile(userId, userName, toUserId, text, fileBase64, fileName, fileMime)));
+        return true;
+    }
+
+
     public boolean isConnected() { return client != null && client.isOpen(); }
 
     public synchronized void disconnect() {

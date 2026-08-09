@@ -1,5 +1,7 @@
 package com.view.admin;
 
+import com.components.AppAlert;
+import com.components.BaseDialog;
 import com.dao.UserDAO;
 import com.model.chat.ChatConversation;
 import com.model.chat.ChatHistoryMessage;
@@ -10,9 +12,11 @@ import com.model.User;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.FileUtil;
+import com.utils.FileDownloadUI;
 import com.utils.NotificationSound;
 import com.ws.ChatClient;
 import com.ws.ChatImageUtil;
+import com.ws.ChatFileUtil;
 import com.ws.ChatMessage;
 import com.ws.ChatServer;
 
@@ -148,6 +152,21 @@ public class ChatPanel extends JPanel {
         titleWrap.add(conversationStatus);
         header.add(titleWrap, BorderLayout.WEST);
 
+        JLabel clearAllButton = new JLabel();
+        FontIcon trashIcon = FontIcon.of(FontAwesomeSolid.TRASH_ALT, 14);
+        trashIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearAllButton.setIcon(trashIcon);
+        clearAllButton.setToolTipText("Xóa tất cả tin nhắn trong cuộc trò chuyện này");
+        clearAllButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearAllButton.setBorder(new EmptyBorder(4, 8, 4, 4));
+        clearAllButton.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                clearCurrentConversationMessages();
+            }
+        });
+        header.add(clearAllButton, BorderLayout.EAST);
+
         messagesContainer = new JPanel();
         messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
         messagesContainer.setBackground(AppColor.WHITE);
@@ -176,9 +195,9 @@ public class ChatPanel extends JPanel {
             }
         });
 
-        imageButton = buildIconButton(FontAwesomeSolid.IMAGE, "Gửi ảnh");
+        imageButton = buildIconButton(FontAwesomeSolid.PAPERCLIP, "Gửi ảnh / file");
         imageButton.setEnabled(false);
-        imageButton.addActionListener(e -> pickAndSendImage());
+        imageButton.addActionListener(e -> pickAndSendAttachment());
 
         FontIcon sendIcon = FontIcon.of(FontAwesomeSolid.PAPER_PLANE, 13);
         sendIcon.setIconColor(Color.WHITE);
@@ -479,6 +498,7 @@ public class ChatPanel extends JPanel {
         cm.text = h.getBodyText();
         cm.fromAdmin = h.isFromStaff();
         cm.timestamp = toEpochMillis(h.getCreatedAt());
+        cm.messageId = h.getMessageId();
         attachHistoryImage(cm, h);
         return cm;
     }
@@ -492,8 +512,96 @@ public class ChatPanel extends JPanel {
         cm.userName = h.getSenderName();
         cm.text = h.getBodyText();
         cm.timestamp = toEpochMillis(h.getCreatedAt());
+        cm.messageId = h.getMessageId();
         attachHistoryImage(cm, h);
         return cm;
+    }
+
+    /** Xóa toàn bộ tin của cuộc trò chuyện đang mở (khách hoặc nội bộ). */
+    private void clearCurrentConversationMessages() {
+        if (staffTabActive) {
+            if (selectedStaffId == null) {
+                AppAlert.warning(this, "Chưa chọn", "Hãy chọn một đồng nghiệp trước.");
+                return;
+            }
+            boolean ok = BaseDialog.confirm(this, "Xóa tất cả tin nhắn",
+                    "Xóa toàn bộ lịch sử chat nội bộ với người này?\nHành động không thể hoàn tác.");
+            if (!ok) return;
+            final int peerId = selectedStaffId;
+            new SwingWorker<Integer, Void>() {
+                @Override
+                protected Integer doInBackground() {
+                    return ChatHistoryService.getInstance().clearStaffDmHistory(myUserId, peerId);
+                }
+
+                @Override
+                protected void done() {
+                    staffConversations.put(peerId, new ArrayList<>());
+                    staffHistoryLoaded.remove(peerId);
+                    renderConversation(List.of(), false);
+                    AppAlert.success(ChatPanel.this, "Đã xóa", "Đã xóa toàn bộ tin nhắn nội bộ.");
+                }
+            }.execute();
+        } else {
+            if (selectedCustomerId == null) {
+                AppAlert.warning(this, "Chưa chọn", "Hãy chọn một khách hàng trước.");
+                return;
+            }
+            boolean ok = BaseDialog.confirm(this, "Xóa tất cả tin nhắn",
+                    "Xóa toàn bộ lịch sử chat với khách này?\nHành động không thể hoàn tác.");
+            if (!ok) return;
+            final int customerId = selectedCustomerId;
+            new SwingWorker<Integer, Void>() {
+                @Override
+                protected Integer doInBackground() {
+                    return ChatHistoryService.getInstance().clearCustomerHistory(customerId);
+                }
+
+                @Override
+                protected void done() {
+                    customerConversations.put(customerId, new ArrayList<>());
+                    customerHistoryLoaded.remove(customerId);
+                    renderConversation(List.of(), true);
+                    AppAlert.success(ChatPanel.this, "Đã xóa", "Đã xóa toàn bộ tin nhắn với khách.");
+                }
+            }.execute();
+        }
+    }
+
+    private void deleteOneMessage(JPanel row, long messageId, ChatMessage linked) {
+        boolean ok = BaseDialog.confirm(this, "Xóa tin nhắn", "Bạn có chắc muốn xóa tin nhắn này?");
+        if (!ok) return;
+        Runnable removeUi = () -> {
+            messagesContainer.remove(row);
+            if (linked != null) {
+                if (staffTabActive && selectedStaffId != null) {
+                    List<ChatMessage> list = staffConversations.get(selectedStaffId);
+                    if (list != null) list.removeIf(m -> m == linked
+                            || (messageId > 0 && m.messageId == messageId));
+                } else if (selectedCustomerId != null) {
+                    List<ChatMessage> list = customerConversations.get(selectedCustomerId);
+                    if (list != null) list.removeIf(m -> m == linked
+                            || (messageId > 0 && m.messageId == messageId));
+                }
+            }
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+        };
+        if (messageId > 0) {
+            new SwingWorker<Boolean, Void>() {
+                @Override
+                protected Boolean doInBackground() {
+                    return ChatHistoryService.getInstance().deleteMessage(messageId);
+                }
+
+                @Override
+                protected void done() {
+                    removeUi.run();
+                }
+            }.execute();
+        } else {
+            removeUi.run();
+        }
     }
 
     private static long toEpochMillis(java.time.LocalDateTime dt) {
@@ -566,24 +674,37 @@ public class ChatPanel extends JPanel {
         }
     }
 
-    private void pickAndSendImage() {
-        File file = FileUtil.chooseImageFile(this);
+    private void pickAndSendAttachment() {
+        File file = ChatFileUtil.chooseAttachment(this);
         if (file == null) return;
-        if (!ChatImageUtil.isSupportedImage(file)) {
-            JOptionPane.showMessageDialog(this, "Định dạng ảnh không được hỗ trợ.",
+        if (!ChatFileUtil.isSupportedFile(file)) {
+            JOptionPane.showMessageDialog(this, "Định dạng file không được hỗ trợ.",
                     "Không hỗ trợ", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        if (file.length() > ChatFileUtil.MAX_BYTES) {
+            JOptionPane.showMessageDialog(this,
+                    "File quá lớn (tối đa " + (ChatFileUtil.MAX_BYTES / 1_000_000) + " MB).",
+                    "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         final boolean forStaff = staffTabActive;
         final Integer targetId = forStaff ? selectedStaffId : selectedCustomerId;
         if (targetId == null) return;
+
+        final boolean asImage = ChatFileUtil.isImageExtension(file.getName())
+                && ChatImageUtil.isSupportedImage(file);
+
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         imageButton.setEnabled(false);
         sendButton.setEnabled(false);
-        new SwingWorker<ChatImageUtil.EncodedImage, Void>() {
+
+        new SwingWorker<Object, Void>() {
             @Override
-            protected ChatImageUtil.EncodedImage doInBackground() {
-                return ChatImageUtil.encodeForChat(file);
+            protected Object doInBackground() {
+                if (asImage) return ChatImageUtil.encodeForChat(file);
+                return ChatFileUtil.encodeForChat(file);
             }
 
             @Override
@@ -591,47 +712,74 @@ public class ChatPanel extends JPanel {
                 setCursor(Cursor.getDefaultCursor());
                 imageButton.setEnabled(true);
                 sendButton.setEnabled(true);
-                ChatImageUtil.EncodedImage encoded;
+                Object encoded;
                 try {
                     encoded = get();
                 } catch (Exception ex) {
                     encoded = null;
                 }
                 if (encoded == null) {
-                    JOptionPane.showMessageDialog(ChatPanel.this, "Không đọc được ảnh.",
-                            "Lỗi ảnh", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(ChatPanel.this,
+                            asImage ? "Không đọc được ảnh." : "Không đọc được file.",
+                            "Lỗi", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
                 String caption = inputField.getText() == null ? "" : inputField.getText().trim();
                 boolean sent;
                 ChatMessage record;
-                if (forStaff) {
-                    sent = ChatClient.getInstance().sendStaffImage(
-                            targetId, caption.isEmpty() ? null : caption, encoded.base64, encoded.mime);
-                    record = ChatMessage.staffImage(myUserId, myName, targetId,
-                            caption.isEmpty() ? null : caption, encoded.base64, encoded.mime);
-                    staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                BufferedImage preview = null;
+
+                if (asImage) {
+                    ChatImageUtil.EncodedImage img = (ChatImageUtil.EncodedImage) encoded;
+                    if (forStaff) {
+                        sent = ChatClient.getInstance().sendStaffImage(
+                                targetId, caption.isEmpty() ? null : caption, img.base64, img.mime);
+                        record = ChatMessage.staffImage(myUserId, myName, targetId,
+                                caption.isEmpty() ? null : caption, img.base64, img.mime);
+                        staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                    } else {
+                        sent = ChatServer.getInstance().sendImageToCustomer(
+                                targetId, myName, caption.isEmpty() ? null : caption, img.base64, img.mime, myUserId);
+                        record = ChatMessage.imageFromAdmin(targetId, myName,
+                                caption.isEmpty() ? null : caption, img.base64, img.mime);
+                        customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                    }
+                    preview = ChatImageUtil.decodeBase64(img.base64);
+                    if ((forStaff && selectedStaffId != null && selectedStaffId.equals(targetId))
+                            || (!forStaff && selectedCustomerId != null && selectedCustomerId.equals(targetId))) {
+                        addBubble(caption.isEmpty() ? null : caption, preview, null, null, true,
+                                TIME_FORMAT.format(new Date(record.timestamp)));
+                    }
                 } else {
-                    sent = ChatServer.getInstance().sendImageToCustomer(
-                            targetId, myName, caption.isEmpty() ? null : caption, encoded.base64, encoded.mime, myUserId);
-                    record = ChatMessage.imageFromAdmin(targetId, myName,
-                            caption.isEmpty() ? null : caption, encoded.base64, encoded.mime);
-                    customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                    ChatFileUtil.EncodedFile f = (ChatFileUtil.EncodedFile) encoded;
+                    if (forStaff) {
+                        sent = ChatClient.getInstance().sendStaffFile(
+                                targetId, caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
+                        record = ChatMessage.staffFile(myUserId, myName, targetId,
+                                caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
+                        staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                    } else {
+                        sent = ChatServer.getInstance().sendFileToCustomer(
+                                targetId, myName, caption.isEmpty() ? null : caption,
+                                f.base64, f.fileName, f.mime, myUserId);
+                        record = ChatMessage.fileFromAdmin(targetId, myName,
+                                caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
+                        customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                    }
+                    if ((forStaff && selectedStaffId != null && selectedStaffId.equals(targetId))
+                            || (!forStaff && selectedCustomerId != null && selectedCustomerId.equals(targetId))) {
+                        addBubble(caption.isEmpty() ? null : caption, null, f.fileName, f.base64, true,
+                                TIME_FORMAT.format(new Date(record.timestamp)));
+                    }
                 }
-                if ((forStaff && selectedStaffId != null && selectedStaffId.equals(targetId))
-                        || (!forStaff && selectedCustomerId != null && selectedCustomerId.equals(targetId))) {
-                    BufferedImage preview = ChatImageUtil.decodeBase64(encoded.base64);
-                    addBubble(caption.isEmpty() ? null : caption, preview, true,
-                            TIME_FORMAT.format(new Date(record.timestamp)));
-                    inputField.setText("");
-                }
-                // Chỉ báo lỗi khi gửi nội bộ NV-NV thất bại thật sự (không có nơi lưu tạm).
-                // Với khách hàng, sendImageToCustomer() đã lưu lịch sử nên không cần popup dù khách offline.
-                if (!sent && forStaff) {
+
+                inputField.setText("");
+                if (forStaff && !sent) {
                     JOptionPane.showMessageDialog(ChatPanel.this,
-                            "Không gửi được ảnh (đối phương offline hoặc mất kết nối).",
-                            "Không gửi được", JOptionPane.WARNING_MESSAGE);
+                            "Không gửi được (đồng nghiệp có thể đang offline).",
+                            "Gửi thất bại", JOptionPane.WARNING_MESSAGE);
                 }
+                // Khách offline: server vẫn lưu history
             }
         }.execute();
     }
@@ -663,7 +811,7 @@ public class ChatPanel extends JPanel {
                     && selectedCustomerId != null && selectedCustomerId == message.userId;
             if (viewing) {
                 BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-                addBubble(message.text, image, false, TIME_FORMAT.format(new Date(message.timestamp)));
+                addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
             } else {
                 customerUnread.put(message.userId, true);
                 customerList.repaint();
@@ -713,7 +861,7 @@ public class ChatPanel extends JPanel {
                 && selectedStaffId != null && selectedStaffId == peerId;
         if (viewing) {
             BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-            addBubble(message.text, image, false, TIME_FORMAT.format(new Date(message.timestamp)));
+            addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
         } else {
             staffUnread.put(peerId, true);
             staffList.repaint();
@@ -802,7 +950,11 @@ public class ChatPanel extends JPanel {
             for (ChatMessage message : history) {
                 boolean mine = customerMode ? message.fromAdmin : (message.userId == myUserId);
                 BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-                addBubbleSilently(message.text, image, mine, TIME_FORMAT.format(new Date(message.timestamp)));
+                addBubbleSilently(message.text, image,
+                        message.hasFile() ? message.fileName : null,
+                        message.hasFile() ? message.fileBase64 : null,
+                        mine, TIME_FORMAT.format(new Date(message.timestamp)),
+                        message.messageId, message);
             }
         }
         messagesContainer.revalidate();
@@ -811,13 +963,33 @@ public class ChatPanel extends JPanel {
     }
 
     private void addBubble(String text, BufferedImage image, boolean isMine, String time) {
-        addBubbleSilently(text, image, isMine, time);
+        addBubble(text, image, null, null, isMine, time, 0L, null);
+    }
+
+    private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
+                           boolean isMine, String time) {
+        addBubble(text, image, fileName, fileBase64, isMine, time, 0L, null);
+    }
+
+    private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
+                           boolean isMine, String time, long messageId, ChatMessage linked) {
+        addBubbleSilently(text, image, fileName, fileBase64, isMine, time, messageId, linked);
         messagesContainer.revalidate();
         messagesContainer.repaint();
         scrollToBottom();
     }
 
     private void addBubbleSilently(String text, BufferedImage image, boolean isMine, String time) {
+        addBubbleSilently(text, image, null, null, isMine, time, 0L, null);
+    }
+
+    private void addBubbleSilently(String text, BufferedImage image, String fileName, String fileBase64,
+                                  boolean isMine, String time) {
+        addBubbleSilently(text, image, fileName, fileBase64, isMine, time, 0L, null);
+    }
+
+    private void addBubbleSilently(String text, BufferedImage image, String fileName, String fileBase64,
+                                  boolean isMine, String time, long messageId, ChatMessage linked) {
         int viewportW = scrollPane.getViewport().getWidth();
         if (viewportW <= 0) viewportW = 480;
         int maxBubbleW = Math.max(200, Math.min(360, viewportW - 48));
@@ -826,6 +998,7 @@ public class ChatPanel extends JPanel {
         JPanel row = new JPanel(new FlowLayout(isMine ? FlowLayout.RIGHT : FlowLayout.LEFT, 0, 6));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.putClientProperty("messageId", messageId);
 
         JPanel bubble = new JPanel(new BorderLayout()) {
             @Override
@@ -852,6 +1025,12 @@ public class ChatPanel extends JPanel {
             contentWrap.add(imageLabel);
             if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
         }
+        if (fileName != null && !fileName.isBlank()) {
+            JLabel fileLabel = buildFileAttachmentLabel(fileName, fileBase64, isMine);
+            fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            contentWrap.add(fileLabel);
+            if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
+        }
         if (text != null && !text.isBlank()) {
             JLabel textLabel = new JLabel("<html><body style='width: " + htmlW + "px'>"
                     + escapeHtml(text) + "</body></html>");
@@ -867,11 +1046,48 @@ public class ChatPanel extends JPanel {
         timeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         contentWrap.add(timeLabel);
 
+        FontIcon delIcon = FontIcon.of(FontAwesomeSolid.TIMES, 11);
+        delIcon.setIconColor(isMine ? new Color(255, 255, 255, 180) : AppColor.TEXT_MUTED);
+        JLabel delBtn = new JLabel(delIcon);
+        delBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        delBtn.setToolTipText("Xóa tin nhắn");
+        delBtn.setBorder(new EmptyBorder(0, 6, 0, 0));
+        delBtn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                Object idObj = row.getClientProperty("messageId");
+                long mid = idObj instanceof Long ? (Long) idObj : 0L;
+                deleteOneMessage(row, mid, linked);
+            }
+        });
+
         bubble.add(contentWrap, BorderLayout.CENTER);
         row.add(bubble);
+        row.add(delBtn);
         Dimension pref = row.getPreferredSize();
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
         messagesContainer.add(row);
+    }
+
+
+    private JLabel buildFileAttachmentLabel(String fileName, String fileBase64, boolean isMine) {
+        JLabel label = new JLabel("📎 " + fileName);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        label.setForeground(isMine ? Color.WHITE : AppColor.ACCENT);
+        label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        label.setToolTipText("Nhấp để lưu file");
+        label.setBorder(new EmptyBorder(6, 0, 0, 0));
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                saveReceivedFile(fileName, fileBase64);
+            }
+        });
+        return label;
+    }
+
+    private void saveReceivedFile(String fileName, String fileBase64) {
+        FileDownloadUI.saveBase64WithProgress(this, fileName, fileBase64);
     }
 
     private JLabel buildImageLabel(BufferedImage src, int maxWidth) {

@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Gọi Gemini API (generateContent) – hỗ trợ cả chat text thuần và function calling.
+ * Gọi Gemini API (generateContent) – hỗ trợ chat text, multimodal (ảnh), function calling.
  * API key đọc từ {@link AppConfig} (GEMINI_API_KEY), không hardcode.
  */
 public final class GeminiService {
@@ -59,7 +59,7 @@ public final class GeminiService {
     /**
      * Một lượt gọi Gemini. Có thể trả về text hoặc danh sách functionCall.
      *
-     * @param history           lịch sử user/model (text)
+     * @param history           lịch sử user/model (text + optional ảnh)
      * @param systemInstruction system prompt
      * @param allowedTools      null/empty = không gửi tools; ngược lại gửi functionDeclarations
      * @param extraContents     các content trung gian (functionCall / functionResponse) đã xảy ra trong vòng lặp tool
@@ -76,9 +76,35 @@ public final class GeminiService {
             JsonObject content = new JsonObject();
             content.addProperty("role", msg.isUser() ? "user" : "model");
             JsonArray parts = new JsonArray();
-            JsonObject part = new JsonObject();
-            part.addProperty("text", msg.text);
-            parts.add(part);
+
+            // Nhiều ảnh: mỗi ảnh 1 inlineData (Gemini vision)
+            if (msg.hasImage() && msg.images != null) {
+                for (AiChatMessage.ImagePart img : msg.images) {
+                    if (img == null || img.base64 == null || img.base64.isBlank()) continue;
+                    JsonObject inlinePart = new JsonObject();
+                    JsonObject inlineData = new JsonObject();
+                    String mime = (img.mime != null && !img.mime.isBlank()) ? img.mime : "image/jpeg";
+                    inlineData.addProperty("mimeType", mime);
+                    inlineData.addProperty("data", img.base64);
+                    inlinePart.add("inlineData", inlineData);
+                    parts.add(inlinePart);
+                }
+            }
+
+            String apiText = msg.textForApi();
+            if (apiText != null && !apiText.isBlank()) {
+                JsonObject textPart = new JsonObject();
+                textPart.addProperty("text", apiText);
+                parts.add(textPart);
+            }
+
+            // Model message không có text/ảnh: bỏ qua để tránh payload rỗng
+            if (parts.size() == 0) {
+                JsonObject empty = new JsonObject();
+                empty.addProperty("text", " ");
+                parts.add(empty);
+            }
+
             content.add("parts", parts);
             contents.add(content);
         }
@@ -119,7 +145,7 @@ public final class GeminiService {
                 .uri(URI.create(API_BASE + model + ":generateContent"))
                 .header("Content-Type", "application/json")
                 .header("x-goog-api-key", apiKey)
-                .timeout(Duration.ofSeconds(45))
+                .timeout(Duration.ofSeconds(60))
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
                 .build();
 

@@ -288,6 +288,125 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     }
 
     @Override
+    protected boolean supportsImport() { return true; }
+
+    @Override
+    protected String[] getImportColumns() {
+        return new String[]{"Tên sản phẩm", "Danh mục", "Thương hiệu", "Đơn vị tính", "Khối lượng/dung tích",
+                "Mô tả", "Giá bán", "Chênh lệch riêng", "Tồn kho tối thiểu"};
+    }
+
+    @Override
+    protected String getImportInstructions() {
+        return "Danh mục phải trùng tên với 1 danh mục đã có sẵn trong hệ thống (tạo danh mục trước nếu chưa có). "
+                + "Giá nhập và tồn kho ban đầu luôn là 0 - nhập hàng qua Phiếu nhập kho sau khi thêm sản phẩm. "
+                + "Thương hiệu, đơn vị tính, khối lượng/dung tích, mô tả, chênh lệch riêng có thể để trống.";
+    }
+
+    @Override
+    protected com.importer.ImportRowResult importRow(String[] cells, int rowNumber) {
+        String name = cellAt(cells, 0);
+        String categoryName = cellAt(cells, 1);
+        String brand = cellAt(cells, 2);
+        String unit = cellAt(cells, 3);
+        String weightVolume = cellAt(cells, 4);
+        String description = cellAt(cells, 5);
+        String sellPriceText = cellAt(cells, 6);
+        String marginText = cellAt(cells, 7);
+        String minStockText = cellAt(cells, 8);
+
+        if (name.isEmpty()) {
+            return com.importer.ImportRowResult.failure("thiếu tên sản phẩm.");
+        }
+        if (name.length() > 150) {
+            return com.importer.ImportRowResult.failure("tên sản phẩm tối đa 150 ký tự.");
+        }
+        if (categoryName.isEmpty()) {
+            return com.importer.ImportRowResult.failure("thiếu danh mục.");
+        }
+        Category category = findCategoryByName(categoryName);
+        if (category == null) {
+            return com.importer.ImportRowResult.failure("danh mục \"" + categoryName + "\" không tồn tại.");
+        }
+
+        java.math.BigDecimal sellPrice = parseNonNegativeAmount(sellPriceText);
+        if (sellPriceText.isEmpty()) {
+            return com.importer.ImportRowResult.failure("thiếu giá bán.");
+        }
+        if (sellPrice == null) {
+            return com.importer.ImportRowResult.failure("giá bán phải là số nguyên không âm.");
+        }
+
+        java.math.BigDecimal margin = null;
+        if (!marginText.isEmpty()) {
+            margin = parseNonNegativeAmount(marginText);
+            if (margin == null) {
+                return com.importer.ImportRowResult.failure("chênh lệch riêng phải là số nguyên không âm.");
+            }
+        }
+
+        int minStock = 0;
+        if (!minStockText.isEmpty()) {
+            try {
+                minStock = Integer.parseInt(minStockText.trim());
+                if (minStock < 0) throw new NumberFormatException();
+            } catch (NumberFormatException e) {
+                return com.importer.ImportRowResult.failure("tồn kho tối thiểu phải là số nguyên không âm.");
+            }
+        }
+
+        Product product = new Product();
+        product.setProductName(name);
+        product.setCategoryId(category.getCategoryId());
+        product.setCategoryName(category.getCategoryName());
+        product.setBrand(brand.isEmpty() ? null : brand);
+        product.setUnit(unit.isEmpty() ? null : unit);
+        product.setWeightVolume(weightVolume.isEmpty() ? null : weightVolume);
+        product.setDescription(description.isEmpty() ? null : description);
+        // Giống ProductFormDialog (ADD): giá nhập và tồn kho luôn = 0, nhập hàng
+        // sau đó qua Phiếu nhập kho để tạo lô đầu tiên (giữ đúng logic FEFO).
+        product.setImportPrice(java.math.BigDecimal.ZERO);
+        product.setSellPrice(sellPrice);
+        product.setMargin(margin);
+        product.setAutoPrice(false);
+        product.setStock(0);
+        product.setMinStock(minStock);
+        product.setStatus("ACTIVE");
+
+        if (!productDAO.insert(product)) {
+            return com.importer.ImportRowResult.failure("lưu thất bại.");
+        }
+        com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_CREATE,
+                "Đã nhập sản phẩm \"" + name + "\" từ file", product, null);
+        return com.importer.ImportRowResult.success();
+    }
+
+    private static String cellAt(String[] cells, int index) {
+        String v = index < cells.length ? cells[index] : null;
+        return v == null ? "" : v.trim();
+    }
+
+    private Category findCategoryByName(String name) {
+        for (Category c : categoryDAO.findAll()) {
+            if (c.getCategoryName() != null && c.getCategoryName().equalsIgnoreCase(name)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    /** Giống isValidNonNegativeAmount() của ProductFormDialog: số nguyên không âm, chấp nhận dấu chấm/phẩy phân cách nghìn. */
+    private static java.math.BigDecimal parseNonNegativeAmount(String text) {
+        if (text == null || text.isBlank()) return null;
+        try {
+            java.math.BigDecimal amount = new java.math.BigDecimal(text.trim().replace(".", "").replace(",", ""));
+            return amount.signum() < 0 ? null : amount;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    @Override
     protected void onDataChanged() {
         reload();
     }

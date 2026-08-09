@@ -180,7 +180,37 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
         return new ArrayList<>(new LinkedHashSet<>(names));
     }
 
-    /** Chưa có nơi nào publish DataChangedEvent cho Categories nên reload() trực tiếp sau mỗi thao tác. */
+    @Override
+    protected boolean supportsImport() { return true; }
+
+    @Override
+    protected String[] getImportColumns() { return new String[]{"Tên danh mục"}; }
+
+    @Override
+    protected String getImportInstructions() {
+        return "Mỗi dòng là 1 danh mục. Tên danh mục không được trùng với danh mục đã có.";
+    }
+
+    @Override
+    protected com.importer.ImportRowResult importRow(String[] cells, int rowNumber) {
+        String name = cells.length > 0 && cells[0] != null ? cells[0].trim() : "";
+        if (name.isEmpty()) {
+            return com.importer.ImportRowResult.failure("thiếu tên danh mục.");
+        }
+        if (categoryDAO.nameExistsExcluding(name, -1)) {
+            return com.importer.ImportRowResult.failure("danh mục \"" + name + "\" đã tồn tại.");
+        }
+        Category category = new Category();
+        category.setCategoryName(name);
+        category.setStatus("ACTIVE");
+        if (!categoryDAO.insertCategory(category)) {
+            return com.importer.ImportRowResult.failure("lưu thất bại.");
+        }
+        com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_CREATE,
+                "Đã nhập danh mục \"" + name + "\" từ file", category, null);
+        return com.importer.ImportRowResult.success();
+    }
+
     @Override
     protected void onDataChanged() {
         reload();

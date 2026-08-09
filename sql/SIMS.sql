@@ -205,9 +205,10 @@ CREATE TABLE ReturnExchanges (
     ReturnID        INT IDENTITY(1,1) PRIMARY KEY,
     InvoiceID       INT NOT NULL FOREIGN KEY REFERENCES Invoices(InvoiceID),
     Type            VARCHAR(20) NOT NULL CHECK (Type IN ('RETURN', 'EXCHANGE')),
-    Reason          NVARCHAR(255) NOT NULL,               -- R4: bat buoc ghi ro ly do
+    Reason          NVARCHAR(255) NOT NULL,               -- lý do khách
+    RejectionReason NVARCHAR(500) NULL,                    -- lý do NV từ chối
     TotalValue      DECIMAL(18,0) NOT NULL DEFAULT 0,
-    RequiresApproval BIT NOT NULL DEFAULT 0,               -- R4: gia tri lon can duyet
+    RequiresApproval BIT NOT NULL DEFAULT 0,
     Status          VARCHAR(20) NOT NULL DEFAULT 'PENDING'
                         CHECK (Status IN ('PENDING', 'APPROVED', 'REJECTED')),
     ApprovedBy      INT NULL FOREIGN KEY REFERENCES Users(UserID),
@@ -424,9 +425,9 @@ CREATE TABLE Orders (
     ShippingAddress NVARCHAR(255) NOT NULL,
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     SubTotal        DECIMAL(18,0) NOT NULL DEFAULT 0,
-    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8,   -- lấy từ StoreConfig VAT_RATE
+    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8,
     VATAmount       AS (SubTotal * VATRate / 100) PERSISTED,
-    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,   -- SubTotal + VATAmount, duy tri qua app (giong Invoices)
+    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,
     PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'COD'
                         CHECK (PaymentMethod IN ('COD', 'PAYPAL')),
     PaymentStatus   VARCHAR(20) NOT NULL DEFAULT 'PENDING'
@@ -436,10 +437,9 @@ CREATE TABLE Orders (
     OrderStatus     VARCHAR(20) NOT NULL DEFAULT 'NEW'
                     CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED')),
     SeenByAdmin     BIT NOT NULL DEFAULT 0,
-    CompletedAt     DATETIME NULL,        -- moc thoi gian chuyen sang COMPLETED - dung tinh han 1 ngay duoc bam "Tra hang"
+    CancelReason    NVARCHAR(500) NULL,   -- lý do hủy đơn
+    CompletedAt     DATETIME NULL,
     InvoiceID       INT NULL FOREIGN KEY REFERENCES Invoices(InvoiceID)
-                    -- Hoa don duoc TU DONG lap khi don chuyen sang COMPLETED (xem OrderDAO#createInvoiceForCompletedOrder),
-                    -- de tai su dung nguyen luong doi/tra (ReturnExchanges) da co san cho hoa don tai quay.
 );
 GO
 
@@ -568,9 +568,21 @@ CREATE TABLE ChatMessages (
     -- Ảnh lưu file local (uploads/chat/...), KHÔNG lưu base64 trong DB
     ImagePath           NVARCHAR(500) NULL,
     ImageMime           VARCHAR(50) NULL,
+    -- File đính kèm (pdf, doc, zip...) lưu local uploads/chat/files/
+    FilePath            NVARCHAR(500) NULL,
+    FileName            NVARCHAR(255) NULL,
     CreatedAt           DATETIME NOT NULL DEFAULT GETDATE(),
     IsReadByPeer        BIT NOT NULL DEFAULT 0
 );
+GO
+
+-- An toàn nếu DB cũ đã có ChatMessages nhưng chưa có 2 cột file
+IF COL_LENGTH('dbo.ChatMessages', 'FilePath') IS NULL
+    ALTER TABLE dbo.ChatMessages ADD FilePath NVARCHAR(500) NULL;
+GO
+
+IF COL_LENGTH('dbo.ChatMessages', 'FileName') IS NULL
+    ALTER TABLE dbo.ChatMessages ADD FileName NVARCHAR(255) NULL;
 GO
 
 CREATE INDEX IX_ChatMessages_Conversation_Created

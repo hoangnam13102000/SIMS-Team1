@@ -3,6 +3,15 @@ package com.model;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+/**
+ * Yeu cau doi/tra hang gan voi 1 hoa don da lap (xem bang ReturnExchanges
+ * trong sql/SIMS.sql). R4: bat buoc co ly do; don gia tri lon (xem
+ * {@link com.dao.ReturnExchangeDAO#APPROVAL_THRESHOLD}) phai duoc Quan ly
+ * ban hang duyet (RequiresApproval = true) truoc khi kho/hoa don goc duoc
+ * dieu chinh - viec cong/tru kho that su do trigger
+ * trg_ReturnExchange_ApprovedStock (sql/Trigger_SIMS.sql) dam nhiem ngay
+ * khi Status chuyen sang APPROVED.
+ */
 public class ReturnExchange {
 
     public static final String TYPE_RETURN = "RETURN";
@@ -17,7 +26,8 @@ public class ReturnExchange {
     private String invoiceCode;
 
     private String type;          // RETURN | EXCHANGE
-    private String reason;        // R4: bat buoc
+    private String reason;        // R4: ly do khach hang
+    private String rejectionReason; // ly do nhan vien tu choi
     private BigDecimal totalValue; // gia tri hang khach tra (tong Direction=IN * UnitPrice)
     private boolean requiresApproval;
     private String status;        // PENDING | APPROVED | REJECTED
@@ -47,6 +57,9 @@ public class ReturnExchange {
 
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 
     public BigDecimal getTotalValue() { return totalValue; }
     public void setTotalValue(BigDecimal totalValue) { this.totalValue = totalValue; }

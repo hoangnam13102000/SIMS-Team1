@@ -37,6 +37,72 @@ public enum AiTool {
             """
     ),
 
+    FIND_SIMILAR_PRODUCTS(
+            "find_similar_products",
+            "Tìm sản phẩm tương tự dựa trên mô tả từ ảnh người dùng gửi (hoặc mô tả chữ). "
+                    + "Dùng khi khách gửi ảnh và muốn biết cửa hàng có bán gì giống vậy. "
+                    + "Thứ tự: tìm theo keywords → nếu không có thì gợi ý sản phẩm cùng danh mục (category_hint). "
+                    + "Trả về danh sách SP + marker [[IMG:...]] nếu có ảnh.",
+            true,
+            EnumSet.noneOf(AppPermission.class),
+            """
+            {
+              "type": "object",
+              "properties": {
+                "keywords": {
+                  "type": "string",
+                  "description": "Mô tả ngắn sản phẩm nhìn thấy trên ảnh: tên, thương hiệu, loại (ví dụ: 'sữa tươi TH True Milk hộp 1L', 'iPhone 15 xanh')"
+                },
+                "category_hint": {
+                  "type": "string",
+                  "description": "Gợi ý tên danh mục nếu nhận ra được (ví dụ: Sữa, Điện thoại, Đồ uống). Có thể để trống."
+                }
+              },
+              "required": ["keywords"]
+            }
+            """
+    ),
+
+    IMPORT_EXCEL(
+            "import_excel",
+            "Đọc một hoặc nhiều file Excel (.xlsx) / Word bảng (.docx) người dùng đính kèm và import vào hệ thống "
+                    + "nếu đúng cấu trúc cột. Hỗ trợ: danh mục, sản phẩm, nhân viên, khách hàng. "
+                    + "Có thể truyền nhiều file_path (phân tách ; hoặc ,) hoặc mảng file_paths. "
+                    + "entity_type: AUTO, CATEGORY, PRODUCT, EMPLOYEE, CUSTOMER. "
+                    + "Chỉ nhân viên có quyền quản lý tương ứng.",
+            false,
+            EnumSet.of(AppPermission.CATEGORY_MANAGE, AppPermission.PRODUCT_MANAGE, AppPermission.USER_MANAGE),
+            """
+            {
+              "type": "object",
+              "properties": {
+                "file_path": {
+                  "type": "string",
+                  "description": "Một path hoặc nhiều path phân tách bởi ; hoặc , (vd uploads/ai_import/a.xlsx;uploads/ai_import/b.docx)"
+                },
+                "file_paths": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Danh sách đường dẫn file .xlsx/.docx"
+                },
+                "file_base64": {
+                  "type": "string",
+                  "description": "Nội dung Base64 nếu không có file_path (1 file)"
+                },
+                "file_name": {
+                  "type": "string",
+                  "description": "Tên file khi dùng file_base64"
+                },
+                "entity_type": {
+                  "type": "string",
+                  "description": "AUTO, CATEGORY, PRODUCT, EMPLOYEE hoặc CUSTOMER"
+                }
+              },
+              "required": []
+            }
+            """
+    ),
+
     GET_PRODUCT_DETAIL(
             "get_product_detail",
             "Lấy chi tiết 1 sản phẩm theo mã (productCode). Khách chỉ thấy giá bán, mô tả, ảnh, tình trạng còn hàng. "
@@ -170,6 +236,37 @@ public enum AiTool {
             """
     ),
 
+    UPDATE_ORDER_STATUS(
+            "update_order_status",
+            "Xác nhận hoặc chuyển trạng thái 1 đơn hàng online theo mã đơn (order_code, ví dụ DH0001). "
+                    + "action nhận 1 trong 4 giá trị: "
+                    + "CONFIRM (NEW→CONFIRMED, tự động trừ kho theo FEFO — từ chối nếu không đủ hàng), "
+                    + "SHIP (CONFIRMED→SHIPPING), "
+                    + "COMPLETE (SHIPPING→COMPLETED, tự động lập hóa đơn tương ứng), "
+                    + "CANCEL (chỉ hủy được khi đơn đang NEW hoặc CONFIRMED, tự động hoàn kho nếu đã trừ). "
+                    + "CHỈ nhân viên có ORDER_MANAGE mới được gọi tool này — ORDER_VIEW (chỉ xem) KHÔNG đủ quyền. "
+                    + "Không bao giờ dùng cho khách hàng. Khi thành công, hệ thống tự gửi thông báo tới "
+                    + "mọi tài khoản có quyền quản lý đơn hàng đang đăng nhập.",
+            false,
+            EnumSet.of(AppPermission.ORDER_MANAGE),
+            """
+            {
+              "type": "object",
+              "properties": {
+                "order_code": {
+                  "type": "string",
+                  "description": "Mã đơn hàng cần cập nhật, ví dụ DH0001"
+                },
+                "action": {
+                  "type": "string",
+                  "description": "CONFIRM, SHIP, COMPLETE hoặc CANCEL"
+                }
+              },
+              "required": ["order_code", "action"]
+            }
+            """
+    ),
+
     SEARCH_INVOICES(
             "search_invoices",
             "Tìm hóa đơn bán tại quầy (POS) theo mã hóa đơn, tên khách. "
@@ -221,9 +318,9 @@ public enum AiTool {
 
     LIST_CATEGORIES(
             "list_categories",
-            "Liệt kê danh mục sản phẩm hiện có (tên, trạng thái). Dùng trước khi tạo danh mục mới để tránh trùng. "
-                    + "Nhân viên có CATEGORY_MANAGE hoặc PRODUCT_VIEW/PRODUCT_MANAGE.",
-            false,
+            "Liệt kê danh mục sản phẩm hiện có (tên, trạng thái). Khách và nhân viên đều dùng được (chỉ xem). "
+                    + "Dùng khi cần đoán danh mục từ ảnh hoặc trước khi tạo danh mục mới.",
+            true,
             EnumSet.of(AppPermission.CATEGORY_MANAGE, AppPermission.PRODUCT_VIEW, AppPermission.PRODUCT_MANAGE),
             """
             {

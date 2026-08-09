@@ -130,10 +130,11 @@ public class ChatHistoryDAO {
     }
 
     public long insertMessage(int conversationId, int senderUserId, String senderName,
-                              boolean fromStaff, String bodyText, String imagePath, String imageMime) {
+                              boolean fromStaff, String bodyText, String imagePath, String imageMime,
+                              String filePath, String fileName) {
         String sql = "INSERT INTO ChatMessages "
-                + "(ConversationID, SenderUserID, SenderName, FromStaff, BodyText, ImagePath, ImageMime) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?)";
+                + "(ConversationID, SenderUserID, SenderName, FromStaff, BodyText, ImagePath, ImageMime, FilePath, FileName) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, conversationId);
@@ -143,6 +144,8 @@ public class ChatHistoryDAO {
             ps.setString(5, bodyText);
             ps.setString(6, imagePath);
             ps.setString(7, imageMime);
+            ps.setString(8, filePath);
+            ps.setString(9, fileName);
             if (ps.executeUpdate() == 0) return -1;
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 long id = keys.next() ? keys.getLong(1) : -1;
@@ -193,6 +196,64 @@ public class ChatHistoryDAO {
         ChatConversation c = findCustomerSupport(customerUserId);
         if (c == null) return List.of();
         return listMessages(c.getConversationId(), limit);
+    }
+
+    /** Xóa 1 tin theo MessageID. Trả về true nếu có dòng bị xóa. */
+    public boolean deleteMessage(long messageId) {
+        if (messageId <= 0) return false;
+        String sql = "DELETE FROM ChatMessages WHERE MessageID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setLong(1, messageId);
+            return ps.executeUpdate() > 0;
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                    "ChatHistoryDAO.deleteMessage - id=" + messageId, e);
+            return false;
+        }
+    }
+
+    /** Xóa toàn bộ tin trong 1 conversation. */
+    public int deleteAllMessages(int conversationId) {
+        if (conversationId <= 0) return 0;
+        String sql = "DELETE FROM ChatMessages WHERE ConversationID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, conversationId);
+            return ps.executeUpdate();
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+                    "ChatHistoryDAO.deleteAllMessages - conv=" + conversationId, e);
+            return 0;
+        }
+    }
+
+    /** Xóa toàn bộ tin hội thoại hỗ trợ của 1 khách. */
+    public int deleteCustomerSupportMessages(int customerUserId) {
+        ChatConversation c = findCustomerSupport(customerUserId);
+        if (c == null) return 0;
+        return deleteAllMessages(c.getConversationId());
+    }
+
+    /** Xóa toàn bộ tin DM giữa 2 nhân viên. */
+    public int deleteStaffDmMessages(int userId1, int userId2) {
+        int a = Math.min(userId1, userId2);
+        int b = Math.max(userId1, userId2);
+        String select = "SELECT TOP 1 ConversationID FROM ChatConversations "
+                + "WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA = ? AND StaffUserIdB = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(select)) {
+            ps.setInt(1, a);
+            ps.setInt(2, b);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return 0;
+                return deleteAllMessages(rs.getInt(1));
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "ChatHistoryDAO.deleteStaffDmMessages", e);
+            return 0;
+        }
     }
 
     public List<ChatHistoryMessage> listStaffDmHistory(int userId1, int userId2, int limit) {
@@ -260,6 +321,12 @@ public class ChatHistoryDAO {
         m.setBodyText(rs.getString("BodyText"));
         m.setImagePath(rs.getString("ImagePath"));
         m.setImageMime(rs.getString("ImageMime"));
+        try {
+            m.setFilePath(rs.getString("FilePath"));
+            m.setFileName(rs.getString("FileName"));
+        } catch (Exception ignored) {
+            // Cot chua co neu DB chua ALTER
+        }
         Timestamp ts = rs.getTimestamp("CreatedAt");
         if (ts != null) m.setCreatedAt(ts.toLocalDateTime());
         m.setReadByPeer(rs.getBoolean("IsReadByPeer"));

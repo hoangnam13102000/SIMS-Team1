@@ -195,6 +195,16 @@ public class ReturnExchangeDetailDialog extends JDialog {
             approveRow.add(infoCell(Lang.get("returnExchange.detail.info.processedAt"),
                     item.getApprovedAt() != null ? item.getApprovedAt().format(DATE_TIME_FORMAT) : "-"));
             cardInner.add(approveRow);
+
+            if (item.isRejected()) {
+                JPanel rejectionRow = new JPanel(new GridLayout(0, 1, 0, 4));
+                rejectionRow.setOpaque(false);
+                rejectionRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+                rejectionRow.add(infoCell("Lý do từ chối",
+                        item.getRejectionReason() != null && !item.getRejectionReason().isBlank()
+                                ? item.getRejectionReason() : "Chưa có lý do từ chối"));
+                cardInner.add(rejectionRow);
+            }
         }
 
         infoCard.add(cardInner, BorderLayout.CENTER);
@@ -447,8 +457,20 @@ public class ReturnExchangeDetailDialog extends JDialog {
                 Lang.get("returnExchange.detail.confirm.reject.button"), AppColor.ERROR, AppColor.ERROR, FontAwesomeSolid.TIMES_CIRCLE);
         if (!confirmed) return;
 
+        String rejectionReason = BaseDialog.inputText(this,
+                "Lý do từ chối trả hàng",
+                "Vui lòng nhập lý do từ chối để khách hàng có thể xem.",
+                "",
+                "Từ chối");
+        if (rejectionReason == null) return;
+        rejectionReason = rejectionReason.trim();
+        if (rejectionReason.isEmpty()) {
+            BaseDialog.error(this, "Thiếu lý do từ chối", "Bạn phải nhập lý do từ chối.");
+            return;
+        }
+
         int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
-        String error = returnExchangeDAO.reject(item.getReturnId(), currentUserId);
+        String error = returnExchangeDAO.reject(item.getReturnId(), currentUserId, rejectionReason);
         if (error != null) {
             BaseDialog.error(this, Lang.get("returnExchange.detail.error.rejectTitle"), error);
             return;

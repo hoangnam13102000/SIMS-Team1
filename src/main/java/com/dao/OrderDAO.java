@@ -39,11 +39,23 @@ public class OrderDAO extends BaseDAO<Order> {
     protected String getColumns() {
         return "o.OrderID, o.OrderCode, o.CustomerID, o.CustomerName, o.CustomerEmail, o.CustomerPhone, "
                 + "o.ShippingAddress, o.CreatedAt, o.SubTotal, o.TotalAmount, o.PaymentMethod, o.PaymentStatus, "
-                + "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, o.CompletedAt, o.InvoiceID, "
+                + "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, o.CancelReason, o.CompletedAt, o.InvoiceID, "
                 + "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount, "
                 + "CASE WHEN EXISTS (SELECT 1 FROM ReturnExchanges r "
-                + "WHERE r.InvoiceID = o.InvoiceID AND r.Status IN ('PENDING', 'APPROVED')) "
-                + "THEN 1 ELSE 0 END AS ReturnRequested";
+                + "WHERE r.InvoiceID = o.InvoiceID) "
+                + "THEN 1 ELSE 0 END AS ReturnRequested, "
+                + "(SELECT TOP 1 r.Status FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnStatus, "
+                + "(SELECT TOP 1 r.Type FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnType, "
+                + "(SELECT TOP 1 r.TotalValue FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnValue, "
+                + "(SELECT TOP 1 r.RejectionReason FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnRejectionReason, "
+                + "(SELECT TOP 1 r.Reason FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnReason, "
+                + "(SELECT TOP 1 r.CreatedAt FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnCreatedAt";
     }
 
     @Override
@@ -78,6 +90,7 @@ public class OrderDAO extends BaseDAO<Order> {
         order.setPayPalCaptureId(rs.getString("PayPalCaptureID"));
         order.setOrderStatus(rs.getString("OrderStatus"));
         order.setSeenByAdmin(rs.getBoolean("SeenByAdmin"));
+        order.setCancelReason(rs.getString("CancelReason"));
 
         Timestamp completedAt = rs.getTimestamp("CompletedAt");
         order.setCompletedAt(completedAt != null ? completedAt.toLocalDateTime() : null);
@@ -85,6 +98,13 @@ public class OrderDAO extends BaseDAO<Order> {
         int invoiceId = rs.getInt("InvoiceID");
         order.setInvoiceId(rs.wasNull() ? null : invoiceId);
         order.setReturnRequested(rs.getBoolean("ReturnRequested"));
+        order.setLatestReturnStatus(rs.getString("LatestReturnStatus"));
+        order.setLatestReturnType(rs.getString("LatestReturnType"));
+        order.setLatestReturnValue(rs.getBigDecimal("LatestReturnValue"));
+        order.setLatestReturnRejectionReason(rs.getString("LatestReturnRejectionReason"));
+        order.setLatestReturnReason(rs.getString("LatestReturnReason"));
+        Timestamp latestReturnCreatedAt = rs.getTimestamp("LatestReturnCreatedAt");
+        order.setLatestReturnCreatedAt(latestReturnCreatedAt != null ? latestReturnCreatedAt.toLocalDateTime() : null);
 
         order.setItemCount(rs.getInt("ItemCount"));
         return order;
@@ -142,6 +162,20 @@ public class OrderDAO extends BaseDAO<Order> {
                         ps.addBatch();
                     }
                     ps.executeBatch();
+                }
+
+                // PAYPAL da thu tien thuc su qua PayPalService.captureOrder()
+                // TRUOC khi goi ham nay (xem javadoc + CartPanel) - lap Invoice
+                // ngay de doanh thu duoc ghi nhan dung luc thu tien, khong phai
+                // doi admin xac nhan giao hang xong (COMPLETED) nhu don COD.
+                // Kho KHONG bi dung toi o day (van tru o buoc CONFIRMED).
+                if ("PAYPAL".equals(order.getPaymentMethod()) && "PAID".equals(order.getPaymentStatus())) {
+                    Integer adminActorId = getFallbackAdminUserId(con);
+                    if (adminActorId == null) {
+                        throw new SQLException(
+                                "Khong tim thay tai khoan ADMIN nao de lap hoa don cho don PayPal.");
+                    }
+                    createInvoiceForOrder(con, orderId, adminActorId);
                 }
 
                 con.commit();
@@ -273,8 +307,7 @@ public class OrderDAO extends BaseDAO<Order> {
 
     /**
      * Xác nhận / chuyển trạng thái đơn: NEW -&gt; CONFIRMED -&gt; SHIPPING -&gt; COMPLETED,
-     * hủy (-&gt; CANCELLED) chỉ được phép ở NEW hoặc CONFIRMED (đơn đã giao cho ĐVVC
-     * thì không hủy được nữa). Chuyển trạng thái không nằm trong
+     * hủy (-&gt; CANCELLED) được phép ở NEW, CONFIRMED hoặc SHIPPING. Chuyển trạng thái không nằm trong
      * {@link #isValidTransition} bị từ chối ngay, không đụng DB.
      * <p>
      * Kho CHỈ thực sự bị trừ tại thời điểm xác nhận (không trừ lúc khách đặt
@@ -291,6 +324,28 @@ public class OrderDAO extends BaseDAO<Order> {
      * @param actorUserId UserID của admin đang thao tác - dùng làm CreatedBy khi ghi InventoryTransactions.
      */
     public StatusUpdateResult updateOrderStatus(int orderId, String newStatus, int actorUserId) {
+        return updateOrderStatus(orderId, newStatus, actorUserId, null, false);
+    }
+
+    /** Overload AI: viaAssistant = true khi lenh tu chatbot (AiToolExecutor). */
+    public StatusUpdateResult updateOrderStatus(int orderId, String newStatus, int actorUserId, boolean viaAssistant) {
+        return updateOrderStatus(orderId, newStatus, actorUserId, null, viaAssistant);
+    }
+
+    /** Khi huy don: bat buoc co ly do huy. */
+    public StatusUpdateResult updateOrderStatus(int orderId, String newStatus, int actorUserId, String cancelReason) {
+        return updateOrderStatus(orderId, newStatus, actorUserId, cancelReason, false);
+    }
+
+    /**
+     * Ban day du: cancelReason (khi CANCELLED) + viaAssistant (khi tu AI).
+     */
+    public StatusUpdateResult updateOrderStatus(int orderId, String newStatus, int actorUserId,
+                                                String cancelReason, boolean viaAssistant) {
+        if ("CANCELLED".equalsIgnoreCase(newStatus)
+                && (cancelReason == null || cancelReason.trim().isEmpty())) {
+            return StatusUpdateResult.fail("Vui lòng nhập lý do hủy đơn.");
+        }
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
@@ -307,31 +362,72 @@ public class OrderDAO extends BaseDAO<Order> {
                         return StatusUpdateResult.fail(
                                 "Không đủ tồn kho để xác nhận đơn - " + insufficient + ".");
                     }
-                } else if ("CONFIRMED".equals(oldStatus) && "CANCELLED".equals(newStatus)) {
+                } else if (("CONFIRMED".equals(oldStatus) || "SHIPPING".equals(oldStatus))
+                        && "CANCELLED".equals(newStatus)) {
                     restoreStockFEFO(con, orderId, actorUserId);
                 }
 
                 if ("COMPLETED".equals(newStatus)) {
                     try (PreparedStatement ps = con.prepareStatement(
-                            "UPDATE Orders SET OrderStatus = ?, CompletedAt = GETDATE() WHERE OrderID = ?")) {
+                            "UPDATE Orders SET OrderStatus = ?, PaymentStatus = 'PAID', CompletedAt = GETDATE() WHERE OrderID = ?")) {
                         ps.setString(1, newStatus);
                         ps.setInt(2, orderId);
                         ps.executeUpdate();
                     }
-                    // Tu dong lap hoa don tuong ung (khong dung kho, chi de tai su dung
-                    // luong doi/tra hien co cho hoa don tai quay) - xem javadoc method.
-                    createInvoiceForCompletedOrder(con, orderId, actorUserId);
+                    // Don PAYPAL da co Invoice lap san tu luc checkout (xem
+                    // OrderDAO#createOrder) - chi don COD (chua co Invoice)
+                    // moi can lap luc nay, tranh tao trung Invoice.
+                    if (getInvoiceIdForUpdate(con, orderId) == null) {
+                        createInvoiceForOrder(con, orderId, actorUserId);
+                    }
                 } else {
-                    try (PreparedStatement ps = con.prepareStatement(
-                            "UPDATE Orders SET OrderStatus = ? WHERE OrderID = ?")) {
+                    String updateSql = "CANCELLED".equals(newStatus)
+                            ? "UPDATE Orders SET OrderStatus = ?, CancelReason = ? WHERE OrderID = ?"
+                            : "UPDATE Orders SET OrderStatus = ? WHERE OrderID = ?";
+                    try (PreparedStatement ps = con.prepareStatement(updateSql)) {
                         ps.setString(1, newStatus);
-                        ps.setInt(2, orderId);
+                        if ("CANCELLED".equals(newStatus)) {
+                            ps.setString(2, cancelReason.trim());
+                            ps.setInt(3, orderId);
+                        } else {
+                            ps.setInt(2, orderId);
+                        }
                         ps.executeUpdate();
+                    }
+
+                    // Don PAYPAL bi huy sau khi da co Invoice (lap luc checkout,
+                    // truoc khi CONFIRMED/SHIPPING) - phai huy luon Invoice de
+                    // loai khoi bao cao doanh thu, khong de "tien da tinh doanh
+                    // thu" cho 1 don thuc te khong giao duoc. Trigger_SIMS.sql
+                    // (trg_Invoices_CancelSameDayOnly) da duoc mien tru rang
+                    // buoc "cung ngay/ca mo" cho cac Invoice gan voi Orders.
+                    if ("CANCELLED".equals(newStatus)) {
+                        Integer linkedInvoiceId = getInvoiceIdForUpdate(con, orderId);
+                        if (linkedInvoiceId != null) {
+                            try (PreparedStatement ps = con.prepareStatement(
+                                    "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, "
+                                            + "CancelledAt = GETDATE() WHERE InvoiceID = ? AND Status = 'ACTIVE'")) {
+                                ps.setString(1, cancelReason.trim());
+                                ps.setInt(2, linkedInvoiceId);
+                                ps.executeUpdate();
+                            }
+                        }
                     }
                 }
 
                 con.commit();
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
+
+                String orderCode = null;
+                try {
+                    Order refreshed = getById(orderId);
+                    if (refreshed != null) orderCode = refreshed.getOrderCode();
+                } catch (Exception ignore) {
+                }
+
+                AppEventBus.getInstance().publish(new com.event.OrderStatusChangedEvent(
+                        orderId, orderCode, oldStatus, newStatus, actorUserId, viaAssistant));
+
                 return StatusUpdateResult.ok();
             } catch (SQLException e) {
                 con.rollback();
@@ -340,22 +436,33 @@ public class OrderDAO extends BaseDAO<Order> {
                 con.setAutoCommit(true);
             }
         } catch (SQLException e) {
-            AppLogger.getInstance().error(ErrorCode.ORDER_STATUS_UPDATE_FAIL, "OrderDAO.updateOrderStatus - " + orderId, e);
+            AppLogger.getInstance().error(ErrorCode.ORDER_STATUS_UPDATE_FAIL,
+                    "OrderDAO.updateOrderStatus - " + orderId, e);
             return StatusUpdateResult.fail("Đã xảy ra lỗi hệ thống. Vui lòng thử lại.");
         }
     }
 
     /**
-     * Tu dong lap 1 hoa don (Invoices + InvoiceDetails) ngay khi don online
-     * chuyen sang COMPLETED, roi gan lai Orders.InvoiceID - CHI de tai su
-     * dung nguyen luong đổi/trả (ReturnExchanges) da co san cho hoa don ban
-     * tai quay, KHONG dung de tru kho (kho da tru xong tu buoc CONFIRMED).
+     * Tu dong lap 1 hoa don (Invoices + InvoiceDetails) cho 1 don online, roi
+     * gan lai Orders.InvoiceID - CHI de tai su dung nguyen luong đổi/trả
+     * (ReturnExchanges) da co san cho hoa don ban tai quay, KHONG dung de tru
+     * kho (kho chi tru o buoc CONFIRMED - xem {@link #deductStockFEFO}).
+     * <p>
+     * Duoc goi o 2 thoi diem khac nhau tuy phuong thuc thanh toan:
+     * <ul>
+     *   <li>PAYPAL: ngay luc {@link #createOrder} (OrderStatus con dang NEW) -
+     *       vi tien da thuc su duoc thu qua PayPalService.captureOrder() luc
+     *       khach checkout, nen doanh thu can duoc ghi nhan ngay, khong phai
+     *       doi den luc admin xac nhan giao hang xong (COMPLETED) nhu COD.</li>
+     *   <li>COD: luc {@link #updateOrderStatus} chuyen sang COMPLETED - vi
+     *       tien mat chi thuc su thu duoc khi giao hang xong.</li>
+     * </ul>
      * <p>
      * Orders.InvoiceID phai duoc UPDATE xong TRUOC khi insert InvoiceDetails,
      * vi trg_InvoiceDetails_CheckStock (Trigger_SIMS.sql) dua vao chinh cot
      * nay de biet dong nao la "bản sao" khong can tru kho lai.
      */
-    private void createInvoiceForCompletedOrder(Connection con, int orderId, int actorUserId) throws SQLException {
+    private void createInvoiceForOrder(Connection con, int orderId, int actorUserId) throws SQLException {
         Integer customerId = null;
         String paymentMethod;
         String payPalOrderId = null;
@@ -489,12 +596,12 @@ public class OrderDAO extends BaseDAO<Order> {
         return list.isEmpty() ? null : list.get(0);
     }
 
-    /** Các bước chuyển trạng thái hợp lệ - hủy chỉ cho phép ở NEW/CONFIRMED, SHIPPING/COMPLETED là 1 chiều. */
+    /** Các bước chuyển trạng thái hợp lệ - SHIPPING có thể hoàn thành hoặc hủy. */
     private boolean isValidTransition(String oldStatus, String newStatus) {
         switch (oldStatus) {
             case "NEW":       return "CONFIRMED".equals(newStatus) || "CANCELLED".equals(newStatus);
             case "CONFIRMED": return "SHIPPING".equals(newStatus) || "CANCELLED".equals(newStatus);
-            case "SHIPPING":  return "COMPLETED".equals(newStatus);
+            case "SHIPPING":  return "COMPLETED".equals(newStatus) || "CANCELLED".equals(newStatus);
             default:          return false; // COMPLETED, CANCELLED la trang thai cuoi
         }
     }
@@ -507,6 +614,38 @@ public class OrderDAO extends BaseDAO<Order> {
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? rs.getString(1) : null;
             }
+        }
+    }
+
+    /** Orders.InvoiceID hien tai (null neu don chua duoc lap hoa don). */
+    private Integer getInvoiceIdForUpdate(Connection con, int orderId) throws SQLException {
+        String sql = "SELECT InvoiceID FROM Orders WHERE OrderID = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                int invoiceId = rs.getInt(1);
+                return rs.wasNull() ? null : invoiceId;
+            }
+        }
+    }
+
+    /**
+     * UserID cua 1 tai khoan ADMIN dang hoat dong, dung lam CreatedBy/actor
+     * cho cac hoa don PAYPAL duoc he thong TU DONG lap ngay luc khach checkout
+     * (khong co nhan vien nao thao tac o thoi diem do, khac voi hoa don COD
+     * duoc lap khi admin bam xac nhan COMPLETED). Neu khong tim thay admin nao
+     * (chua seed du lieu / da bi xoa het) thi tra ve null - ben goi se bao loi
+     * ro rang thay vi that bai am tham.
+     */
+    private Integer getFallbackAdminUserId(Connection con) throws SQLException {
+        String sql = "SELECT TOP 1 u.UserID FROM Users u "
+                + "JOIN Roles r ON r.RoleID = u.RoleID "
+                + "WHERE r.RoleCode = 'ADMIN' AND u.Status = 'ACTIVE' AND u.IsDeleted = 0 "
+                + "ORDER BY u.UserID";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : null;
         }
     }
 

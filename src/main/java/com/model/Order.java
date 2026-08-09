@@ -26,10 +26,17 @@ public class Order {
 
     private String orderStatus; // NEW | CONFIRMED | SHIPPING | COMPLETED | CANCELLED
     private boolean seenByAdmin;
+    private String cancelReason;
 
     private LocalDateTime completedAt; // set khi chuyen sang COMPLETED - dung tinh han 1 ngay duoc bam "Tra hang"
     private Integer invoiceId;         // hoa don duoc tu dong lap khi COMPLETED (null neu chua/khong co)
     private boolean returnRequested;   // da co yeu cau doi/tra PENDING/APPROVED gan voi hoa don nay chua
+    private String latestReturnStatus; // PENDING | APPROVED | REJECTED - yeu cau gan nhat
+    private String latestReturnType;   // RETURN | EXCHANGE
+    private BigDecimal latestReturnValue;
+    private String latestReturnRejectionReason;
+    private String latestReturnReason;       // lý do khách hàng gửi yêu cầu
+    private LocalDateTime latestReturnCreatedAt; // thời gian khách gửi yêu cầu
 
     private int itemCount;
 
@@ -81,6 +88,9 @@ public class Order {
     public boolean isSeenByAdmin() { return seenByAdmin; }
     public void setSeenByAdmin(boolean seenByAdmin) { this.seenByAdmin = seenByAdmin; }
 
+    public String getCancelReason() { return cancelReason; }
+    public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
+
     public int getItemCount() { return itemCount; }
     public void setItemCount(int itemCount) { this.itemCount = itemCount; }
 
@@ -92,6 +102,24 @@ public class Order {
 
     public boolean isReturnRequested() { return returnRequested; }
     public void setReturnRequested(boolean returnRequested) { this.returnRequested = returnRequested; }
+
+    public String getLatestReturnStatus() { return latestReturnStatus; }
+    public void setLatestReturnStatus(String latestReturnStatus) { this.latestReturnStatus = latestReturnStatus; }
+
+    public String getLatestReturnType() { return latestReturnType; }
+    public void setLatestReturnType(String latestReturnType) { this.latestReturnType = latestReturnType; }
+
+    public BigDecimal getLatestReturnValue() { return latestReturnValue; }
+    public void setLatestReturnValue(BigDecimal latestReturnValue) { this.latestReturnValue = latestReturnValue; }
+
+    public String getLatestReturnRejectionReason() { return latestReturnRejectionReason; }
+    public void setLatestReturnRejectionReason(String latestReturnRejectionReason) { this.latestReturnRejectionReason = latestReturnRejectionReason; }
+
+    public String getLatestReturnReason() { return latestReturnReason; }
+    public void setLatestReturnReason(String latestReturnReason) { this.latestReturnReason = latestReturnReason; }
+
+    public LocalDateTime getLatestReturnCreatedAt() { return latestReturnCreatedAt; }
+    public void setLatestReturnCreatedAt(LocalDateTime latestReturnCreatedAt) { this.latestReturnCreatedAt = latestReturnCreatedAt; }
 
     public boolean isCancelled() { return "CANCELLED".equalsIgnoreCase(orderStatus); }
     public boolean isConfirmed() { return "CONFIRMED".equalsIgnoreCase(orderStatus); }

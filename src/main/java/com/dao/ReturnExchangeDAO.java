@@ -22,14 +22,7 @@ import java.util.Map;
 
 public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
 
-    /**
-     * Nguon doc nguong gia tri (VND) duoc coi la "lon" theo R4 - tu dong yeu
-     * cau Quan ly ban hang duyet truoc khi kho/hoa don goc duoc dieu chinh.
-     * Doc dong tu StoreConfig (KEY_APPROVAL_THRESHOLD) thay vi hang so cung,
-     * cho phep ADMIN chinh nguong nay tu trang Cai dat ma khong can sua code
-     * (cung mo hinh voi VAT_RATE trong PosPanel).
-     */
-    private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
+    public static final BigDecimal APPROVAL_THRESHOLD = new BigDecimal("0");
 
     private static final String BASE_TABLE =
             "ReturnExchanges r "
@@ -50,7 +43,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
 
     @Override
     protected String getColumns() {
-        return "r.ReturnID, r.InvoiceID, inv.InvoiceCode, r.Type, r.Reason, r.TotalValue, "
+        return "r.ReturnID, r.InvoiceID, inv.InvoiceCode, r.Type, r.Reason, r.RejectionReason, r.TotalValue, "
                 + "r.RequiresApproval, r.Status, r.ApprovedBy, au.FullName AS ApprovedByName, r.ApprovedAt, "
                 + "r.CreatedBy, u.FullName AS CreatedByName, r.CreatedAt";
     }
@@ -71,6 +64,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         re.setInvoiceCode(rs.getString("InvoiceCode"));
         re.setType(rs.getString("Type"));
         re.setReason(rs.getString("Reason"));
+        re.setRejectionReason(rs.getString("RejectionReason"));
         re.setTotalValue(rs.getBigDecimal("TotalValue"));
         re.setRequiresApproval(rs.getBoolean("RequiresApproval"));
         re.setStatus(rs.getString("Status"));
@@ -90,14 +84,13 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         return re;
     }
 
-    /** Danh sach dong san pham (IN + OUT) cua 1 yeu cau doi/tra, dung khi xem chi tiet. */
     public List<ReturnExchangeDetail> getDetails(int returnId) {
         String sql = "SELECT d.ReturnDetailID, d.ReturnID, d.ProductID, p.ProductName, p.ProductCode, "
                 + "d.Quantity, d.Direction, d.UnitPrice "
                 + "FROM ReturnExchangeDetails d "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
                 + "WHERE d.ReturnID = ? "
-                + "ORDER BY d.Direction DESC, d.ReturnDetailID ASC"; // OUT truoc IN cho de nhin (hang doi/hang tra)
+                + "ORDER BY d.Direction DESC, d.ReturnDetailID ASC";
 
         List<ReturnExchangeDetail> list = new ArrayList<>();
         try (Connection con = DBConnection.getConnection();
@@ -124,7 +117,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         return list;
     }
 
-    /** Danh sach cac yeu cau doi/tra da tung tao cho 1 hoa don (hien trong InvoiceDetailDialog). */
     public List<ReturnExchange> getByInvoice(int invoiceId) {
         String sql = "SELECT " + getColumns() + " FROM " + BASE_TABLE
                 + " WHERE r.InvoiceID = ? ORDER BY r.CreatedAt DESC, r.ReturnID DESC";
@@ -142,12 +134,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         return list;
     }
 
-    /**
-     * So luong con co the tra them cho tung ProductID trong 1 hoa don =
-     * so luong da ban (InvoiceDetails) - so luong da tra qua cac yeu cau
-     * PENDING/APPROVED truoc do (REJECTED khong tinh). Dung de gioi han
-     * spinner so luong khi mo dialog tao yeu cau moi.
-     */
     public Map<Integer, Integer> getReturnableQuantities(int invoiceId) {
         Map<Integer, Integer> sold = new HashMap<>();
         String soldSql = "SELECT ProductID, SUM(Quantity) AS Qty FROM InvoiceDetails "
@@ -182,31 +168,12 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         return sold;
     }
 
-    /**
-     * Tao 1 yeu cau doi/tra hang moi. Trinh tu (1 transaction):
-     * <ol>
-     *   <li>Khoa dong hoa don (UPDLOCK) + kiem tra van con ACTIVE.</li>
-     *   <li>Validate tung dong: IN khong vuot so luong con co the tra
-     *   ({@link #getReturnableQuantities}); OUT (hang doi, chi EXCHANGE)
-     *   khong vuot ton kho hien co cua san pham moi.</li>
-     *   <li>INSERT header (Status=PENDING) + tung dong ReturnExchangeDetails.</li>
-     *   <li>Tinh TotalValue (tong gia tri hang IN - khach tra) va
-     *   RequiresApproval theo nguong {@link StoreConfigDAO#getApprovalThreshold()} (R4).</li>
-     *   <li>Neu KHONG can duyet: tu dong chuyen luon sang APPROVED ngay
-     *   trong transaction nay (ApprovedBy = nguoi tao) - trigger
-     *   trg_ReturnExchange_ApprovedStock se cong/tru kho + dieu chinh hoa
-     *   don goc. Neu can duyet: giu nguyen PENDING, cho Quan ly ban hang
-     *   xu ly sau ({@link #approve}/{@link #reject}).</li>
-     * </ol>
-     * Tra ve null neu thanh cong, hoac thong diep loi (tieng Viet, hien
-     * thang len UI duoc) neu that bai.
-     */
     public String createReturnExchange(ReturnExchange header, List<ReturnExchangeDetail> details) {
         if (details == null || details.isEmpty()) {
             return "Chưa chọn sản phẩm nào để đổi/trả.";
         }
         if (header.getReason() == null || header.getReason().isBlank()) {
-            return "Vui lòng nhập lý do đổi/trả (bắt buộc theo quy định)."; // R4
+            return "Vui lòng nhập lý do đổi/trả (bắt buộc theo quy định).";
         }
 
         String insertHeaderSql = "INSERT INTO ReturnExchanges "
@@ -220,7 +187,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
-                // 1) khoa dong hoa don, kiem tra van con ACTIVE
                 String invStatus;
                 try (PreparedStatement ps = con.prepareStatement(
                         "SELECT Status FROM Invoices WITH (UPDLOCK, ROWLOCK) WHERE InvoiceID = ?")) {
@@ -238,7 +204,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     return "Hóa đơn đã bị hủy, không thể đổi/trả hàng.";
                 }
 
-                // 2) validate tung dong
                 Map<Integer, Integer> returnable = getReturnableQuantities(header.getInvoiceId());
                 Map<Integer, Integer> returnRequestedSoFar = new HashMap<>();
 
@@ -275,14 +240,12 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     }
                 }
 
-                // 3) tinh TotalValue (gia tri hang khach tra - Direction=IN) + nguong duyet
                 BigDecimal totalValue = BigDecimal.ZERO;
                 for (ReturnExchangeDetail d : details) {
                     if (d.isIn()) totalValue = totalValue.add(d.getLineTotal());
                 }
-                boolean requiresApproval = totalValue.compareTo(storeConfigDAO.getApprovalThreshold()) > 0;
+                boolean requiresApproval = totalValue.compareTo(APPROVAL_THRESHOLD) > 0;
 
-                // 4) insert header
                 int returnId;
                 try (PreparedStatement ps = con.prepareStatement(insertHeaderSql, Statement.RETURN_GENERATED_KEYS)) {
                     ps.setInt(1, header.getInvoiceId());
@@ -298,7 +261,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     }
                 }
 
-                // 5) insert tung dong
                 try (PreparedStatement ps = con.prepareStatement(insertDetailSql)) {
                     for (ReturnExchangeDetail d : details) {
                         ps.setInt(1, returnId);
@@ -310,7 +272,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     }
                 }
 
-                // 6) khong can duyet -> tu dong duyet ngay (trigger se cong/tru kho)
                 if (!requiresApproval) {
                     try (PreparedStatement ps = con.prepareStatement(approveSql)) {
                         ps.setInt(1, header.getCreatedBy());
@@ -341,18 +302,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         }
     }
 
-    /**
-     * Quan ly ban hang duyet 1 yeu cau dang PENDING (R4). Trigger
-     * trg_ReturnExchange_ApprovedStock se tu dong cong/tru kho va dieu
-     * chinh lai hoa don goc ngay khi UPDATE nay thanh cong.
-     * <p>
-     * QUAN TRONG: ton kho co the da thay doi ke tu luc yeu cau duoc TAO (vd
-     * san pham dinh doi da ban het cho khach khac trong luc cho duyet) - nen
-     * phai RE-CHECK ton kho (voi UPDLOCK/ROWLOCK, giong createReturnExchange())
-     * ngay truoc khi duyet, thay vi de trigger tu dong tru va dam vao
-     * CHECK (Stock >= 0) cua bang Products -> loi SQLException tho, khong
-     * than thien, lai con khong biet dich chinh xac san pham nao thieu.
-     */
     public String approve(int returnId, int approverId) {
         String lockRequestSql = "SELECT Status FROM ReturnExchanges WITH (UPDLOCK, ROWLOCK) WHERE ReturnID = ?";
         String outDetailSql = "SELECT d.Quantity, p.Stock, p.ProductName "
@@ -365,7 +314,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
-                // 1) khoa dong yeu cau, kiem tra van con PENDING (tranh duyet 2 lan dong thoi)
                 String status;
                 try (PreparedStatement ps = con.prepareStatement(lockRequestSql)) {
                     ps.setInt(1, returnId);
@@ -382,8 +330,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     return "Yêu cầu này không còn ở trạng thái chờ duyệt.";
                 }
 
-                // 2) re-check ton kho HIEN TAI cho tung dong "doi moi giao" (OUT) -
-                // ton kho co the da giam ke tu luc tao yeu cau.
                 try (PreparedStatement ps = con.prepareStatement(outDetailSql)) {
                     ps.setInt(1, returnId);
                     try (ResultSet rs = ps.executeQuery()) {
@@ -400,7 +346,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     }
                 }
 
-                // 3) duyet - trigger trg_ReturnExchange_ApprovedStock se tu cong/tru kho
                 try (PreparedStatement ps = con.prepareStatement(updateSql)) {
                     ps.setInt(1, approverId);
                     ps.setInt(2, returnId);
@@ -428,14 +373,17 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         }
     }
 
-    /** Tu choi 1 yeu cau dang PENDING - khong dong/tru kho gi ca (giu nguyen nhu truoc khi tao yeu cau). */
-    public String reject(int returnId, int approverId) {
-        String sql = "UPDATE ReturnExchanges SET Status = 'REJECTED', ApprovedBy = ?, ApprovedAt = GETDATE() "
+    public String reject(int returnId, int approverId, String rejectionReason) {
+        if (rejectionReason == null || rejectionReason.isBlank()) {
+            return "Vui lòng nhập lý do từ chối.";
+        }
+        String sql = "UPDATE ReturnExchanges SET Status = 'REJECTED', RejectionReason = ?, ApprovedBy = ?, ApprovedAt = GETDATE() "
                 + "WHERE ReturnID = ? AND Status = 'PENDING'";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, approverId);
-            ps.setInt(2, returnId);
+            ps.setString(1, rejectionReason.trim());
+            ps.setInt(2, approverId);
+            ps.setInt(3, returnId);
             int affected = ps.executeUpdate();
             if (affected == 0) {
                 return "Yêu cầu này không còn ở trạng thái chờ duyệt.";

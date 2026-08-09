@@ -2,14 +2,19 @@ package com.view.admin;
 
 import com.components.BaseDialog;
 import com.components.SettingsButton;
+import com.event.AppEventBus;
+import com.event.OrderStatusChangedEvent;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
 import com.model.NotificationItem;
 import com.model.Order;
 import com.model.permission.AppPermission;
+import com.permission.PermissionManager;
 import com.service.AuthService;
 import com.service.OrderNotifyPoller;
 import com.service.StockAlertNotifyPoller;
+import com.service.ReturnExchangeNotifyPoller;
+import com.settings.NotificationSettings;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
 import com.view.LoginFrame;
@@ -50,12 +55,19 @@ public class AdminMainFrame extends JFrame {
     private MainLayout layout;
     private final List<NotificationItem> orderNotifications = new ArrayList<>();
     private final List<NotificationItem> chatNotifications = new ArrayList<>();
+    /** Thông báo chuyển trạng thái đơn (xác nhận/giao/hoàn thành/hủy) - tách riêng khỏi
+     *  orderNotifications (đơn MỚI) vì 2 nguồn refresh độc lập, gộp lại lúc render. */
+    private final List<NotificationItem> orderStatusNotifications = new ArrayList<>();
+    private final List<NotificationItem> returnNotifications = new ArrayList<>();
     private ChatPanel chatPanelRef;
     private String currentPageKey = "dashboard";
     private final Runnable onThemeChanged = this::rebuildContent;
     private final Runnable onLangChanged = this::rebuildContent;
     private final OrderNotifyPoller orderNotifyPoller = new OrderNotifyPoller();
     private final StockAlertNotifyPoller stockAlertNotifyPoller = new StockAlertNotifyPoller();
+    private final ReturnExchangeNotifyPoller returnExchangeNotifyPoller =
+            new ReturnExchangeNotifyPoller(this::onNewReturnNotifications);
+    private final java.util.function.Consumer<OrderStatusChangedEvent> orderStatusListener = this::onOrderStatusChanged;
 
     public AdminMainFrame() {
         setTitle(Lang.get("admin.frame.title"));
@@ -87,6 +99,14 @@ public class AdminMainFrame extends JFrame {
 
         stockAlertNotifyPoller.onUnseenChanged((count, preview) -> layout.setBadge("stockAlerts", count));
         stockAlertNotifyPoller.start();
+        returnExchangeNotifyPoller.start();
+
+        // Thong bao chuyen trang thai don hang (xac nhan/giao/hoan thanh/huy) - ban chat lan
+        // nut bam thu cong deu di qua OrderDAO.updateOrderStatus nen deu toi day nhu nhau.
+        // Moi phien admin dang mo TU QUYET DINH co hien thong bao hay khong dua theo quyen
+        // cua chinh tai khoan dang dang nhap tren phien do - dung la "thong bao phu hop voi
+        // tung tai khoan" thay vi phat tan cho tat ca bat ke quyen han.
+        AppEventBus.getInstance().subscribe(OrderStatusChangedEvent.class, orderStatusListener);
 
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
         LanguageManager.getInstance().addRebuildListener(onLangChanged);
@@ -98,6 +118,8 @@ public class AdminMainFrame extends JFrame {
                 LanguageManager.getInstance().removeRebuildListener(onLangChanged);
                 orderNotifyPoller.stop();
                 stockAlertNotifyPoller.stop();
+                returnExchangeNotifyPoller.stop();
+                AppEventBus.getInstance().unsubscribe(OrderStatusChangedEvent.class, orderStatusListener);
                 ChatClient.getInstance().disconnect();
                 AuthService.getInstance().logout();
                 new LoginFrame();
@@ -196,6 +218,8 @@ public class AdminMainFrame extends JFrame {
                 layout.showPage("orders");
             } else if (item.getType() == NotificationItem.Type.STOCK) {
                 layout.showPage("stockAlerts");
+            } else if (item.getType() == NotificationItem.Type.RETURN) {
+                layout.showPage("returnExchange");
             }
         });
         layout.getHeader().onNotificationDismiss(this::dismissNotificationSource);
@@ -210,9 +234,12 @@ public class AdminMainFrame extends JFrame {
                         "AdminMainFrame.onClearAllNotifications - markAllSeen that bai", e);
             }
             orderNotifications.clear();
+            orderStatusNotifications.clear();
             chatNotifications.clear();
+            returnNotifications.clear();
             layout.setBadge("orders", 0);
             layout.setBadge("chat", 0);
+            layout.setBadge("returnExchange", 0);
             refreshHeaderNotifications();
         });
         refreshHeaderNotifications();
@@ -257,11 +284,68 @@ public class AdminMainFrame extends JFrame {
         return items;
     }
 
+    /**
+     * Nhận sự kiện chuyển trạng thái đơn (từ nút bấm thủ công HOẶC từ chatbot
+     * AI - xem {@code AiToolExecutor.updateOrderStatus}). Chỉ đẩy lên chuông
+     * thông báo của phiên hiện tại nếu tài khoản đang đăng nhập có quyền xem
+     * đơn hàng - mỗi tài khoản nhận thông báo phù hợp với quyền hạn của mình,
+     * nhân viên bán hàng thường không thấy còn quản lý kho/đơn thì thấy.
+     */
+    private void onOrderStatusChanged(OrderStatusChangedEvent evt) {
+        if (evt == null || layout == null) return;
+        boolean canSeeOrders = PermissionManager.getInstance().can(AppPermission.ORDER_VIEW)
+                || PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
+        if (!canSeeOrders) return;
+
+        String code = evt.getOrderCode() != null ? evt.getOrderCode() : ("#" + evt.getOrderId());
+        String title = switch (evt.getNewStatus()) {
+            case "CONFIRMED" -> Lang.get("admin.header.notification.orderConfirmed");
+            case "SHIPPING" -> Lang.get("admin.header.notification.orderShipping");
+            case "COMPLETED" -> Lang.get("admin.header.notification.orderCompleted");
+            case "CANCELLED" -> Lang.get("admin.header.notification.orderCancelled");
+            default -> Lang.get("admin.header.notification.orderUpdated");
+        };
+        String message = code + (evt.isViaAssistant()
+                ? " · " + Lang.get("admin.header.notification.viaAssistant")
+                : "");
+
+        NotificationItem item = new NotificationItem(
+                "orderstatus-" + evt.getOrderId() + "-" + System.currentTimeMillis(),
+                NotificationItem.Type.ORDER,
+                title,
+                message,
+                java.time.LocalDateTime.now(),
+                evt.getOrderId()
+        );
+        orderStatusNotifications.add(0, item);
+        // Gioi han kich thuoc de danh sach khong phinh to vo han trong 1 phien lam viec dai.
+        while (orderStatusNotifications.size() > 20) {
+            orderStatusNotifications.remove(orderStatusNotifications.size() - 1);
+        }
+        refreshHeaderNotifications();
+
+        if (!NotificationSettings.getInstance().isOrdersMuted()) {
+            com.utils.NotificationSound.playDing();
+        }
+    }
+
+    private void onNewReturnNotifications(List<NotificationItem> items) {
+        if (items == null || items.isEmpty()) return;
+        for (NotificationItem item : items) {
+            returnNotifications.removeIf(n -> n.getId().equals(item.getId()));
+            returnNotifications.add(0, item);
+        }
+        refreshHeaderNotifications();
+    }
+
     private void refreshHeaderNotifications() {
         if (layout == null || layout.getHeader() == null) return;
         List<NotificationItem> merged = new ArrayList<>();
         merged.addAll(chatNotifications);
         merged.addAll(orderNotifications);
+        merged.addAll(orderStatusNotifications);
+        merged.addAll(returnNotifications);
+        layout.setBadge("returnExchange", returnNotifications.size());
         layout.getHeader().setNotifications(merged);
     }
 
@@ -272,18 +356,27 @@ public class AdminMainFrame extends JFrame {
                 chatPanelRef.markNotificationRead(item.getId());
             }
             chatNotifications.removeIf(n -> item.getId().equals(n.getId()));
+        } else if (item.getType() == NotificationItem.Type.RETURN) {
+            returnNotifications.removeIf(n -> item.getId().equals(n.getId()));
+            layout.setBadge("returnExchange", returnNotifications.size());
         } else if (item.getType() == NotificationItem.Type.ORDER) {
             Integer orderId = item.getRefId();
-            if (orderId != null) {
+            // Chi cac thong bao "don MOI" (id dang "order-<id>") moi gan voi co
+            // SeenByAdmin trong DB - thong bao chuyen trang thai (id "orderstatus-...")
+            // chi ton tai tren UI phien nay nen khong can/khong nen goi markSeen.
+            boolean isNewOrderNotification = item.getId() != null && item.getId().startsWith("order-");
+            if (isNewOrderNotification && orderId != null) {
                 try {
                     new com.dao.OrderDAO().markSeen(orderId);
                 } catch (Exception e) {
                     com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.ORDER_STATUS_UPDATE_FAIL,
                             "AdminMainFrame - markSeen that bai, orderId=" + orderId, e);
                 }
+                orderNotifications.removeIf(n -> item.getId().equals(n.getId()));
+                layout.setBadge("orders", orderNotifications.size());
+            } else {
+                orderStatusNotifications.removeIf(n -> item.getId().equals(n.getId()));
             }
-            orderNotifications.removeIf(n -> item.getId().equals(n.getId()));
-            layout.setBadge("orders", orderNotifications.size());
         }
         if (item.getType() != NotificationItem.Type.MESSAGE) {
             refreshHeaderNotifications();

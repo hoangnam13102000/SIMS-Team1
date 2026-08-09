@@ -201,6 +201,147 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return new ArrayList<>(new LinkedHashSet<>(names));
     }
 
+    @Override
+    protected boolean supportsImport() { return true; }
+
+    @Override
+    protected String[] getImportColumns() {
+        return new String[]{"Họ và tên", "Email", "Số điện thoại", "Vai trò", "Ngày sinh", "Giới tính", "Lương", "Ngày vào làm"};
+    }
+
+    @Override
+    protected String getImportInstructions() {
+        return "Vai trò nhận 1 trong các giá trị: Quản trị viên, Quản lý bán hàng, Quản lý kho, Nhân viên bán hàng. "
+                + "Ngày sinh/Ngày vào làm theo định dạng dd/MM/yyyy. Giới tính: Nam, Nữ, Khác (có thể để trống). "
+                + "Số điện thoại, ngày sinh, giới tính, lương có thể để trống. Username và mật khẩu sẽ được hệ thống tự sinh và gửi qua email.";
+    }
+
+    @Override
+    protected com.importer.ImportRowResult importRow(String[] cells, int rowNumber) {
+        String fullName = cellAt(cells, 0);
+        String email = cellAt(cells, 1);
+        String phone = cellAt(cells, 2);
+        String roleText = cellAt(cells, 3);
+        String dobText = cellAt(cells, 4);
+        String genderText = cellAt(cells, 5);
+        String salaryText = cellAt(cells, 6);
+        String hireDateText = cellAt(cells, 7);
+
+        if (fullName.isEmpty()) {
+            return com.importer.ImportRowResult.failure("thiếu họ và tên.");
+        }
+        String emailError = com.validation.Rules.required("Thiếu email.").validate(email);
+        if (emailError == null) emailError = com.validation.Rules.email("Email không đúng định dạng.").validate(email);
+        if (emailError != null) {
+            return com.importer.ImportRowResult.failure(emailError);
+        }
+        if (employeeDAO.emailExistsExcluding(email.trim(), -1)) {
+            return com.importer.ImportRowResult.failure("email \"" + email + "\" đã được dùng.");
+        }
+        if (!phone.isEmpty()) {
+            String phoneError = com.validation.Rules.phoneVn("Số điện thoại không đúng định dạng (vd 09xxxxxxxx).").validate(phone);
+            if (phoneError != null) {
+                return com.importer.ImportRowResult.failure(phoneError);
+            }
+        }
+
+        Role role = parseRole(roleText);
+        if (role == null) {
+            return com.importer.ImportRowResult.failure("vai trò \"" + roleText
+                    + "\" không hợp lệ (Quản trị viên, Quản lý bán hàng, Quản lý kho, Nhân viên bán hàng).");
+        }
+
+        java.time.LocalDate dob = null;
+        if (!dobText.isEmpty()) {
+            dob = parseDate(dobText);
+            if (dob == null) {
+                return com.importer.ImportRowResult.failure("ngày sinh \"" + dobText + "\" không đúng định dạng dd/MM/yyyy.");
+            }
+        }
+
+        Employee.Gender gender = null;
+        if (!genderText.isEmpty()) {
+            gender = parseGender(genderText);
+            if (gender == null) {
+                return com.importer.ImportRowResult.failure("giới tính \"" + genderText + "\" không hợp lệ (Nam, Nữ, Khác).");
+            }
+        }
+
+        java.math.BigDecimal salary = null;
+        if (!salaryText.isEmpty()) {
+            try {
+                salary = new java.math.BigDecimal(salaryText.replace(",", "").replace(".", "").trim());
+                if (salary.signum() < 0) {
+                    return com.importer.ImportRowResult.failure("lương phải là số không âm.");
+                }
+            } catch (NumberFormatException e) {
+                return com.importer.ImportRowResult.failure("lương \"" + salaryText + "\" không hợp lệ.");
+            }
+        }
+
+        java.time.LocalDate hireDate = java.time.LocalDate.now();
+        if (!hireDateText.isEmpty()) {
+            java.time.LocalDate parsed = parseDate(hireDateText);
+            if (parsed == null) {
+                return com.importer.ImportRowResult.failure("ngày vào làm \"" + hireDateText + "\" không đúng định dạng dd/MM/yyyy.");
+            }
+            hireDate = parsed;
+        }
+
+        Employee employee = new Employee();
+        employee.setFullName(fullName);
+        employee.setEmail(email.trim());
+        employee.setPhone(phone);
+        employee.setRole(role);
+        employee.setDateOfBirth(dob);
+        employee.setGender(gender);
+        employee.setSalary(salary);
+        employee.setHireDate(hireDate);
+
+        EmployeeDAO.EmployeeCreationResult result = employeeDAO.createEmployee(employee);
+        if (!result.success) {
+            return com.importer.ImportRowResult.failure("lưu thất bại (email có thể đã được dùng).");
+        }
+        com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_CREATE,
+                "Đã nhập nhân viên \"" + fullName + "\" từ file", employee, null);
+        return com.importer.ImportRowResult.success();
+    }
+
+    private static String cellAt(String[] cells, int index) {
+        String v = index < cells.length ? cells[index] : null;
+        return v == null ? "" : v.trim();
+    }
+
+    private static Role parseRole(String text) {
+        if (text == null) return null;
+        switch (text.trim().toLowerCase(java.util.Locale.forLanguageTag("vi"))) {
+            case "quản trị viên": case "admin": return Role.ADMIN;
+            case "quản lý bán hàng": case "sales_manager": return Role.SALES_MANAGER;
+            case "quản lý kho": case "inventory_manager": return Role.INVENTORY_MANAGER;
+            case "nhân viên bán hàng": case "sales_staff": return Role.SALES_STAFF;
+            default: return null;
+        }
+    }
+
+    private static Employee.Gender parseGender(String text) {
+        if (text == null) return null;
+        switch (text.trim().toLowerCase(java.util.Locale.forLanguageTag("vi"))) {
+            case "nam": case "male": return Employee.Gender.MALE;
+            case "nữ": case "female": return Employee.Gender.FEMALE;
+            case "khác": case "other": return Employee.Gender.OTHER;
+            default: return null;
+        }
+    }
+
+    private static java.time.LocalDate parseDate(String text) {
+        try {
+            return java.time.LocalDate.parse(text.trim(),
+                    java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
      * Giống UserAccountPanel/CustomerPanel: chưa có nơi nào publish DataChangedEvent
      * cho Users/Employees nên reload() trực tiếp sau mỗi thao tác.

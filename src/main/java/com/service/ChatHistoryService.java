@@ -75,6 +75,7 @@ public final class ChatHistoryService {
                 if (conv == null) return;
 
                 String imagePath = saveImageIfPresent(msg);
+                String[] fileSaved = saveFileIfPresent(msg);
                 dao.insertMessage(
                         conv.getConversationId(),
                         senderUserId > 0 ? senderUserId : customerUserId,
@@ -82,7 +83,9 @@ public final class ChatHistoryService {
                         fromStaff,
                         msg.text,
                         imagePath,
-                        msg.imageMime
+                        msg.imageMime,
+                        fileSaved != null ? fileSaved[0] : null,
+                        fileSaved != null ? fileSaved[1] : null
                 );
             } catch (Exception e) {
                 AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
@@ -100,6 +103,7 @@ public final class ChatHistoryService {
                 ChatConversation conv = dao.findOrCreateStaffDm(msg.userId, msg.toUserId);
                 if (conv == null) return;
                 String imagePath = saveImageIfPresent(msg);
+                String[] fileSaved = saveFileIfPresent(msg);
                 dao.insertMessage(
                         conv.getConversationId(),
                         msg.userId,
@@ -107,7 +111,9 @@ public final class ChatHistoryService {
                         true,
                         msg.text,
                         imagePath,
-                        msg.imageMime
+                        msg.imageMime,
+                        fileSaved != null ? fileSaved[0] : null,
+                        fileSaved != null ? fileSaved[1] : null
                 );
             } catch (Exception e) {
                 AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
@@ -126,6 +132,43 @@ public final class ChatHistoryService {
 
     public List<ChatConversation> listRecentCustomerThreads(int limit) {
         return dao.listRecentCustomerSupport(limit);
+    }
+
+    /** Xóa 1 tin nhắn đã lưu DB. */
+    public boolean deleteMessage(long messageId) {
+        return dao.deleteMessage(messageId);
+    }
+
+    /** Xóa toàn bộ lịch sử chat hỗ trợ của 1 khách. */
+    public int clearCustomerHistory(int customerUserId) {
+        return dao.deleteCustomerSupportMessages(customerUserId);
+    }
+
+    /** Xóa toàn bộ lịch sử DM giữa 2 nhân viên. */
+    public int clearStaffDmHistory(int userId1, int userId2) {
+        return dao.deleteStaffDmMessages(userId1, userId2);
+    }
+
+
+    /** @return [filePath, fileName] hoặc null */
+    private String[] saveFileIfPresent(ChatMessage msg) {
+        if (msg == null || !msg.hasFile()) return null;
+        try {
+            byte[] bytes = Base64.getDecoder().decode(msg.fileBase64);
+            if (bytes == null || bytes.length == 0) return null;
+            Path dir = Path.of("uploads", "chat", "files");
+            Files.createDirectories(dir);
+            String original = msg.fileName != null ? msg.fileName : "file.bin";
+            String safeName = original.replaceAll("[\\/:*?\"<>|]", "_");
+            String name = "f_" + System.currentTimeMillis() + "_" + safeName;
+            Path out = dir.resolve(name);
+            Files.write(out, bytes);
+            return new String[] { "uploads/chat/files/" + name, original };
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
+                    "ChatHistoryService.saveFileIfPresent", e);
+            return null;
+        }
     }
 
     private String saveImageIfPresent(ChatMessage msg) {

@@ -7,11 +7,18 @@ public class ChatMessage {
     public String userName;
     public String text;
     public long timestamp;
+    /** ID tin đã lưu DB (0 nếu tin realtime chưa persist / không có id). Dùng để xóa từng tin. */
+    public long messageId;
     /** true neu tin nhan nay la cua nhan vien quan tri gui xuong cho khach hang. */
     public boolean fromAdmin;
 
     public String imageBase64;
     public String imageMime;
+
+    /** File dinh kem (pdf, doc, zip...). */
+    public String fileBase64;
+    public String fileName;
+    public String fileMime;
 
     /** STAFF_CHAT: userId = nguoi gui, toUserId = nguoi nhan. */
     public int toUserId;
@@ -62,6 +69,24 @@ public class ChatMessage {
         return m;
     }
 
+    public static ChatMessage file(int userId, String userName, String text,
+                                   String fileBase64, String fileName, String fileMime) {
+        ChatMessage m = new ChatMessage("CHAT", userId, userName, text, false);
+        m.fileBase64 = fileBase64;
+        m.fileName = fileName;
+        m.fileMime = fileMime != null ? fileMime : "application/octet-stream";
+        return m;
+    }
+
+    public static ChatMessage fileFromAdmin(int toUserId, String adminName, String text,
+                                            String fileBase64, String fileName, String fileMime) {
+        ChatMessage m = new ChatMessage("CHAT", toUserId, adminName, text, true);
+        m.fileBase64 = fileBase64;
+        m.fileName = fileName;
+        m.fileMime = fileMime != null ? fileMime : "application/octet-stream";
+        return m;
+    }
+
     public static ChatMessage staffJoin(int userId, String userName, String roleCode) {
         ChatMessage m = new ChatMessage("STAFF_JOIN", userId, userName, null, false);
         m.staff = true;
@@ -92,6 +117,17 @@ public class ChatMessage {
         return m;
     }
 
+    public static ChatMessage staffFile(int fromUserId, String fromName, int toUserId,
+                                        String text, String fileBase64, String fileName, String fileMime) {
+        ChatMessage m = new ChatMessage("STAFF_CHAT", fromUserId, fromName, text, false);
+        m.staff = true;
+        m.toUserId = toUserId;
+        m.fileBase64 = fileBase64;
+        m.fileName = fileName;
+        m.fileMime = fileMime != null ? fileMime : "application/octet-stream";
+        return m;
+    }
+
     public boolean isJoin() { return "JOIN".equals(type); }
     public boolean isChat() { return "CHAT".equals(type); }
     public boolean isLeave() { return "LEAVE".equals(type); }
@@ -99,4 +135,8 @@ public class ChatMessage {
     public boolean isStaffLeave() { return "STAFF_LEAVE".equals(type); }
     public boolean isStaffChat() { return "STAFF_CHAT".equals(type); }
     public boolean hasImage() { return imageBase64 != null && !imageBase64.isBlank(); }
+    public boolean hasFile() {
+        return fileBase64 != null && !fileBase64.isBlank()
+                && fileName != null && !fileName.isBlank();
+    }
 }

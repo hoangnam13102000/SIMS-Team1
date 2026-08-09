@@ -13,6 +13,8 @@ public class ChatHistoryMessage {
     private String bodyText;
     private String imagePath;
     private String imageMime;
+    private String filePath;
+    private String fileName;
     private LocalDateTime createdAt;
     private boolean readByPeer;
 
@@ -40,6 +42,12 @@ public class ChatHistoryMessage {
     public String getImageMime() { return imageMime; }
     public void setImageMime(String imageMime) { this.imageMime = imageMime; }
 
+    public String getFilePath() { return filePath; }
+    public void setFilePath(String filePath) { this.filePath = filePath; }
+
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
@@ -48,5 +56,9 @@ public class ChatHistoryMessage {
 
     public boolean hasImage() {
         return imagePath != null && !imagePath.isBlank();
+    }
+
+    public boolean hasFile() {
+        return filePath != null && !filePath.isBlank();
     }
 }

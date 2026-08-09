@@ -1,10 +1,14 @@
 package com.view.client;
 
+import com.components.AppAlert;
+import com.components.BaseDialog;
 import com.theme.AppColor;
 import com.service.AuthService;
 import com.utils.FileUtil;
+import com.utils.FileDownloadUI;
 import com.ws.ChatClient;
 import com.ws.ChatImageUtil;
+import com.ws.ChatFileUtil;
 import com.model.chat.ChatHistoryMessage;
 import com.service.ChatHistoryService;
 import com.utils.ImageUtil;
@@ -79,8 +83,8 @@ public class ChatPanel extends JPanel {
             }
         });
 
-        JButton imageButton = buildIconButton(FontAwesomeSolid.IMAGE, "Gửi ảnh");
-        imageButton.addActionListener(e -> pickAndSendImage());
+        JButton imageButton = buildIconButton(FontAwesomeSolid.PAPERCLIP, "Gửi ảnh / file");
+        imageButton.addActionListener(e -> pickAndSendAttachment());
 
         FontIcon sendIcon = FontIcon.of(FontAwesomeSolid.PAPER_PLANE, 13);
         sendIcon.setIconColor(Color.WHITE);
@@ -179,6 +183,17 @@ public class ChatPanel extends JPanel {
         statusLabelRef.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         statusLabelRef.setForeground(AppColor.TEXT_MUTED);
 
+        JLabel clearAllButton = new JLabel(iconOf(FontAwesomeSolid.TRASH_ALT, 13, AppColor.TEXT_MUTED));
+        clearAllButton.setBorder(new EmptyBorder(4, 8, 4, 4));
+        clearAllButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearAllButton.setToolTipText("Xóa tất cả tin nhắn");
+        clearAllButton.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                clearAllMessages();
+            }
+        });
+
         JLabel closeButton = new JLabel(iconOf(FontAwesomeSolid.TIMES, 14, AppColor.TEXT_MUTED));
         closeButton.setBorder(new EmptyBorder(4, 8, 4, 0));
         closeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -191,6 +206,7 @@ public class ChatPanel extends JPanel {
 
         right.add(statusDotRef);
         right.add(statusLabelRef);
+        right.add(clearAllButton);
         right.add(closeButton);
 
         header.add(left, BorderLayout.WEST);
@@ -231,10 +247,19 @@ public class ChatPanel extends JPanel {
                         if (h.hasImage()) {
                             image = ImageUtil.readSafe(h.getImagePath());
                         }
+                        String fileName = null;
+                        String fileB64 = null;
+                        if (h.hasFile()) {
+                            fileName = h.getFileName() != null ? h.getFileName() : "file";
+                            try {
+                                byte[] bytes = java.nio.file.Files.readAllBytes(java.nio.file.Path.of(h.getFilePath()));
+                                fileB64 = java.util.Base64.getEncoder().encodeToString(bytes);
+                            } catch (Exception ignored) {}
+                        }
                         String time = h.getCreatedAt() != null
                                 ? TIME_FORMAT.format(java.sql.Timestamp.valueOf(h.getCreatedAt()))
                                 : TIME_FORMAT.format(new java.util.Date());
-                        addBubble(h.getBodyText(), image, mine, time);
+                        addBubble(h.getBodyText(), image, fileName, fileB64, mine, time, h.getMessageId());
                     }
                     messagesContainer.revalidate();
                     messagesContainer.repaint();
@@ -247,9 +272,63 @@ public class ChatPanel extends JPanel {
         }.execute();
     }
 
+    private void clearAllMessages() {
+        if (!AuthService.getInstance().isLoggedIn()) {
+            messagesContainer.removeAll();
+            addWelcomeBubble();
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+            return;
+        }
+        boolean ok = BaseDialog.confirm(this, "Xóa tất cả tin nhắn",
+                "Bạn có chắc muốn xóa toàn bộ lịch sử chat hỗ trợ?\nHành động này không thể hoàn tác.");
+        if (!ok) return;
+        final int customerUserId = AuthService.getInstance().getCurrentUser().getUserId();
+        new SwingWorker<Integer, Void>() {
+            @Override
+            protected Integer doInBackground() {
+                return ChatHistoryService.getInstance().clearCustomerHistory(customerUserId);
+            }
+
+            @Override
+            protected void done() {
+                messagesContainer.removeAll();
+                addWelcomeBubble();
+                messagesContainer.revalidate();
+                messagesContainer.repaint();
+                AppAlert.success(ChatPanel.this, "Đã xóa", "Đã xóa toàn bộ tin nhắn trong cuộc trò chuyện này.");
+            }
+        }.execute();
+    }
+
+    private void deleteOneMessage(JPanel row, long messageId) {
+        boolean ok = BaseDialog.confirm(this, "Xóa tin nhắn",
+                "Bạn có chắc muốn xóa tin nhắn này?");
+        if (!ok) return;
+        if (messageId > 0) {
+            new SwingWorker<Boolean, Void>() {
+                @Override
+                protected Boolean doInBackground() {
+                    return ChatHistoryService.getInstance().deleteMessage(messageId);
+                }
+
+                @Override
+                protected void done() {
+                    messagesContainer.remove(row);
+                    messagesContainer.revalidate();
+                    messagesContainer.repaint();
+                }
+            }.execute();
+        } else {
+            messagesContainer.remove(row);
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+        }
+    }
+
     private void addWelcomeBubble() {
         addBubble("Xin chào! Bạn cần hỗ trợ gì, hãy nhắn cho chúng tôi nhé.",
-                null, false, TIME_FORMAT.format(new Date()));
+                null, false, TIME_FORMAT.format(new Date()), 0L);
     }
 
     private void sendCurrentInput() {
@@ -257,63 +336,73 @@ public class ChatPanel extends JPanel {
         if (text.isEmpty()) return;
 
         boolean sent = ChatClient.getInstance().sendMessage(text);
-        addBubble(text, null, true, TIME_FORMAT.format(new Date()));
+        addBubble(text, null, true, TIME_FORMAT.format(new Date()), 0L);
         inputField.setText("");
 
         if (!sent) {
             addBubble("Không thể gửi: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
-                    null, false, TIME_FORMAT.format(new Date()));
+                    null, false, TIME_FORMAT.format(new Date()), 0L);
         }
     }
 
-    private void pickAndSendImage() {
-        File file = FileUtil.chooseImageFile(this);
+    private void pickAndSendAttachment() {
+        File file = ChatFileUtil.chooseAttachment(this);
         if (file == null) return;
-
-        if (!ChatImageUtil.isSupportedImage(file)) {
-            JOptionPane.showMessageDialog(this,
-                    "Định dạng ảnh không được hỗ trợ. Vui lòng chọn JPG, PNG, GIF, BMP hoặc WEBP.",
+        if (!ChatFileUtil.isSupportedFile(file)) {
+            JOptionPane.showMessageDialog(this, "Định dạng file không được hỗ trợ.",
                     "Không hỗ trợ", JOptionPane.WARNING_MESSAGE);
             return;
         }
-
+        if (file.length() > ChatFileUtil.MAX_BYTES) {
+            JOptionPane.showMessageDialog(this,
+                    "File quá lớn (tối đa " + (ChatFileUtil.MAX_BYTES / 1_000_000) + " MB).",
+                    "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        final boolean asImage = ChatFileUtil.isImageExtension(file.getName())
+                && ChatImageUtil.isSupportedImage(file);
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        new SwingWorker<ChatImageUtil.EncodedImage, Void>() {
+        new SwingWorker<Object, Void>() {
             @Override
-            protected ChatImageUtil.EncodedImage doInBackground() {
-                return ChatImageUtil.encodeForChat(file);
+            protected Object doInBackground() {
+                if (asImage) return ChatImageUtil.encodeForChat(file);
+                return ChatFileUtil.encodeForChat(file);
             }
-
             @Override
             protected void done() {
                 setCursor(Cursor.getDefaultCursor());
-                ChatImageUtil.EncodedImage encoded;
-                try {
-                    encoded = get();
-                } catch (Exception ex) {
-                    encoded = null;
-                }
+                Object encoded;
+                try { encoded = get(); } catch (Exception ex) { encoded = null; }
                 if (encoded == null) {
                     JOptionPane.showMessageDialog(ChatPanel.this,
-                            "Không đọc được ảnh hoặc ảnh quá lớn sau khi nén. Vui lòng chọn ảnh khác.",
-                            "Lỗi ảnh", JOptionPane.ERROR_MESSAGE);
+                            asImage ? "Không đọc được ảnh." : "Không đọc được file.",
+                            "Lỗi", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
-
                 String caption = inputField.getText() == null ? "" : inputField.getText().trim();
-                boolean sent = ChatClient.getInstance().sendImage(
-                        caption.isEmpty() ? null : caption,
-                        encoded.base64,
-                        encoded.mime);
-
-                BufferedImage preview = ChatImageUtil.decodeBase64(encoded.base64);
-                addBubble(caption.isEmpty() ? null : caption, preview, true, TIME_FORMAT.format(new Date()));
-                inputField.setText("");
-
-                if (!sent) {
-                    addBubble("Không thể gửi ảnh: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
-                            null, false, TIME_FORMAT.format(new Date()));
+                if (asImage) {
+                    ChatImageUtil.EncodedImage img = (ChatImageUtil.EncodedImage) encoded;
+                    boolean sent = ChatClient.getInstance().sendImage(
+                            caption.isEmpty() ? null : caption, img.base64, img.mime);
+                    BufferedImage preview = ChatImageUtil.decodeBase64(img.base64);
+                    addBubble(caption.isEmpty() ? null : caption, preview, null, null, true,
+                            TIME_FORMAT.format(new Date()), 0L);
+                    if (!sent) {
+                        addBubble("Không thể gửi: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
+                                null, null, null, false, TIME_FORMAT.format(new Date()), 0L);
+                    }
+                } else {
+                    ChatFileUtil.EncodedFile f = (ChatFileUtil.EncodedFile) encoded;
+                    boolean sent = ChatClient.getInstance().sendFile(
+                            caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
+                    addBubble(caption.isEmpty() ? null : caption, null, f.fileName, f.base64, true,
+                            TIME_FORMAT.format(new Date()), 0L);
+                    if (!sent) {
+                        addBubble("Không thể gửi: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
+                                null, null, null, false, TIME_FORMAT.format(new Date()), 0L);
+                    }
                 }
+                inputField.setText("");
             }
         }.execute();
     }
@@ -322,8 +411,13 @@ public class ChatPanel extends JPanel {
         if (!message.isChat() || !message.fromAdmin) return;
         BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
         String text = message.text;
-        if ((text == null || text.isBlank()) && image == null) return;
-        addBubble(text, image, false, TIME_FORMAT.format(new Date(message.timestamp)));
+        boolean hasFile = message.hasFile();
+        if ((text == null || text.isBlank()) && image == null && !hasFile) return;
+        addBubble(text, image,
+                hasFile ? message.fileName : null,
+                hasFile ? message.fileBase64 : null,
+                false, TIME_FORMAT.format(new Date(message.timestamp)),
+                message.messageId);
         if (onIncomingMessageListener != null) onIncomingMessageListener.run();
     }
 
@@ -337,6 +431,21 @@ public class ChatPanel extends JPanel {
     }
 
     private void addBubble(String text, BufferedImage image, boolean isMine, String time) {
+        addBubble(text, image, null, null, isMine, time, 0L);
+    }
+
+    /** Overload: text + image + isMine + time + messageId (không có file). */
+    private void addBubble(String text, BufferedImage image, boolean isMine, String time, long messageId) {
+        addBubble(text, image, null, null, isMine, time, messageId);
+    }
+
+    private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
+                           boolean isMine, String time) {
+        addBubble(text, image, fileName, fileBase64, isMine, time, 0L);
+    }
+
+    private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
+                           boolean isMine, String time, long messageId) {
         int viewportW = scrollPane.getViewport().getWidth();
         if (viewportW <= 0) viewportW = 300;
         int maxBubbleW = Math.max(160, Math.min(260, viewportW - 48));
@@ -345,6 +454,7 @@ public class ChatPanel extends JPanel {
         JPanel row = new JPanel(new FlowLayout(isMine ? FlowLayout.RIGHT : FlowLayout.LEFT, 0, 6));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.putClientProperty("messageId", messageId);
 
         JPanel bubble = new JPanel(new BorderLayout()) {
             @Override
@@ -366,14 +476,34 @@ public class ChatPanel extends JPanel {
         contentWrap.setLayout(new BoxLayout(contentWrap, BoxLayout.Y_AXIS));
 
         if (image != null) {
-            JLabel imageLabel = buildImageLabel(image, maxBubbleW - 28);
+            int w = image.getWidth(), h = image.getHeight();
+            int targetW = Math.min(w, Math.min(IMAGE_MAX_W, maxBubbleW - 28));
+            int targetH = Math.max(1, (int) Math.round(h * (targetW / (double) w)));
+            Image scaled = image.getScaledInstance(targetW, targetH, Image.SCALE_SMOOTH);
+            JLabel imageLabel = new JLabel(new ImageIcon(scaled));
             imageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             contentWrap.add(imageLabel);
-            if (text != null && !text.isBlank()) {
-                contentWrap.add(Box.createVerticalStrut(6));
-            }
+            if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
         }
-
+        if (fileName != null && !fileName.isBlank()) {
+            JLabel fileLabel = new JLabel("📎 " + fileName);
+            fileLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            fileLabel.setForeground(isMine ? Color.WHITE : AppColor.ACCENT);
+            fileLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            fileLabel.setToolTipText("Nhấp để lưu file");
+            fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            fileLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+            final String fn = fileName;
+            final String fb = fileBase64;
+            fileLabel.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    FileDownloadUI.saveBase64WithProgress(ChatPanel.this, fn, fb);
+                }
+            });
+            contentWrap.add(fileLabel);
+            if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
+        }
         if (text != null && !text.isBlank()) {
             JLabel textLabel = new JLabel("<html><body style='width: " + htmlW + "px'>"
                     + escapeHtml(text) + "</body></html>");
@@ -382,29 +512,40 @@ public class ChatPanel extends JPanel {
             textLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             contentWrap.add(textLabel);
         }
+        if (time != null && !time.isBlank()) {
+            JLabel timeLabel = new JLabel(time);
+            timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+            timeLabel.setForeground(isMine ? new Color(255, 255, 255, 200) : AppColor.TEXT_MUTED);
+            timeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            timeLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+            contentWrap.add(timeLabel);
+        }
 
-        JLabel timeLabel = new JLabel(time);
-        timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-        timeLabel.setForeground(isMine ? AppColor.ACCENT_SELECTION_BG : AppColor.TEXT_MUTED);
-        timeLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
-        timeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        contentWrap.add(timeLabel);
+        // Nút xóa từng tin
+        JLabel delBtn = new JLabel(iconOf(FontAwesomeSolid.TIMES, 11,
+                isMine ? new Color(255, 255, 255, 180) : AppColor.TEXT_MUTED));
+        delBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        delBtn.setToolTipText("Xóa tin nhắn");
+        delBtn.setBorder(new EmptyBorder(0, 6, 0, 0));
+        delBtn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                Object idObj = row.getClientProperty("messageId");
+                long mid = idObj instanceof Long ? (Long) idObj : 0L;
+                deleteOneMessage(row, mid);
+            }
+        });
 
         bubble.add(contentWrap, BorderLayout.CENTER);
         row.add(bubble);
-
-        Dimension pref = row.getPreferredSize();
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
-
+        row.add(delBtn);
         messagesContainer.add(row);
         messagesContainer.revalidate();
         messagesContainer.repaint();
-
-        SwingUtilities.invokeLater(() -> {
-            JScrollBar vBar = scrollPane.getVerticalScrollBar();
-            vBar.setValue(vBar.getMaximum());
-        });
+        scrollToBottom();
     }
+
+
 
     private JLabel buildImageLabel(BufferedImage src, int maxWidth) {
         int w = src.getWidth();
@@ -443,6 +584,14 @@ public class ChatPanel extends JPanel {
         dialog.pack();
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
+    }
+
+
+    private void scrollToBottom() {
+        SwingUtilities.invokeLater(() -> {
+            JScrollBar vBar = scrollPane.getVerticalScrollBar();
+            vBar.setValue(vBar.getMaximum());
+        });
     }
 
     private String escapeHtml(String text) {

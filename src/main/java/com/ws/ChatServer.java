@@ -123,6 +123,20 @@ public class ChatServer {
         return delivered;
     }
 
+    /** Gui file NV -> khach. Luon luu lich su. */
+    public boolean sendFileToCustomer(int userId, String adminName, String text,
+                                      String fileBase64, String fileName, String fileMime, int staffSenderUserId) {
+        if (fileBase64 == null || fileBase64.isBlank() || fileName == null || fileName.isBlank()) return false;
+        ChatMessage msg = ChatMessage.fileFromAdmin(userId, adminName, text, fileBase64, fileName, fileMime);
+        WebSocket conn = connectionsByUserId.get(userId);
+        boolean delivered = conn != null && conn.isOpen();
+        if (delivered) {
+            conn.send(GSON.toJson(msg));
+        }
+        ChatHistoryService.getInstance().saveCustomerChatAsync(msg, staffSenderUserId);
+        return delivered;
+    }
+
     public java.util.Set<Integer> onlineCustomerIds() {
         return new java.util.HashSet<>(connectionsByUserId.keySet());
     }
@@ -254,7 +268,7 @@ public class ChatServer {
                 // Lưu lịch sử khách ↔ hỗ trợ (chỉ tin CHAT có nội dung/ảnh)
                 if (chatMessage.isChat()
                         && ((chatMessage.text != null && !chatMessage.text.isBlank())
-                            || chatMessage.hasImage())) {
+                            || chatMessage.hasImage() || chatMessage.hasFile())) {
                     int staffSenderId = 0;
                     if (chatMessage.fromAdmin) {
                         ChatMessage staffSession = staffSessionByConnection.get(conn);
