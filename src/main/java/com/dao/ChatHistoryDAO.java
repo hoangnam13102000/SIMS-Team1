@@ -198,6 +198,56 @@ public class ChatHistoryDAO {
         return listMessages(c.getConversationId(), limit);
     }
 
+    /**
+     * Tin khách gửi (FromStaff=0) trong hội thoại CUSTOMER_SUPPORT sau MessageID cho trước.
+     * Dùng poller realtime phía admin khi WebSocket miss.
+     */
+    public List<ChatHistoryMessage> listNewCustomerMessagesSince(long afterMessageId, int limit) {
+        if (limit <= 0) limit = 50;
+        // FromStaff=0: SenderUserID = khách. CustomerUserID dùng khi SenderUserID thiếu.
+        String sql = "SELECT TOP (" + limit + ") m.MessageID, m.ConversationID, m.SenderUserID, "
+                + "m.SenderName, m.FromStaff, m.BodyText, m.ImagePath, m.ImageMime, "
+                + "m.FilePath, m.FileName, m.CreatedAt, m.ReadByPeer, c.CustomerUserID "
+                + "FROM ChatMessages m "
+                + "INNER JOIN ChatConversations c ON c.ConversationID = m.ConversationID "
+                + "WHERE c.ConversationType = 'CUSTOMER_SUPPORT' "
+                + "AND m.FromStaff = 0 "
+                + "AND m.MessageID > ? "
+                + "ORDER BY m.MessageID ASC";
+        List<ChatHistoryMessage> list = new ArrayList<>();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setLong(1, Math.max(0, afterMessageId));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    ChatHistoryMessage h = mapMessage(rs);
+                    int sender = h.getSenderUserId();
+                    if (sender <= 0) {
+                        int cust = rs.getInt("CustomerUserID");
+                        if (!rs.wasNull()) h.setSenderUserId(cust);
+                    }
+                    list.add(h);
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "ChatHistoryDAO.listNewCustomerMessagesSince afterId=" + afterMessageId, e);
+        }
+        return list;
+    }
+
+    /** Max MessageID hiện có (mọi loại) — khởi tạo watermark poller. */
+    public long getMaxMessageId() {
+        String sql = "SELECT ISNULL(MAX(MessageID), 0) FROM ChatMessages";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getLong(1) : 0L;
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
     /** Xóa 1 tin theo MessageID. Trả về true nếu có dòng bị xóa. */
     public boolean deleteMessage(long messageId) {
         if (messageId <= 0) return false;

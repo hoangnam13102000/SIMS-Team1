@@ -189,6 +189,24 @@ public class ChatClient {
         client.send(GSON.toJson(ChatMessage.staffFile(userId, userName, toUserId, text, fileBase64, fileName, fileMime)));
         return true;
     }
+    /** Gửi tin nhắn thoại (khách → hỗ trợ). transcript có thể null. */
+    public boolean sendVoice(String transcript, String voiceBase64, String voiceMime, int durationMs) {
+        if (client == null || !client.isOpen() || staffMode) return false;
+        if (voiceBase64 == null || voiceBase64.isBlank()) return false;
+        client.send(GSON.toJson(ChatMessage.voice(
+                userId, userName, transcript, voiceBase64, voiceMime, durationMs)));
+        return true;
+    }
+
+    /** Nhân viên gửi thoại cho khách (qua server helper) — dùng staff voice. */
+    public boolean sendStaffVoice(int toUserId, String transcript, String voiceBase64, String voiceMime, int durationMs) {
+        if (client == null || !client.isOpen() || !staffMode) return false;
+        if (voiceBase64 == null || voiceBase64.isBlank()) return false;
+        client.send(GSON.toJson(ChatMessage.staffVoice(
+                userId, userName, toUserId, transcript, voiceBase64, voiceMime, durationMs)));
+        return true;
+    }
+
 
 
     public boolean isConnected() { return client != null && client.isOpen(); }

@@ -191,23 +191,41 @@ public class ProductCard extends JPanel {
     }
 
     private JLabel buildCategoryPill(String categoryName) {
-        return pillLabel(categoryName, new Color(255, 255, 255, 235), AppColor.TEXT_PRIMARY);
+        // Dark mode: nền tối + chữ sáng (tránh chữ sáng trên nền trắng bị mờ)
+        boolean dark = AppColor.getCurrentMode() == com.theme.ThemeMode.DARK;
+        Color bg = dark ? new Color(28, 31, 38, 230) : new Color(255, 255, 255, 235);
+        return pillLabel(categoryName, bg, AppColor.TEXT_PRIMARY);
     }
-
     private JLabel buildOutOfStockPill() {
         return pillLabel("Hết hàng", AppColor.ERROR, Color.WHITE);
     }
 
+    /** Pill nen + chu tren goc anh. Chu hay bi mo do thieu hint TEXT_ANTIALIASING va nen qua trong suot
+     *  lam giam tuong phan tren anh nen - fix bang cach ve nen dam (opaque) va bat AA cho ca text luc paint. */
     private JLabel pillLabel(String text, Color bg, Color fg) {
         JLabel label = new JLabel(text) {
             @Override
             protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
+                Graphics2D g2 = (Graphics2D) g;
+                Object oldAA = g2.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+                Object oldTextAA = g2.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING);
+                Object oldStroke = g2.getRenderingHint(RenderingHints.KEY_STROKE_CONTROL);
+
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+
+                // Nen mo nhe cho khoi cung (bong do), roi nen chinh dam mau de chu de doc tren moi loai anh
+                g2.setColor(new Color(15, 23, 42, 25));
+                g2.fillRoundRect(1, 2, getWidth(), getHeight(), getHeight(), getHeight());
                 g2.setColor(bg);
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
-                g2.dispose();
-                super.paintComponent(g);
+
+                super.paintComponent(g2);
+
+                if (oldAA != null) g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, oldAA);
+                if (oldTextAA != null) g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, oldTextAA);
+                if (oldStroke != null) g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, oldStroke);
             }
         };
         label.setFont(AppFont.SMALL_BOLD);

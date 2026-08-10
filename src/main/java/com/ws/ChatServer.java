@@ -59,6 +59,9 @@ public class ChatServer {
         if (server != null) return;
         server = new InternalServer(port);
         server.setReuseAddr(true);
+        try {
+            server.setConnectionLostTimeout(90);
+        } catch (Exception ignored) {}
         server.start();
         Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer, "ChatServer-shutdown"));
     }
@@ -136,6 +139,19 @@ public class ChatServer {
         ChatHistoryService.getInstance().saveCustomerChatAsync(msg, staffSenderUserId);
         return delivered;
     }
+    public boolean sendVoiceToCustomer(int userId, String adminName, String transcript,
+                                       String voiceBase64, String voiceMime, int durationMs, int staffSenderUserId) {
+        if (voiceBase64 == null || voiceBase64.isBlank()) return false;
+        ChatMessage msg = ChatMessage.voiceFromAdmin(
+                userId, adminName, transcript, voiceBase64, voiceMime, durationMs);
+        WebSocket conn = connectionsByUserId.get(userId);
+        boolean delivered = conn != null && conn.isOpen();
+        if (delivered) {
+            conn.send(GSON.toJson(msg));
+        }
+        ChatHistoryService.getInstance().saveCustomerChatAsync(msg, staffSenderUserId);
+        return delivered;
+    }
 
     public java.util.Set<Integer> onlineCustomerIds() {
         return new java.util.HashSet<>(connectionsByUserId.keySet());
@@ -169,21 +185,26 @@ public class ChatServer {
     }
 
     private void broadcastToStaff(ChatMessage message, Integer excludeUserId) {
-        String json = GSON.toJson(message);
-        for (Map.Entry<Integer, WebSocket> e : staffConnections.entrySet()) {
-            if (excludeUserId != null && excludeUserId.equals(e.getKey())) continue;
-            WebSocket conn = e.getValue();
-            if (conn != null && conn.isOpen()) {
-                try {
-                    conn.send(json);
-                } catch (Exception ex) {
-                    // 1 client roi mang giua chung khong duoc lam hong broadcast cho cac client
-                    // con lai, nhung van ghi log de phat hien neu 1 client cu the loi lien tuc.
-                    AppLogger.getInstance().error(ErrorCode.WS_MESSAGE_FAIL,
-                            "ChatServer.broadcastToStaff - gui that bai toi staff userId=" + e.getKey(), ex);
+        if (message == null) return;
+        final String json = GSON.toJson(message);
+        // Snapshot để tránh ConcurrentModification khi staff join/leave trong lúc gửi
+        java.util.List<java.util.Map.Entry<Integer, WebSocket>> snapshot =
+                new java.util.ArrayList<>(staffConnections.entrySet());
+        // Gửi async: tránh re-entrancy trên thread WebSocket (onMessage đang chạy)
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            for (java.util.Map.Entry<Integer, WebSocket> e : snapshot) {
+                if (excludeUserId != null && excludeUserId.equals(e.getKey())) continue;
+                WebSocket conn = e.getValue();
+                if (conn != null && conn.isOpen()) {
+                    try {
+                        conn.send(json);
+                    } catch (Exception ex) {
+                        AppLogger.getInstance().error(ErrorCode.WS_MESSAGE_FAIL,
+                                "ChatServer.broadcastToStaff - gui that bai toi staff userId=" + e.getKey(), ex);
+                    }
                 }
             }
-        }
+        });
     }
 
     private class InternalServer extends WebSocketServer {
@@ -216,6 +237,8 @@ public class ChatServer {
                 if (chatMessage.isJoin()) {
                     connectionsByUserId.put(chatMessage.userId, conn);
                     sessionByConnection.put(conn, chatMessage);
+                    // Báo staff có khách online
+                    broadcastToStaff(chatMessage, null);
                     dispatch(chatMessage);
                     return;
                 }
@@ -255,7 +278,7 @@ public class ChatServer {
                     sendToStaff(chatMessage.toUserId, chatMessage);
                     sendToStaff(chatMessage.userId, chatMessage);
                     dispatch(chatMessage);
-                    // Lưu lịch sử chat nội bộ NV–NV (không liên quan chatbot AI)
+                    // Lưu lịch sử chat nội bộ NV–NV
                     ChatHistoryService.getInstance().saveStaffDmAsync(chatMessage);
                     return;
                 }
@@ -263,12 +286,16 @@ public class ChatServer {
                 if (chatMessage.isLeave()) {
                     connectionsByUserId.remove(chatMessage.userId, conn);
                     sessionByConnection.remove(conn);
+                    // Báo staff khách offline
+                    broadcastToStaff(chatMessage, null);
+                    dispatch(chatMessage);
+                    return;
                 }
 
-                // Lưu lịch sử khách ↔ hỗ trợ (chỉ tin CHAT có nội dung/ảnh)
+                // Lưu lịch sử khách ↔ hỗ trợ (text / ảnh / file / thoại)
                 if (chatMessage.isChat()
                         && ((chatMessage.text != null && !chatMessage.text.isBlank())
-                            || chatMessage.hasImage() || chatMessage.hasFile())) {
+                            || chatMessage.hasImage() || chatMessage.hasFile() || chatMessage.hasVoice())) {
                     int staffSenderId = 0;
                     if (chatMessage.fromAdmin) {
                         ChatMessage staffSession = staffSessionByConnection.get(conn);
@@ -277,6 +304,12 @@ public class ChatServer {
                         }
                     }
                     ChatHistoryService.getInstance().saveCustomerChatAsync(chatMessage, staffSenderId);
+                }
+
+                // FIX: đẩy tin khách (kể cả thoại) tới MỌI nhân viên đang online qua WebSocket.
+                // Trước đây chỉ dispatch() local → process/máy khác không nhận, không có chuông.
+                if (chatMessage.isChat() && !chatMessage.fromAdmin) {
+                    broadcastToStaff(chatMessage, null);
                 }
 
                 dispatch(chatMessage);

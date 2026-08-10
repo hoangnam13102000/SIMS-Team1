@@ -12,7 +12,7 @@ import java.util.function.Consumer;
 /**
  * Dropdown lọc dùng chung cho toolbar các trang CRUD (BaseCrudPanel), đứng
  * cạnh {@link BaseSearch}: icon + JComboBox bọc trong 1 khung bo góc, cùng
- * chiều cao (38px) và cùng màu viền/nền với BaseSearch, để cả cụm "tìm kiếm +
+ * chiều cao (38px) và cùng màu viền/nền với BaseSearch, để cụm "tìm kiếm +
  * lọc" nhìn như 1 khối thống nhất thay vì JComboBox mặc định vuông vức, rời
  * rạc của Swing.
  * <p>
@@ -29,18 +29,21 @@ public class FilterDropdown<T> extends JPanel {
     private final JComboBox<T> combo;
 
     public FilterDropdown(FontAwesomeSolid icon, T[] items) {
-        setLayout(new BorderLayout());
+        setLayout(new BorderLayout(0, 0));
         setBackground(AppColor.BG_LIGHT);
         setOpaque(true);
+        // Padding trái 12px giống BaseSearch; phải 4px đủ cho mũi tên dropdown.
         setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(0, 12, 0, 6)));
+                new EmptyBorder(0, 12, 0, 4)));
         setPreferredSize(new Dimension(190, 38));
+        setMaximumSize(new Dimension(220, 38));
 
         FontIcon fontIcon = FontIcon.of(icon, 13);
         fontIcon.setIconColor(AppColor.TEXT_MUTED);
         JLabel iconLabel = new JLabel(fontIcon);
-        iconLabel.setBorder(new EmptyBorder(0, 0, 0, 8));
+        // Khoảng cách icon → text: 6px.
+        iconLabel.setBorder(new EmptyBorder(0, 0, 0, 6));
 
         combo = new JComboBox<>(items);
         combo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
@@ -50,14 +53,37 @@ public class FilterDropdown<T> extends JPanel {
         combo.setFocusable(false);
         combo.setOpaque(false);
         combo.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        // FlatLaf: padding 0 để không thừa khoảng trắng giữa icon và chữ.
+        // buttonBackground phải CÙNG màu panel (không null, không để mặc định trắng)
+        // để vùng nút mũi tên chiếm hết chiều cao/nền — tránh khe trắng.
+        // Đồng thời set màu mũi tên rõ ràng để hover không làm mất mũi tên.
+        String bg = hex(AppColor.BG_LIGHT);
+        String hoverBg = hex(AppColor.BG_LIGHTER);
+        String arrow = hex(AppColor.TEXT_MUTED);
+        String arrowHover = hex(AppColor.TEXT_PRIMARY);
+        combo.putClientProperty("FlatLaf.style",
+                "padding: 0,0,0,0;"
+                + "background: " + bg + ";"
+                + "buttonBackground: " + bg + ";"
+                + "buttonHoverBackground: " + hoverBg + ";"
+                + "buttonPressedBackground: " + hoverBg + ";"
+                + "buttonArrowColor: " + arrow + ";"
+                + "buttonHoverArrowColor: " + arrowHover + ";"
+                + "buttonPressedArrowColor: " + arrowHover + ";"
+                + "buttonSeparatorWidth: 0");
+
         combo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                     boolean isSelected, boolean cellHasFocus) {
                 JLabel label = (JLabel) super.getListCellRendererComponent(
                         list, value, index, isSelected, cellHasFocus);
-                label.setFont(new Font("Segoe UI", index < 0 ? Font.PLAIN : Font.PLAIN, 13));
-                label.setBorder(new EmptyBorder(6, 10, 6, 10));
+                label.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                // index == -1: chữ trong khung combo (cạnh icon) → không padding trái.
+                // index >= 0: dòng trong popup → cần padding trái cho dễ đọc.
+                int leftPad = index < 0 ? 0 : 10;
+                label.setBorder(new EmptyBorder(4, leftPad, 4, 8));
                 if (isSelected) {
                     label.setBackground(AppColor.ACCENT_BG_SOFT);
                     label.setForeground(AppColor.ACCENT_HOVER);
@@ -71,6 +97,10 @@ public class FilterDropdown<T> extends JPanel {
 
         add(iconLabel, BorderLayout.WEST);
         add(combo, BorderLayout.CENTER);
+    }
+
+    private static String hex(Color c) {
+        return String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
     }
 
     /** Gọi listener mỗi khi lựa chọn thay đổi (kể cả do code gọi setSelectedItem). */

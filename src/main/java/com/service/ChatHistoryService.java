@@ -190,4 +190,14 @@ public final class ChatHistoryService {
             return null;
         }
     }
+
+    /** Poller: tin khách mới sau afterMessageId. */
+    public List<ChatHistoryMessage> listNewCustomerMessagesSince(long afterMessageId, int limit) {
+        return dao.listNewCustomerMessagesSince(afterMessageId, limit);
+    }
+
+    public long getMaxMessageId() {
+        return dao.getMaxMessageId();
+    }
+
 }

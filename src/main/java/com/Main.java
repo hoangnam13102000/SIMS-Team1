@@ -18,6 +18,9 @@ public class Main {
 
         System.setProperty("sun.java2d.uiScale.enabled", "true");
         System.setProperty("flatlaf.uiScale", "100%");
+        // Tăng giới hạn payload WebSocket (tin thoại base64 có thể lớn)
+        System.setProperty("org.java_websocket.bin.message.size", String.valueOf(16 * 1024 * 1024));
+        System.setProperty("org.java_websocket.txt.message.size", String.valueOf(16 * 1024 * 1024));
 
         // Ap dung theme Light/Dark da luu tu lan truoc (mac dinh Light neu
         // chua tung doi).

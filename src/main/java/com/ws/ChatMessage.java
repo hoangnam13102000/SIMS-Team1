@@ -20,6 +20,15 @@ public class ChatMessage {
     public String fileName;
     public String fileMime;
 
+    /**
+     * Tin nhắn thoại: audio + (tuỳ chọn) transcript.
+     * text thường chứa transcript hoặc nhãn "[Tin nhắn thoại]".
+     */
+    public String voiceBase64;
+    public String voiceMime;
+    /** Thời lượng ms (ước lượng), 0 nếu không biết. */
+    public int voiceDurationMs;
+
     /** STAFF_CHAT: userId = nguoi gui, toUserId = nguoi nhan. */
     public int toUserId;
     public String roleCode;
@@ -87,6 +96,40 @@ public class ChatMessage {
         return m;
     }
 
+    /**
+     * Tin thoại khách → hỗ trợ.
+     * @param transcript có thể null/blank
+     * @param voiceBase64 WAV/base64
+     */
+    public static ChatMessage voice(int userId, String userName, String transcript,
+                                    String voiceBase64, String voiceMime, int durationMs) {
+        String label = (transcript != null && !transcript.isBlank())
+                ? transcript : "[Tin nhắn thoại]";
+        ChatMessage m = new ChatMessage("CHAT", userId, userName, label, false);
+        m.voiceBase64 = voiceBase64;
+        m.voiceMime = voiceMime != null ? voiceMime : "audio/wav";
+        m.voiceDurationMs = Math.max(0, durationMs);
+        // Đồng bộ file fields để lịch sử DB lưu như file đính kèm
+        m.fileBase64 = voiceBase64;
+        m.fileName = "voice.wav";
+        m.fileMime = m.voiceMime;
+        return m;
+    }
+
+    public static ChatMessage voiceFromAdmin(int toUserId, String adminName, String transcript,
+                                             String voiceBase64, String voiceMime, int durationMs) {
+        String label = (transcript != null && !transcript.isBlank())
+                ? transcript : "[Voice message]";
+        ChatMessage m = new ChatMessage("CHAT", toUserId, adminName, label, true);
+        m.voiceBase64 = voiceBase64;
+        m.voiceMime = voiceMime != null ? voiceMime : "audio/wav";
+        m.voiceDurationMs = Math.max(0, durationMs);
+        m.fileBase64 = voiceBase64;
+        m.fileName = "voice.wav";
+        m.fileMime = m.voiceMime;
+        return m;
+    }
+
     public static ChatMessage staffJoin(int userId, String userName, String roleCode) {
         ChatMessage m = new ChatMessage("STAFF_JOIN", userId, userName, null, false);
         m.staff = true;
@@ -128,6 +171,22 @@ public class ChatMessage {
         return m;
     }
 
+    public static ChatMessage staffVoice(int fromUserId, String fromName, int toUserId,
+                                         String transcript, String voiceBase64, String voiceMime, int durationMs) {
+        String label = (transcript != null && !transcript.isBlank())
+                ? transcript : "[Tin nhắn thoại]";
+        ChatMessage m = new ChatMessage("STAFF_CHAT", fromUserId, fromName, label, false);
+        m.staff = true;
+        m.toUserId = toUserId;
+        m.voiceBase64 = voiceBase64;
+        m.voiceMime = voiceMime != null ? voiceMime : "audio/wav";
+        m.voiceDurationMs = Math.max(0, durationMs);
+        m.fileBase64 = voiceBase64;
+        m.fileName = "voice.wav";
+        m.fileMime = m.voiceMime;
+        return m;
+    }
+
     public boolean isJoin() { return "JOIN".equals(type); }
     public boolean isChat() { return "CHAT".equals(type); }
     public boolean isLeave() { return "LEAVE".equals(type); }
@@ -138,5 +197,8 @@ public class ChatMessage {
     public boolean hasFile() {
         return fileBase64 != null && !fileBase64.isBlank()
                 && fileName != null && !fileName.isBlank();
+    }
+    public boolean hasVoice() {
+        return voiceBase64 != null && !voiceBase64.isBlank();
     }
 }

@@ -19,6 +19,10 @@ import com.ws.ChatImageUtil;
 import com.ws.ChatFileUtil;
 import com.ws.ChatMessage;
 import com.ws.ChatServer;
+import com.ws.VoiceNotePlayer;
+import com.ws.VoiceNoteSender;
+import com.components.common.SoundWaveIcon;
+import com.service.ai.voice.TextToSpeechService;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -84,6 +88,17 @@ public class ChatPanel extends JPanel {
     private final JTextField inputField;
     private final JButton sendButton;
     private final JButton imageButton;
+    private final JButton voiceMicButton;
+    private final JButton ttsButton;
+    private final VoiceNoteSender voiceSender = new VoiceNoteSender();
+    private final SoundWaveIcon soundWave = new SoundWaveIcon();
+    private javax.swing.Timer voiceLevelTimer;
+    private JProgressBar voiceLoadingBar;
+    private JLabel voiceLoadingLabel;
+    private JPanel voiceLoadingPanel;
+    private final TextToSpeechService ttsService = new TextToSpeechService();
+    private boolean ttsEnabled;
+    private String lastIncomingText;
     private final JLabel conversationTitle;
     private final JLabel conversationStatus;
     private final JTabbedPane sideTabs;
@@ -94,6 +109,12 @@ public class ChatPanel extends JPanel {
 
     private final Consumer<ChatMessage> serverListener = this::onServerEvent;
     private final Consumer<ChatMessage> staffClientListener = this::onStaffClientEvent;
+    /** Chống double-notify khi cùng JVM vừa nhận qua ChatServer.dispatch vừa qua ChatClient. */
+    private final java.util.Set<String> recentIncomingKeys =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+    /** Fallback: poll DB tin khách mới (khi WebSocket miss). */
+    private javax.swing.Timer customerMsgPoller;
+    private volatile long lastPolledMessageId = 0L;
     private Consumer<Integer> onUnreadCountChanged;
     private Consumer<List<com.model.NotificationItem>> onUnreadNotifications;
     private boolean staffTabActive;
@@ -199,6 +220,16 @@ public class ChatPanel extends JPanel {
         imageButton.setEnabled(false);
         imageButton.addActionListener(e -> pickAndSendAttachment());
 
+        voiceMicButton = buildIconButton(FontAwesomeSolid.MICROPHONE, "Tin nhắn thoại");
+        voiceMicButton.setEnabled(false);
+        voiceMicButton.addActionListener(e -> toggleVoiceNote());
+
+        ttsEnabled = false;
+        lastIncomingText = null;
+        ttsButton = buildIconButton(FontAwesomeSolid.VOLUME_UP, "Bật đọc to tin nhắn đến");
+        ttsButton.setEnabled(true);
+        ttsButton.addActionListener(e -> toggleChatTts());
+
         FontIcon sendIcon = FontIcon.of(FontAwesomeSolid.PAPER_PLANE, 13);
         sendIcon.setIconColor(Color.WHITE);
         sendButton = new JButton("Gửi", sendIcon);
@@ -213,14 +244,40 @@ public class ChatPanel extends JPanel {
 
         JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         rightActions.setOpaque(false);
+        rightActions.add(ttsButton);
+        rightActions.add(voiceMicButton);
         rightActions.add(imageButton);
         rightActions.add(sendButton);
         inputBar.add(inputField, BorderLayout.CENTER);
         inputBar.add(rightActions, BorderLayout.EAST);
 
+        voiceLoadingLabel = new JLabel("Đang xử lý giọng nói…");
+        voiceLoadingLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        voiceLoadingLabel.setForeground(AppColor.TEXT_MUTED);
+        voiceLoadingBar = new JProgressBar();
+        voiceLoadingBar.setIndeterminate(true);
+        voiceLoadingBar.setPreferredSize(new Dimension(100, 4));
+        voiceLoadingPanel = new JPanel(new BorderLayout(8, 0));
+        voiceLoadingPanel.setBackground(AppColor.BG_LIGHTER);
+        voiceLoadingPanel.setBorder(new EmptyBorder(6, 16, 4, 16));
+        JPanel waveAndLabel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        waveAndLabel.setOpaque(false);
+        soundWave.setPreferredSize(new Dimension(28, 22));
+        soundWave.setBarColor(AppColor.ACCENT_HOVER);
+        waveAndLabel.add(soundWave);
+        waveAndLabel.add(voiceLoadingLabel);
+        voiceLoadingPanel.add(waveAndLabel, BorderLayout.WEST);
+        voiceLoadingPanel.add(voiceLoadingBar, BorderLayout.CENTER);
+        voiceLoadingPanel.setVisible(false);
+
+        JPanel southWrap = new JPanel(new BorderLayout());
+        southWrap.setOpaque(false);
+        southWrap.add(voiceLoadingPanel, BorderLayout.NORTH);
+        southWrap.add(inputBar, BorderLayout.CENTER);
+
         conversationCard.add(header, BorderLayout.NORTH);
         conversationCard.add(scrollPane, BorderLayout.CENTER);
-        conversationCard.add(inputBar, BorderLayout.SOUTH);
+        conversationCard.add(southWrap, BorderLayout.SOUTH);
         add(conversationCard, BorderLayout.CENTER);
 
         loadStaffDirectory();
@@ -230,6 +287,69 @@ public class ChatPanel extends JPanel {
 
         ChatServer.getInstance().addListener(serverListener);
         ChatClient.getInstance().addMessageListener(staffClientListener);
+        startCustomerMessagePoller();
+    }
+
+    /**
+     * Poll DB mỗi 2s: bắt tin khách đã lưu nhưng UI chưa nhận realtime (WS miss).
+     * Watermark = max MessageID lúc start → chỉ lấy tin mới sau đó.
+     */
+    private void startCustomerMessagePoller() {
+        try {
+            lastPolledMessageId = com.service.ChatHistoryService.getInstance().getMaxMessageId();
+        } catch (Exception e) {
+            lastPolledMessageId = 0L;
+        }
+        if (customerMsgPoller != null) {
+            customerMsgPoller.stop();
+        }
+        customerMsgPoller = new javax.swing.Timer(2000, e -> pollNewCustomerMessages());
+        customerMsgPoller.setRepeats(true);
+        customerMsgPoller.start();
+    }
+
+    private void pollNewCustomerMessages() {
+        try {
+            java.util.List<com.model.chat.ChatHistoryMessage> news =
+                    com.service.ChatHistoryService.getInstance()
+                            .listNewCustomerMessagesSince(lastPolledMessageId, 30);
+            if (news == null || news.isEmpty()) return;
+            for (com.model.chat.ChatHistoryMessage h : news) {
+                if (h.getMessageId() > lastPolledMessageId) {
+                    lastPolledMessageId = h.getMessageId();
+                }
+                // Chỉ tin khách (FromStaff=false)
+                if (h.isFromStaff()) continue;
+                int customerId = h.getSenderUserId();
+                if (customerId <= 0) continue;
+                ChatMessage cm = toCustomerChatMessage(h, customerId);
+                // Đính file/voice nếu có trên disk
+                attachHistoryFile(cm, h);
+                handleIncomingCustomerChat(cm);
+            }
+        } catch (Exception ex) {
+            // Không spam UI; log nhẹ
+            com.core.log.AppLogger.getInstance().error(
+                    com.core.log.ErrorCode.DB_QUERY_FAIL,
+                    "ChatPanel.pollNewCustomerMessages", ex);
+        }
+    }
+
+    /** Đính file/voice từ đường dẫn đã lưu DB vào ChatMessage (base64) để phát/nghe được. */
+    private void attachHistoryFile(ChatMessage cm, com.model.chat.ChatHistoryMessage h) {
+        if (h == null || !h.hasFile()) return;
+        try {
+            java.io.File f = new java.io.File(h.getFilePath());
+            if (!f.isFile()) return;
+            byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+            cm.fileBase64 = java.util.Base64.getEncoder().encodeToString(bytes);
+            cm.fileName = h.getFileName() != null ? h.getFileName() : f.getName();
+            if ("voice.wav".equalsIgnoreCase(cm.fileName) || cm.fileName.toLowerCase().endsWith(".wav")) {
+                cm.voiceBase64 = cm.fileBase64;
+                cm.voiceMime = "audio/wav";
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     public void setOnUnreadCountChanged(Consumer<Integer> callback) {
@@ -500,6 +620,7 @@ public class ChatPanel extends JPanel {
         cm.timestamp = toEpochMillis(h.getCreatedAt());
         cm.messageId = h.getMessageId();
         attachHistoryImage(cm, h);
+        attachHistoryFile(cm, h);
         return cm;
     }
 
@@ -638,6 +759,201 @@ public class ChatPanel extends JPanel {
         inputField.setEnabled(enabled);
         sendButton.setEnabled(enabled);
         imageButton.setEnabled(enabled);
+        voiceMicButton.setEnabled(enabled);
+        ttsButton.setEnabled(true);
+    }
+
+
+    private void toggleChatTts() {
+        ttsEnabled = !ttsEnabled;
+        FontIcon ic = FontIcon.of(
+                ttsEnabled ? FontAwesomeSolid.VOLUME_UP : FontAwesomeSolid.VOLUME_MUTE, 16);
+        ic.setIconColor(ttsEnabled ? AppColor.ACCENT_HOVER : AppColor.TEXT_MUTED);
+        ttsButton.setIcon(ic);
+        ttsButton.setToolTipText(ttsEnabled ? "Đang bật đọc to — bấm để tắt" : "Bật đọc to tin nhắn đến");
+        if (ttsEnabled) {
+            if (lastIncomingText != null && !lastIncomingText.isBlank()) {
+                ttsService.speakAsync(lastIncomingText);
+            }
+        } else {
+            ttsService.stop();
+        }
+    }
+
+    private void speakIncomingIfEnabled(String text) {
+        if (text == null || text.isBlank()) return;
+        lastIncomingText = text.trim();
+        if (ttsEnabled) ttsService.speakAsync(lastIncomingText);
+    }
+
+
+    /** Nút phát tin thoại — dễ bấm, báo lỗi rõ. */
+    private JComponent buildVoicePlayControl(String voiceBase64, boolean isMine) {
+        FontIcon playIcon = FontIcon.of(FontAwesomeSolid.PLAY_CIRCLE, 18);
+        playIcon.setIconColor(isMine ? Color.WHITE : AppColor.ACCENT_HOVER);
+        JButton playBtn = new JButton(" Nghe tin thoại", playIcon);
+        playBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        playBtn.setForeground(isMine ? Color.WHITE : AppColor.TEXT_PRIMARY);
+        playBtn.setFocusPainted(false);
+        playBtn.setBorderPainted(true);
+        playBtn.setContentAreaFilled(true);
+        playBtn.setOpaque(true);
+        playBtn.setBackground(isMine ? new Color(255, 255, 255, 50) : AppColor.BG_LIGHT);
+        playBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        playBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        playBtn.setHorizontalAlignment(SwingConstants.LEFT);
+        playBtn.setPreferredSize(new Dimension(168, 34));
+        playBtn.setMaximumSize(new Dimension(240, 36));
+        final String vb64 = voiceBase64;
+        playBtn.addActionListener(ev -> {
+            System.out.println("[Chat] Play clicked, dataLen=" + (vb64 == null ? 0 : vb64.length()));
+            if (vb64 == null || vb64.isBlank()) {
+                AppAlert.warning(ChatPanel.this, "Không có dữ liệu âm thanh.");
+                return;
+            }
+            VoiceNotePlayer player = VoiceNotePlayer.getInstance();
+            if (player.isPlaying()) {
+                player.stop();
+                playBtn.setText(" Nghe tin thoại");
+                return;
+            }
+            playBtn.setEnabled(false);
+            playBtn.setText(" Đang phát…");
+            new Thread(() -> {
+                try {
+                    player.play(vb64);
+                    SwingUtilities.invokeLater(() -> {
+                        playBtn.setText(" Nghe tin thoại");
+                        playBtn.setEnabled(true);
+                    });
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+                    SwingUtilities.invokeLater(() -> {
+                        playBtn.setText(" Nghe tin thoại");
+                        playBtn.setEnabled(true);
+                        AppAlert.error(ChatPanel.this, "Không phát được:\\n" + msg);
+                    });
+                }
+            }, "play-voice").start();
+        });
+        return playBtn;
+    }
+
+    private void toggleVoiceNote() {
+        if (voiceSender.isBusy()) return;
+        if (staffTabActive) {
+            if (selectedStaffId == null) return;
+        } else if (selectedCustomerId == null) {
+            return;
+        }
+        if (voiceSender.isRecording()) {
+            finishAndSendVoice();
+            return;
+        }
+        try {
+            FontIcon stopIcon = FontIcon.of(FontAwesomeSolid.STOP, 16);
+            stopIcon.setIconColor(new Color(220, 53, 69));
+            voiceMicButton.setIcon(stopIcon);
+            voiceMicButton.setToolTipText("Đang ghi… nghỉ 1–2s sẽ gửi (hoặc bấm dừng)");
+            if (voiceLoadingPanel != null) {
+                voiceLoadingLabel.setText("Đang nghe… hãy nói");
+                voiceLoadingPanel.setVisible(true);
+                voiceLoadingBar.setIndeterminate(true);
+            }
+            voiceSender.start(this::finishAndSendVoice);
+            startVoiceLevelMonitor();
+        } catch (Exception ex) {
+            AppAlert.error(this, "Không mở được microphone.\n" + ex.getMessage());
+            resetVoiceMicButton();
+        }
+    }
+
+    private void setVoiceProcessing(boolean on, String message) {
+        if (!on) {
+            stopVoiceLevelMonitor();
+        } else {
+            // đang processing: dừng animate theo mic
+            stopVoiceLevelMonitor();
+        }
+        if (voiceLoadingPanel != null) {
+            if (message != null) voiceLoadingLabel.setText(message);
+            voiceLoadingPanel.setVisible(on);
+            voiceLoadingBar.setIndeterminate(on);
+        }
+        if (inputField != null) {
+            inputField.setEnabled(!on && (staffTabActive ? selectedStaffId != null : selectedCustomerId != null));
+            inputField.putClientProperty("JTextField.placeholderText",
+                    on ? (message != null ? message : "Đang xử lý…") : "Nhập tin nhắn...");
+            inputField.repaint();
+        }
+        if (voiceMicButton != null) {
+            boolean hasTarget = staffTabActive ? selectedStaffId != null : selectedCustomerId != null;
+            voiceMicButton.setEnabled(!on && hasTarget);
+        }
+        revalidate();
+        repaint();
+    }
+
+    private void finishAndSendVoice() {
+        if (voiceSender.isBusy()) return;
+        setVoiceProcessing(true, "Đang nhận dạng & gửi tin thoại…");
+        voiceSender.finish((transcript, b64) -> {
+            setVoiceProcessing(false, null);
+            resetVoiceMicButton();
+            if (b64 == null || b64.isBlank()) {
+                AppAlert.info(this, "Không ghi được âm thanh.");
+                return;
+            }
+            int dur = voiceSender.lastDurationEstimateMs();
+            String label = (transcript != null && !transcript.isBlank()) ? transcript : "[Tin nhắn thoại]";
+            if (staffTabActive) {
+                if (selectedStaffId == null) return;
+                boolean sent = ChatClient.getInstance().sendStaffVoice(
+                        selectedStaffId, transcript, b64, "audio/wav", dur);
+                ChatMessage record = ChatMessage.staffVoice(
+                        myUserId, myName, selectedStaffId, transcript, b64, "audio/wav", dur);
+                staffConversations.computeIfAbsent(selectedStaffId, k -> new ArrayList<>()).add(record);
+                addBubble(label, null, "voice.wav", b64, true, TIME_FORMAT.format(new Date()));
+                if (!sent) AppAlert.warning(this, "Gửi thoại nội bộ thất bại.");
+            } else {
+                if (selectedCustomerId == null) return;
+                ChatServer.getInstance().sendVoiceToCustomer(
+                        selectedCustomerId, myName, transcript, b64, "audio/wav", dur, myUserId);
+                ChatMessage record = ChatMessage.voiceFromAdmin(
+                        selectedCustomerId, myName, transcript, b64, "audio/wav", dur);
+                customerConversations.computeIfAbsent(selectedCustomerId, k -> new ArrayList<>()).add(record);
+                addBubble(label, null, "voice.wav", b64, true, TIME_FORMAT.format(new Date()));
+            }
+        });
+    }
+
+    private void startVoiceLevelMonitor() {
+        stopVoiceLevelMonitor();
+        soundWave.start();
+        voiceLevelTimer = new javax.swing.Timer(50, e -> {
+            if (!voiceSender.isRecording()) return;
+            soundWave.setLevel(voiceSender.getLastRms());
+        });
+        voiceLevelTimer.start();
+    }
+
+    private void stopVoiceLevelMonitor() {
+        if (voiceLevelTimer != null) {
+            voiceLevelTimer.stop();
+            voiceLevelTimer = null;
+        }
+        soundWave.stop();
+    }
+
+    private void resetVoiceMicButton() {
+        FontIcon mic = FontIcon.of(FontAwesomeSolid.MICROPHONE, 16);
+        mic.setIconColor(AppColor.TEXT_MUTED);
+        voiceMicButton.setIcon(mic);
+        voiceMicButton.setToolTipText("Tin nhắn thoại");
+        if (voiceLoadingPanel != null && (voiceSender == null || !voiceSender.isBusy())) {
+            // không tắt nếu đang processing — setVoiceProcessing lo
+        }
     }
 
     private void sendCurrent() {
@@ -784,7 +1100,78 @@ public class ChatPanel extends JPanel {
         }.execute();
     }
 
+    /**
+     * Xử lý tin nhắn từ khách (CHAT, không fromAdmin): text / ảnh / file / thoại.
+     * Dùng chung cho listener ChatServer (cùng JVM) và ChatClient (mọi máy staff).
+     */
+    private void handleIncomingCustomerChat(ChatMessage message) {
+        if (message == null || !message.isChat() || message.fromAdmin) return;
+
+        String key = message.messageId > 0
+                ? ("id:" + message.messageId)
+                : (message.userId + "|" + message.timestamp + "|"
+                    + (message.hasVoice()
+                        ? ("V" + message.voiceDurationMs)
+                        : String.valueOf(message.text)));
+        String softKey = "soft:" + message.userId + "|"
+                + (message.hasVoice() ? "voice:" + message.voiceDurationMs
+                    : ("t:" + (message.text != null ? message.text : "")));
+        boolean seen = !recentIncomingKeys.add(key) | !recentIncomingKeys.add(softKey);
+        if (seen) {
+            return;
+        }
+        javax.swing.Timer clearKey = new javax.swing.Timer(5000, e -> {
+            recentIncomingKeys.remove(key);
+            recentIncomingKeys.remove(softKey);
+        });
+        clearKey.setRepeats(false);
+        clearKey.start();
+
+        customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>()).add(message);
+        onlineCustomers.putIfAbsent(message.userId,
+                message.userName != null && !message.userName.isBlank()
+                        ? message.userName : ("Khách #" + message.userId));
+        knownCustomerIds.add(message.userId);
+        if (message.userName != null && !message.userName.isBlank()) {
+            customerDisplayNames.put(message.userId, message.userName);
+        }
+
+        String preview = previewOf(message);
+        customerLastPreview.put(message.userId, preview);
+        customerLastTime.put(message.userId,
+                message.timestamp > 0 ? message.timestamp : System.currentTimeMillis());
+
+        NotificationSound.playMessageSound();
+
+        boolean viewing = !staffTabActive && isShowing()
+                && selectedCustomerId != null && selectedCustomerId == message.userId;
+
+        if (viewing) {
+            BufferedImage image = message.hasImage()
+                    ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
+            long ts = message.timestamp > 0 ? message.timestamp : System.currentTimeMillis();
+            addBubble(
+                    message.text,
+                    image,
+                    message.hasFile() ? message.fileName : null,
+                    message.hasFile() ? message.fileBase64 : null,
+                    false,
+                    TIME_FORMAT.format(new Date(ts))
+            );
+            if (message.text != null && !message.text.isBlank() && !message.hasVoice()) {
+                speakIncomingIfEnabled(message.text);
+            }
+        } else {
+            customerUnread.put(message.userId, true);
+            customerList.repaint();
+            notifyUnreadCountChanged();
+        }
+        refreshCustomerListVisual();
+    }
+
     private void onServerEvent(ChatMessage message) {
+        if (message == null) return;
+
         if (message.isJoin()) {
             onlineCustomers.put(message.userId, message.userName);
             knownCustomerIds.add(message.userId);
@@ -798,26 +1185,9 @@ public class ChatPanel extends JPanel {
             if (!staffTabActive && selectedCustomerId != null && selectedCustomerId == message.userId)
                 selectCustomer(message.userId);
         } else if (message.isChat() && !message.fromAdmin) {
-            customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>()).add(message);
-            onlineCustomers.putIfAbsent(message.userId,
-                    message.userName != null ? message.userName : ("Khách #" + message.userId));
-            knownCustomerIds.add(message.userId);
-            String preview = previewOf(message);
-            customerLastPreview.put(message.userId, preview);
-            customerLastTime.put(message.userId,
-                    message.timestamp > 0 ? message.timestamp : System.currentTimeMillis());
-            NotificationSound.playMessageSound();
-            boolean viewing = !staffTabActive && isShowing()
-                    && selectedCustomerId != null && selectedCustomerId == message.userId;
-            if (viewing) {
-                BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-                addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
-            } else {
-                customerUnread.put(message.userId, true);
-                customerList.repaint();
-                notifyUnreadCountChanged();
-            }
+            handleIncomingCustomerChat(message);
         }
+
         if (message.isStaffJoin() && message.userId != myUserId) {
             onlineStaffIds.add(message.userId);
             ensureStaffInDirectory(message);
@@ -833,6 +1203,27 @@ public class ChatPanel extends JPanel {
     }
 
     private void onStaffClientEvent(ChatMessage message) {
+        if (message == null) return;
+
+        // FIX: nhận tin khách realtime (text / thoại / file) qua WebSocket staff
+        if (message.isChat() && !message.fromAdmin) {
+            handleIncomingCustomerChat(message);
+            return;
+        }
+
+        if (message.isJoin()) {
+            onlineCustomers.put(message.userId, message.userName);
+            knownCustomerIds.add(message.userId);
+            customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>());
+            refreshCustomerListVisual();
+            return;
+        }
+        if (message.isLeave() && !message.staff) {
+            onlineCustomers.remove(message.userId);
+            refreshCustomerListVisual();
+            return;
+        }
+
         if (message.isStaffJoin() && message.userId != myUserId) {
             onlineStaffIds.add(message.userId);
             ensureStaffInDirectory(message);
@@ -850,6 +1241,7 @@ public class ChatPanel extends JPanel {
         }
         if (!message.isStaffChat()) return;
         if (message.userId == myUserId) return; // ignore echo of own message
+
         int peerId = message.userId;
         staffConversations.computeIfAbsent(peerId, k -> new ArrayList<>()).add(message);
         ensureStaffInDirectory(message);
@@ -861,7 +1253,11 @@ public class ChatPanel extends JPanel {
                 && selectedStaffId != null && selectedStaffId == peerId;
         if (viewing) {
             BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-            addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
+            long ts = message.timestamp > 0 ? message.timestamp : System.currentTimeMillis();
+            addBubble(message.text, image,
+                    message.hasFile() ? message.fileName : null,
+                    message.hasFile() ? message.fileBase64 : null,
+                    false, TIME_FORMAT.format(new Date(ts)));
         } else {
             staffUnread.put(peerId, true);
             staffList.repaint();
@@ -1026,9 +1422,15 @@ public class ChatPanel extends JPanel {
             if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
         }
         if (fileName != null && !fileName.isBlank()) {
-            JLabel fileLabel = buildFileAttachmentLabel(fileName, fileBase64, isMine);
-            fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            contentWrap.add(fileLabel);
+            boolean isVoiceFile = "voice.wav".equalsIgnoreCase(fileName)
+                    || fileName.toLowerCase().endsWith(".wav");
+            if (isVoiceFile && fileBase64 != null && !fileBase64.isBlank()) {
+                contentWrap.add(buildVoicePlayControl(fileBase64, isMine));
+            } else {
+                JLabel fileLabel = buildFileAttachmentLabel(fileName, fileBase64, isMine);
+                fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                contentWrap.add(fileLabel);
+            }
             if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
         }
         if (text != null && !text.isBlank()) {

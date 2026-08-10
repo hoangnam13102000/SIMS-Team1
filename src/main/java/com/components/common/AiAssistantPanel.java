@@ -4,6 +4,9 @@ import com.components.AppAlert;
 import com.model.ai.AiChatMessage;
 import com.service.ai.AiChatService;
 import com.service.ai.GeminiService;
+import com.service.ai.voice.AudioRecorder;
+import com.service.ai.voice.SpeechToTextService;
+import com.service.ai.voice.TextToSpeechService;
 import com.theme.AppColor;
 import com.utils.FileDownloadUI;
 import com.utils.ImageUtil;
@@ -33,6 +36,8 @@ import java.util.regex.Pattern;
  * Panel chat với trợ lý AI (Gemini).
  * Hỗ trợ nhiều ảnh + nhiều file (Excel/Word/…) trong 1 tin.
  * Icon Word/Excel/PDF… dùng FontAwesome (FILE_WORD, FILE_EXCEL…).
+ * <p>
+ * Giọng nói: nút mic (STT qua Gemini) + nút loa (TTS đọc câu trả lời).
  */
 public class AiAssistantPanel extends JPanel {
 
@@ -46,6 +51,10 @@ public class AiAssistantPanel extends JPanel {
     private final JTextField inputField;
     private final JButton sendButton;
     private final JButton attachButton;
+    private final JButton micButton;
+    private final JButton ttsButton;
+    private boolean ttsEnabled;
+    private String lastAiReply;
     private final JPanel pendingAttachChip;
     private final JPanel pendingListPanel;
     private final String headerTitle;
@@ -53,9 +62,16 @@ public class AiAssistantPanel extends JPanel {
     private final boolean clientSide;
 
     private final AiChatService chatService = new AiChatService();
+    private final AudioRecorder audioRecorder = new AudioRecorder();
+    private final SpeechToTextService sttService = new SpeechToTextService();
+    private final TextToSpeechService ttsService = new TextToSpeechService();
     private final List<AiChatMessage> history = new ArrayList<>();
     private JPanel typingBubbleRef;
+    private JPanel voiceLoadingBubbleRef;
     private Runnable onCloseListener;
+    private boolean voiceBusy;
+    private final SoundWaveIcon soundWave = new SoundWaveIcon();
+    private javax.swing.Timer voiceLevelTimer;
 
     /** Nhiều file/ảnh đang chờ gửi. */
     private final List<PendingAttachment> pendingAttachments = new ArrayList<>();
@@ -100,6 +116,34 @@ public class AiAssistantPanel extends JPanel {
         attachButton.setPreferredSize(new Dimension(36, 36));
         attachButton.addActionListener(e -> pickAttachment());
 
+        // Mic: giọng nói → text → gửi chat
+        FontIcon micIcon = FontIcon.of(FontAwesomeSolid.MICROPHONE, 14);
+        micIcon.setIconColor(AppColor.TEXT_SECONDARY);
+        micButton = new JButton(micIcon);
+        micButton.setToolTipText("Nhấn để nói (nhấn lại để gửi)");
+        micButton.setFocusPainted(false);
+        micButton.setBorderPainted(false);
+        micButton.setContentAreaFilled(false);
+        micButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        micButton.setPreferredSize(new Dimension(36, 36));
+        micButton.addActionListener(e -> toggleVoiceInput());
+
+        // Bật/tắt đọc câu trả lời AI (JButton — tránh JToggleButton LAF khó bấm)
+        ttsEnabled = false;
+        lastAiReply = null;
+        FontIcon volIcon = FontIcon.of(FontAwesomeSolid.VOLUME_UP, 14);
+        volIcon.setIconColor(AppColor.TEXT_SECONDARY);
+        ttsButton = new JButton(volIcon);
+        ttsButton.setToolTipText("Bật đọc to câu trả lời AI (bấm lại để tắt)");
+        ttsButton.setFocusPainted(false);
+        ttsButton.setBorderPainted(false);
+        ttsButton.setContentAreaFilled(false);
+        ttsButton.setOpaque(false);
+        ttsButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        ttsButton.setPreferredSize(new Dimension(36, 36));
+        ttsButton.setEnabled(true);
+        ttsButton.addActionListener(e -> toggleTts());
+
         inputField = new JTextField();
         inputField.putClientProperty("JTextField.placeholderText", "Nhập câu hỏi cho trợ lý AI...");
         inputField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
@@ -136,9 +180,15 @@ public class AiAssistantPanel extends JPanel {
         rightActions.setOpaque(false);
         rightActions.setLayout(new BoxLayout(rightActions, BoxLayout.X_AXIS));
         rightActions.add(Box.createHorizontalStrut(4));
+        rightActions.add(ttsButton);
+        rightActions.add(Box.createHorizontalStrut(2));
+        rightActions.add(micButton);
+        rightActions.add(Box.createHorizontalStrut(4));
         rightActions.add(attachButton);
         rightActions.add(Box.createHorizontalStrut(6));
         rightActions.add(sendButton);
+        ttsButton.setAlignmentY(Component.CENTER_ALIGNMENT);
+        micButton.setAlignmentY(Component.CENTER_ALIGNMENT);
         attachButton.setAlignmentY(Component.CENTER_ALIGNMENT);
         sendButton.setAlignmentY(Component.CENTER_ALIGNMENT);
 
@@ -177,6 +227,9 @@ public class AiAssistantPanel extends JPanel {
         inputField.setEnabled(enabled);
         sendButton.setEnabled(enabled);
         attachButton.setEnabled(enabled);
+        micButton.setEnabled(enabled && !voiceBusy);
+        // Nút loa luôn bấm được
+        ttsButton.setEnabled(true);
     }
 
     private JPanel buildHeaderBar(boolean showCloseButton) {
@@ -204,6 +257,7 @@ public class AiAssistantPanel extends JPanel {
             closeButton.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
+                    stopVoiceResources();
                     if (onCloseListener != null) onCloseListener.run();
                 }
             });
@@ -219,6 +273,222 @@ public class AiAssistantPanel extends JPanel {
         FontIcon icon = FontIcon.of(type, size);
         icon.setIconColor(color);
         return icon;
+    }
+
+    // ------------------------------------------------------------------
+    // Giọng nói: STT (VAD tự dừng) + TTS
+    // ------------------------------------------------------------------
+
+    private void toggleTts() {
+        ttsEnabled = !ttsEnabled;
+        FontIcon volIcon = FontIcon.of(
+                ttsEnabled ? FontAwesomeSolid.VOLUME_UP : FontAwesomeSolid.VOLUME_MUTE, 14);
+        volIcon.setIconColor(ttsEnabled ? AppColor.ACCENT_HOVER : AppColor.TEXT_SECONDARY);
+        ttsButton.setIcon(volIcon);
+        ttsButton.setToolTipText(ttsEnabled
+                ? "Đang bật đọc to — bấm để tắt"
+                : "Bật đọc to câu trả lời AI");
+        ttsButton.repaint();
+        if (ttsEnabled) {
+            if (lastAiReply != null && !lastAiReply.isBlank()) {
+                ttsService.speakAsync(lastAiReply);
+            }
+        } else {
+            ttsService.stop();
+        }
+    }
+
+    private void toggleVoiceInput() {
+        if (voiceBusy) return;
+        if (audioRecorder.isRecording()) {
+            finishVoiceInput();
+        } else {
+            startVoiceInput();
+        }
+    }
+
+    private void startVoiceInput() {
+        try {
+            ttsService.stop();
+            audioRecorder.setSilenceMs(700);
+            // Quan trọng: invokeLater để không deadlock với thread recorder
+            audioRecorder.setOnAutoStop(() -> SwingUtilities.invokeLater(() -> {
+                if (!voiceBusy) {
+                    finishVoiceInput();
+                }
+            }));
+            audioRecorder.start();
+
+            FontIcon stopIcon = FontIcon.of(FontAwesomeSolid.STOP, 14);
+            stopIcon.setIconColor(AppColor.ERROR);
+            micButton.setIcon(stopIcon);
+            micButton.setToolTipText("Đang nghe… nghỉ ~0.7s sẽ tự gửi (hoặc bấm dừng)");
+            inputField.putClientProperty("JTextField.placeholderText",
+                    "Đang nghe… nói xong nghỉ ngắn sẽ tự gửi");
+            inputField.repaint();
+            showVoiceLoadingBubble("Đang nghe… nói xong nghỉ ngắn sẽ gửi");
+            startVoiceLevelMonitor();
+
+            // Timer dự phòng: nếu VAD đã dừng mà callback sót, vẫn finish
+            javax.swing.Timer watchdog = new javax.swing.Timer(300, null);
+            watchdog.addActionListener(ev -> {
+                if (voiceBusy) {
+                    watchdog.stop();
+                    return;
+                }
+                if (!audioRecorder.isRecording() && audioRecorder.wasStoppedByVad()) {
+                    watchdog.stop();
+                    finishVoiceInput();
+                }
+                // hết 35s vẫn đang ghi → dừng
+                if (!audioRecorder.isRecording() && !audioRecorder.wasStoppedByVad()) {
+                    // user đã stop tay — worker finishVoice sẽ lo
+                }
+            });
+            watchdog.setRepeats(true);
+            watchdog.start();
+            // tự tắt watchdog sau 35s
+            javax.swing.Timer stopWatch = new javax.swing.Timer(35_000, e -> watchdog.stop());
+            stopWatch.setRepeats(false);
+            stopWatch.start();
+        } catch (Exception ex) {
+            AppAlert.error(this, "Không mở được microphone.\n" + rootMessage(ex));
+        }
+    }
+
+    private void finishVoiceInput() {
+        if (voiceBusy) return;
+        stopVoiceLevelMonitor();
+        voiceBusy = true;
+        setInputEnabled(false);
+        micButton.setEnabled(false);
+        inputField.putClientProperty("JTextField.placeholderText", "Đang nhận dạng giọng nói…");
+        inputField.repaint();
+        showVoiceLoadingBubble("Đang nhận dạng giọng nói…");
+
+        new SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() throws Exception {
+                byte[] wav = audioRecorder.stopAndGetWav();
+                if (wav.length < 1000) return "";
+                return sttService.transcribeWav(wav);
+            }
+
+            @Override
+            protected void done() {
+                voiceBusy = false;
+                hideVoiceLoadingBubble();
+                resetMicButton();
+                try {
+                    String spoken = get();
+                    setInputEnabled(true);
+                    if (spoken == null || spoken.isBlank()) {
+                        AppAlert.info(AiAssistantPanel.this,
+                                "Không nhận được lời nói. Thử nói rõ hơn hoặc kiểm tra mic.");
+                        inputField.requestFocusInWindow();
+                        return;
+                    }
+                    inputField.setText(spoken);
+                    sendCurrentInput(); // sẽ hiện "Đang trả lời..." khi gửi AI
+                } catch (Exception ex) {
+                    setInputEnabled(true);
+                    AppAlert.error(AiAssistantPanel.this,
+                            "Nhận dạng giọng nói thất bại.\n" + rootMessage(ex));
+                }
+            }
+        }.execute();
+    }
+
+    private void showVoiceLoadingBubble(String message) {
+        hideVoiceLoadingBubble();
+        boolean listening = message != null && message.toLowerCase().contains("nghe");
+        if (listening) {
+            JPanel row = new JPanel(new BorderLayout(8, 0));
+            row.setOpaque(false);
+            row.setBorder(new EmptyBorder(4, 0, 4, 0));
+            JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            left.setOpaque(false);
+            soundWave.setPreferredSize(new Dimension(32, 28));
+            soundWave.setBarColor(AppColor.ACCENT_HOVER);
+            left.add(soundWave);
+            JLabel lbl = new JLabel(message);
+            lbl.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+            lbl.setForeground(AppColor.TEXT_SECONDARY);
+            left.add(lbl);
+            row.add(left, BorderLayout.WEST);
+            // align like other AI bubbles
+            JPanel wrap = new JPanel(new BorderLayout());
+            wrap.setOpaque(false);
+            wrap.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
+            wrap.add(row, BorderLayout.WEST);
+            voiceLoadingBubbleRef = wrap;
+        } else {
+            voiceLoadingBubbleRef = buildBubbleRow(message, false, "", null, null, null);
+        }
+        messagesContainer.add(voiceLoadingBubbleRef);
+        messagesContainer.revalidate();
+        messagesContainer.repaint();
+        scrollToBottom();
+    }
+
+    private void hideVoiceLoadingBubble() {
+        if (voiceLoadingBubbleRef != null) {
+            messagesContainer.remove(voiceLoadingBubbleRef);
+            voiceLoadingBubbleRef = null;
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+        }
+    }
+
+    private void startVoiceLevelMonitor() {
+        stopVoiceLevelMonitor();
+        soundWave.start();
+        voiceLevelTimer = new javax.swing.Timer(50, e -> {
+            if (!audioRecorder.isRecording()) {
+                // vẫn animate nhẹ nếu đang processing
+                return;
+            }
+            soundWave.setLevel(audioRecorder.getLastRms());
+        });
+        voiceLevelTimer.start();
+    }
+
+    private void stopVoiceLevelMonitor() {
+        if (voiceLevelTimer != null) {
+            voiceLevelTimer.stop();
+            voiceLevelTimer = null;
+        }
+        soundWave.stop();
+    }
+
+    private void resetMicButton() {
+        FontIcon micIcon = FontIcon.of(FontAwesomeSolid.MICROPHONE, 14);
+        micIcon.setIconColor(AppColor.TEXT_SECONDARY);
+        micButton.setIcon(micIcon);
+        micButton.setToolTipText("Nhấn để nói — nghỉ ngắn sẽ tự gửi");
+        inputField.putClientProperty("JTextField.placeholderText", "Nhập câu hỏi cho trợ lý AI...");
+        inputField.repaint();
+    }
+
+    private void stopVoiceResources() {
+        try {
+            audioRecorder.setOnAutoStop(null);
+            audioRecorder.cancel();
+        } catch (Exception ignored) {
+        }
+        ttsService.stop();
+        voiceBusy = false;
+        stopVoiceLevelMonitor();
+        hideVoiceLoadingBubble();
+        resetMicButton();
+    }
+
+    private static String rootMessage(Exception ex) {
+        Throwable t = ex;
+        while (t.getCause() != null) {
+            t = t.getCause();
+        }
+        return t.getMessage() != null ? t.getMessage() : t.toString();
     }
 
     // ------------------------------------------------------------------
@@ -451,6 +721,10 @@ public class AiAssistantPanel extends JPanel {
                 }
                 history.add(new AiChatMessage("model", reply));
                 addBubble(reply, false, TIME_FORMAT.format(new Date()), null, null, null, null);
+                lastAiReply = reply;
+                if (ttsEnabled && reply != null && !reply.isBlank()) {
+                    ttsService.speakAsync(reply);
+                }
                 inputField.requestFocusInWindow();
             }
         }.execute();

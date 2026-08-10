@@ -13,6 +13,10 @@ import com.model.chat.ChatHistoryMessage;
 import com.service.ChatHistoryService;
 import com.utils.ImageUtil;
 import com.ws.ChatMessage;
+import com.ws.VoiceNotePlayer;
+import com.ws.VoiceNoteSender;
+import com.components.common.SoundWaveIcon;
+import com.service.ai.voice.TextToSpeechService;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -40,6 +44,17 @@ public class ChatPanel extends JPanel {
     private final JPanel messagesContainer;
     private final JScrollPane scrollPane;
     private final JTextField inputField;
+    private final JButton voiceMicButton;
+    private final JButton ttsButton;
+    private final VoiceNoteSender voiceSender = new VoiceNoteSender();
+    private final SoundWaveIcon soundWave = new SoundWaveIcon();
+    private javax.swing.Timer voiceLevelTimer;
+    private final TextToSpeechService ttsService = new TextToSpeechService();
+    private boolean ttsEnabled;
+    private String lastIncomingText;
+    private JProgressBar voiceLoadingBar;
+    private JLabel voiceLoadingLabel;
+    private JPanel voiceLoadingPanel;
     private JLabel statusDotRef;
     private JLabel statusLabelRef;
 
@@ -86,6 +101,14 @@ public class ChatPanel extends JPanel {
         JButton imageButton = buildIconButton(FontAwesomeSolid.PAPERCLIP, "Gửi ảnh / file");
         imageButton.addActionListener(e -> pickAndSendAttachment());
 
+        voiceMicButton = buildIconButton(FontAwesomeSolid.MICROPHONE, "Tin nhắn thoại");
+        voiceMicButton.addActionListener(e -> toggleVoiceNote());
+
+        ttsEnabled = false;
+        lastIncomingText = null;
+        ttsButton = buildIconButton(FontAwesomeSolid.VOLUME_UP, "Bật đọc to tin nhắn đến");
+        ttsButton.addActionListener(e -> toggleChatTts());
+
         FontIcon sendIcon = FontIcon.of(FontAwesomeSolid.PAPER_PLANE, 13);
         sendIcon.setIconColor(Color.WHITE);
         JButton sendButton = new JButton("Gửi", sendIcon);
@@ -99,15 +122,41 @@ public class ChatPanel extends JPanel {
 
         JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         rightActions.setOpaque(false);
+        rightActions.add(ttsButton);
+        rightActions.add(voiceMicButton);
         rightActions.add(imageButton);
         rightActions.add(sendButton);
 
         inputBar.add(inputField, BorderLayout.CENTER);
         inputBar.add(rightActions, BorderLayout.EAST);
 
+        voiceLoadingLabel = new JLabel("Đang xử lý giọng nói…");
+        voiceLoadingLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        voiceLoadingLabel.setForeground(AppColor.TEXT_MUTED);
+        voiceLoadingBar = new JProgressBar();
+        voiceLoadingBar.setIndeterminate(true);
+        voiceLoadingBar.setPreferredSize(new Dimension(100, 4));
+        voiceLoadingPanel = new JPanel(new BorderLayout(8, 0));
+        voiceLoadingPanel.setBackground(AppColor.BG_LIGHTER);
+        voiceLoadingPanel.setBorder(new EmptyBorder(6, 16, 4, 16));
+        JPanel waveAndLabel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        waveAndLabel.setOpaque(false);
+        soundWave.setPreferredSize(new Dimension(28, 22));
+        soundWave.setBarColor(AppColor.ACCENT_HOVER);
+        waveAndLabel.add(soundWave);
+        waveAndLabel.add(voiceLoadingLabel);
+        voiceLoadingPanel.add(waveAndLabel, BorderLayout.WEST);
+        voiceLoadingPanel.add(voiceLoadingBar, BorderLayout.CENTER);
+        voiceLoadingPanel.setVisible(false);
+
+        JPanel southWrap = new JPanel(new BorderLayout());
+        southWrap.setOpaque(false);
+        southWrap.add(voiceLoadingPanel, BorderLayout.NORTH);
+        southWrap.add(inputBar, BorderLayout.CENTER);
+
         add(headerBar, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
-        add(inputBar, BorderLayout.SOUTH);
+        add(southWrap, BorderLayout.SOUTH);
 
         addWelcomeBubble();
         loadPersistedHistory();
@@ -331,6 +380,177 @@ public class ChatPanel extends JPanel {
                 null, false, TIME_FORMAT.format(new Date()), 0L);
     }
 
+
+    private void toggleChatTts() {
+        ttsEnabled = !ttsEnabled;
+        FontIcon ic = FontIcon.of(
+                ttsEnabled ? FontAwesomeSolid.VOLUME_UP : FontAwesomeSolid.VOLUME_MUTE, 16);
+        ic.setIconColor(ttsEnabled ? AppColor.ACCENT_HOVER : AppColor.TEXT_MUTED);
+        ttsButton.setIcon(ic);
+        ttsButton.setToolTipText(ttsEnabled ? "Đang bật đọc to — bấm để tắt" : "Bật đọc to tin nhắn đến");
+        if (ttsEnabled) {
+            if (lastIncomingText != null && !lastIncomingText.isBlank()) {
+                ttsService.speakAsync(lastIncomingText);
+            }
+        } else {
+            ttsService.stop();
+        }
+    }
+
+    private void speakIncomingIfEnabled(String text) {
+        if (text == null || text.isBlank()) return;
+        lastIncomingText = text.trim();
+        if (ttsEnabled) ttsService.speakAsync(lastIncomingText);
+    }
+
+
+    /** Nút phát tin thoại — dễ bấm, báo lỗi rõ. */
+    private JComponent buildVoicePlayControl(String voiceBase64, boolean isMine) {
+        FontIcon playIcon = FontIcon.of(FontAwesomeSolid.PLAY_CIRCLE, 18);
+        playIcon.setIconColor(isMine ? Color.WHITE : AppColor.ACCENT_HOVER);
+        JButton playBtn = new JButton(" Nghe tin thoại", playIcon);
+        playBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        playBtn.setForeground(isMine ? Color.WHITE : AppColor.TEXT_PRIMARY);
+        playBtn.setFocusPainted(false);
+        playBtn.setBorderPainted(true);
+        playBtn.setContentAreaFilled(true);
+        playBtn.setOpaque(true);
+        playBtn.setBackground(isMine ? new Color(255, 255, 255, 50) : AppColor.BG_LIGHT);
+        playBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        playBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        playBtn.setHorizontalAlignment(SwingConstants.LEFT);
+        playBtn.setPreferredSize(new Dimension(168, 34));
+        playBtn.setMaximumSize(new Dimension(240, 36));
+        final String vb64 = voiceBase64;
+        playBtn.addActionListener(ev -> {
+            System.out.println("[Chat] Play clicked, dataLen=" + (vb64 == null ? 0 : vb64.length()));
+            if (vb64 == null || vb64.isBlank()) {
+                AppAlert.warning(ChatPanel.this, "Không có dữ liệu âm thanh.");
+                return;
+            }
+            VoiceNotePlayer player = VoiceNotePlayer.getInstance();
+            if (player.isPlaying()) {
+                player.stop();
+                playBtn.setText(" Nghe tin thoại");
+                return;
+            }
+            playBtn.setEnabled(false);
+            playBtn.setText(" Đang phát…");
+            new Thread(() -> {
+                try {
+                    player.play(vb64);
+                    SwingUtilities.invokeLater(() -> {
+                        playBtn.setText(" Nghe tin thoại");
+                        playBtn.setEnabled(true);
+                    });
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+                    SwingUtilities.invokeLater(() -> {
+                        playBtn.setText(" Nghe tin thoại");
+                        playBtn.setEnabled(true);
+                        AppAlert.error(ChatPanel.this, "Không phát được:\\n" + msg);
+                    });
+                }
+            }, "play-voice").start();
+        });
+        return playBtn;
+    }
+
+    private void toggleVoiceNote() {
+        if (voiceSender.isBusy()) return;
+        if (voiceSender.isRecording()) {
+            finishAndSendVoice();
+            return;
+        }
+        try {
+            FontIcon stopIcon = FontIcon.of(FontAwesomeSolid.STOP, 16);
+            stopIcon.setIconColor(new Color(220, 53, 69));
+            voiceMicButton.setIcon(stopIcon);
+            voiceMicButton.setToolTipText("Đang ghi… nghỉ 1–2s sẽ gửi (hoặc bấm dừng)");
+            if (voiceLoadingPanel != null) {
+                voiceLoadingLabel.setText("Đang nghe… hãy nói");
+                voiceLoadingPanel.setVisible(true);
+                voiceLoadingBar.setIndeterminate(true);
+            }
+            voiceSender.start(this::finishAndSendVoice);
+            startVoiceLevelMonitor();
+        } catch (Exception ex) {
+            AppAlert.error(this, "Không mở được microphone.\n" + ex.getMessage());
+            resetVoiceMicButton();
+        }
+    }
+
+    private void setVoiceProcessing(boolean on, String message) {
+        if (!on) {
+            stopVoiceLevelMonitor();
+        } else {
+            // đang processing: dừng animate theo mic
+            stopVoiceLevelMonitor();
+        }
+        if (voiceLoadingPanel != null) {
+            if (message != null) voiceLoadingLabel.setText(message);
+            voiceLoadingPanel.setVisible(on);
+            voiceLoadingBar.setIndeterminate(on);
+        }
+        if (inputField != null) {
+            inputField.setEnabled(!on);
+            inputField.putClientProperty("JTextField.placeholderText",
+                    on ? (message != null ? message : "Đang xử lý…") : "Nhập câu hỏi của bạn...");
+            inputField.repaint();
+        }
+        if (voiceMicButton != null) voiceMicButton.setEnabled(!on);
+        if (ttsButton != null && on) { /* keep tts */ }
+        revalidate();
+        repaint();
+    }
+
+    private void finishAndSendVoice() {
+        if (voiceSender.isBusy()) return;
+        setVoiceProcessing(true, "Đang nhận dạng & gửi tin thoại…");
+        voiceSender.finish((transcript, b64) -> {
+            setVoiceProcessing(false, null);
+            resetVoiceMicButton();
+            if (b64 == null || b64.isBlank()) {
+                AppAlert.info(this, "Không ghi được âm thanh.");
+                return;
+            }
+            int dur = voiceSender.lastDurationEstimateMs();
+            boolean sent = ChatClient.getInstance().sendVoice(transcript, b64, "audio/wav", dur);
+            String label = (transcript != null && !transcript.isBlank()) ? transcript : "[Tin nhắn thoại]";
+            addBubble(label, null, "voice.wav", b64, true, TIME_FORMAT.format(new Date()), 0L);
+            if (!sent) {
+                addBubble("Không thể gửi thoại: hỗ trợ chưa trực tuyến.",
+                        null, false, TIME_FORMAT.format(new Date()), 0L);
+            }
+        });
+    }
+
+    private void startVoiceLevelMonitor() {
+        stopVoiceLevelMonitor();
+        soundWave.start();
+        voiceLevelTimer = new javax.swing.Timer(50, e -> {
+            if (!voiceSender.isRecording()) return;
+            soundWave.setLevel(voiceSender.getLastRms());
+        });
+        voiceLevelTimer.start();
+    }
+
+    private void stopVoiceLevelMonitor() {
+        if (voiceLevelTimer != null) {
+            voiceLevelTimer.stop();
+            voiceLevelTimer = null;
+        }
+        soundWave.stop();
+    }
+
+    private void resetVoiceMicButton() {
+        FontIcon mic = FontIcon.of(FontAwesomeSolid.MICROPHONE, 16);
+        mic.setIconColor(AppColor.TEXT_MUTED);
+        voiceMicButton.setIcon(mic);
+        voiceMicButton.setToolTipText("Tin nhắn thoại");
+    }
+
     private void sendCurrentInput() {
         String text = inputField.getText() == null ? "" : inputField.getText().trim();
         if (text.isEmpty()) return;
@@ -411,13 +631,22 @@ public class ChatPanel extends JPanel {
         if (!message.isChat() || !message.fromAdmin) return;
         BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
         String text = message.text;
-        boolean hasFile = message.hasFile();
-        if ((text == null || text.isBlank()) && image == null && !hasFile) return;
-        addBubble(text, image,
-                hasFile ? message.fileName : null,
-                hasFile ? message.fileBase64 : null,
+        boolean isVoice = message.hasVoice()
+                || (message.hasFile() && message.fileName != null
+                    && ("voice.wav".equalsIgnoreCase(message.fileName)
+                        || message.fileName.toLowerCase().endsWith(".wav")));
+        boolean hasFile = message.hasFile() && !isVoice;
+        String voiceOrFileB64 = isVoice
+                ? (message.hasVoice() ? message.voiceBase64 : message.fileBase64)
+                : (hasFile ? message.fileBase64 : null);
+        String fileName = isVoice ? "voice.wav" : (hasFile ? message.fileName : null);
+        if ((text == null || text.isBlank()) && image == null && !hasFile && !isVoice) return;
+        addBubble(text, image, fileName, voiceOrFileB64,
                 false, TIME_FORMAT.format(new Date(message.timestamp)),
                 message.messageId);
+        if (text != null && !text.isBlank()) {
+            speakIncomingIfEnabled(text);
+        }
         if (onIncomingMessageListener != null) onIncomingMessageListener.run();
     }
 
@@ -486,22 +715,30 @@ public class ChatPanel extends JPanel {
             if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
         }
         if (fileName != null && !fileName.isBlank()) {
-            JLabel fileLabel = new JLabel("📎 " + fileName);
-            fileLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            fileLabel.setForeground(isMine ? Color.WHITE : AppColor.ACCENT);
-            fileLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-            fileLabel.setToolTipText("Nhấp để lưu file");
-            fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            fileLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
-            final String fn = fileName;
-            final String fb = fileBase64;
-            fileLabel.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseClicked(MouseEvent e) {
-                    FileDownloadUI.saveBase64WithProgress(ChatPanel.this, fn, fb);
-                }
-            });
-            contentWrap.add(fileLabel);
+            boolean isVoiceFile = "voice.wav".equalsIgnoreCase(fileName)
+                    || fileName.toLowerCase().endsWith(".wav");
+            if (isVoiceFile && fileBase64 != null && !fileBase64.isBlank()) {
+                contentWrap.add(buildVoicePlayControl(fileBase64, isMine));
+            } else {
+                FontIcon fileIcon = FontIcon.of(FontAwesomeSolid.FILE, 14);
+                fileIcon.setIconColor(isMine ? Color.WHITE : AppColor.ACCENT_HOVER);
+                JLabel fileLabel = new JLabel(fileName, fileIcon, SwingConstants.LEFT);
+                fileLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                fileLabel.setForeground(isMine ? Color.WHITE : AppColor.ACCENT);
+                fileLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+                fileLabel.setToolTipText("Nhấp để lưu file");
+                fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                fileLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+                final String fn = fileName;
+                final String fb = fileBase64;
+                fileLabel.addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseClicked(MouseEvent e) {
+                        FileDownloadUI.saveBase64WithProgress(ChatPanel.this, fn, fb);
+                    }
+                });
+                contentWrap.add(fileLabel);
+            }
             if (text != null && !text.isBlank()) contentWrap.add(Box.createVerticalStrut(6));
         }
         if (text != null && !text.isBlank()) {

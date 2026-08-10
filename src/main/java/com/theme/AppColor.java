@@ -101,13 +101,14 @@ public final class AppColor {
         BORDER = dark ? new Color(51, 56, 71) : new Color(226, 232, 240);
         FIELD_BORDER = dark ? new Color(71, 78, 97) : new Color(203, 213, 225);
 
-        TEXT_TITLE = dark ? new Color(241, 245, 249) : new Color(15, 23, 42);
-        TEXT_PRIMARY = dark ? new Color(226, 232, 240) : new Color(30, 41, 59);
-        TEXT_SECONDARY = dark ? new Color(180, 190, 205) : new Color(71, 85, 105);
-        TEXT_MUTED = dark ? new Color(148, 163, 184) : new Color(100, 116, 139);
-        TEXT_DISABLED = dark ? new Color(100, 105, 115) : new Color(150, 150, 150);
-        TEXT_MUTED_ALT = dark ? new Color(190, 199, 214) : new Color(148, 163, 184);
-        ICON_MUTED = dark ? new Color(176, 183, 195) : new Color(156, 163, 175);
+        // Dark mode: tăng độ sáng chữ phụ để tránh bị mờ trên nền tối (đặc biệt POS)
+        TEXT_TITLE = dark ? new Color(248, 250, 252) : new Color(15, 23, 42);
+        TEXT_PRIMARY = dark ? new Color(236, 242, 250) : new Color(30, 41, 59);
+        TEXT_SECONDARY = dark ? new Color(200, 210, 225) : new Color(71, 85, 105);
+        TEXT_MUTED = dark ? new Color(176, 188, 206) : new Color(100, 116, 139);
+        TEXT_DISABLED = dark ? new Color(120, 128, 140) : new Color(150, 150, 150);
+        TEXT_MUTED_ALT = dark ? new Color(200, 210, 225) : new Color(148, 163, 184);
+        ICON_MUTED = dark ? new Color(190, 198, 212) : new Color(156, 163, 175);
 
         ACCENT = dark ? new Color(52, 211, 153) : new Color(5, 150, 105);
         ACCENT_HOVER = dark ? new Color(16, 185, 129) : new Color(4, 120, 87);
@@ -142,8 +143,8 @@ public final class AppColor {
         TABLE_HEADER_BG = dark ? new Color(15, 20, 32) : new Color(30, 41, 59);
         TABLE_ROW_ODD = dark ? new Color(34, 38, 48) : new Color(248, 250, 252);
         TABLE_GRID = dark ? new Color(44, 48, 60) : new Color(241, 245, 249);
-        TABLE_ROW_TEXT = dark ? new Color(203, 213, 225) : new Color(51, 65, 85);
-        TABLE_VIEW_ACTION = dark ? new Color(148, 163, 184) : new Color(71, 85, 105);
+        TABLE_ROW_TEXT = dark ? new Color(220, 228, 238) : new Color(51, 65, 85);
+        TABLE_VIEW_ACTION = dark ? new Color(176, 188, 206) : new Color(71, 85, 105);
         TABLE_EDIT_ACTION = ACCENT;
         TABLE_DELETE_ACTION = ERROR;
     }
