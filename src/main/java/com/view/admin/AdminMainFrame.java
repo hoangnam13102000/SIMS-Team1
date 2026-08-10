@@ -25,6 +25,7 @@ import com.view.admin.customer.CustomerPanel;
 import com.view.admin.employee.EmployeePanel;
 import com.view.admin.exceptionreport.ExceptionReportPanel;
 import com.view.admin.inventory.InventoryBatchPanel;
+import com.view.admin.inventory.InventoryOverviewPanel;
 import com.view.admin.inventoryreport.InventoryReportPanel;
 import com.view.admin.inventory.PurchaseReceiptPanel;
 import com.view.admin.inventory.StockReconciliationPanel;
@@ -155,6 +156,8 @@ public class AdminMainFrame extends JFrame {
                 AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
 
         layout.addSection(Lang.get("sidebar.section.warehouse"));
+        layout.addPage("inventoryOverview", Lang.get("sidebar.inventoryOverview"), FontAwesomeSolid.TH_LARGE, new InventoryOverviewPanel(),
+                AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE, new PurchaseReceiptPanel(),
                 AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES, new InventoryBatchPanel(),

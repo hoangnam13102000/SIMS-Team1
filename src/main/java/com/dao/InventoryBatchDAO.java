@@ -177,6 +177,42 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
                 .replace("[", "\\[");
     }
 
+    /**
+     * Cac lo CON TON (RemainingQty > 0, Status='ACTIVE') cua 1 nhom ProductID,
+     * theo dung thu tu FEFO (getOrderBy()) - dung cho InventoryOverviewPanel
+     * de hien cot "Lo hang" (nhan vien nhin ma lo la biet can tim lo nao
+     * trong kho khi bo sung hang). 1 QUERY DUY NHAT cho ca trang (IN (...)),
+     * KHONG goi rieng tung san pham (tranh N+1). Ket qua group san theo
+     * ProductID de panel tra cuu O(1) khi mapRowToColumns().
+     */
+    public java.util.Map<Integer, java.util.List<InventoryBatch>> getActiveBatchesByProductIds(List<Integer> productIds) {
+        java.util.Map<Integer, java.util.List<InventoryBatch>> result = new java.util.LinkedHashMap<>();
+        if (productIds == null || productIds.isEmpty()) return result;
+
+        syncExpiredStatus();
+
+        String placeholders = String.join(",", java.util.Collections.nCopies(productIds.size(), "?"));
+        String sql = "SELECT " + getColumns() + " FROM " + getTableName()
+                + " WHERE b.ProductID IN (" + placeholders + ") AND b.RemainingQty > 0 AND b.Status = 'ACTIVE'"
+                + " ORDER BY " + getOrderBy();
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            for (int i = 0; i < productIds.size(); i++) {
+                ps.setInt(i + 1, productIds.get(i));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    InventoryBatch batch = mapResultSet(rs);
+                    result.computeIfAbsent(batch.getProductId(), k -> new ArrayList<>()).add(batch);
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "InventoryBatchDAO.getActiveBatchesByProductIds", e);
+        }
+        return result;
+    }
+
     /** Dem so lo sap het han trong vong {@code days} ngay toi (dung cho canh bao tren Dashboard). */
     public int countExpiringSoon(int days) {
         String sql = "SELECT COUNT(*) FROM InventoryBatch "

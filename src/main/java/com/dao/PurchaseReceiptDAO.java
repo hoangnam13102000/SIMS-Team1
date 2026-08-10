@@ -188,10 +188,15 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
     }
 
     public List<PurchaseReceiptDetail> getDetails(int receiptId) {
+        // LEFT JOIN InventoryBatch: moi dong phieu nhap sinh dung 1 lo (xem
+        // trigger trg_PurchaseReceiptDetails_Insert), lay ve BatchCode (LOT_xxxxxx)
+        // de doi chieu voi LotNumber (so lo tren bao bi NCC) - tranh tinh trang
+        // nhan vien phai hoi lai "lo he thong ung voi lo nao tren bao bi".
         String sql = "SELECT d.ReceiptDetailID, d.ReceiptID, d.ProductID, p.ProductName, p.ProductCode, "
-                + "d.Quantity, d.ImportPrice, d.LotNumber, d.ManufactureDate, d.ExpiryDate "
+                + "d.Quantity, d.ImportPrice, d.LotNumber, d.ManufactureDate, d.ExpiryDate, b.BatchCode "
                 + "FROM PurchaseReceiptDetails d "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "LEFT JOIN InventoryBatch b ON b.ReceiptDetailID = d.ReceiptDetailID "
                 + "WHERE d.ReceiptID = ? "
                 + "ORDER BY d.ReceiptDetailID ASC";
 
@@ -210,6 +215,7 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
                     detail.setQuantity(rs.getInt("Quantity"));
                     detail.setImportPrice(rs.getBigDecimal("ImportPrice"));
                     detail.setLotNumber(rs.getString("LotNumber"));
+                    detail.setBatchCode(rs.getString("BatchCode"));
 
                     Date mfg = rs.getDate("ManufactureDate");
                     detail.setManufactureDate(mfg != null ? mfg.toLocalDate() : null);

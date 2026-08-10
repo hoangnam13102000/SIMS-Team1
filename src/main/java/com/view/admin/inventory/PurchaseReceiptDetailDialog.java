@@ -57,7 +57,7 @@ public class PurchaseReceiptDetailDialog extends JDialog {
         this.receipt = receipt;
         this.details = receiptDAO.getDetails(receipt.getReceiptId());
 
-        setSize(780, 660);
+        setSize(880, 660);
         setMinimumSize(new Dimension(640, 500));
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -261,7 +261,7 @@ public class PurchaseReceiptDetailDialog extends JDialog {
     // ---------------------------------------------------------------
 
     private JTable buildDetailTable(List<PurchaseReceiptDetail> details) {
-        String[] columns = {"Sản phẩm", "Số lô (NCC)", "NSX", "HSD", "SL", "Giá nhập", "Thành tiền"};
+        String[] columns = {"Sản phẩm", "Mã lô (hệ thống)", "Số lô (NCC)", "NSX", "HSD", "SL", "Giá nhập", "Thành tiền"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
@@ -270,6 +270,7 @@ public class PurchaseReceiptDetailDialog extends JDialog {
         for (PurchaseReceiptDetail d : details) {
             model.addRow(new Object[]{
                     d.getProductName(),
+                    emptyDash(d.getBatchCode()),
                     emptyDash(d.getLotNumber()),
                     d.getManufactureDate() != null ? d.getManufactureDate().format(DATE_FORMAT) : "-",
                     d.getExpiryDate() != null ? d.getExpiryDate().format(DATE_FORMAT) : "-",
@@ -299,13 +300,14 @@ public class PurchaseReceiptDetailDialog extends JDialog {
         table.setIntercellSpacing(new Dimension(0, 0));
 
         table.getColumnModel().getColumn(0).setPreferredWidth(200);
-        table.getColumnModel().getColumn(1).setPreferredWidth(100);
-        table.getColumnModel().getColumn(2).setPreferredWidth(90);
+        table.getColumnModel().getColumn(1).setPreferredWidth(110);
+        table.getColumnModel().getColumn(2).setPreferredWidth(100);
         table.getColumnModel().getColumn(3).setPreferredWidth(90);
-        table.getColumnModel().getColumn(4).setPreferredWidth(50);
-        table.getColumnModel().getColumn(4).setMaxWidth(70);
-        table.getColumnModel().getColumn(5).setPreferredWidth(100);
-        table.getColumnModel().getColumn(6).setPreferredWidth(110);
+        table.getColumnModel().getColumn(4).setPreferredWidth(90);
+        table.getColumnModel().getColumn(5).setPreferredWidth(50);
+        table.getColumnModel().getColumn(5).setMaxWidth(70);
+        table.getColumnModel().getColumn(6).setPreferredWidth(100);
+        table.getColumnModel().getColumn(7).setPreferredWidth(110);
 
         DefaultTableCellRenderer nameRenderer = new DefaultTableCellRenderer() {
             @Override
@@ -331,8 +333,22 @@ public class PurchaseReceiptDetailDialog extends JDialog {
                 return c;
             }
         };
-        table.getColumnModel().getColumn(1).setCellRenderer(lot);
         table.getColumnModel().getColumn(2).setCellRenderer(lot);
+
+        // Cột mã lô hệ thống (LOT_xxxxxx): in đậm, tô nhấn để nhân viên kho
+        // đối chiếu ngay với số lô NCC ở cột bên cạnh - không cần hỏi lại.
+        DefaultTableCellRenderer batchCodeRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                             boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setForeground(AppColor.ACCENT);
+                setFont(AppFont.SMALL_BOLD);
+                setBackground(AppColor.WHITE);
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(1).setCellRenderer(batchCodeRenderer);
 
         // Cột HSD: to màu cảnh báo nếu sắp hết hạn / đã hết hạn
         DefaultTableCellRenderer expiry = new DefaultTableCellRenderer() {
@@ -355,7 +371,7 @@ public class PurchaseReceiptDetailDialog extends JDialog {
                 return c;
             }
         };
-        table.getColumnModel().getColumn(3).setCellRenderer(expiry);
+        table.getColumnModel().getColumn(4).setCellRenderer(expiry);
 
         DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
             @Override
@@ -368,7 +384,7 @@ public class PurchaseReceiptDetailDialog extends JDialog {
                 return c;
             }
         };
-        table.getColumnModel().getColumn(4).setCellRenderer(center);
+        table.getColumnModel().getColumn(5).setCellRenderer(center);
 
         DefaultTableCellRenderer money = new DefaultTableCellRenderer() {
             @Override
@@ -377,14 +393,14 @@ public class PurchaseReceiptDetailDialog extends JDialog {
                 Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
                 setHorizontalAlignment(SwingConstants.RIGHT);
                 setBackground(AppColor.WHITE);
-                setForeground(column == 6 ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
-                setFont(column == 6 ? AppFont.BODY_BOLD : AppFont.BODY);
+                setForeground(column == 7 ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
+                setFont(column == 7 ? AppFont.BODY_BOLD : AppFont.BODY);
                 setBorder(new EmptyBorder(0, 4, 0, 12));
                 return c;
             }
         };
-        table.getColumnModel().getColumn(5).setCellRenderer(money);
         table.getColumnModel().getColumn(6).setCellRenderer(money);
+        table.getColumnModel().getColumn(7).setCellRenderer(money);
 
         return table;
     }

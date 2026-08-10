@@ -243,7 +243,7 @@ public class PurchaseReceiptFormDialog extends JDialog {
         gc.gridy = 1;
         gc.gridx = 0; gc.gridwidth = 1; gc.weightx = 1;
         gc.insets = new Insets(0, 0, 0, 10);
-        grid.add(fieldBlock("Số lô NCC", lotField), gc);
+        grid.add(fieldBlock("Số lô NCC *", lotField), gc);
         gc.gridx = 1;
         grid.add(fieldBlock("NSX", mfgPicker), gc);
         gc.gridx = 2;
@@ -421,6 +421,19 @@ public class PurchaseReceiptFormDialog extends JDialog {
             priceField.requestFocus();
             return;
         }
+        // Bat buoc nhap so lo NCC: he thong se tu sinh ma lo noi bo (LOT_xxxxxx)
+        // cho moi dong, nhung neu khong ghi lai so lo tren bao bi NCC ngay luc
+        // nhap thi ve sau khong the doi chieu duoc lo nao la lo nao ngoai thuc te
+        // (vd khi kho hoi "lo nay nam o dau" / doi tra hang / thu hoi lo loi).
+        String lot = blankToNull(lotField.getText());
+        if (lot == null) {
+            BaseDialog.error(this, "Thiếu số lô NCC",
+                    "Vui lòng ghi lại số lô in trên bao bì/phiếu giao của nhà cung cấp trước khi thêm dòng.\n"
+                            + "Hệ thống sẽ tự sinh mã lô nội bộ, nhưng cần số lô NCC để đối chiếu thực tế.");
+            lotField.requestFocus();
+            return;
+        }
+
         LocalDate mfg = mfgPicker.getValue();
         LocalDate exp = expPicker.getValue();
         if (mfg != null && exp != null && !exp.isAfter(mfg)) {
@@ -432,7 +445,7 @@ public class PurchaseReceiptFormDialog extends JDialog {
         row.product = product;
         row.quantity = qty;
         row.importPrice = price;
-        row.lotNumber = blankToNull(lotField.getText());
+        row.lotNumber = lot;
         row.manufactureDate = mfg;
         row.expiryDate = exp;
         tableModel.addRow(row);

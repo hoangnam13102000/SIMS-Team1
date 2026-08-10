@@ -566,6 +566,27 @@ public class BaseTable extends JPanel {
         return setColumnRenderer(columnIndex, StatusColumn.renderer(labelFn, colorFn, rowColorProvider));
     }
 
+    // ===== CUSTOM RENDERER (cho cac cot dac thu tung man hinh, vd thanh mini-progress ton kho) =====
+    /**
+     * Loi ra {@link #setColumnRenderer} (dang private, chi dung noi bo cho
+     * setBadgeColumn/setImageColumn/setAutoRowNumberColumn) de man hinh nao
+     * can 1 renderer rieng (khong nam trong 3 loai co san o tren) van gan
+     * duoc ma khong phai sua BaseTable - renderer se tu dong duoc khoi phuc
+     * dung khi co cot moi them vao sau (vd setActionColumn), giong het co
+     * che ap dung cho badge/image/STT.
+     *
+     * Vi du (cot "Ton kho" dang thanh progress bar, xem StockLevelColumn):
+     *   table.setCustomColumn(6, StockLevelColumn.renderer(table.rowColorProvider()));
+     */
+    public BaseTable setCustomColumn(int columnIndex, TableCellRenderer renderer) {
+        return setColumnRenderer(columnIndex, renderer);
+    }
+
+    /** RowColorProvider dung chung cua bang nay - truyen cho cac renderer ben ngoai package com.components.table. */
+    public RowColorProvider rowColorProvider() {
+        return rowColorProvider;
+    }
+
     // ===== ĐỘ RỘNG CỘT / CUỘN NGANG =====
  
     public BaseTable setColumnWidths(int... widths) {

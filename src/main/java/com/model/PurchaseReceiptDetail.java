@@ -19,6 +19,11 @@ public class PurchaseReceiptDetail {
     private LocalDate manufactureDate;
     private LocalDate expiryDate;
 
+    // Ma lo he thong (LOT_xxxxxx) duoc trigger trg_PurchaseReceiptDetails_Insert
+    // sinh ra tu dong sau khi INSERT dong nay - chi doc, khong ghi khi tao phieu.
+    // Dung de doi chieu voi lotNumber (so lo tren bao bi NCC) khi tra loi kho.
+    private String batchCode;
+
     public PurchaseReceiptDetail() {
     }
 
@@ -51,6 +56,9 @@ public class PurchaseReceiptDetail {
 
     public LocalDate getExpiryDate() { return expiryDate; }
     public void setExpiryDate(LocalDate expiryDate) { this.expiryDate = expiryDate; }
+
+    public String getBatchCode() { return batchCode; }
+    public void setBatchCode(String batchCode) { this.batchCode = batchCode; }
 
     public BigDecimal lineTotal() {
         if (importPrice == null) return BigDecimal.ZERO;

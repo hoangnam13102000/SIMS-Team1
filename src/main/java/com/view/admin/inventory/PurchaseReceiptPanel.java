@@ -1,7 +1,6 @@
 package com.view.admin.inventory;
 
 import com.components.crud.BaseCrudPanel;
-import com.components.table.AutoRowNumber;
 import com.dao.PurchaseReceiptDAO;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
@@ -27,15 +26,16 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final PurchaseReceiptDAO receiptDAO = new PurchaseReceiptDAO();
-    private AutoRowNumber stt;
 
     public PurchaseReceiptPanel() {
         super();
 
-        stt = table.setAutoRowNumberColumn(0);
-        table.setColumnWidths(45, 110, 160, 130, 130, 90, 130, 110);
-        table.setColumnMinWidths(35, 95, 130, 110, 110, 70, 110, 90);
-        table.setBadgeColumn(7, this::statusLabel, this::statusColor);
+        // Nha cung cap/Nguoi tao can nhieu cho hon de khong bi cat "...".
+        // Cot "So mat hang" truoc do qua hep khien header wrap 3 dong va bi
+        // cat mat chu cuoi - noi rong ra de header nam gon 1 dong.
+        table.setColumnWidths(140, 270, 190, 150, 110, 130, 110);
+        table.setColumnMinWidths(110, 200, 150, 130, 90, 110, 90);
+        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
 
         initialLoad();
     }
@@ -56,14 +56,15 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Mã phiếu", "Nhà cung cấp", "Người tạo", "Ngày tạo",
-                "Số mặt hàng", "Tổng tiền", "Trạng thái"};
+        // "Số SP" (ngan hon "Số mặt hàng") de header luon nam gon 1 dong du
+        // cot khong qua rong, tranh bi wrap 2-3 dong va cat mat chu.
+        return new String[]{"Mã phiếu", "Nhà cung cấp", "Người tạo", "Ngày tạo",
+                "Số SP", "Tổng tiền", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(PurchaseReceipt item) {
         return new Object[]{
-                "",
                 item.getReceiptCode(),
                 item.getSupplierName(),
                 item.getCreatedByName(),
@@ -75,7 +76,7 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{5, 6}; }
+    protected int[] numericColumns() { return new int[]{4, 5}; }
 
     @Override
     protected String getEntityLabel() { return "phiếu nhập kho"; }
@@ -87,7 +88,6 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<PurchaseReceipt> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
         table.getTable().repaint();
     }
 

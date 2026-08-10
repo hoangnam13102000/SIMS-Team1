@@ -8,7 +8,6 @@ import com.dao.InventoryBatchDAO;
 import com.model.Category;
 import com.model.InventoryBatch;
 import com.theme.AppColor;
-import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -43,9 +42,14 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     public InventoryBatchPanel() {
         super();
 
-        table.setColumnWidths(160, 150, 130, 90, 90, 70, 80, 110, 120);
-        table.setColumnMinWidths(140, 120, 100, 80, 80, 60, 70, 100, 100);
-        table.setBadgeColumn(8, this::statusLabel, this::statusColor);
+        // Giu lai cot can thiet de quet nhanh theo FEFO tren 1 man hinh, khong
+        // can cuon ngang: Ma lo, So lo NCC (doi chieu bao bi), San pham, HSD
+        // (uu tien FEFO), Con lai, Trang thai. Cac thong tin it dùng hang ngay
+        // (NSX, Nha cung cap, SL nhap ban dau, Gia nhap) xem trong dialog chi
+        // tiet (nut Xem) - da co du o InventoryBatchFormDialog VIEW mode.
+        table.setColumnWidths(150, 130, 220, 130, 90, 130);
+        table.setColumnMinWidths(120, 100, 160, 100, 70, 100);
+        table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
         buildFilterBar();
 
@@ -141,27 +145,26 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Mã lô", "Sản phẩm", "Nhà cung cấp",
-                "NSX", "HSD", "SL nhập", "Còn lại", "Giá nhập", "Trạng thái"};
+        // Chi giu cot can cho quyet dinh nhanh (xuat lo nao truoc theo FEFO,
+        // doi chieu so lo NCC). NSX/Nha cung cap/SL nhap/Gia nhap xem trong
+        // dialog chi tiet qua nut Xem (cot Thao tac).
+        return new String[]{"Mã lô", "Số lô NCC", "Sản phẩm", "HSD", "Còn lại", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(InventoryBatch item) {
         return new Object[]{
                 item.getBatchCode(),
+                item.getLotNumber() != null && !item.getLotNumber().isBlank() ? item.getLotNumber() : "—",
                 item.getProductName(),
-                item.getSupplierName(),
-                formatDate(item.getManufactureDate()),
                 formatDate(item.getExpiryDate()),
-                item.getQuantity(),
                 item.getRemainingQty(),
-                NumberUtil.formatThousands(item.getImportPrice().longValue()),
                 statusLabel(item)
         };
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{5, 6, 7}; }
+    protected int[] numericColumns() { return new int[]{4}; }
 
     @Override
     protected String getEntityLabel() { return "lô hàng"; }

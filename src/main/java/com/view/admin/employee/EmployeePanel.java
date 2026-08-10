@@ -4,7 +4,6 @@ import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
-import com.components.table.AutoRowNumber;
 import com.dao.EmployeeDAO;
 import com.model.Employee;
 import com.model.Role;
@@ -36,7 +35,6 @@ import javax.swing.BorderFactory;
 public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     private final EmployeeDAO employeeDAO = new EmployeeDAO();
-    private AutoRowNumber stt;
     private JComboBox<String> roleFilter;
     private Role selectedRole;
 
@@ -56,16 +54,15 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
                         this::toggleLockRow,
                         row -> canManage(row)));
 
-        stt = table.setAutoRowNumberColumn(0);
-        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
-        table.setBadgeColumn(7, this::lockLabel, this::lockColor);
+        table.setBadgeColumn(5, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(6, this::lockLabel, this::lockColor);
 
         // Preferred theo tỷ lệ; minWidth đủ cho badge "Đang hoạt động" / "Bình thường"
         // không bị clip. Không enableHorizontalScroll → cột co giãn theo khung,
         // không scrollbar ngang. Text dài (mã NV, email...) nếu vẫn tràn sẽ hiện
         // "..." + tooltip full khi hover (BaseTable striped renderer).
-        table.setColumnWidths(45, 110, 110, 110, 150, 120, 145, 115);
-        table.setColumnMinWidths(40, 85, 85, 90, 110, 95, 140, 110);
+        table.setColumnWidths(110, 110, 110, 150, 120, 145, 115);
+        table.setColumnMinWidths(85, 85, 90, 110, 95, 140, 110);
 
         setupRoleFilter();
         initialLoad();
@@ -89,13 +86,12 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Mã nhân viên", "Họ và tên", "Tên đăng nhập", "Email", "Vai trò", "Trạng thái", "Khóa"};
+        return new String[]{"Mã nhân viên", "Họ và tên", "Tên đăng nhập", "Email", "Vai trò", "Trạng thái", "Khóa"};
     }
 
     @Override
     protected Object[] mapRowToColumns(Employee item) {
         return new Object[]{
-                "",
                 item.getEmployeeId(),
                 item.getFullName(),
                 item.getUsername(),
@@ -111,8 +107,7 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<Employee> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
-        table.getTable().repaint();
+        // Không còn cột STT nên không cần cập nhật pageOffset nữa.
     }
 
     @Override
