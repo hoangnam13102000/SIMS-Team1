@@ -158,7 +158,7 @@ public class InvoiceDetailDialog extends JDialog {
                 BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(16, 16, 16, 16)));
         infoCard.setAlignmentX(Component.LEFT_ALIGNMENT);
-        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 360));
+        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 480));
 
         JPanel cardInner = new JPanel();
         cardInner.setOpaque(false);
@@ -176,6 +176,30 @@ public class InvoiceDetailDialog extends JDialog {
                 InvoicePanel.paymentMethodLabel(invoice.getPaymentMethod())));
         infoGrid.add(infoCell("Tạm tính",
                 NumberUtil.formatThousands(invoice.getSubTotal().longValue()) + " đ"));
+
+        // Ma khuyen mai + so tien giam (kiem soat dong tien)
+        String promoCode = invoice.getPromotionCode();
+        boolean hasPromo = promoCode != null && !promoCode.isBlank()
+                && invoice.getDiscountAmount() != null
+                && invoice.getDiscountAmount().signum() > 0;
+        infoGrid.add(infoCell("Mã khuyến mãi",
+                hasPromo ? promoCode : "— Không áp dụng"));
+        infoGrid.add(infoCell("Giảm giá (KM)",
+                hasPromo
+                        ? ("−" + NumberUtil.formatThousands(invoice.getDiscountAmount().longValue()) + " đ")
+                        : "0 đ"));
+
+        // Diem thanh vien dung de tru tien
+        int pointsUsed = invoice.getPointsUsed();
+        boolean hasPoints = pointsUsed > 0
+                && invoice.getPointsDiscountAmount() != null
+                && invoice.getPointsDiscountAmount().signum() > 0;
+        infoGrid.add(infoCell("Điểm đã dùng",
+                hasPoints
+                        ? (pointsUsed + " điểm (−"
+                        + NumberUtil.formatThousands(invoice.getPointsDiscountAmount().longValue()) + " đ)")
+                        : "— Không dùng điểm"));
+
         String vatLabel = "VAT";
         if (invoice.getVatRate() != null) {
             vatLabel = "VAT (" + invoice.getVatRate().stripTrailingZeros().toPlainString() + "%)";

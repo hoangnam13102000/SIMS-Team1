@@ -500,6 +500,21 @@ public class OrderHistoryPanel extends JPanel {
         body.add(divider());
         body.add(Box.createVerticalStrut(10));
 
+        // Tam tinh / KM / tong — de khach doi chieu so tien
+        body.add(infoLine("Tạm tính",
+                NumberUtil.formatThousands(order.getSubTotal() != null
+                        ? order.getSubTotal().longValue() : 0L) + " đ"));
+        String promoCode = order.getPromotionCode();
+        boolean hasPromo = promoCode != null && !promoCode.isBlank()
+                && order.getDiscountAmount() != null
+                && order.getDiscountAmount().signum() > 0;
+        body.add(infoLine("Mã khuyến mãi",
+                hasPromo ? promoCode : "— Không áp dụng"));
+        body.add(infoLine("Giảm giá (KM)",
+                hasPromo
+                        ? ("−" + NumberUtil.formatThousands(order.getDiscountAmount().longValue()) + " đ")
+                        : "0 đ"));
+
         JPanel totalRow = new JPanel(new BorderLayout());
         totalRow.setOpaque(false);
         totalRow.setAlignmentX(Component.LEFT_ALIGNMENT);

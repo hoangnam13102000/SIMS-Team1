@@ -157,7 +157,7 @@ public class OrderDetailDialog extends JDialog {
                 BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(16, 16, 16, 16)));
         infoCard.setAlignmentX(Component.LEFT_ALIGNMENT);
-        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 340));
+        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 420));
 
         JPanel cardInner = new JPanel();
         cardInner.setOpaque(false);
@@ -177,6 +177,19 @@ public class OrderDetailDialog extends JDialog {
                 OrderPanel.paymentStatusLabel(order.getPaymentStatus())));
         infoGrid.add(infoCell("Tạm tính",
                 NumberUtil.formatThousands(order.getSubTotal().longValue()) + " đ"));
+
+        // Ma khuyen mai + so tien giam (don online)
+        String promoCode = order.getPromotionCode();
+        boolean hasPromo = promoCode != null && !promoCode.isBlank()
+                && order.getDiscountAmount() != null
+                && order.getDiscountAmount().signum() > 0;
+        infoGrid.add(infoCell("Mã khuyến mãi",
+                hasPromo ? promoCode : "— Không áp dụng"));
+        infoGrid.add(infoCell("Giảm giá (KM)",
+                hasPromo
+                        ? ("−" + NumberUtil.formatThousands(order.getDiscountAmount().longValue()) + " đ")
+                        : "0 đ"));
+
         infoGrid.add(infoCellTotal("Tổng tiền đơn hàng",
                 NumberUtil.formatThousands(order.getTotalAmount().longValue()) + " đ"));
         cardInner.add(infoGrid);

@@ -665,9 +665,6 @@ public class PosPanel extends JPanel {
         if (editor instanceof JSpinner.DefaultEditor de) {
             de.getTextField().setColumns(6);
         }
-        for (var cl : pointsSpinner.getChangeListeners()) {
-            pointsSpinner.removeChangeListener(cl);
-        }
         pointsSpinner.addChangeListener(e -> {
             if (!usePointsCheck.isSelected()) return;
             int v = ((Number) pointsSpinner.getValue()).intValue();
