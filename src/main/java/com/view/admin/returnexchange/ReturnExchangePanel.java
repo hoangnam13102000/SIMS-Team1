@@ -26,8 +26,7 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
         super();
 
         table.setBadgeColumn(1, this::typeLabel, this::typeColor);
-        table.setBadgeColumn(4, this::approvalLabel, this::approvalColor);
-        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
         initialLoad();
         applyColumnWidths();
@@ -40,9 +39,9 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
      */
     private void applyColumnWidths() {
         // preferred: Mã HĐ rộng; Lý do / Người tạo linh hoạt
-        table.setColumnWidths(190, 95, 200, 100, 90, 130, 115);
+        table.setColumnWidths(190, 95, 200, 100, 130, 115);
         // min: Mã HĐ không dưới 185; các cột còn lại cho phép co mạnh
-        table.setColumnMinWidths(185, 75, 80, 80, 70, 80, 95);
+        table.setColumnMinWidths(185, 75, 80, 80, 80, 95);
         if (table.getTable().getColumnModel().getColumnCount() > 0) {
             var col = table.getTable().getColumnModel().getColumn(0);
             col.setMinWidth(185);
@@ -69,7 +68,7 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
         return new String[]{
                 Lang.get("returnExchange.col.invoiceCode"),
                 Lang.get("returnExchange.col.type"), Lang.get("returnExchange.col.reason"),
-                Lang.get("returnExchange.col.value"), Lang.get("returnExchange.col.requiresApproval"),
+                Lang.get("returnExchange.col.value"),
                 Lang.get("returnExchange.col.createdBy"),
                 Lang.get("returnExchange.col.status")
         };
@@ -82,7 +81,6 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
                 item.getType(),
                 item.getReason(),
                 NumberUtil.formatThousands(item.getTotalValue() != null ? item.getTotalValue().longValue() : 0),
-                item.isRequiresApproval() ? Lang.get("returnExchange.bool.yes") : Lang.get("returnExchange.bool.no"),
                 item.getCreatedByName() != null ? item.getCreatedByName() : "-",
                 item.getStatus()
         };
@@ -168,14 +166,6 @@ public class ReturnExchangePanel extends BaseCrudPanel<ReturnExchange> {
 
     private Color typeColor(Object value) {
         return ReturnExchange.TYPE_EXCHANGE.equalsIgnoreCase(String.valueOf(value)) ? AppColor.ACCENT : AppColor.INFO;
-    }
-
-    private String approvalLabel(Object value) {
-        return String.valueOf(value);
-    }
-
-    private Color approvalColor(Object value) {
-        return Lang.get("returnExchange.bool.yes").equals(String.valueOf(value)) ? AppColor.WARNING : AppColor.TEXT_MUTED;
     }
 
     private String statusLabel(Object value) {
