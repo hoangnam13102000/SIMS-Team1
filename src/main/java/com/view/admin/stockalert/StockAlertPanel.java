@@ -1,5 +1,6 @@
 package com.view.admin.stockalert;
 
+import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.table.ActionColumn;
@@ -8,10 +9,17 @@ import com.model.StockAlert;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -37,6 +45,51 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
         table.setBadgeColumn(2, this::alertTypeLabel, this::alertTypeColor);
         table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
+        // Cột "Mã SP" (index 0): thêm icon copy
+        table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã sản phẩm: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã SP
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 0 && viewRow >= 0) { // Cột Mã SP
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 0);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(StockAlertPanel.this, "Copy thành công", "Đã copy mã sản phẩm: " + text);
+                    }
+                }
+            }
+        });
+
         initialLoad();
         applyColumnWidths();
 
@@ -52,15 +105,12 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.EXCLAMATION_TRIANGLE; }
-
     @Override
     protected String getPageTitle() { return "Cảnh báo tồn kho"; }
-
     @Override
     protected String getPageSubtitle() {
         return "Các báo cáo hết/sắp hết hàng từ nhân viên bán hàng - lên kế hoạch nhập hàng bổ sung";
     }
-
     @Override
     protected String getAddButtonLabel() { return null; }
 
@@ -110,13 +160,10 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
 
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo tên sản phẩm, mã SP..."; }
-
     @Override
     protected boolean supportsEdit() { return false; }
-
     @Override
     protected boolean supportsDelete() { return false; }
-
     @Override
     protected boolean supportsView() { return false; }
 
@@ -149,7 +196,6 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 "Đánh dấu \"" + item.getProductName() + "\" đã được lên kế hoạch nhập hàng bổ sung?",
                 "Xác nhận", AppColor.ACCENT, AppColor.ACCENT, FontAwesomeSolid.CALENDAR_PLUS);
         if (!confirmed) return;
-
         if (stockAlertDAO.markPlanned(item.getAlertId())) {
             BaseDialog.success(this, "Thành công",
                     "Đã đánh dấu \"" + item.getProductName() + "\" đang được lên kế hoạch nhập bổ sung.");
@@ -167,7 +213,6 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 "Xác nhận \"" + item.getProductName() + "\" đã được nhập hàng bổ sung / không còn cần xử lý?",
                 "Xác nhận", AppColor.SUCCESS, AppColor.SUCCESS, FontAwesomeSolid.CHECK_CIRCLE);
         if (!confirmed) return;
-
         int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
         if (stockAlertDAO.resolve(item.getAlertId(), currentUserId)) {
             BaseDialog.success(this, "Thành công", "Đã xử lý xong \"" + item.getProductName() + "\".");
@@ -200,5 +245,20 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
         if ("RESOLVED".equals(v)) return AppColor.SUCCESS;
         if ("PLANNED".equals(v)) return AppColor.INFO;
         return AppColor.WARNING; // NEW
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã sản phẩm vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
+        }
     }
 }

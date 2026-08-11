@@ -1,5 +1,6 @@
 package com.view.admin.order;
 
+import com.components.AppAlert;
 import com.components.DatePickerField;
 import com.components.crud.BaseCrudPanel;
 import com.dao.OrderDAO;
@@ -11,6 +12,11 @@ import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Font;
@@ -50,8 +56,52 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         table.setBadgeColumn(5, this::statusLabel, this::paymentStatusColor);
         table.setBadgeColumn(6, this::statusLabel, this::orderStatusColor);
 
-        buildDateFilterBar();
+        // Cột "Mã đơn" (index 0): thêm icon copy
+        table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã đơn hàng: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã đơn hàng
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 0 && viewRow >= 0) { // Cột Mã đơn
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 0);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(OrderPanel.this, "Copy thành công", "Đã copy mã đơn hàng: " + text);
+                    }
+                }
+            }
+        });
 
+        buildDateFilterBar();
         initialLoad();
         applyColumnWidths();
     }
@@ -310,6 +360,19 @@ public class OrderPanel extends BaseCrudPanel<Order> {
             case "COMPLETED": return "Hoàn thành";
             case "CANCELLED": return "Đã hủy";
             default: return status;
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã đơn hàng vào clipboard
+    // ---------------------------------------------------------------
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
         }
     }
 }

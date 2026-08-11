@@ -284,13 +284,23 @@ public class RevenueReportPanel extends JPanel {
             BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu để xuất trong khoảng thời gian đang chọn.");
             return;
         }
-        String[] headers = new String[]{"Ngày", "Số hóa đơn", "Thu (doanh thu)", "Chi - giá vốn",
-                "Chi - thiệt hại", "Tổng chi", "Lợi nhuận ròng"};
+        String[] headers = new String[]{
+                "Ngày", "Số hóa đơn", "Thu (doanh thu)",
+                "Chi - giá vốn", "Chi - thiệt hại", "Hoàn trả NCC",
+                "Tổng chi", "Lợi nhuận ròng"
+        };
         List<Object[]> rows = new ArrayList<>();
         for (DailyFinancePoint p : daily) {
-            rows.add(new Object[]{p.date.format(FILE_DATE_FORMAT), p.invoiceCount,
-                    p.revenue.longValue(), p.cost.longValue(), p.disposalLoss.longValue(),
-                    p.totalExpense().longValue(), p.netProfit().longValue()});
+            rows.add(new Object[]{
+                    p.date.format(FILE_DATE_FORMAT),
+                    p.invoiceCount,
+                    p.revenue.longValue(),
+                    p.cost.longValue(),
+                    p.disposalLoss.longValue(),
+                    p.supplierRefund.longValue(),
+                    p.totalExpense().longValue(),
+                    p.netProfit().longValue()
+            });
         }
 
         String defaultName = "bao_cao_doanh_thu_loi_nhuan_" + timestamp() + "." + format;

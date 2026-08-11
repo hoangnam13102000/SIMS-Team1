@@ -1,5 +1,6 @@
 package com.view.admin.employee;
 
+import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
@@ -10,12 +11,16 @@ import com.model.Role;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
-import java.awt.Color;
-import java.awt.Frame;
-import java.awt.Window;
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.Dimension;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -64,6 +69,51 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         table.setColumnWidths(110, 110, 110, 150, 120, 145, 115);
         table.setColumnMinWidths(85, 85, 90, 110, 95, 140, 110);
 
+        // Cột "Mã nhân viên" (index 0): thêm icon copy
+        table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã nhân viên: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã nhân viên
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 0 && viewRow >= 0) { // Cột Mã nhân viên
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 0);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(EmployeePanel.this, "Copy thành công", "Đã copy mã nhân viên: " + text);
+                    }
+                }
+            }
+        });
+
         setupRoleFilter();
         initialLoad();
     }
@@ -74,13 +124,10 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.USER_TIE; }
-
     @Override
     protected String getPageTitle() { return "Quản lý nhân viên"; }
-
     @Override
     protected String getPageSubtitle() { return "Quản lý hồ sơ nhân viên trong hệ thống (không bao gồm khách hàng)"; }
-
     @Override
     protected String getAddButtonLabel() { return "Thêm nhân viên"; }
 
@@ -144,7 +191,6 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     /** Không hỗ trợ xóa cứng - dùng "Vô hiệu hóa" trong form Sửa thay thế, giống UserAccountPanel/CustomerPanel. */
     @Override
     protected boolean supportsDelete() { return false; }
-
     @Override
     protected boolean deleteItem(Employee item) { return false; }
 
@@ -160,7 +206,6 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         roleFilter.setFocusable(false);
         roleFilter.setToolTipText("Lọc danh sách theo vai trò");
         roleFilter.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
-
         roleFilter.addActionListener(e -> {
             selectedRole = roleFromFilterIndex(roleFilter.getSelectedIndex());
             applyFilters();
@@ -225,14 +270,17 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         if (fullName.isEmpty()) {
             return com.importer.ImportRowResult.failure("thiếu họ và tên.");
         }
+
         String emailError = com.validation.Rules.required("Thiếu email.").validate(email);
         if (emailError == null) emailError = com.validation.Rules.email("Email không đúng định dạng.").validate(email);
         if (emailError != null) {
             return com.importer.ImportRowResult.failure(emailError);
         }
+
         if (employeeDAO.emailExistsExcluding(email.trim(), -1)) {
             return com.importer.ImportRowResult.failure("email \"" + email + "\" đã được dùng.");
         }
+
         if (!phone.isEmpty()) {
             String phoneError = com.validation.Rules.phoneVn("Số điện thoại không đúng định dạng (vd 09xxxxxxxx).").validate(phone);
             if (phoneError != null) {
@@ -297,6 +345,7 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         if (!result.success) {
             return com.importer.ImportRowResult.failure("lưu thất bại (email có thể đã được dùng).");
         }
+
         com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_CREATE,
                 "Đã nhập nhân viên \"" + fullName + "\" từ file", employee, null);
         return com.importer.ImportRowResult.success();
@@ -432,12 +481,10 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     private void lockRow(int modelRow) {
         Employee item = rowToItem(modelRow);
         if (item == null) return;
-
         boolean confirmed = BaseDialog.confirm(this, "Khóa tài khoản",
                 "Khóa tài khoản \"" + getItemDisplayName(item) + "\"? Nhân viên này sẽ không thể đăng nhập cho tới khi được mở khóa lại.",
                 "Khóa tài khoản", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.LOCK);
         if (!confirmed) return;
-
         if (employeeDAO.setLocked(item.getUserId(), true)) {
             com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
                     "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\"");
@@ -451,7 +498,6 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     private void unlockRow(int modelRow) {
         Employee item = rowToItem(modelRow);
         if (item == null) return;
-
         if (employeeDAO.setLocked(item.getUserId(), false)) {
             com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
                     "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\"");
@@ -491,5 +537,20 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     private Color lockColor(Object value) {
         return "LOCKED".equals(value) ? AppColor.ERROR : AppColor.TEXT_MUTED;
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã nhân viên vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
+        }
     }
 }

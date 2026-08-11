@@ -1,5 +1,6 @@
 package com.view.admin.inventory;
 
+import com.components.AppAlert;
 import com.components.crud.BaseCrudPanel;
 import com.dao.PurchaseReceiptDAO;
 import com.model.permission.AppPermission;
@@ -8,22 +9,25 @@ import com.model.PurchaseReceipt;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
-import java.awt.Color;
-import java.awt.Frame;
-import java.awt.Window;
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
-
 public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
-    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final PurchaseReceiptDAO receiptDAO = new PurchaseReceiptDAO();
 
@@ -37,18 +41,60 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
         table.setColumnMinWidths(110, 200, 150, 130, 90, 110, 90);
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
 
+        // Cột "Mã phiếu" (index 0): thêm icon copy
+        table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã phiếu nhập: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã phiếu nhập
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 0 && viewRow >= 0) { // Cột Mã phiếu
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 0);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(PurchaseReceiptPanel.this, "Copy thành công", "Đã copy mã phiếu nhập: " + text);
+                    }
+                }
+            }
+        });
+
         initialLoad();
     }
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.FILE_INVOICE; }
-
     @Override
     protected String getPageTitle() { return "Quản lý nhập kho"; }
-
     @Override
     protected String getPageSubtitle() { return "Lập phiếu nhập nhiều sản phẩm và tra cứu lịch sử theo nhà cung cấp"; }
-
     @Override
     protected String getAddButtonLabel() {
         return AuthService.getInstance().can(AppPermission.STOCK_IMPORT) ? "Lập phiếu nhập" : null;
@@ -128,10 +174,8 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
     @Override
     protected boolean supportsEdit() { return false; }
-
     @Override
     protected boolean supportsDelete() { return false; }
-
     @Override
     protected boolean supportsView() { return true; }
 
@@ -176,5 +220,20 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
     private Color statusColor(Object value) {
         return "Đã hủy".equals(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã phiếu nhập vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
+        }
     }
 }

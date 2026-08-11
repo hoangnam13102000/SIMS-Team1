@@ -1,7 +1,7 @@
 package com.view.admin.inventory;
 
+import com.components.AppAlert;
 import com.components.crud.BaseCrudPanel;
-import com.components.table.AutoRowNumber;
 import com.dao.StockDisposalDAO;
 import com.model.StockDisposal;
 import com.model.permission.AppPermission;
@@ -9,12 +9,19 @@ import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -26,32 +33,74 @@ import javax.swing.SwingUtilities;
  */
 public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
 
-    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final StockDisposalDAO disposalDAO = new StockDisposalDAO();
-    private AutoRowNumber stt;
 
     public StockDisposalPanel() {
         super();
-        stt = table.setAutoRowNumberColumn(0);
-        // STT | Ma phieu | Ly do | So dong | Ton that | Nguoi lap | Ngay | Trang thai
-        table.setColumnWidths(45, 110, 120, 80, 120, 130, 130, 100);
-        table.setColumnMinWidths(35, 90, 100, 60, 100, 100, 110, 80);
-        table.setBadgeColumn(7, this::statusLabel, this::statusColor);
+
+        // Mã phiếu | Lý do | Số dòng | Tổn thất | Người lập | Ngày lập | Trạng thái
+        table.setColumnWidths(110, 120, 80, 120, 130, 130, 100);
+        table.setColumnMinWidths(90, 100, 60, 100, 100, 110, 80);
+        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
+
+        // Cột "Mã phiếu" (index 0): thêm icon copy
+        table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã phiếu tiêu hủy: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã phiếu tiêu hủy
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 0 && viewRow >= 0) { // Cột Mã phiếu
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 0);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(StockDisposalPanel.this, "Copy thành công", "Đã copy mã phiếu tiêu hủy: " + text);
+                    }
+                }
+            }
+        });
+
         initialLoad();
     }
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.TRASH; }
-
     @Override
     protected String getPageTitle() { return "Tiêu hủy hàng"; }
-
     @Override
     protected String getPageSubtitle() {
         return "Lập phiếu tiêu hủy theo lô, ghi nhận tổn thất tài chính (giá nhập × SL)";
     }
-
     @Override
     protected String getAddButtonLabel() {
         return AuthService.getInstance().can(AppPermission.STOCK_DISPOSE) ? "Lập phiếu tiêu hủy" : null;
@@ -59,13 +108,12 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Mã phiếu", "Lý do", "Số dòng", "Tổn thất", "Người lập", "Ngày lập", "Trạng thái"};
+        return new String[]{"Mã phiếu", "Lý do", "Số dòng", "Tổn thất", "Người lập", "Ngày lập", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(StockDisposal item) {
         return new Object[]{
-                "",
                 item.getDisposalCode(),
                 item.getReasonLabel(),
                 item.getItemCount(),
@@ -77,7 +125,7 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{3, 4}; }
+    protected int[] numericColumns() { return new int[]{2, 3}; }
 
     @Override
     protected String getEntityLabel() { return "phiếu tiêu hủy"; }
@@ -89,7 +137,6 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
 
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<StockDisposal> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
         table.getTable().repaint();
     }
 
@@ -126,10 +173,8 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
 
     @Override
     protected boolean supportsEdit() { return false; }
-
     @Override
     protected boolean supportsDelete() { return false; }
-
     @Override
     protected boolean supportsView() { return true; }
 
@@ -167,5 +212,20 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
 
     private Color statusColor(Object value) {
         return "Đã hủy".equals(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã phiếu tiêu hủy vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
+        }
     }
 }

@@ -4,12 +4,10 @@ import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
-import com.components.table.AutoRowNumber;
 import com.dao.CategoryDAO;
 import com.model.Category;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import java.awt.Color;
@@ -22,11 +20,9 @@ import java.util.List;
 import java.util.Map;
 import javax.swing.SwingUtilities;
 
-
 public class CategoryPanel extends BaseCrudPanel<Category> {
 
     private final CategoryDAO categoryDAO = new CategoryDAO();
-    private AutoRowNumber stt;
 
     /**
      * So san pham (moi trang thai) cua tung danh muc dang hien tren TRANG
@@ -58,11 +54,10 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
                         this::handleDeleteOrToggle,
                         null));
 
-        stt = table.setAutoRowNumberColumn(0);
-        table.setBadgeColumn(3, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(1, this::statusLabel, this::statusColor);
 
-        table.setColumnWidths(60, 90, 260, 150);
-        table.setColumnMinWidths(55, 70, 180, 120);
+        table.setColumnWidths(350, 150);
+        table.setColumnMinWidths(200, 120);
 
         initialLoad();
     }
@@ -85,14 +80,12 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Mã DM", "Tên danh mục", "Trạng thái"};
+        return new String[]{"Tên danh mục", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(Category item) {
         return new Object[]{
-                "",
-                item.getCategoryId(),
                 item.getCategoryName(),
                 item.getStatus()
         };
@@ -103,7 +96,6 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
 
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<Category> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
         table.getTable().repaint();
     }
 
@@ -259,7 +251,6 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
         }
         Category item = rowToItem(modelRow);
         if (item == null) return;
-
         if (item.isActive()) {
             disableCategory(item);
         } else {
@@ -270,10 +261,8 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
     private void deleteCategoryRow(int modelRow) {
         Category item = rowToItem(modelRow);
         if (item == null) return;
-
         boolean confirmed = BaseDialog.confirmDelete(this, getEntityLabel(), getItemDisplayName(item));
         if (!confirmed) return;
-
         if (deleteItem(item)) {
             com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_DELETE,
                     "Đã xóa " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\"", item, null);
@@ -291,7 +280,6 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
                         + "và TẤT CẢ sản phẩm thuộc danh mục này sẽ không thể bán được (kể cả tại quầy POS) cho đến khi kích hoạt lại.",
                 "Vô hiệu hóa", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.TOGGLE_OFF);
         if (!confirmed) return;
-
         item.setStatus("DISABLED");
         if (categoryDAO.updateCategory(item)) {
             com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,

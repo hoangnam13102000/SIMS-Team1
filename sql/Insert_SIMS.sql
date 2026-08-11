@@ -73,10 +73,10 @@ GO
 -- ---- 4. Users ----
 -- Da them cot AvatarUrl (anh dai dien, co the NULL neu chua upload).
 INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, RoleID) VALUES
-('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Nguyễn Văn Admin',  'admin@connectmart.vn',   '0900000001', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
-('salesmgr', '$2a$10$examplehash.salesmgr.000000000000000000000000000', N'Trần Thị Bích',     'bich.sm@connectmart.vn', '0900000002', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_MANAGER')),
-('invmgr',   '$2a$10$examplehash.invmgr.0000000000000000000000000000',  N'Lê Văn Kho',        'kho.im@connectmart.vn',  '0900000003', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='INVENTORY_MANAGER')),
-('staff01',  '$2a$10$examplehash.staff01.000000000000000000000000000', N'Phạm Thị Ngân',     'ngan.staff@connectmart.vn', '0900000004', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),
+('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Hoàng Trung Nam',  'nam@connectmart.vn',   '0900000001', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
+('salesmgr', '$2a$10$examplehash.salesmgr.000000000000000000000000000', N'Hà Minh Tuấn',     'tuan.sm@connectmart.vn', '0900000002', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_MANAGER')),
+('invmgr',   '$2a$10$examplehash.invmgr.0000000000000000000000000000',  N'Trần Tài Phương',        'phuongkho.im@connectmart.vn',  '0900000003', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='INVENTORY_MANAGER')),
+('staff01',  '$2a$10$examplehash.staff01.000000000000000000000000000', N'Lê Hoa Trường Vũ',     'vu.staff@connectmart.vn', '0900000004', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),
 ('staff02',  '$2a$10$examplehash.staff02.000000000000000000000000000', N'Hoàng Văn Sơn',     'son.staff@connectmart.vn', '0900000005', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),
 -- Tai khoan khach hang (Role = CUSTOMER) - can co truoc vi Customers gio ke thua Users
 ('lan.nguyen',  '$2a$10$examplehash.customer1.00000000000000000000000', N'Nguyễn Thị Lan',  'lan.nguyen@gmail.com', '0912345678', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER')),

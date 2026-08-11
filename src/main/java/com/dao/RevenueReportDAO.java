@@ -20,9 +20,9 @@ import java.util.Map;
 
 /**
  * DAO riêng cho trang "Báo cáo doanh thu".
- * Chỉ tính trên hóa đơn Status = 'ACTIVE'.
- * Đã trừ hàng trả (ReturnExchange APPROVED, Direction = 'IN') để
- * doanh thu / giá vốn / lợi nhuận phản ánh đúng sau khi trả hàng.
+ * - Chỉ tính hóa đơn Status = 'ACTIVE'.
+ * - Trừ hàng khách trả (ReturnExchange APPROVED, Direction = 'IN').
+ * - Trừ tiền hoàn trả NCC (SupplierReturns COMPLETED) khỏi Chi / cộng vào lãi ròng.
  */
 public class RevenueReportDAO {
 
@@ -31,7 +31,7 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
-    // DTO kết quả
+    // DTO
     // ---------------------------------------------------------------
 
     public static class Summary {
@@ -50,7 +50,6 @@ public class RevenueReportDAO {
             return totalRevenue.divide(BigDecimal.valueOf(invoiceCount), 0, java.math.RoundingMode.HALF_UP);
         }
 
-        /** % tăng/giảm so với 1 Summary khác (thường là kỳ trước). Null nếu kỳ trước = 0. */
         public Double growthPercent(Summary previous) {
             if (previous == null || previous.totalRevenue.signum() == 0) return null;
             return totalRevenue.subtract(previous.totalRevenue)
@@ -73,32 +72,33 @@ public class RevenueReportDAO {
     }
 
     /**
-     * 1 điểm dữ liệu "Thu / Chi / Lợi nhuận ròng" theo ngày.
-     * "Thu" = doanh thu bán hàng (đã trừ trả hàng).
-     * "Chi" = giá vốn hàng bán (đã trừ trả hàng) + thiệt hại hàng hủy.
+     * Thu / Chi / Lợi nhuận ròng theo ngày.
+     * Chi = giá vốn + thiệt hại hủy - hoàn trả NCC.
      */
     public static class DailyFinancePoint {
         public final LocalDate date;
         public final BigDecimal revenue;
         public final BigDecimal cost;
         public final BigDecimal disposalLoss;
+        /** Tiền hoàn từ phiếu trả NCC (COMPLETED) trong ngày. */
+        public final BigDecimal supplierRefund;
         public final int invoiceCount;
 
         public DailyFinancePoint(LocalDate date, BigDecimal revenue, BigDecimal cost,
-                                  BigDecimal disposalLoss, int invoiceCount) {
+                                  BigDecimal disposalLoss, BigDecimal supplierRefund, int invoiceCount) {
             this.date = date;
             this.revenue = revenue != null ? revenue : BigDecimal.ZERO;
             this.cost = cost != null ? cost : BigDecimal.ZERO;
             this.disposalLoss = disposalLoss != null ? disposalLoss : BigDecimal.ZERO;
+            this.supplierRefund = supplierRefund != null ? supplierRefund : BigDecimal.ZERO;
             this.invoiceCount = invoiceCount;
         }
 
-        /** Tổng "Chi" = giá vốn + thiệt hại. */
+        /** Chi = giá vốn + thiệt hại - hoàn trả NCC */
         public BigDecimal totalExpense() {
-            return cost.add(disposalLoss);
+            return cost.add(disposalLoss).subtract(supplierRefund);
         }
 
-        /** Lợi nhuận ròng của ngày = Thu - Chi. */
         public BigDecimal netProfit() {
             return revenue.subtract(totalExpense());
         }
@@ -131,26 +131,31 @@ public class RevenueReportDAO {
     public static class ProfitSummary {
         public final BigDecimal totalRevenue;
         public final BigDecimal totalCost;
-        /** Tổng thiệt hại hàng hủy (StockDisposals.TotalLossAmount) trong kỳ. */
         public final BigDecimal totalLoss;
-        /** Lợi nhuận gộp = Revenue - Cost (chưa trừ thiệt hại). */
+        /** Tổng tiền hoàn trả NCC trong kỳ. */
+        public final BigDecimal totalSupplierRefund;
         public final BigDecimal totalProfit;
-        /** Lợi nhuận ròng = Revenue - Cost - Loss. */
         public final BigDecimal netProfit;
 
         public ProfitSummary(BigDecimal totalRevenue, BigDecimal totalCost) {
-            this(totalRevenue, totalCost, BigDecimal.ZERO);
+            this(totalRevenue, totalCost, BigDecimal.ZERO, BigDecimal.ZERO);
         }
 
         public ProfitSummary(BigDecimal totalRevenue, BigDecimal totalCost, BigDecimal totalLoss) {
+            this(totalRevenue, totalCost, totalLoss, BigDecimal.ZERO);
+        }
+
+        public ProfitSummary(BigDecimal totalRevenue, BigDecimal totalCost,
+                             BigDecimal totalLoss, BigDecimal totalSupplierRefund) {
             this.totalRevenue = totalRevenue != null ? totalRevenue : BigDecimal.ZERO;
             this.totalCost = totalCost != null ? totalCost : BigDecimal.ZERO;
             this.totalLoss = totalLoss != null ? totalLoss : BigDecimal.ZERO;
+            this.totalSupplierRefund = totalSupplierRefund != null ? totalSupplierRefund : BigDecimal.ZERO;
             this.totalProfit = this.totalRevenue.subtract(this.totalCost);
-            this.netProfit = this.totalProfit.subtract(this.totalLoss);
+            // Lãi ròng = DT - giá vốn - hủy + hoàn trả NCC
+            this.netProfit = this.totalProfit.subtract(this.totalLoss).add(this.totalSupplierRefund);
         }
 
-        /** Biên lợi nhuận ròng (%) = Lợi nhuận ròng / Doanh thu * 100. Null nếu doanh thu = 0. */
         public Double netMarginPercent() {
             if (totalRevenue.signum() == 0) return null;
             return netProfit.divide(totalRevenue, 4, java.math.RoundingMode.HALF_UP)
@@ -158,7 +163,6 @@ public class RevenueReportDAO {
                     .doubleValue();
         }
 
-        /** Biên lợi nhuận (%) = Lợi nhuận / Doanh thu * 100. Null nếu doanh thu = 0. */
         public Double marginPercent() {
             if (totalRevenue.signum() == 0) return null;
             return totalProfit.divide(totalRevenue, 4, java.math.RoundingMode.HALF_UP)
@@ -211,7 +215,6 @@ public class RevenueReportDAO {
         }
     }
 
-    /** 1 đường (danh mục) trên biểu đồ: số liệu đã can chỉnh đủ cho MỌI tháng trong khoảng lọc. */
     public static class CategorySeries {
         public final String categoryName;
         public final List<Long> quantityByMonth;
@@ -227,7 +230,6 @@ public class RevenueReportDAO {
         }
     }
 
-    /** Kết quả đã PIVOT: trục tháng (đầy đủ) + danh sách đường theo danh mục. */
     public static class MonthlyCategoryTrend {
         public final List<YearMonth> months;
         public final List<CategorySeries> series;
@@ -239,7 +241,7 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
-    // Subquery dùng chung để trừ hàng trả đã duyệt
+    // JOIN trừ hàng khách trả (APPROVED, Direction = IN)
     // ---------------------------------------------------------------
     private static final String RETURN_JOIN =
             "LEFT JOIN ( "
@@ -256,13 +258,10 @@ public class RevenueReportDAO {
     // Truy vấn
     // ---------------------------------------------------------------
 
-    /** Tổng quan (doanh thu, số hóa đơn, số mặt hàng đã bán net) trong [from, to]. */
     public Summary getSummary(LocalDate from, LocalDate to) {
-        // TotalAmount đã được trigger giảm khi trả hàng → dùng luôn
         String invoiceSql = "SELECT ISNULL(SUM(TotalAmount), 0) AS Revenue, COUNT(*) AS Cnt "
                 + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ?";
 
-        // Số lượng bán net = Quantity - ReturnedQty
         String itemsSql = "SELECT ISNULL(SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)), 0) "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
@@ -298,10 +297,6 @@ public class RevenueReportDAO {
         return new Summary(revenue, invoiceCount, itemsSold);
     }
 
-    /**
-     * Doanh thu từng ngày trong [from, to].
-     * Dùng TotalAmount (đã được trigger điều chỉnh khi trả hàng).
-     */
     public List<DailyPoint> getDailyRevenue(LocalDate from, LocalDate to) {
         String sql = "SELECT CAST(CreatedAt AS DATE) AS Day, SUM(TotalAmount) AS Revenue, COUNT(*) AS Cnt "
                 + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -330,7 +325,6 @@ public class RevenueReportDAO {
         return result;
     }
 
-    /** Doanh thu nhóm theo phương thức thanh toán. */
     public List<PaymentSlice> getRevenueByPaymentMethod(LocalDate from, LocalDate to) {
         String sql = "SELECT PaymentMethod, SUM(TotalAmount) AS Revenue, COUNT(*) AS Cnt "
                 + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -343,7 +337,8 @@ public class RevenueReportDAO {
             ps.setDate(2, Date.valueOf(to));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    list.add(new PaymentSlice(rs.getString("PaymentMethod"), rs.getBigDecimal("Revenue"), rs.getInt("Cnt")));
+                    list.add(new PaymentSlice(rs.getString("PaymentMethod"),
+                            rs.getBigDecimal("Revenue"), rs.getInt("Cnt")));
                 }
             }
         } catch (SQLException e) {
@@ -353,7 +348,6 @@ public class RevenueReportDAO {
         return list;
     }
 
-    /** Top sản phẩm bán chạy (đã trừ số lượng trả). */
     public List<TopProduct> getTopProducts(LocalDate from, LocalDate to, int limit) {
         String sql = "SELECT TOP (?) p.ProductName, "
                 + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
@@ -375,7 +369,8 @@ public class RevenueReportDAO {
             ps.setDate(3, Date.valueOf(to));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    list.add(new TopProduct(rs.getString("ProductName"), rs.getLong("Qty"), rs.getBigDecimal("Revenue")));
+                    list.add(new TopProduct(rs.getString("ProductName"),
+                            rs.getLong("Qty"), rs.getBigDecimal("Revenue")));
                 }
             }
         } catch (SQLException e) {
@@ -389,7 +384,6 @@ public class RevenueReportDAO {
     // Báo cáo lợi nhuận
     // ---------------------------------------------------------------
 
-    /** Tổng doanh thu, giá vốn, lợi nhuận (đã trừ hàng trả). */
     public ProfitSummary getProfitSummary(LocalDate from, LocalDate to) {
         String sql = "SELECT "
                 + "ISNULL(SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)), 0) AS Revenue, "
@@ -416,14 +410,33 @@ public class RevenueReportDAO {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "RevenueReportDAO.getProfitSummary - from=" + from + " to=" + to, e);
         }
+
         BigDecimal loss = new StockDisposalDAO().sumLossBetween(from, to);
-        return new ProfitSummary(revenue, cost, loss);
+        BigDecimal supplierRefund = sumSupplierRefundBetween(from, to);
+        return new ProfitSummary(revenue, cost, loss, supplierRefund);
     }
 
-    /**
-     * "Thu / Chi / Lợi nhuận ròng" từng ngày – dùng cho biểu đồ cột.
-     * ĐÃ TRỪ hàng trả nên cột Doanh thu và Chi sẽ thay đổi khi có trả hàng.
-     */
+    /** Tổng tiền hoàn trả NCC (phiếu COMPLETED) trong [from, to]. */
+    public BigDecimal sumSupplierRefundBetween(LocalDate from, LocalDate to) {
+        String sql = "SELECT ISNULL(SUM(TotalRefundAmount), 0) FROM SupplierReturns "
+                + "WHERE Status = 'COMPLETED' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ?";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    BigDecimal v = rs.getBigDecimal(1);
+                    return v != null ? v : BigDecimal.ZERO;
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.sumSupplierRefundBetween - from=" + from + " to=" + to, e);
+        }
+        return BigDecimal.ZERO;
+    }
+
     public List<DailyFinancePoint> getDailyFinance(LocalDate from, LocalDate to) {
         String salesSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
                 + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
@@ -441,10 +454,18 @@ public class RevenueReportDAO {
                 + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY CAST(CreatedAt AS DATE)";
 
+        String refundSql = "SELECT CAST(CreatedAt AS DATE) AS Day, "
+                + "ISNULL(SUM(TotalRefundAmount), 0) AS Refund "
+                + "FROM SupplierReturns "
+                + "WHERE Status = 'COMPLETED' "
+                + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY CAST(CreatedAt AS DATE)";
+
         Map<LocalDate, BigDecimal> revenueByDay = new LinkedHashMap<>();
         Map<LocalDate, BigDecimal> costByDay = new LinkedHashMap<>();
         Map<LocalDate, Integer> cntByDay = new LinkedHashMap<>();
         Map<LocalDate, BigDecimal> lossByDay = new LinkedHashMap<>();
+        Map<LocalDate, BigDecimal> refundByDay = new LinkedHashMap<>();
 
         try (Connection con = getConnection()) {
             try (PreparedStatement ps = con.prepareStatement(salesSql)) {
@@ -469,6 +490,16 @@ public class RevenueReportDAO {
                     }
                 }
             }
+            try (PreparedStatement ps = con.prepareStatement(refundSql)) {
+                ps.setDate(1, Date.valueOf(from));
+                ps.setDate(2, Date.valueOf(to));
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        LocalDate day = rs.getDate("Day").toLocalDate();
+                        refundByDay.put(day, rs.getBigDecimal("Refund"));
+                    }
+                }
+            }
         } catch (SQLException e) {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "RevenueReportDAO.getDailyFinance - from=" + from + " to=" + to, e);
@@ -476,14 +507,17 @@ public class RevenueReportDAO {
 
         List<DailyFinancePoint> result = new ArrayList<>();
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            result.add(new DailyFinancePoint(d,
-                    revenueByDay.get(d), costByDay.get(d), lossByDay.get(d),
+            result.add(new DailyFinancePoint(
+                    d,
+                    revenueByDay.get(d),
+                    costByDay.get(d),
+                    lossByDay.get(d),
+                    refundByDay.get(d),
                     cntByDay.getOrDefault(d, 0)));
         }
         return result;
     }
 
-    /** Lợi nhuận từng ngày (đã trừ hàng trả). */
     public List<DailyPoint> getDailyProfit(LocalDate from, LocalDate to) {
         String sql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
                 + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
@@ -516,14 +550,36 @@ public class RevenueReportDAO {
                     "RevenueReportDAO.getDailyProfit - from=" + from + " to=" + to, e);
         }
 
+        // Cộng hoàn trả NCC vào lợi nhuận ngày (cùng logic getDailyFinance)
+        Map<LocalDate, BigDecimal> refundByDay = new LinkedHashMap<>();
+        String refundSql = "SELECT CAST(CreatedAt AS DATE) AS Day, "
+                + "ISNULL(SUM(TotalRefundAmount), 0) AS Refund "
+                + "FROM SupplierReturns WHERE Status = 'COMPLETED' "
+                + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY CAST(CreatedAt AS DATE)";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(refundSql)) {
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    refundByDay.put(rs.getDate("Day").toLocalDate(), rs.getBigDecimal("Refund"));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "RevenueReportDAO.getDailyProfit refund - from=" + from + " to=" + to, e);
+        }
+
         List<DailyPoint> result = new ArrayList<>();
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            result.add(byDay.getOrDefault(d, new DailyPoint(d, BigDecimal.ZERO, 0)));
+            DailyPoint base = byDay.getOrDefault(d, new DailyPoint(d, BigDecimal.ZERO, 0));
+            BigDecimal refund = refundByDay.getOrDefault(d, BigDecimal.ZERO);
+            result.add(new DailyPoint(d, base.revenue.add(refund), base.invoiceCount));
         }
         return result;
     }
 
-    /** Top sản phẩm theo lợi nhuận (đã trừ hàng trả). */
     public List<ProductProfit> getTopProductsByProfit(LocalDate from, LocalDate to, int limit) {
         String sql = "SELECT TOP (?) p.ProductName, "
                 + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
@@ -558,7 +614,6 @@ public class RevenueReportDAO {
         return list;
     }
 
-    /** Lợi nhuận theo danh mục (đã trừ hàng trả). */
     public List<CategoryProfit> getProfitByCategory(LocalDate from, LocalDate to) {
         String sql = "SELECT c.CategoryName, "
                 + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
@@ -592,7 +647,7 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
-    // Xu hướng bán hàng theo tháng & danh mục
+    // Xu hướng theo tháng & danh mục
     // ---------------------------------------------------------------
 
     public List<MonthlyCategoryPoint> getMonthlySalesByCategory(LocalDate from, LocalDate to) {
@@ -628,10 +683,6 @@ public class RevenueReportDAO {
         return list;
     }
 
-    /**
-     * Bản PIVOT sẵn của getMonthlySalesByCategory:
-     * điền ĐỦ mọi tháng trong [from, to] để biểu đồ đường vẽ trục liên tục.
-     */
     public MonthlyCategoryTrend getMonthlyCategoryTrend(LocalDate from, LocalDate to) {
         List<MonthlyCategoryPoint> raw = getMonthlySalesByCategory(from, to);
 

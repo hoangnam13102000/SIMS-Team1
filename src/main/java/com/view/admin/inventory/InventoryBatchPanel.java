@@ -1,5 +1,6 @@
 package com.view.admin.inventory;
 
+import com.components.AppAlert;
 import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
@@ -9,10 +10,14 @@ import com.model.Category;
 import com.model.InventoryBatch;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Font;
@@ -35,7 +40,6 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     private final InventoryBatchDAO batchDAO = new InventoryBatchDAO();
     private final CategoryDAO categoryDAO = new CategoryDAO();
-
     private FilterDropdown<CategoryOption> categoryFilter;
     private JLabel clearFiltersLink;
 
@@ -51,8 +55,57 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
         table.setColumnMinWidths(120, 100, 160, 100, 70, 100);
         table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
-        buildFilterBar();
+        // Cột "Mã lô" (index 0) và "Số lô NCC" (index 1): thêm icon copy
+        for (int colIdx : new int[]{0, 1}) {
+            final int col = colIdx;
+            final String colName = colIdx == 0 ? "mã lô" : "số lô NCC";
+            table.getTable().getColumnModel().getColumn(col).setCellRenderer(new DefaultTableCellRenderer() {
+                @Override
+                public Component getTableCellRendererComponent(JTable table, Object value,
+                        boolean isSelected, boolean hasFocus, int row, int column) {
+                    JLabel c = (JLabel) super.getTableCellRendererComponent(
+                        table, value, isSelected, hasFocus, row, column);
+                    String text = value != null ? value.toString() : "";
+                    c.setText(text);
+                    c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                    c.setHorizontalAlignment(SwingConstants.LEFT);
+                    c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                    if (text != null && !text.isBlank() && !"—".equals(text)) {
+                        FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                        copyIcon.setIconColor(AppColor.ACCENT);
+                        c.setIcon(copyIcon);
+                        c.setIconTextGap(6);
+                        c.setHorizontalTextPosition(SwingConstants.LEFT);
+                        c.setToolTipText("Click để copy " + colName + ": " + text);
+                    } else {
+                        c.setIcon(null);
+                        c.setToolTipText(null);
+                    }
+                    return c;
+                }
+            });
+        }
+        
+        // Xử lý click vào icon copy cho cột Mã lô (0) và Số lô NCC (1)
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if ((viewCol == 0 || viewCol == 1) && viewRow >= 0) {
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, viewCol);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank() && !"—".equals(text)) {
+                        copyToClipboard(text);
+                        String colName = viewCol == 0 ? "mã lô" : "số lô NCC";
+                        AppAlert.success(InventoryBatchPanel.this, "Copy thành công", "Đã copy " + colName + ": " + text);
+                    }
+                }
+            }
+        });
 
+        buildFilterBar();
         initialLoad();
     }
 
@@ -64,12 +117,10 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     private static final class CategoryOption {
         final Integer categoryId;
         final String label;
-
         CategoryOption(Integer categoryId, String label) {
             this.categoryId = categoryId;
             this.label = label;
         }
-
         @Override
         public String toString() { return label; }
     }
@@ -101,12 +152,10 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
                 categoryFilter.resetToAll();
                 onFilterChanged();
             }
-
             @Override
             public void mouseEntered(MouseEvent e) {
                 clearFiltersLink.setForeground(AppColor.ERROR);
             }
-
             @Override
             public void mouseExited(MouseEvent e) {
                 clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
@@ -127,15 +176,12 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.BOXES; }
-
     @Override
     protected String getPageTitle() { return "Quản lý lô hàng"; }
-
     @Override
     protected String getPageSubtitle() {
         return "Theo dõi lô hàng theo hạn sử dụng (FEFO). Vào \"Quản lý nhập kho\" để lập phiếu nhập.";
     }
-
     @Override
     protected String getAddButtonLabel() {
         // Trang này chỉ để theo dõi lô hàng (read-only), không tạo lô/nhập kho tại đây.
@@ -210,10 +256,8 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     @Override
     protected boolean supportsEdit() { return false; }
-
     @Override
     protected boolean supportsDelete() { return false; }
-
     @Override
     protected boolean supportsView() { return true; }
 
@@ -271,5 +315,20 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     private static String formatDate(java.time.LocalDate date) {
         return date == null ? "-" : date.format(DATE_FORMAT);
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
+        }
     }
 }

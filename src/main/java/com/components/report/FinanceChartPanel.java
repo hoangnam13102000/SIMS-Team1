@@ -26,13 +26,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Bieu do "Thu / Chi / Loi nhuan rong" theo ngay cho tab Loi nhuan:
- * - Cot nhom: "Thu" (doanh thu) va "Chi" (gia von + thiet hai hang huy)
- *   dat canh nhau moi ngay, de so sanh truc quan thu > chi hay nguoc lai.
- * - Duong "Loi nhuan rong" (Thu - Chi) de de tren cung, gan diem tron o moi
- *   ngay, mau xanh la khi duong nam >= 0 tai diem do va do khi < 0.
- * Tu ve bang Graphics2D, dong bo cach lam voi RevenueChartPanel (khong dung
- * thu vien chart ngoai).
+ * Biểu đồ "Thu / Chi / Lợi nhuận ròng" theo ngày cho tab Lợi nhuận:
+ * - Cột nhóm: "Thu" (doanh thu) và "Chi" (giá vốn + thiệt hại - hoàn trả NCC)
+ * - Đường "Lợi nhuận ròng" (Thu - Chi)
  */
 public class FinanceChartPanel extends JComponent {
 
@@ -89,6 +85,8 @@ public class FinanceChartPanel extends JComponent {
                 + "<br>Thu (doanh thu): " + NumberUtil.formatThousands(p.revenue.longValue()) + " đ"
                 + "<br>Chi (giá vốn): " + NumberUtil.formatThousands(p.cost.longValue()) + " đ"
                 + "<br>Chi (thiệt hại): " + NumberUtil.formatThousands(p.disposalLoss.longValue()) + " đ"
+                + "<br>Hoàn trả NCC: " + NumberUtil.formatThousands(p.supplierRefund.longValue()) + " đ"
+                + "<br>Tổng chi (sau hoàn): " + NumberUtil.formatThousands(p.totalExpense().longValue()) + " đ"
                 + "<br><b>Lợi nhuận ròng: <span style='color:" + (profitPositive ? "#16a34a" : "#dc2626") + "'>"
                 + NumberUtil.formatThousands(p.netProfit().longValue()) + " đ</span></b>"
                 + "<br>Hóa đơn: " + p.invoiceCount + "</html>";
@@ -119,12 +117,10 @@ public class FinanceChartPanel extends JComponent {
             return;
         }
 
-        // Truc Y dua tren gia tri lon nhat giua Thu/Chi (Loi nhuan luon nam
-        // trong khoang nay vi = Thu - Chi, khong can tinh rieng).
         long maxValue = 1;
         for (DailyFinancePoint p : data) {
             maxValue = Math.max(maxValue, p.revenue.longValue());
-            maxValue = Math.max(maxValue, p.totalExpense().longValue());
+            maxValue = Math.max(maxValue, Math.max(0, p.totalExpense().longValue()));
         }
         long axisMax = niceCeiling(maxValue);
 
@@ -172,7 +168,6 @@ public class FinanceChartPanel extends JComponent {
         }
     }
 
-    /** Ve 2 cot (Thu mau xanh accent, Chi mau do/warning) canh nhau cho moi ngay. */
     private void drawGroupedBars(Graphics2D g2, int left, int top, int width, int height, long axisMax) {
         int n = data.size();
         double slot = width / (double) n;
@@ -194,7 +189,9 @@ public class FinanceChartPanel extends JComponent {
             g2.setColor(hovered ? revenueHover : revenueColor);
             drawBar(g2, groupX, top + height - revHeight, barWidth, revHeight);
 
-            double expRatio = axisMax == 0 ? 0 : p.totalExpense().doubleValue() / axisMax;
+            // Chi sau khi trừ hoàn NCC (không vẽ âm)
+            double expVal = Math.max(0, p.totalExpense().doubleValue());
+            double expRatio = axisMax == 0 ? 0 : expVal / axisMax;
             int expHeight = (int) Math.round(expRatio * height);
             g2.setColor(hovered ? expenseHover : expenseColor);
             drawBar(g2, groupX + barWidth + 3, top + height - expHeight, barWidth, expHeight);
@@ -207,7 +204,6 @@ public class FinanceChartPanel extends JComponent {
         g2.fill(bar);
     }
 
-    /** Ve duong Loi nhuan rong de tren 2 cot, diem tron mau theo lai/lo tai diem do. */
     private void drawProfitLine(Graphics2D g2, int left, int top, int width, int height, long axisMax) {
         int n = data.size();
         if (n == 0 || axisMax == 0) return;
@@ -217,10 +213,6 @@ public class FinanceChartPanel extends JComponent {
         Color positiveColor = AppColor.SUCCESS != null ? AppColor.SUCCESS : new Color(22, 163, 74);
         Color negativeColor = AppColor.ERROR != null ? AppColor.ERROR : new Color(220, 38, 38);
 
-        // Truc Y hien tai chi ve gia tri tu 0 den axisMax (0 o day, axisMax o
-        // dinh, giong 2 cot Thu/Chi). Loi nhuan am duoc clamp ve 0 (nam sat
-        // day) thay vi ve am ra ngoai khung - van the hien dung xu huong
-        // (cang am cang sat day) ma khong pha layout truc chung voi 2 cot.
         Path2D.Double path = new Path2D.Double();
         double[] xs = new double[n];
         double[] ys = new double[n];
@@ -274,7 +266,6 @@ public class FinanceChartPanel extends JComponent {
         }
     }
 
-    /** Chu thich mau: Thu / Chi / Loi nhuan rong - ve o goc tren-trai vung ve. */
     private void drawLegend(Graphics2D g2, int left, int w) {
         g2.setFont(AppFont.SMALL);
         FontMetrics fm = g2.getFontMetrics();
@@ -282,7 +273,9 @@ public class FinanceChartPanel extends JComponent {
         int x = left;
 
         x = drawLegendItem(g2, x, y, fm, AppColor.ACCENT, "Thu (doanh thu)");
-        x = drawLegendItem(g2, x, y, fm, AppColor.ERROR != null ? AppColor.ERROR : new Color(220, 38, 38), "Chi (giá vốn + thiệt hại)");
+        x = drawLegendItem(g2, x, y, fm,
+                AppColor.ERROR != null ? AppColor.ERROR : new Color(220, 38, 38),
+                "Chi (sau hoàn NCC)");
         drawLegendLineItem(g2, x, y, fm, "Lợi nhuận ròng");
     }
 
@@ -305,7 +298,6 @@ public class FinanceChartPanel extends JComponent {
         g2.drawString(label, x + 20, y + fm.getAscent() / 2 - 2);
     }
 
-    /** Lam tron 1 gia tri len thanh so "dep" (1/2/5 x 10^k) de chia luoi truc Y khong le. */
     private static long niceCeiling(long value) {
         if (value <= 0) return 1;
         long magnitude = 1;

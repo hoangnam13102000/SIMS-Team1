@@ -138,6 +138,12 @@ public class AdminMainFrame extends JFrame {
         return user != null && user.getRole() == Role.INVENTORY_MANAGER;
     }
 
+    /** Quản lý bán hàng: không hiện tab Kho và POS. Admin vẫn toàn quyền. */
+    private boolean isSalesManager() {
+        var user = AuthService.getInstance().getCurrentUser();
+        return user != null && user.getRole() == Role.SALES_MANAGER;
+    }
+
     private void buildContent() {
         setTitle(Lang.get("admin.frame.title"));
         if (layout != null) {
@@ -173,31 +179,37 @@ public class AdminMainFrame extends JFrame {
                 new ExceptionReportPanel(),
                 AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
 
-        layout.addSection(Lang.get("sidebar.section.warehouse"));
-        // QL kho đã dùng InventoryOverviewPanel làm dashboard → không hiện lại trong tab Kho
-        if (!isInventoryManager()) {
-            layout.addPage("inventoryOverview", Lang.get("sidebar.inventoryOverview"), FontAwesomeSolid.TH_LARGE,
-                    new InventoryOverviewPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+        // ========== KHO: ẩn với SALES_MANAGER, Admin / QL kho vẫn thấy ==========
+        if (!isSalesManager()) {
+            layout.addSection(Lang.get("sidebar.section.warehouse"));
+            // QL kho đã dùng InventoryOverviewPanel làm dashboard → không hiện lại trong tab Kho
+            if (!isInventoryManager()) {
+                layout.addPage("inventoryOverview", Lang.get("sidebar.inventoryOverview"), FontAwesomeSolid.TH_LARGE,
+                        new InventoryOverviewPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+            }
+            layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE,
+                    new PurchaseReceiptPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+            layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES,
+                    new InventoryBatchPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+            layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE,
+                    new StockReconciliationPanel(), AppPermission.STOCK_RECONCILE);
+            layout.addPage("stockDisposal", Lang.get("sidebar.stockDisposal"), FontAwesomeSolid.TRASH,
+                    new StockDisposalPanel(), AppPermission.STOCK_DISPOSE, AppPermission.STOCK_DISPOSE_VIEW);
+            layout.addPage("supplierReturn", Lang.get("sidebar.supplierReturn"), FontAwesomeSolid.UNDO,
+                    new SupplierReturnPanel(),
+                    AppPermission.SUPPLIER_RETURN_CREATE, AppPermission.SUPPLIER_RETURN_VIEW);
+            layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE,
+                    new StockAlertPanel(), AppPermission.STOCK_ALERT_VIEW);
+            layout.addPage("inventoryReport", Lang.get("sidebar.inventoryReport"), FontAwesomeSolid.WAREHOUSE,
+                    new InventoryReportPanel(), AppPermission.STOCK_VIEW);
         }
-        layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE,
-                new PurchaseReceiptPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
-        layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES,
-                new InventoryBatchPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
-        layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE,
-                new StockReconciliationPanel(), AppPermission.STOCK_RECONCILE);
-        layout.addPage("stockDisposal", Lang.get("sidebar.stockDisposal"), FontAwesomeSolid.TRASH,
-                new StockDisposalPanel(), AppPermission.STOCK_DISPOSE, AppPermission.STOCK_DISPOSE_VIEW);
-        layout.addPage("supplierReturn", Lang.get("sidebar.supplierReturn"), FontAwesomeSolid.UNDO,
-                new SupplierReturnPanel(),
-                AppPermission.SUPPLIER_RETURN_CREATE, AppPermission.SUPPLIER_RETURN_VIEW);
-        layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE,
-                new StockAlertPanel(), AppPermission.STOCK_ALERT_VIEW);
-        layout.addPage("inventoryReport", Lang.get("sidebar.inventoryReport"), FontAwesomeSolid.WAREHOUSE,
-                new InventoryReportPanel(), AppPermission.STOCK_VIEW);
 
         layout.addSection(Lang.get("sidebar.section.sales"));
-        layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
-                AppPermission.INVOICE_CREATE);
+        // ========== POS: ẩn với SALES_MANAGER, Admin / NV bán hàng vẫn thấy ==========
+        if (!isSalesManager()) {
+            layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
+                    AppPermission.INVOICE_CREATE);
+        }
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
         layout.addPage("returnExchange", Lang.get("sidebar.returnExchange"), FontAwesomeSolid.EXCHANGE_ALT,
@@ -247,7 +259,11 @@ public class AdminMainFrame extends JFrame {
             } else if (item.getType() == NotificationItem.Type.ORDER) {
                 layout.showPage("orders");
             } else if (item.getType() == NotificationItem.Type.STOCK) {
-                layout.showPage("stockAlerts");
+                if (!isSalesManager()) {
+                    layout.showPage("stockAlerts");
+                } else {
+                    layout.showPage("dashboard");
+                }
             } else if (item.getType() == NotificationItem.Type.RETURN) {
                 layout.showPage("returnExchange");
             }

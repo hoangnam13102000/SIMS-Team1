@@ -2,7 +2,6 @@ package com.view.admin.auditlog;
 
 import com.components.StatCard;
 import com.components.crud.BaseCrudPanel;
-import com.components.table.AutoRowNumber;
 import com.dao.AuditLogDAO;
 import com.event.AutoRefresher;
 import com.event.LogWrittenEvent;
@@ -10,14 +9,21 @@ import com.model.ActivityLog;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Man hinh "Nhat ky audit" cho Admin - CHI XEM, khong them/sua/xoa. Hien thi
@@ -31,7 +37,7 @@ import java.util.List;
  */
 public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
 
-    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
+    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("dd/MM/yyyy");
 
     private final AuditLogDAO auditLogDAO = new AuditLogDAO();
 
@@ -39,10 +45,6 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
     private JComboBox<String> entityTypeFilter;
     private String selectedAction;
     private String selectedEntityType;
-
-    /** Cot STT tu dong danh so theo trang - xem AutoRowNumber. Truoc day panel
-     *  nay chua goi setAutoRowNumberColumn nen cot STT luon rong. */
-    private AutoRowNumber stt;
 
     /** Cac StatCard tren dau trang - gia tri duoc lam moi trong afterRender()
      *  moi lan bang tai lai (kem ca khi co LogWrittenEvent moi). */
@@ -53,15 +55,65 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
 
     public AuditLogPanel() {
         super();
-        stt = table.setAutoRowNumberColumn(0);
-        // Cột "Hành động" (index 3): StatBadge màu theo loại action — trực quan hơn plain text
-        table.setBadgeColumn(3,
+
+        // Cột "Hành động" (index 2): StatBadge màu theo loại action — trực quan hơn plain text
+        table.setBadgeColumn(2,
                 v -> actionLabel(v == null ? null : String.valueOf(v)),
                 v -> actionColor(v == null ? null : String.valueOf(v)));
-        // Cột "Đối tượng" (index 4): badge tông nhẹ theo entity type
-        table.setBadgeColumn(4,
+        // Cột "Đối tượng" (index 3): badge tông nhẹ theo entity type
+        table.setBadgeColumn(3,
                 v -> entityLabel(v == null ? null : String.valueOf(v)),
                 v -> entityColor(v == null ? null : String.valueOf(v)));
+
+        // Cột "Mô tả" (index 4): thêm icon copy mã SP nếu có
+        final FontIcon copyIconTemplate = FontIcon.of(FontAwesomeSolid.COPY, 12);
+        copyIconTemplate.setIconColor(AppColor.ACCENT);
+        table.getTable().getColumnModel().getColumn(4).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (extractProductCode(text) != null) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 12);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                } else {
+                    c.setIcon(null);
+                }
+                c.setToolTipText(extractProductCode(text) != null ? "Click để copy mã sản phẩm" : null);
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã SP
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 4 && viewRow >= 0) {
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 4);
+                    String text = value != null ? value.toString() : "";
+                    String productCode = extractProductCode(text);
+                    if (productCode != null) {
+                        copyToClipboard(productCode);
+                        JOptionPane.showMessageDialog(AuditLogPanel.this, 
+                            "Đã copy mã sản phẩm: " + productCode, 
+                            "Copy thành công", JOptionPane.INFORMATION_MESSAGE);
+                    }
+                }
+            }
+        });
+
         setupFilters();
         AutoRefresher.bind(this, LogWrittenEvent.class, 400, this::reload);
         initialLoad();
@@ -78,7 +130,6 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
         // Rút gọn nhãn để 4 card cân đều, tránh truncate khi cột hẹp
         failedLoginCard = new StatCard("Đăng nhập thất bại", "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE, AppColor.ERROR);
         activeUserCard = new StatCard("Người dùng hoạt động", "0", FontAwesomeSolid.USERS, AppColor.WARNING);
-
         List<JComponent> cards = new ArrayList<>();
         cards.add(totalCard);
         cards.add(todayCard);
@@ -126,14 +177,13 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Thời gian", "Người dùng", "Hành động", "Đối tượng", "Mô tả"};
+        return new String[]{"Thời gian", "Người dùng", "Hành động", "Đối tượng", "Mô tả"};
     }
 
     @Override
     protected Object[] mapRowToColumns(ActivityLog item) {
         // Cột Hành động / Đối tượng giữ raw code — setBadgeColumn sẽ map label + màu
         return new Object[]{
-                "",
                 item.getCreatedAt() != null ? DATE_FORMAT.format(item.getCreatedAt()) : "",
                 item.getUsername() != null ? item.getUsername() : "SYSTEM",
                 item.getAction(),
@@ -151,11 +201,8 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
         return auditLogDAO.filter(page, pageSize, null, selectedAction, selectedEntityType, null, null);
     }
 
-    /** STT phải tính theo đúng trang đang xem (giống các panel khác); đồng thời
-     *  làm mới StatCard mỗi khi bảng tải lại (kể cả do LogWrittenEvent). */
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<ActivityLog> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
         table.getTable().repaint();
         refreshStatsCards();
     }
@@ -330,6 +377,43 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
                 return AppColor.ERROR;
             default:
                 return AppColor.TEXT_MUTED;
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: extract & copy mã sản phẩm
+    // ---------------------------------------------------------------
+
+    /**
+     * Trích xuất mã sản phẩm từ chuỗi mô tả.
+     * Pattern: "mã SPxxx" hoặc chỉ "SPxxx" (SP + chữ số/chữ cái).
+     * Ví dụ: "Đã thêm mới sản phẩm ... với mã SP001" → "SP001"
+     */
+    private static String extractProductCode(String text) {
+        if (text == null || text.isBlank()) return null;
+        // Ưu tiên pattern "mã SPxxx"
+        Pattern p1 = Pattern.compile("mã\\s+(SP[A-Z0-9]+)", Pattern.CASE_INSENSITIVE);
+        Matcher m1 = p1.matcher(text);
+        if (m1.find()) {
+            return m1.group(1).toUpperCase();
+        }
+        // Pattern dự phòng: tìm SPxxx đứng độc lập
+        Pattern p2 = Pattern.compile("\\b(SP[A-Z0-9]{2,})\\b", Pattern.CASE_INSENSITIVE);
+        Matcher m2 = p2.matcher(text);
+        if (m2.find()) {
+            return m2.group(1).toUpperCase();
+        }
+        return null;
+    }
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được (trường hợp hiếm)
         }
     }
 }

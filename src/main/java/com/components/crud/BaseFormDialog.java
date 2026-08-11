@@ -1,6 +1,5 @@
 package com.components.crud;
 
-
 import com.components.LoadingOverlay;
 import com.theme.AppColor;
 import com.core.log.ActivityLogHelper;
@@ -78,7 +77,6 @@ public abstract class BaseFormDialog<T> extends JDialog {
     // ---------------------------------------------------------------
 
     protected int getDialogWidth() { return 420; }
-
     protected int getDialogHeight() { return 420; }
 
     // ---------------------------------------------------------------
@@ -87,8 +85,7 @@ public abstract class BaseFormDialog<T> extends JDialog {
 
     protected void init() {
         setTitle((mode.isReadOnly() ? "Chi tiết " : mode == CrudMode.EDIT ? "Cập nhật " : "Thêm ") + entityLabel);
-        setSize(getDialogWidth(), getDialogHeight());
-        setResizable(false);
+        setResizable(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
@@ -105,14 +102,18 @@ public abstract class BaseFormDialog<T> extends JDialog {
         scrollPane.setBorder(null);
         scrollPane.getViewport().setBackground(AppColor.WHITE);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         add(scrollPane, BorderLayout.CENTER);
+        
+        // Đặt kích thước sau khi xây dựng form để đảm bảo chứa đủ nội dung
+        setSize(getDialogWidth(), getDialogHeight());
 
         add(buildFooter(), BorderLayout.SOUTH);
 
         if (editingEntity != null) {
             fillForm(editingEntity);
         }
-
         if (mode.isReadOnly()) {
             setFieldsEnabled(formPanel, false);
             saveButton.setVisible(false);
@@ -140,7 +141,6 @@ public abstract class BaseFormDialog<T> extends JDialog {
         header.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
                 new EmptyBorder(18, 24, 18, 24)));
-
         JLabel titleLabel = new JLabel((mode.isReadOnly() ? "Chi tiết " : mode == CrudMode.EDIT ? "Cập nhật " : "Thêm ") + entityLabel);
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 17));
         titleLabel.setForeground(AppColor.TEXT_PRIMARY);
@@ -199,15 +199,14 @@ public abstract class BaseFormDialog<T> extends JDialog {
      */
     private void onSaveClicked() {
         if (saving) return;
-
         String error = validateForm();
         if (error != null) {
             showMessage(error);
             return;
         }
-
         // collectFormData() đụng Swing components → phải gọi trên EDT
         final T data = collectFormData();
+
         setSaving(true, mode == CrudMode.ADD ? "Đang thêm " + entityLabel + "..." : "Đang lưu " + entityLabel + "...");
 
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
@@ -225,7 +224,6 @@ public abstract class BaseFormDialog<T> extends JDialog {
                     e.printStackTrace();
                     ok = false;
                 }
-
                 if (ok) {
                     result = data;
                     saved = true;
@@ -383,7 +381,6 @@ public abstract class BaseFormDialog<T> extends JDialog {
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         area.setBorder(new EmptyBorder(8, 10, 8, 10));
-
         JScrollPane scroll = new JScrollPane(area);
         scroll.setAlignmentX(Component.LEFT_ALIGNMENT);
         scroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));

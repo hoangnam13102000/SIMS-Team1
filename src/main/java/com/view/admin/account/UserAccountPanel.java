@@ -4,14 +4,12 @@ import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
-import com.components.table.AutoRowNumber;
 import com.dao.UserDAO;
 import com.model.Role;
 import com.model.User;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import java.awt.Color;
@@ -25,11 +23,9 @@ import javax.swing.SwingUtilities;
 import javax.swing.JComboBox;
 import javax.swing.BorderFactory;
 
-
 public class UserAccountPanel extends BaseCrudPanel<User> {
 
     private final UserDAO userDAO = new UserDAO();
-    private AutoRowNumber stt;
     private JComboBox<String> roleFilter;
     private Role selectedRole;
 
@@ -49,15 +45,14 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
                         this::toggleLockRow,
                         row -> canManage(row)));
 
-        stt = table.setAutoRowNumberColumn(0);
-        table.setBadgeColumn(5, this::statusLabel, this::statusColor);
-        table.setBadgeColumn(6, this::lockLabel, this::lockColor);
+        table.setBadgeColumn(4, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(5, this::lockLabel, this::lockColor);
 
         // Dat do rong ro rang cho tung cot - neu khong JTable se tu chia deu
         // theo do rong khung nhin, khien cac tieu de dai (vd "Tên đăng nhập",
         // "Họ và tên") bi cat thanh "..." (giong da sua o CustomerPanel).
-        table.setColumnWidths(50, 115, 115, 180, 150, 130, 115);
-        table.setColumnMinWidths(45, 90, 85, 90, 110, 100, 95);
+        table.setColumnWidths(115, 115, 180, 150, 130, 115);
+        table.setColumnMinWidths(90, 85, 90, 110, 100, 95);
 
         setupRoleFilter();
         initialLoad();
@@ -69,25 +64,21 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.USERS_COG; }
-
     @Override
     protected String getPageTitle() { return "Quản lý tài khoản"; }
-
     @Override
     protected String getPageSubtitle() { return "Quản lý tài khoản người dùng và phân quyền trong hệ thống"; }
-
     @Override
     protected String getAddButtonLabel() { return null; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Tên đăng nhập", "Họ và tên", "Email", "Vai trò", "Trạng thái", "Khóa"};
+        return new String[]{"Tên đăng nhập", "Họ và tên", "Email", "Vai trò", "Trạng thái", "Khóa"};
     }
 
     @Override
     protected Object[] mapRowToColumns(User item) {
         return new Object[]{
-                "",
                 item.getUsername(),
                 item.getFullName(),
                 item.getEmail(),
@@ -100,10 +91,8 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     @Override
     protected String getEntityLabel() { return "tài khoản"; }
 
-    /** STT phải tính theo đúng trang đang xem, không luôn bắt đầu lại từ 1 (giống CustomerPanel). */
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<User> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
         table.getTable().repaint();
     }
 
@@ -141,7 +130,6 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     /** Không hỗ trợ xóa cứng - dùng "Vô hiệu hóa" trong form Sửa thay thế. */
     @Override
     protected boolean supportsDelete() { return false; }
-
     @Override
     protected boolean deleteItem(User item) { return false; }
 
@@ -163,7 +151,6 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         roleFilter.setFocusable(false);
         roleFilter.setToolTipText("Lọc danh sách theo vai trò");
         roleFilter.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
-
         roleFilter.addActionListener(e -> {
             selectedRole = roleFromFilterIndex(roleFilter.getSelectedIndex());
             applyFilters();
@@ -265,12 +252,10 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     private void lockRow(int modelRow) {
         User item = rowToItem(modelRow);
         if (item == null) return;
-
         boolean confirmed = BaseDialog.confirm(this, "Khóa tài khoản",
                 "Khóa tài khoản \"" + getItemDisplayName(item) + "\"? Tài khoản này sẽ không thể đăng nhập cho tới khi được mở khóa lại.",
                 "Khóa tài khoản", AppColor.WARNING, AppColor.WARNING, FontAwesomeSolid.LOCK);
         if (!confirmed) return;
-
         if (userDAO.setLocked(item.getUserId(), true)) {
             com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
                     "Đã khóa tài khoản \"" + getItemDisplayName(item) + "\"");
@@ -284,7 +269,6 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     private void unlockRow(int modelRow) {
         User item = rowToItem(modelRow);
         if (item == null) return;
-
         if (userDAO.setLocked(item.getUserId(), false)) {
             com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_STATUS_CHANGE,
                     "Đã mở khóa tài khoản \"" + getItemDisplayName(item) + "\"");

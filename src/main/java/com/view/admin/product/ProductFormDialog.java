@@ -8,11 +8,11 @@ import com.dao.StoreConfigDAO;
 import com.model.Category;
 import com.model.Product;
 import com.theme.AppColor;
+import com.utils.CurrencyDocumentFilter;
 import com.utils.FileUtil;
 import com.utils.ImageUtil;
 import com.validation.FormValidator;
 import com.validation.Rules;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -55,6 +55,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     private final ProductDAO productDAO;
     private final List<Category> categories;
     private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
+
     /** Chenh lech mac dinh he thong (StoreConfig.DEFAULT_MARGIN) - doc 1 lan luc mo form, chi dung de xem truoc (preview); gia tri THAT do trigger SQL tinh. */
     private final BigDecimal defaultMargin = storeConfigDAO.getDefaultMargin();
 
@@ -73,7 +74,6 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     private JTextField minStockField;
     private JComboBox<String> statusCombo;
     private JTextArea descriptionArea;
-
     private JLabel imagePreviewLabel;
     private JLabel imageHintLabel;
     private File pendingImageFile;
@@ -89,12 +89,12 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
 
     @Override
     protected int getDialogWidth() {
-        return 900;
+        return 1050;
     }
 
     @Override
     protected int getDialogHeight() {
-        return mode == CrudMode.ADD ? 540 : 560;
+        return mode == CrudMode.ADD ? 750 : 770;
     }
 
     /**
@@ -115,7 +115,8 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         columns.setOpaque(false);
         columns.setLayout(new BoxLayout(columns, BoxLayout.X_AXIS));
         columns.setAlignmentX(Component.LEFT_ALIGNMENT);
-        columns.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        columns.setPreferredSize(new Dimension(1000, 620));
+        columns.setMaximumSize(new Dimension(1000, Integer.MAX_VALUE));
 
         columns.add(buildImageColumn());
         columns.add(Box.createHorizontalStrut(20));
@@ -139,6 +140,9 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.setOpaque(false);
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
         col.setAlignmentY(Component.TOP_ALIGNMENT);
+        col.setPreferredSize(new Dimension(180, 620));
+        col.setMaximumSize(new Dimension(180, Integer.MAX_VALUE));
+        col.setMinimumSize(new Dimension(180, 400));
 
         JLabel caption = iconFieldLabel(FontAwesomeSolid.IMAGE, "Hình ảnh", false);
         caption.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -181,7 +185,6 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     private void chooseImage() {
         File selected = FileUtil.chooseImageFile(this);
         if (selected == null) return;
-
         if (!FileUtil.isWithinSizeLimit(selected, 5)) {
             showMessage("Ảnh vượt quá 5MB, vui lòng chọn ảnh khác.");
             return;
@@ -190,7 +193,6 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
             showMessage("Định dạng ảnh không được hỗ trợ.");
             return;
         }
-
         pendingImageFile = selected;
         imagePreviewLabel.setIcon(ImageUtil.loadIcon(selected.getPath(), PREVIEW_SIZE, PREVIEW_SIZE));
         imageHintLabel.setText(selected.getName());
@@ -207,6 +209,9 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
         col.setAlignmentY(Component.TOP_ALIGNMENT);
         col.setAlignmentX(Component.LEFT_ALIGNMENT);
+        col.setPreferredSize(new Dimension(390, 620));
+        col.setMaximumSize(new Dimension(390, Integer.MAX_VALUE));
+        col.setMinimumSize(new Dimension(350, 400));
 
         addSectionHeader(col, FontAwesomeSolid.BOX, "Thông tin sản phẩm");
 
@@ -266,10 +271,14 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
         col.setAlignmentY(Component.TOP_ALIGNMENT);
         col.setAlignmentX(Component.LEFT_ALIGNMENT);
+        col.setPreferredSize(new Dimension(390, 620));
+        col.setMaximumSize(new Dimension(390, Integer.MAX_VALUE));
+        col.setMinimumSize(new Dimension(350, 400));
 
         addSectionHeader(col, FontAwesomeSolid.DOLLAR_SIGN, "Giá & tồn kho");
 
         importPriceField = newTextField();
+        CurrencyDocumentFilter.install(importPriceField);
         importPriceField.setEditable(mode != CrudMode.ADD);
         importPriceField.setFocusable(mode != CrudMode.ADD);
         if (mode == CrudMode.ADD) {
@@ -298,6 +307,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.add(Box.createVerticalStrut(10));
 
         marginField = newTextField();
+        CurrencyDocumentFilter.install(marginField);
         col.add(fieldGroupIcon(FontAwesomeSolid.EQUALS, "Chênh lệch riêng cho SP này", false, wrapWithSuffix(marginField, "VNĐ")));
         col.add(Box.createVerticalStrut(4));
         JLabel marginHint = new JLabel("Để trống = dùng mặc định hệ thống (" + formatVnd(defaultMargin) + " đ, chỉnh ở Cài đặt)");
@@ -309,6 +319,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.add(Box.createVerticalStrut(10));
 
         sellPriceField = newTextField();
+        CurrencyDocumentFilter.install(sellPriceField);
         col.add(fieldGroupIcon(FontAwesomeSolid.ARROW_UP, "Giá bán", true, wrapWithSuffix(sellPriceField, "VNĐ")));
         col.add(Box.createVerticalStrut(4));
         priceHint = new JLabel("Giá bán ≥ giá nhập");
@@ -322,6 +333,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         wireAutoPriceBehavior();
 
         stockField = newTextField();
+        CurrencyDocumentFilter.install(stockField);
         stockField.setEditable(false);
         stockField.setFocusable(false);
         stockField.setBackground(AppColor.BG_LIGHTER);
@@ -339,6 +351,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.add(Box.createVerticalStrut(12));
 
         minStockField = newTextField();
+        CurrencyDocumentFilter.install(minStockField);
         col.add(fieldGroupIcon(FontAwesomeSolid.EXCLAMATION_TRIANGLE, "Tồn kho tối thiểu", true, minStockField));
         col.add(Box.createVerticalStrut(12));
 
@@ -397,7 +410,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         }
         BigDecimal margin = parseAmount(marginField.getText());
         BigDecimal effectiveMargin = margin != null ? margin : defaultMargin;
-        sellPriceField.setText(importPrice.add(effectiveMargin).toPlainString());
+        sellPriceField.setText(CurrencyDocumentFilter.format(importPrice.add(effectiveMargin)));
     }
 
     private static String formatVnd(BigDecimal amount) {
@@ -459,7 +472,6 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     private JLabel iconFieldLabel(FontAwesomeSolid iconType, String text, boolean required) {
         FontIcon icon = FontIcon.of(iconType, 12);
         icon.setIconColor(AppColor.TEXT_MUTED_ALT);
-
         String html = "<html>" + text
                 + (required ? " <font color='" + toHex(AppColor.ERROR) + "'>*</font>" : "")
                 + "</html>";
@@ -485,7 +497,6 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
 
     private JPanel wrapWithSuffix(JTextField field, String suffix) {
         field.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 0));
-
         JLabel suffixLabel = new JLabel(suffix);
         suffixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
         suffixLabel.setForeground(AppColor.TEXT_MUTED);
@@ -530,6 +541,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         inner.add(label);
         inner.add(Box.createVerticalStrut(2));
         inner.add(productCodeField);
+
         card.add(inner, BorderLayout.CENTER);
         return card;
     }
@@ -575,20 +587,19 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         brandField.setText(entity.getBrand() != null ? entity.getBrand() : "");
         unitCombo.setSelectedItem(entity.getUnit() != null ? entity.getUnit() : "");
         weightVolumeField.setText(entity.getWeightVolume() != null ? entity.getWeightVolume() : "");
-        importPriceField.setText(entity.getImportPrice() != null ? entity.getImportPrice().toPlainString() : "");
+        importPriceField.setText(entity.getImportPrice() != null ? CurrencyDocumentFilter.format(entity.getImportPrice()) : "");
         autoPriceCheckbox.setSelected(entity.isAutoPrice());
-        marginField.setText(entity.getMargin() != null ? entity.getMargin().toPlainString() : "");
+        marginField.setText(entity.getMargin() != null ? CurrencyDocumentFilter.format(entity.getMargin()) : "");
         applyAutoPriceFieldState();
         // AutoPrice=false: giu nguyen SellPrice da luu (nguoi dung tu chinh); AutoPrice=true: preview se tu tinh lai ngay ben duoi.
         if (!entity.isAutoPrice()) {
-            sellPriceField.setText(entity.getSellPrice() != null ? entity.getSellPrice().toPlainString() : "");
+            sellPriceField.setText(entity.getSellPrice() != null ? CurrencyDocumentFilter.format(entity.getSellPrice()) : "");
         }
         recomputeSellPricePreview();
-        stockField.setText(String.valueOf(entity.getStock()));
-        minStockField.setText(String.valueOf(entity.getMinStock()));
+        stockField.setText(CurrencyDocumentFilter.format(entity.getStock()));
+        minStockField.setText(CurrencyDocumentFilter.format(entity.getMinStock()));
         statusCombo.setSelectedIndex(entity.isActive() ? 0 : 1);
         descriptionArea.setText(entity.getDescription() != null ? entity.getDescription() : "");
-
         if (entity.getImageUrl() != null && !entity.getImageUrl().isBlank()) {
             imagePreviewLabel.setIcon(ImageUtil.loadIcon(entity.getImageUrl(), PREVIEW_SIZE, PREVIEW_SIZE));
             imageHintLabel.setText("Ảnh hiện tại");
@@ -610,54 +621,40 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         if (categoryCombo.getSelectedItem() == null) {
             return "Vui lòng chọn danh mục (hoặc tạo danh mục trước).";
         }
-
         FormValidator validator = new FormValidator();
-
         validator.field(productNameField.getText())
                 .required("Vui lòng nhập tên sản phẩm.")
                 .maxLength(150, "Tên sản phẩm tối đa 150 ký tự.");
-
         validator.field(brandField.getText())
                 .maxLength(100, "Thương hiệu tối đa 100 ký tự.");
-
         validator.field(String.valueOf(unitCombo.getEditor().getItem()))
                 .maxLength(30, "Đơn vị tính tối đa 30 ký tự.");
-
         validator.field(weightVolumeField.getText())
                 .maxLength(50, "Khối lượng/dung tích tối đa 50 ký tự.");
-
         validator.field(descriptionArea.getText())
                 .maxLength(1000, "Mô tả tối đa 1000 ký tự.");
-
         validator.field(importPriceField.getText())
                 .required("Vui lòng nhập giá nhập.")
                 .rule(v -> isValidNonNegativeAmount(v) ? null : "Giá nhập phải là số nguyên không âm.");
-
         String marginText = marginField.getText() == null ? "" : marginField.getText().trim();
         if (!marginText.isEmpty()) {
             validator.field(marginText)
                     .rule(v -> isValidNonNegativeAmount(v) ? null : "Chênh lệch riêng phải là số nguyên không âm.");
         }
-
         validator.field(sellPriceField.getText())
                 .required("Vui lòng nhập giá bán.")
                 .rule(v -> isValidNonNegativeAmount(v) ? null : "Giá bán phải là số nguyên không âm.");
-
         // Tồn kho không còn là input thủ công (readonly) - luôn hợp lệ, không cần validate.
-
         validator.field(minStockField.getText())
                 .required("Vui lòng nhập tồn kho tối thiểu.")
                 .rule(Rules.custom(ProductFormDialog::isValidNonNegativeInt, "Tồn kho tối thiểu phải là số nguyên không âm."));
-
         String error = validator.validate();
         if (error != null) return error;
-
         BigDecimal importPrice = parseAmount(importPriceField.getText());
         BigDecimal sellPrice = parseAmount(sellPriceField.getText());
         if (importPrice != null && sellPrice != null && sellPrice.compareTo(importPrice) < 0) {
             return "Giá bán phải lớn hơn hoặc bằng giá nhập.";
         }
-
         return null;
     }
 
@@ -665,16 +662,13 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     protected Product collectFormData() {
         Product product = editingEntity != null ? editingEntity : new Product();
         product.setProductName(productNameField.getText().trim());
-
         Category selectedCategory = (Category) categoryCombo.getSelectedItem();
         product.setCategoryId(selectedCategory.getCategoryId());
         product.setCategoryName(selectedCategory.getCategoryName());
-
         product.setBrand(blankToNull(brandField.getText()));
         product.setUnit(blankToNull(String.valueOf(unitCombo.getEditor().getItem())));
         product.setWeightVolume(blankToNull(weightVolumeField.getText()));
         product.setDescription(blankToNull(descriptionArea.getText()));
-
         product.setImportPrice(mode == CrudMode.ADD ? java.math.BigDecimal.ZERO : parseAmount(importPriceField.getText()));
         product.setSellPrice(parseAmount(sellPriceField.getText()));
         product.setMargin(parseAmount(marginField.getText())); // null neu de trong -> DB dung DEFAULT_MARGIN chung
@@ -682,12 +676,10 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         // Ton kho khong nhap tay: ADD luon = 0 (nhap hang qua Phieu nhap kho de tao lo dau tien);
         // EDIT giu nguyen gia tri hien co trong DB (khong ghi de boi form) de khong lech voi InventoryBatch.
         product.setStock(mode == CrudMode.ADD ? 0 : editingEntity.getStock());
-        product.setMinStock(Integer.parseInt(minStockField.getText().trim()));
+        product.setMinStock(CurrencyDocumentFilter.parse(minStockField.getText()).intValueExact());
         product.setStatus(statusCombo.getSelectedIndex() == 1 ? "DISABLED" : "ACTIVE");
-
         // Copy ảnh để ở persist() (chạy background) — tránh đơ UI trên EDT
         product.setImageUrl(currentImageUrl);
-
         return product;
     }
 
@@ -712,23 +704,15 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     }
 
     private static BigDecimal parseAmount(String value) {
-        if (value == null) return null;
-        String cleaned = value.trim().replace(".", "").replace(",", "");
-        if (cleaned.isEmpty() || !cleaned.matches("\\d+")) return null;
-        try {
-            return new BigDecimal(cleaned);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return CurrencyDocumentFilter.parse(value);
     }
 
     private static boolean isValidNonNegativeInt(String value) {
-        if (value == null) return false;
-        String trimmed = value.trim();
-        if (!trimmed.matches("\\d+")) return false;
+        BigDecimal parsed = CurrencyDocumentFilter.parse(value);
+        if (parsed == null) return false;
         try {
-            return Integer.parseInt(trimmed) >= 0;
-        } catch (NumberFormatException e) {
+            return parsed.intValueExact() >= 0;
+        } catch (ArithmeticException e) {
             return false;
         }
     }

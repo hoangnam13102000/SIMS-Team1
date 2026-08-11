@@ -330,26 +330,31 @@ public class BaseTable extends JPanel {
                     boolean isSelected, boolean hasFocus, int row, int column) {
                 JLabel c = (JLabel) super.getTableCellRendererComponent(
                     table, value, isSelected, hasFocus, row, column);
+                
                 c.setBackground(AppColor.TABLE_HEADER_BG);
                 c.setForeground(HEADER_FG);
                 c.setBorder(new EmptyBorder(AppSpacing.SM, AppSpacing.MD, AppSpacing.SM, AppSpacing.MD));
                 c.setFont(AppFont.BODY_BOLD);
+                c.setHorizontalAlignment(SwingConstants.CENTER);   // ← THÊM DÒNG NÀY
                 c.setHorizontalTextPosition(SwingConstants.LEFT);
                 c.setVerticalAlignment(SwingConstants.CENTER);
+                
                 Icon sortIcon = sortIconFor(table, column);
                 c.setIcon(sortIcon);
                 c.setIconTextGap(4);
-
+                
                 String text = value != null ? value.toString() : "";
                 int colWidth = table.getColumnModel().getColumn(column).getWidth();
                 int iconW = sortIcon != null ? sortIcon.getIconWidth() + 4 : 0;
                 int available = Math.max(12, colWidth - AppSpacing.MD * 2 - iconW);
                 FontMetrics fm = c.getFontMetrics(AppFont.BODY_BOLD);
+                
                 if (!text.isEmpty() && fm.stringWidth(text) > available) {
                     c.setText(wrapHeaderHtml(text, fm, available));
                 } else {
                     c.setText(text);
                 }
+                
                 return c;
             }
         };

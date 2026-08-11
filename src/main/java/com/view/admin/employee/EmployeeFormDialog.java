@@ -8,6 +8,7 @@ import com.dao.EmployeeDAO;
 import com.model.Employee;
 import com.model.Role;
 import com.theme.AppColor;
+import com.utils.CurrencyDocumentFilter;
 import com.utils.FileUtil;
 import com.utils.ImageUtil;
 import com.validation.FormValidator;
@@ -97,7 +98,7 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
 
     @Override
     protected int getDialogHeight() {
-        return mode == CrudMode.ADD ? 520 : 540;
+        return mode == CrudMode.ADD ? 640 : 660;
     }
 
     /**
@@ -260,6 +261,7 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         col.add(Box.createVerticalStrut(12));
 
         salaryField = newTextField();
+        CurrencyDocumentFilter.install(salaryField);
         col.add(fieldGroupIcon(FontAwesomeSolid.MONEY_BILL_WAVE, "Lương", false, wrapWithSuffix(salaryField, "VNĐ")));
         col.add(Box.createVerticalStrut(12));
 
@@ -451,7 +453,7 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         emailField.setText(entity.getEmail());
         phoneField.setText(entity.getPhone());
         dobPicker.setValue(entity.getDateOfBirth());
-        salaryField.setText(entity.getSalary() != null ? entity.getSalary().toPlainString() : "");
+        salaryField.setText(entity.getSalary() != null ? CurrencyDocumentFilter.format(entity.getSalary()) : "");
         hireDatePicker.setValue(entity.getHireDate() != null ? entity.getHireDate() : LocalDate.now());
         genderCombo.setSelectedIndex(indexOfGender(entity.getGender()));
         roleCombo.setSelectedIndex(indexOfRole(entity.getRole()));
@@ -570,20 +572,12 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
 
     private static boolean isBlankOrValidSalary(String value) {
         if (value == null || value.trim().isEmpty()) return true;
-        try {
-            return new BigDecimal(value.trim().replace(",", "")).compareTo(BigDecimal.ZERO) >= 0;
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        BigDecimal parsed = CurrencyDocumentFilter.parse(value);
+        return parsed != null && parsed.compareTo(BigDecimal.ZERO) >= 0;
     }
 
     private static BigDecimal parseSalaryOrNull(String value) {
-        if (value == null || value.trim().isEmpty()) return null;
-        try {
-            return new BigDecimal(value.trim().replace(",", ""));
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return CurrencyDocumentFilter.parse(value);
     }
 
     private static int indexOfRole(Role role) {

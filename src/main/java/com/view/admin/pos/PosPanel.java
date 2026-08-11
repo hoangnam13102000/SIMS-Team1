@@ -32,12 +32,10 @@ import com.theme.AppRadius;
 import com.theme.AppSpacing;
 import com.utils.NumberUtil;
 import com.utils.QrCodeUtil;
-
 import org.kordamp.ikonli.Ikon;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeBrands;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
-
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
@@ -105,10 +103,8 @@ public class PosPanel extends JPanel {
     private final JLabel promoStatusLabel = new JLabel(" ");
     private final JButton checkoutButton = new JButton();
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang lập hóa đơn...");
-
     private String selectedPaymentMethod = "CASH";
     private final java.util.Map<String, JToggleButton> paymentButtons = new java.util.LinkedHashMap<>();
-
     private final Runnable cartListener = this::refreshCartSummary;
 
     public PosPanel() {
@@ -128,7 +124,6 @@ public class PosPanel extends JPanel {
         body.add(buildLeftPanel(), BorderLayout.CENTER);
 
         JPanel right = buildRightPanel();
-        // Chỉ cố định chiều rộng; chiều cao theo cửa sổ (BorderLayout.EAST)
         right.setPreferredSize(new Dimension(420, 10));
         right.setMinimumSize(new Dimension(360, 10));
         body.add(right, BorderLayout.EAST);
@@ -137,15 +132,12 @@ public class PosPanel extends JPanel {
 
         vatRate = storeConfigDAO.getVatRate();
         cart.setPointRedeemRate(storeConfigDAO.getPointRedeemRate());
-
         cart.addListener(cartListener);
+
         loadCategories();
         loadProducts(null, null);
         refreshCartSummary();
 
-        // Khi trang Cai dat luu VAT_RATE moi (hoac bat ky thay doi du lieu nao
-        // khac), nap lai ti le VAT tu DB va ve lai tong tien - khong can dong
-        // mo lai panel/khoi dong lai app.
         AutoRefresher.bind(this, DataChangedEvent.class, 300, this::reloadVatRate);
     }
 
@@ -199,9 +191,6 @@ public class PosPanel extends JPanel {
 
         panel.add(filterRow, BorderLayout.NORTH);
 
-        // Boc grid trong 1 panel BorderLayout.NORTH de GridLayout khong bi keo
-        // gian theo chieu cao khung nhin - moi the giu dung kich thuoc tu nhien
-        // (giong HomePanel#renderProducts).
         JPanel gridWrapper = new JPanel(new BorderLayout());
         gridWrapper.setOpaque(false);
         gridWrapper.add(productGrid, BorderLayout.NORTH);
@@ -213,10 +202,10 @@ public class PosPanel extends JPanel {
         scroll.getViewport().setOpaque(false);
 
         emptyStateHolder.setOpaque(false);
-
         productAreaWrapper.setOpaque(false);
         productAreaWrapper.add(scroll, "grid");
         productAreaWrapper.add(emptyStateHolder, "empty");
+
         panel.add(productAreaWrapper, BorderLayout.CENTER);
 
         productGrid.onAddToCart(product -> {
@@ -227,7 +216,6 @@ public class PosPanel extends JPanel {
         return panel;
     }
 
-    /** Nut mo dialog quet ma vach bang webcam (xem BarcodeScannerDialog). */
     private JButton buildScanButton() {
         JButton btn = iconButton(FontAwesomeSolid.CAMERA, AppColor.ACCENT);
         btn.setToolTipText("Quét mã vạch sản phẩm bằng webcam");
@@ -235,13 +223,6 @@ public class PosPanel extends JPanel {
         return btn;
     }
 
-    /**
-     * Mo dialog quet ma vach (webcam + ZXing). Khi doc duoc 1 ma, tim san
-     * pham DANG BAN co ProductCode khop (xem {@link ProductDAO#findActiveByCode})
-     * roi tu dong them 1 don vi vao gio hang, giong nhu bam "Them vao gio" tren
-     * luoi san pham. Neu khong tim thay san pham nao khop ma vua quet duoc thi
-     * bao loi cho nhan vien biet thay vi im lang bo qua.
-     */
     private void openBarcodeScanner() {
         Window owner = SwingUtilities.getWindowAncestor(this);
         new BarcodeScannerDialog(owner)
@@ -261,13 +242,13 @@ public class PosPanel extends JPanel {
     }
 
     private Integer selectedCategoryId() {
-    	Object selected = categoryCombo.getSelectedItem();
+        Object selected = categoryCombo.getSelectedItem();
         return (selected instanceof Category) ? ((Category) selected).getCategoryId() : null;
     }
 
     private void loadCategories() {
         categoryCombo.removeAllItems();
-        categoryCombo.addItem(null); // "Tat ca danh muc"
+        categoryCombo.addItem(null);
         for (Category category : categoryDAO.findAllActive()) {
             categoryCombo.addItem(category);
         }
@@ -276,6 +257,7 @@ public class PosPanel extends JPanel {
     private void loadProducts(String keyword, Integer categoryId) {
         List<Product> products = productDAO.findActive(keyword, categoryId);
         productGrid.setProducts(products);
+
         if (products.isEmpty()) {
             emptyStateHolder.removeAll();
             boolean hasKeyword = keyword != null && !keyword.isBlank();
@@ -293,7 +275,6 @@ public class PosPanel extends JPanel {
     // =================================================================
 
     private JPanel buildRightPanel() {
-        // NORTH (khách gọn) + CENTER (giỏ lớn) + SOUTH (KM/tổng/TT nén để nhường chỗ giỏ)
         JPanel panel = new JPanel(new BorderLayout(0, 4));
         panel.setOpaque(true);
         panel.setBackground(AppColor.WHITE);
@@ -301,7 +282,7 @@ public class PosPanel extends JPanel {
                 new LineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(10, 12, 10, 12)));
 
-        // ----- NORTH: khách hàng (gọn) -----
+        // ----- NORTH: khách hàng -----
         JPanel top = new JPanel() {
             @Override
             public Dimension getMaximumSize() {
@@ -317,7 +298,7 @@ public class PosPanel extends JPanel {
         top.add(fixedHeight(buildCustomerStatusRow(), 20));
         panel.add(top, BorderLayout.NORTH);
 
-        // ----- CENTER: giỏ hàng (ưu tiên chiều cao) -----
+        // ----- CENTER: giỏ hàng -----
         JPanel cartSection = new JPanel(new BorderLayout(0, 2));
         cartSection.setOpaque(false);
         cartSection.add(sectionLabel("Giỏ hàng"), BorderLayout.NORTH);
@@ -331,12 +312,11 @@ public class PosPanel extends JPanel {
         cartScroll.setOpaque(false);
         cartScroll.getViewport().setOpaque(false);
         cartScroll.getVerticalScrollBar().setUnitIncrement(14);
-        // Min cao để luôn đủ chỗ ~3-4 dòng sản phẩm
         cartScroll.setMinimumSize(new Dimension(10, 240));
         cartSection.add(cartScroll, BorderLayout.CENTER);
         panel.add(cartSection, BorderLayout.CENTER);
 
-        // ----- SOUTH: nén gọn — luôn hiện đủ nút thanh toán -----
+        // ----- SOUTH: KM/tổng/TT -----
         JPanel bottom = new JPanel() {
             @Override
             public Dimension getMaximumSize() {
@@ -350,21 +330,19 @@ public class PosPanel extends JPanel {
         sep.setForeground(AppColor.BORDER);
         sep.setAlignmentX(Component.LEFT_ALIGNMENT);
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+
         bottom.add(Box.createVerticalStrut(4));
         bottom.add(sep);
         bottom.add(Box.createVerticalStrut(6));
-
-        // Mã KM + nút trên 1 hàng (bỏ tiêu đề riêng để tiết kiệm chiều cao)
         bottom.add(fixedHeight(buildPromoRowCompact(), 30));
+
         promoStatusLabel.setFont(AppFont.SMALL);
         promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
         promoStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        // Chỉ chiếm chỗ khi có nội dung
         promoStatusLabel.setText(" ");
         bottom.add(promoStatusLabel);
         bottom.add(Box.createVerticalStrut(4));
 
-        // Hang dung diem thanh vien (chi hien khi da chon KH co diem)
         bottom.add(fixedHeight(buildPointsRow(), 28));
         pointsHintLabel.setFont(AppFont.SMALL);
         pointsHintLabel.setForeground(AppColor.TEXT_MUTED);
@@ -379,17 +357,14 @@ public class PosPanel extends JPanel {
         bottom.add(Box.createVerticalStrut(2));
         bottom.add(fixedHeight(summaryRow(new JLabel("Tổng cộng"), totalValue, AppFont.HEADING_MD, AppColor.TEXT_TITLE), 26));
         bottom.add(Box.createVerticalStrut(6));
-
         bottom.add(fixedHeight(buildPaymentMethodRow(), 32));
         bottom.add(Box.createVerticalStrut(6));
         bottom.add(fixedHeight(buildCheckoutButton(), 42));
 
         panel.add(bottom, BorderLayout.SOUTH);
-
         return panel;
     }
 
-    /** Hàng mã KM gọn: nhãn + ô nhập + nút trên cùng 1 dòng. */
     private JPanel buildPromoRowCompact() {
         JPanel row = new JPanel(new BorderLayout(6, 0));
         row.setOpaque(false);
@@ -401,7 +376,6 @@ public class PosPanel extends JPanel {
 
         promoCodeField.setFont(AppFont.BODY);
         promoCodeField.setToolTipText("Nhập mã khuyến mãi rồi bấm Áp dụng");
-        // Tránh gắn listener trùng khi rebuild
         for (var al : promoCodeField.getActionListeners()) {
             promoCodeField.removeActionListener(al);
         }
@@ -445,7 +419,6 @@ public class PosPanel extends JPanel {
     private JPanel buildPromoRow() {
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
         row.setOpaque(false);
-
         promoCodeField.setFont(AppFont.BODY);
         promoCodeField.setToolTipText("Nhập mã khuyến mãi rồi bấm Áp dụng");
         promoCodeField.addActionListener(e -> applyPromoFromField());
@@ -453,7 +426,6 @@ public class PosPanel extends JPanel {
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         buttons.setOpaque(false);
-
         applyPromoButton.setFont(AppFont.SMALL);
         applyPromoButton.setFocusPainted(false);
         applyPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -517,9 +489,7 @@ public class PosPanel extends JPanel {
         return comp;
     }
 
- // ---------------- Khach hang ----------------
-
- // ---------------- Khach hang ----------------
+    // ---------------- Khach hang ----------------
 
     private JPanel buildCustomerSearchRow() {
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
@@ -543,18 +513,9 @@ public class PosPanel extends JPanel {
         searchButtons.add(searchBtn);
 
         row.add(searchButtons, BorderLayout.EAST);
-
         return row;
     }
 
-    /**
-     * Mo dialog quet ma vach/the khach hang bang webcam (tai su dung
-     * BarcodeScannerDialog voi tieu de rieng, xem overload moi). Ma quet
-     * duoc coi la CustomerCode (vd "CUS_0007", in tren the thanh vien) - tra
-     * CHINH XAC 1 khach qua {@link CustomerDAO#findByCode}, giong het cach
-     * quet ma san pham (ProductDAO.findActiveByCode). O tim kiem text
-     * (SDT/ten) van giu nguyen cho truong hop nhap tay/khong co the.
-     */
     private void openCustomerBarcodeScanner() {
         Window owner = SwingUtilities.getWindowAncestor(this);
         new BarcodeScannerDialog(owner, "Quét mã khách hàng", "Đưa mã vạch/thẻ thành viên của khách vào giữa khung hình")
@@ -611,6 +572,7 @@ public class PosPanel extends JPanel {
         }
         showCustomerPicker(results);
     }
+
     private void showCustomerPicker(List<Customer> results) {
         JPopupMenu popup = new JPopupMenu();
         for (Customer c : results) {
@@ -626,16 +588,12 @@ public class PosPanel extends JPanel {
 
     private void selectCustomer(Customer customer) {
         String phone = customer.getPhone() != null && !customer.getPhone().isBlank() ? customer.getPhone() : "";
-        // Hien them diem thanh vien hien co ngay khi chon/quet khach - de thu
-        // ngan biet truoc khi thanh toan (vd khach hoi doi diem lay qua tang).
         String label = customer.getFullName() + (phone.isEmpty() ? "" : " - " + phone)
                 + " - Điểm: " + customer.getMemberPoint();
         cart.setCustomer(customer.getCustomerId(), label, customer.getMemberPoint());
         customerSearchField.setText("");
     }
 
-
-    /** Hàng dùng điểm thành viên trừ tiền (kiểu Bách Hóa Xanh). */
     private JPanel buildPointsRow() {
         pointsRowPanel.setOpaque(false);
 
@@ -683,8 +641,8 @@ public class PosPanel extends JPanel {
 
         String[] methods = {"CASH", "BANK_TRANSFER", "PAYPAL", "CARD"};
         String[] labels = {"Tiền mặt", "Chuyển khoản", "PayPal (Sandbox)", "Thẻ"};
-
         ButtonGroup group = new ButtonGroup();
+
         for (int i = 0; i < methods.length; i++) {
             String method = methods[i];
             JToggleButton btn = new JToggleButton(labels[i]);
@@ -693,10 +651,12 @@ public class PosPanel extends JPanel {
             btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
             btn.setSelected(method.equals(selectedPaymentMethod));
             styleToggle(btn);
+
             btn.addActionListener(e -> {
                 selectedPaymentMethod = method;
                 for (JToggleButton other : paymentButtons.values()) styleToggle(other);
             });
+
             group.add(btn);
             paymentButtons.put(method, btn);
             row.add(btn);
@@ -711,7 +671,8 @@ public class PosPanel extends JPanel {
         btn.setForeground(selected ? AppColor.ACCENT_HOVER : AppColor.TEXT_SECONDARY);
         btn.setBorder(BorderFactory.createLineBorder(selected ? AppColor.ACCENT_HOVER : AppColor.BORDER, selected ? 2 : 1, true));
     }
- // ---------------- Gio hang ----------------
+
+    // ---------------- Gio hang ----------------
 
     private void refreshCartSummary() {
         rebuildCartRows();
@@ -744,25 +705,29 @@ public class PosPanel extends JPanel {
             promoCodeField.setText(cart.getAppliedPromotion().getCode());
         }
 
-        // Cap nhat UI doi diem
         boolean hasCustomer = cart.getCustomerId() != null;
         int memberPts = cart.getCustomerMemberPoint();
         long redeem = cart.getPointRedeemRate().longValue();
+
         pointsRowPanel.setVisible(hasCustomer && memberPts > 0);
         pointsHintLabel.setVisible(hasCustomer && memberPts > 0);
+
         if (hasCustomer && memberPts > 0) {
             int maxByMoney = redeem > 0 ? (int) Math.min(memberPts, totalBeforePoints / redeem) : 0;
             SpinnerNumberModel model = (SpinnerNumberModel) pointsSpinner.getModel();
             model.setMinimum(0);
             model.setMaximum(Math.max(0, maxByMoney));
+
             int cur = cart.getPointsToUse();
             if (cur > maxByMoney) cur = maxByMoney;
-            // Tranh vong lap change listener
+
             if (((Number) pointsSpinner.getValue()).intValue() != cur) {
                 pointsSpinner.setValue(cur);
             }
+
             usePointsCheck.setSelected(cur > 0);
             pointsSpinner.setEnabled(cur > 0 || usePointsCheck.isSelected());
+
             pointsHintLabel.setText("Còn " + memberPts + " điểm · 1 điểm = "
                     + NumberUtil.formatThousands(redeem) + " đ · tối đa dùng " + maxByMoney);
         } else {
@@ -774,7 +739,6 @@ public class PosPanel extends JPanel {
         checkoutButton.setEnabled(!cart.isEmpty());
     }
 
-    /** Tinh tien VAT tu tam tinh, dung chung vatRate hien hanh (doc tu StoreConfig). */
     private long calculateVat(long subTotal) {
         return vatRate.multiply(BigDecimal.valueOf(subTotal))
                 .divide(new BigDecimal("100"), 0, java.math.RoundingMode.HALF_UP)
@@ -784,6 +748,7 @@ public class PosPanel extends JPanel {
     private void rebuildCartRows() {
         cartListPanel.removeAll();
         List<CartItem> items = cart.getItems();
+
         if (items.isEmpty()) {
             JLabel empty = new JLabel("Giỏ hàng đang trống - bấm \"Thêm vào giỏ\" trên sản phẩm để bắt đầu.");
             empty.setFont(AppFont.SMALL);
@@ -796,12 +761,14 @@ public class PosPanel extends JPanel {
                 cartListPanel.add(Box.createVerticalStrut(AppSpacing.SM));
             }
         }
+
         cartListPanel.revalidate();
         cartListPanel.repaint();
     }
 
     private JPanel buildCartRow(CartItem item) {
         Product product = item.getProduct();
+
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 2));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -833,6 +800,7 @@ public class PosPanel extends JPanel {
 
         JPanel qtyRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
         qtyRow.setOpaque(false);
+
         JButton minus = smallStepButton(FontAwesomeSolid.MINUS);
         JLabel qtyLabel = new JLabel(String.valueOf(item.getQuantity()));
         qtyLabel.setFont(AppFont.SMALL_BOLD);
@@ -840,8 +808,10 @@ public class PosPanel extends JPanel {
         qtyLabel.setHorizontalAlignment(SwingConstants.CENTER);
         qtyLabel.setPreferredSize(new Dimension(24, 22));
         JButton plus = smallStepButton(FontAwesomeSolid.PLUS);
+
         minus.addActionListener(e -> cart.updateQuantity(product.getProductId(), item.getQuantity() - 1));
         plus.addActionListener(e -> cart.updateQuantity(product.getProductId(), item.getQuantity() + 1));
+
         qtyRow.add(minus);
         qtyRow.add(qtyLabel);
         qtyRow.add(plus);
@@ -849,11 +819,14 @@ public class PosPanel extends JPanel {
         JButton removeBtn = smallStepButton(FontAwesomeSolid.TRASH);
         ((FontIcon) removeBtn.getIcon()).setIconColor(AppColor.ERROR);
         removeBtn.addActionListener(e -> cart.removeItem(product.getProductId()));
+
         JPanel removeRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         removeRow.setOpaque(false);
+
         JLabel lineTotal = new JLabel(NumberUtil.formatThousands(item.getSubtotal()) + " đ");
         lineTotal.setFont(AppFont.SMALL_BOLD);
         lineTotal.setForeground(AppColor.TEXT_TITLE);
+
         removeRow.add(lineTotal);
         removeRow.add(Box.createHorizontalStrut(6));
         removeRow.add(removeBtn);
@@ -953,6 +926,7 @@ public class PosPanel extends JPanel {
             AppAlert.warning(this, "Giỏ hàng đang trống.");
             return;
         }
+
         User currentUser = AuthService.getInstance().getCurrentUser();
         if (currentUser == null) return;
 
@@ -993,14 +967,15 @@ public class PosPanel extends JPanel {
 
     /**
      * Lap hoa don xuong DB (dung chung cho ca thanh toan thuong lan sau khi
-     * PayPal da capture thanh cong) - luon chay o background thread vi la
-     * thao tac DB blocking.
+     * PayPal da capture thanh cong). Sau khi thanh cong, hien thi dialog
+     * "PaymentSuccessDialog" voi nut "In hoa don PDF".
      */
     private void createInvoiceAndFinish(User currentUser, List<CartItem> snapshot, Integer customerId,
                                          long expectedSubTotal, String paymentMethod,
                                          String payPalOrderId, String payPalCaptureId,
                                          BigDecimal discountAmount, Integer promotionId, String promotionCode,
                                          int pointsUsed, BigDecimal pointsDiscountAmount) {
+
         checkoutButton.setEnabled(false);
         loadingOverlay.start("Đang lập hóa đơn...");
 
@@ -1034,6 +1009,7 @@ public class PosPanel extends JPanel {
                     detail.setUnitPrice(item.getProduct().getSellPrice());
                     details.add(detail);
                 }
+
                 return invoiceDAO.createInvoice(invoice, details);
             }
 
@@ -1041,6 +1017,7 @@ public class PosPanel extends JPanel {
             protected void done() {
                 loadingOverlay.stop();
                 checkoutButton.setEnabled(!cart.isEmpty());
+
                 boolean ok;
                 try {
                     ok = Boolean.TRUE.equals(get());
@@ -1055,28 +1032,13 @@ public class PosPanel extends JPanel {
                     promoStatusLabel.setText(" ");
                     promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
                     loadProducts(null, null);
-                    String pointsUsedSuffix = invoice.getPointsUsed() > 0
-                            ? " Đã trừ " + invoice.getPointsUsed() + " điểm (−"
-                              + NumberUtil.formatThousands(invoice.getPointsDiscountAmount().longValue()) + " đ)."
-                            : "";
-                    String pointsSuffix = invoice.getPointsEarned() > 0
-                            ? " Khách được cộng " + invoice.getPointsEarned() + " điểm thành viên."
-                            : "";
-                    pointsSuffix = pointsUsedSuffix + pointsSuffix;
-                    boolean stockLimited = invoice.getSubTotal() != null
-                            && invoice.getSubTotal().longValue() < expectedSubTotal;
-                    if (stockLimited) {
-                        AppAlert.warning(PosPanel.this, "Đã lập hóa đơn " + invoice.getInvoiceCode(),
-                                "Một số sản phẩm không đủ tồn kho nên đã được giới hạn số lượng. "
-                                        + "Tổng tiền thực tế: " + NumberUtil.formatThousands(
-                                        invoice.getTotalAmount().longValue()) + " đ." + pointsSuffix + " "
-                                        + "Vui lòng kiểm tra lại trong \"Quản lý hóa đơn\".");
-                    } else {
-                        AppAlert.success(PosPanel.this, "Lập hóa đơn thành công",
-                                "Hóa đơn " + invoice.getInvoiceCode() + " - Tổng tiền: "
-                                        + NumberUtil.formatThousands(invoice.getTotalAmount().longValue()) + " đ."
-                                        + pointsSuffix);
-                    }
+
+                    // === HIEN THI DIALOG THANH CONG VOI NUT IN HOA DON PDF ===
+                    Window owner = SwingUtilities.getWindowAncestor(PosPanel.this);
+                    PaymentSuccessDialog successDialog = new PaymentSuccessDialog(
+                            owner instanceof Frame ? (Frame) owner : null, invoice, invoiceDAO);
+                    successDialog.setVisible(true);
+
                 } else {
                     AppAlert.error(PosPanel.this, "Không thể lập hóa đơn",
                             "Có thể do sản phẩm trong giỏ đã hết hàng hoặc có lỗi hệ thống. "
@@ -1090,19 +1052,11 @@ public class PosPanel extends JPanel {
 
     // ---------------- Thanh toan PayPal (sandbox) tai quay ----------------
 
-    /**
-     * Luong PayPal THAT (sandbox): tao 1 don PayPal (Orders v2 API), hien thi
-     * ma QR cua link "approve" de KHACH tu quet bang dien thoai cua ho (thay
-     * vi mo trinh duyet tren may cua thu ngan - hop ly hon cho ngu canh quay
-     * thu ngan, xem javadoc QrCodeUtil), cho ket qua duyet roi capture (chot
-     * giao dich). CHI lap hoa don xuong DB SAU KHI capture thanh cong -
-     * giong het pattern cua CartPanel#payWithPayPalThenPersist (trang khach
-     * hang) de nhat quan trong toan he thong.
-     */
     private void payWithPayPalThenCreateInvoice(User currentUser, List<CartItem> snapshot, Integer customerId,
                                                  long expectedSubTotal, long totalVnd,
                                                  BigDecimal discountAmount, Integer promotionId, String promotionCode,
                                                  int pointsUsed, BigDecimal pointsDiscountAmount) {
+
         PayPalService payPalService = new PayPalService();
 
         JLabel qrLabel = new JLabel("Đang khởi tạo đơn PayPal...");
@@ -1149,6 +1103,7 @@ public class PosPanel extends JPanel {
                     if (!approval.approved()) {
                         return new PayPalPosResult(false, "CANCELLED", null, null);
                     }
+
                     PayPalService.CaptureResult result = payPalService.captureOrder(created.payPalOrderId());
                     if (result.success()) {
                         return new PayPalPosResult(true, "COMPLETED", created.payPalOrderId(), result.captureId());
@@ -1178,6 +1133,7 @@ public class PosPanel extends JPanel {
             protected void done() {
                 waitingDialog.dispose();
                 if (isCancelled()) return;
+
                 try {
                     PayPalPosResult result = get();
                     if (result.success()) {
@@ -1193,22 +1149,18 @@ public class PosPanel extends JPanel {
                                 "Khách chưa duyệt thanh toán trong trang PayPal. Giỏ hàng vẫn được giữ nguyên.");
                     }
                 } catch (CancellationException ignored) {
-                    // Nhan vien tu bam Huy tren dialog cho - khong bao loi.
                 } catch (Exception e) {
                     AppAlert.error(PosPanel.this, "Thanh toán PayPal thất bại",
                             "Có lỗi xảy ra: " + e.getMessage());
                 }
             }
         };
+
         workerRef[0] = worker;
         worker.execute();
-        waitingDialog.setVisible(true); // modal - chan toi khi worker goi dispose() trong done()
+        waitingDialog.setVisible(true);
     }
 
-    /**
-     * Dialog modal "Đang chờ thanh toán PayPal..." hien QR (khach quet bang
-     * dien thoai) + nut du phong mo tren chinh may nay + nut Huy.
-     */
     private JDialog buildPayPalWaitingDialog(JLabel qrLabel, JButton openHereBtn, Runnable onCancel) {
         JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this),
                 "Thanh toán PayPal (Sandbox)", Dialog.ModalityType.APPLICATION_MODAL);

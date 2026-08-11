@@ -3,11 +3,9 @@ package com.view.admin.supplier;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.crud.TrashConfig;
-import com.components.table.AutoRowNumber;
 import com.dao.SupplierDAO;
 import com.model.Supplier;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import java.awt.Frame;
@@ -21,41 +19,35 @@ import javax.swing.SwingUtilities;
 public class SupplierPanel extends BaseCrudPanel<Supplier> {
 
     private final SupplierDAO supplierDAO = new SupplierDAO();
-    private AutoRowNumber stt;
 
     public SupplierPanel() {
         super();
 
-        stt = table.setAutoRowNumberColumn(0);
         // Không enableHorizontalScroll → cột co giãn theo khung, không scrollbar ngang.
-        // Cột "Số SP đang cung cấp" (index 6) cần min ~130px để header hiện đủ 1 dòng.
-        table.setColumnWidths(50, 150, 105, 145, 170, 150, 140);
-        table.setColumnMinWidths(40, 100, 85, 110, 120, 110, 130);
+        // Cột "Số SP đang cung cấp" (index 5) cần min ~130px để header hiện đủ 1 dòng.
+        table.setColumnWidths(150, 105, 145, 170, 150, 140);
+        table.setColumnMinWidths(100, 85, 110, 120, 110, 130);
 
         initialLoad();
     }
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.TRUCK; }
-
     @Override
     protected String getPageTitle() { return "Quản lý nhà cung cấp"; }
-
     @Override
     protected String getPageSubtitle() { return "Quản lý danh sách nhà cung cấp và mặt hàng họ cung cấp"; }
-
     @Override
     protected String getAddButtonLabel() { return "Thêm nhà cung cấp"; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Tên nhà cung cấp", "Số điện thoại", "Email", "Địa chỉ", "Mặt hàng cung cấp", "Số SP đang cung cấp"};
+        return new String[]{"Tên nhà cung cấp", "Số điện thoại", "Email", "Địa chỉ", "Mặt hàng cung cấp", "Số SP đang cung cấp"};
     }
 
     @Override
     protected Object[] mapRowToColumns(Supplier item) {
         return new Object[]{
-                "",
                 item.getSupplierName(),
                 emptyDash(item.getPhone()),
                 emptyDash(item.getEmail()),
@@ -66,14 +58,13 @@ public class SupplierPanel extends BaseCrudPanel<Supplier> {
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{6}; }
+    protected int[] numericColumns() { return new int[]{5}; }
 
     @Override
     protected String getEntityLabel() { return "nhà cung cấp"; }
 
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<Supplier> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
         table.getTable().repaint();
     }
 
@@ -108,7 +99,6 @@ public class SupplierPanel extends BaseCrudPanel<Supplier> {
         if (suppliers == null || suppliers.isEmpty()) return;
         List<Integer> ids = new ArrayList<>();
         for (Supplier s : suppliers) ids.add(s.getSupplierId());
-
         Map<Integer, Integer> counts = supplierDAO.countProductsGrouped(ids);
         for (Supplier s : suppliers) {
             s.setProductCount(counts.getOrDefault(s.getSupplierId(), 0));

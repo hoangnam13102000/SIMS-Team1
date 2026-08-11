@@ -1,5 +1,6 @@
 package com.view.admin.customer;
 
+import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
@@ -9,17 +10,20 @@ import com.dao.CustomerDAO;
 import com.model.Customer;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
-import java.awt.Color;
-import java.awt.Frame;
-import java.awt.Window;
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
-
 
 public class CustomerPanel extends BaseCrudPanel<Customer> {
 
@@ -45,6 +49,51 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
         table.setColumnWidths(110, 130, 160, 240, 120, 130);
         table.setColumnMinWidths(100, 110, 130, 200, 105, 120);
 
+        // Cột "Mã KH" (index 0): thêm icon copy
+        table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã khách hàng: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã khách hàng
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 0 && viewRow >= 0) { // Cột Mã KH
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 0);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(CustomerPanel.this, "Copy thành công", "Đã copy mã khách hàng: " + text);
+                    }
+                }
+            }
+        });
+
         initialLoad();
     }
 
@@ -54,13 +103,10 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.ID_CARD; }
-
     @Override
     protected String getPageTitle() { return "Quản lý khách hàng"; }
-
     @Override
     protected String getPageSubtitle() { return "Xem và quản lý thông tin, điểm thành viên của khách hàng"; }
-
     /** Khach hang tu dang ky qua RegisterFrame - khong tao moi tu trang quan tri nay. */
     @Override
     protected String getAddButtonLabel() { return null; }
@@ -197,10 +243,8 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     private void deleteRowPublic(int modelRow) {
         Customer item = rowToItem(modelRow);
         if (item == null) return;
-
         boolean confirmed = BaseDialog.confirmDelete(this, getEntityLabel(), getItemDisplayName(item));
         if (!confirmed) return;
-
         if (deleteItem(item)) {
             BaseDialog.success(this, "Thành công",
                     "Đã xóa " + getEntityLabel() + " \"" + getItemDisplayName(item) + "\". Có thể khôi phục trong Thùng rác.");
@@ -220,5 +264,20 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
 
     private Color statusColor(Object value) {
         return "DISABLED".equalsIgnoreCase(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã khách hàng vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
+        }
     }
 }

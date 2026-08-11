@@ -1,20 +1,27 @@
 package com.view.admin.promotion;
 
+import com.components.AppAlert;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.crud.TrashConfig;
-import com.components.table.AutoRowNumber;
 import com.dao.PromotionDAO;
 import com.model.Promotion;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -31,41 +38,80 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final PromotionDAO promotionDAO = new PromotionDAO();
-    private AutoRowNumber stt;
 
     public PromotionPanel() {
         super();
 
-        stt = table.setAutoRowNumberColumn(0);
-        table.setColumnWidths(50, 130, 200, 130, 140, 170, 100, 130);
-        table.setColumnMinWidths(40, 100, 150, 100, 110, 150, 80, 110);
-        table.setBadgeColumn(7, this::statusLabel, this::statusColor);
+        table.setColumnWidths(130, 200, 130, 140, 170, 100, 130);
+        table.setColumnMinWidths(100, 150, 100, 110, 150, 80, 110);
+        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
+
+        // Cột "Mã" (index 0): thêm icon copy
+        table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã khuyến mãi: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã khuyến mãi
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 0 && viewRow >= 0) { // Cột Mã
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 0);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(PromotionPanel.this, "Copy thành công", "Đã copy mã khuyến mãi: " + text);
+                    }
+                }
+            }
+        });
 
         initialLoad();
     }
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.PERCENT; }
-
     @Override
     protected String getPageTitle() { return "Quản lý khuyến mãi"; }
-
     @Override
     protected String getPageSubtitle() { return "Tạo và quản lý mã giảm giá áp dụng khi bán hàng"; }
-
     @Override
     protected String getAddButtonLabel() { return "Thêm khuyến mãi"; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Mã", "Tên chương trình", "Giá trị giảm", "Đơn tối thiểu",
+        return new String[]{"Mã", "Tên chương trình", "Giá trị giảm", "Đơn tối thiểu",
                 "Hiệu lực", "Đã dùng", "Trạng thái"};
     }
 
     @Override
     protected Object[] mapRowToColumns(Promotion item) {
         return new Object[]{
-                "",
                 item.getCode(),
                 item.getName(),
                 discountDisplay(item),
@@ -81,7 +127,6 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
 
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<Promotion> result) {
-        stt.setPageOffset((result.getCurrentPage() - 1) * result.getPageSize());
         table.getTable().repaint();
     }
 
@@ -193,6 +238,21 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
             case "Đã tắt": return AppColor.WARNING;
             case "Hết lượt dùng": return AppColor.ERROR;
             default: return AppColor.TEXT_MUTED; // Đã kết thúc
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã khuyến mãi vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.view.admin.product;
 
+import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
@@ -15,14 +16,14 @@ import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
-import javax.swing.JLabel;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import java.awt.Color;
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.Cursor;
 import java.awt.Font;
 import java.awt.Frame;
@@ -39,7 +40,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     private final ProductDAO productDAO = new ProductDAO();
     private final CategoryDAO categoryDAO = new CategoryDAO();
     private AutoRowNumber stt;
-
     private FilterDropdown<CategoryOption> categoryFilter;
     private FilterDropdown<PriceRangeOption> priceFilter;
     private JLabel clearFiltersLink;
@@ -51,7 +51,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
                         this::viewRowPublic);
-
         if (canManageProducts()) {
             actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                             this::editRowPublic)
@@ -62,18 +61,60 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                             this::toggleStatusRow,
                             null);
         }
-
         table.setActionColumn(actions);
 
         stt = table.setAutoRowNumberColumn(0);
         table.setImageColumn(1, 40);
         table.setBadgeColumn(8, this::statusLabel, this::statusColor);
-
         table.setColumnWidths(45, 52, 85, 160, 110, 95, 95, 70, 105);
         table.setColumnMinWidths(40, 48, 70, 100, 85, 75, 75, 55, 95);
 
-        buildFilterBar();
+        // Cột "Mã SP" (index 2): thêm icon copy
+        table.getTable().getColumnModel().getColumn(2).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                String text = value != null ? value.toString() : "";
+                c.setText(text);
+                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                if (text != null && !text.isBlank()) {
+                    FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
+                    copyIcon.setIconColor(AppColor.ACCENT);
+                    c.setIcon(copyIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Click để copy mã sản phẩm: " + text);
+                } else {
+                    c.setIcon(null);
+                    c.setToolTipText(null);
+                }
+                return c;
+            }
+        });
+        
+        // Xử lý click vào icon copy mã SP
+        table.getTable().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int viewCol = table.getTable().columnAtPoint(e.getPoint());
+                int viewRow = table.getTable().rowAtPoint(e.getPoint());
+                if (viewCol == 2 && viewRow >= 0) { // Cột Mã SP
+                    int modelRow = table.getTable().convertRowIndexToModel(viewRow);
+                    Object value = table.getTable().getModel().getValueAt(modelRow, 2);
+                    String text = value != null ? value.toString() : "";
+                    if (text != null && !text.isBlank()) {
+                        copyToClipboard(text);
+                        AppAlert.success(ProductPanel.this, "Copy thành công", "Đã copy mã sản phẩm: " + text);
+                    }
+                }
+            }
+        });
 
+        buildFilterBar();
         initialLoad();
     }
 
@@ -84,12 +125,10 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     private static final class CategoryOption {
         final Integer categoryId;
         final String label;
-
         CategoryOption(Integer categoryId, String label) {
             this.categoryId = categoryId;
             this.label = label;
         }
-
         @Override
         public String toString() { return label; }
     }
@@ -149,12 +188,10 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                 priceFilter.resetToAll();
                 onFilterChanged();
             }
-
             @Override
             public void mouseEntered(MouseEvent e) {
                 clearFiltersLink.setForeground(AppColor.ERROR);
             }
-
             @Override
             public void mouseExited(MouseEvent e) {
                 clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
@@ -186,13 +223,10 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.BOX; }
-
     @Override
     protected String getPageTitle() { return "Quản lý sản phẩm"; }
-
     @Override
     protected String getPageSubtitle() { return "Quản lý danh sách sản phẩm, giá và tồn kho trong hệ thống"; }
-
     @Override
     protected String getAddButtonLabel() { return canManageProducts() ? "Thêm sản phẩm" : null; }
 
@@ -266,7 +300,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
     @Override
     protected boolean supportsDelete() { return false; }
-
     @Override
     protected boolean deleteItem(Product item) { return false; }
 
@@ -324,6 +357,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         if (categoryName.isEmpty()) {
             return com.importer.ImportRowResult.failure("thiếu danh mục.");
         }
+
         Category category = findCategoryByName(categoryName);
         if (category == null) {
             return com.importer.ImportRowResult.failure("danh mục \"" + categoryName + "\" không tồn tại.");
@@ -376,6 +410,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
         if (!productDAO.insert(product)) {
             return com.importer.ImportRowResult.failure("lưu thất bại.");
         }
+
         com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_CREATE,
                 "Đã nhập sản phẩm \"" + name + "\" từ file", product, null);
         return com.importer.ImportRowResult.success();
@@ -445,7 +480,6 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     private void toggleStatusRow(int modelRow) {
         Product item = rowToItem(modelRow);
         if (item == null) return;
-
         boolean willDisable = item.isActive();
         boolean confirmed = BaseDialog.confirm(this,
                 willDisable ? "Ngừng bán sản phẩm" : "Mở bán lại sản phẩm",
@@ -474,5 +508,20 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
     private Color statusColor(Object value) {
         return "DISABLED".equalsIgnoreCase(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: copy mã sản phẩm vào clipboard
+    // ---------------------------------------------------------------
+
+    /** Copy chuỗi vào clipboard hệ thống. */
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, null);
+        } catch (Exception ignored) {
+            // Bỏ qua nếu không copy được
+        }
     }
 }

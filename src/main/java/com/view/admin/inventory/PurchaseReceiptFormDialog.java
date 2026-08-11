@@ -10,6 +10,7 @@ import com.model.PurchaseReceiptDetail;
 import com.model.Supplier;
 import com.service.AuthService;
 import com.theme.AppColor;
+import com.utils.CurrencyDocumentFilter;
 import com.utils.NumberUtil;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -228,6 +229,7 @@ public class PurchaseReceiptFormDialog extends JDialog {
                 comboLabel(value == null ? "— Chọn sản phẩm —" : value.getProductName(), isSelected));
         quantityField = styledField();
         priceField = styledField();
+        CurrencyDocumentFilter.install(priceField);
         lotField = styledField();
         mfgPicker = new DatePickerField();
         expPicker = new DatePickerField();
@@ -417,7 +419,7 @@ public class PurchaseReceiptFormDialog extends JDialog {
         }
         BigDecimal price = parseAmount(priceField.getText());
         if (price == null || price.signum() < 0) {
-            BaseDialog.error(this, "Giá nhập không hợp lệ", "Nhập giá ≥ 0 (có thể dùng dấu chấm phân cách hàng nghìn).");
+            BaseDialog.error(this, "Giá nhập không hợp lệ", "Nhập giá ≥ 0 (có thể dùng dấu phẩy phân cách hàng nghìn).");
             priceField.requestFocus();
             return;
         }
@@ -662,14 +664,7 @@ public class PurchaseReceiptFormDialog extends JDialog {
     }
 
     private static BigDecimal parseAmount(String value) {
-        if (value == null) return null;
-        String cleaned = value.trim().replace(".", "").replace(",", "");
-        if (cleaned.isEmpty() || !cleaned.matches("\\d+")) return null;
-        try {
-            return new BigDecimal(cleaned);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return CurrencyDocumentFilter.parse(value);
     }
 
     private static final class LineRow {
