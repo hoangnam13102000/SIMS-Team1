@@ -102,14 +102,22 @@ INSERT INTO Suppliers (SupplierName, Address, Phone, Email, SuppliedItems) VALUE
 GO
 
 -- ---- 7. Products ----
--- Luu y: Ca phe bot de Stock = 0 luc dau, se duoc nhap kho ngay sau qua PurchaseReceiptDetails
--- (trigger trg_PurchaseReceiptDetails_Insert se tu cong kho + ghi InventoryTransactions, KHONG can UPDATE thu cong)
+-- QUAN TRONG: Stock LUON de = 0 khi insert - day KHONG phai cot nhap tay,
+-- ma la cot duoc trigger trg_PurchaseReceiptDetails_Insert tu dong cong don
+-- theo InventoryBatch (xem sql/Trigger_SIMS.sql). Neu insert thang mot con
+-- so vao Stock ma khong tao InventoryBatch tuong ung, POS se bi "tam thay":
+-- PosCartService doc Products.Stock nen van cho bo vao gio hang binh thuong
+-- (hien "con hang"), nhung trigger trg_InvoiceDetails_CheckStock khi lap hoa
+-- don lai tinh ton that theo SUM(InventoryBatch.RemainingQty) = 0 nen chan
+-- luon voi loi "San pham da het hang" -> thanh toan tao bug lan lon giua 2
+-- nguon du lieu. Tat ca ton kho ban dau vi vay PHAI di qua muc 11 (Phieu
+-- nhap kho) ngay ben duoi, giong cach "Ca phe bot" da tung lam dung truoc day.
 INSERT INTO Products (ProductName, CategoryID, ImportPrice, SellPrice, Stock, MinStock) VALUES
-(N'Táo Envy',       (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      35000, 45000, 50, 10),
-(N'Chuối già',       (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      15000, 20000, 80, 15),
-(N'Cà chua',         (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        18000, 24000, 40, 10),
-(N'Cà rốt',          (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        12000, 17000, 60, 10),
-(N'Nước suối 500ml', (SELECT CategoryID FROM Categories WHERE CategoryName=N'Đồ uống'),        4000,  6000, 200, 30),
+(N'Táo Envy',       (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      35000, 45000, 0, 10),
+(N'Chuối già',       (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      15000, 20000, 0, 15),
+(N'Cà chua',         (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        18000, 24000, 0, 10),
+(N'Cà rốt',          (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        12000, 17000, 0, 10),
+(N'Nước suối 500ml', (SELECT CategoryID FROM Categories WHERE CategoryName=N'Đồ uống'),        4000,  6000, 0, 30),
 (N'Cà phê bột 500g', (SELECT CategoryID FROM Categories WHERE CategoryName=N'Thực phẩm khô'), 65000, 89000, 0,  5);
 GO
 
@@ -155,7 +163,68 @@ INSERT INTO Shifts (UserID, StartTime, Status) VALUES
 ((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, -3, GETDATE()), 'OPEN');
 GO
 
--- ---- 11. Invoice mau (co CustomerID, PaymentMethod, VATRate) ----
+-- ---- 11. Phieu nhap kho mau (BAT BUOC chay TRUOC muc 12 - Hoa don mau) ----
+-- Day la nguon DUY NHAT tao InventoryBatch (tung dong PurchaseReceiptDetails
+-- sinh dung 1 lo qua trigger trg_PurchaseReceiptDetails_Insert), trigger se
+-- tu cong Products.Stock tuong ung - KHONG duoc UPDATE Products.Stock thu
+-- cong o bat ky dau khac. Nhap theo dung NCC uu tien (IsPreferred=1) da khai
+-- bao o muc 8 cho nhat quan gia. HSD dat tuong doi theo GETDATE() de luon
+-- "con han" bat ke script duoc chay vao ngay nao (R1/FEFO: b.ExpiryDate >=
+-- CAST(GETDATE() AS DATE) moi duoc tinh vao ton kho ban duoc); hang kho
+-- khong theo doi HSD (nuoc dong chai) de ManufactureDate/ExpiryDate = NULL.
+INSERT INTO PurchaseReceipts (ReceiptCode, SupplierID, CreatedBy, TotalAmount) VALUES
+('PN-20260715-001',
+ (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Nông sản Miền Tây'),
+ (SELECT UserID FROM Users WHERE Username='invmgr'), 0),
+('PN-20260716-001',
+ (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Rau sạch Đà Lạt'),
+ (SELECT UserID FROM Users WHERE Username='invmgr'), 0),
+('PN-20260718-001',
+ (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
+ (SELECT UserID FROM Users WHERE Username='invmgr'), 0);
+GO
+
+-- Nong san Mien Tay: Tao Envy + Chuoi gia (trai cay, mau nhanh het han hon)
+INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260715-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 50, 35000,
+ N'LOT-TAO-001', DATEADD(DAY, -3, GETDATE()), DATEADD(DAY, 20, GETDATE())),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260715-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 80, 15000,
+ N'LOT-CHUOI-001', DATEADD(DAY, -1, GETDATE()), DATEADD(DAY, 7, GETDATE()));
+GO
+
+-- Rau sach Da Lat (NCC uu tien - gia 17500/12000 theo SupplierProducts): Ca chua + Ca rot
+INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260716-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà chua'), 40, 17500,
+ N'LOT-CACHUA-001', DATEADD(DAY, -2, GETDATE()), DATEADD(DAY, 10, GETDATE())),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260716-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà rốt'), 60, 12000,
+ N'LOT-CAROT-001', DATEADD(DAY, -2, GETDATE()), DATEADD(DAY, 25, GETDATE()));
+GO
+
+-- An Binh: Nuoc suoi (khong theo doi HSD) + Ca phe bot (kho, HSD dai)
+INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260718-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 200, 4000,
+ N'LOT-NUOC-001', NULL, NULL),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260718-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 30, 65000,
+ N'LOT-CAPHE-001', DATEADD(DAY, -5, GETDATE()), DATEADD(DAY, 365, GETDATE()));
+GO
+
+UPDATE r
+SET r.TotalAmount = t.Sum
+FROM PurchaseReceipts r
+JOIN (SELECT ReceiptID, SUM(Quantity * ImportPrice) AS Sum FROM PurchaseReceiptDetails GROUP BY ReceiptID) t
+  ON t.ReceiptID = r.ReceiptID;
+GO
+
+-- ---- 12. Hoa don mau (co CustomerID, PaymentMethod, VATRate) ----
+-- Chay SAU muc 11 nen luc nay Tao Envy/Nuoc suoi da co InventoryBatch that ->
+-- trg_InvoiceDetails_CheckStock moi cho phep insert (truoc day 2 dong nay
+-- nam TRUOC phan nhap kho nen luon bi trigger tu choi vi ton kho theo batch = 0).
 INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, VATRate, TotalAmount) VALUES
 ('HD-20260725-001',
  (SELECT TOP 1 ShiftID FROM Shifts ORDER BY ShiftID DESC),
@@ -165,7 +234,7 @@ INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod
 GO
 
 -- Insert chi tiet hoa don -> trigger trg_InvoiceDetails_CheckStock se tu tru kho
--- + tu ghi InventoryTransactions (TransactionType='SALE')
+-- (theo FEFO, tru dan tren InventoryBatch) + tu ghi InventoryTransactions (TransactionType='SALE')
 INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
 ((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
  (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 3, 45000),
@@ -180,27 +249,6 @@ SET i.SubTotal    = t.Sum,
 FROM Invoices i
 JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t
   ON t.InvoiceID = i.InvoiceID;
-GO
-
--- ---- 12. Phieu nhap kho mau ----
-INSERT INTO PurchaseReceipts (ReceiptCode, SupplierID, CreatedBy, TotalAmount) VALUES
-('PN-20260720-001',
- (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
- (SELECT UserID FROM Users WHERE Username='invmgr'), 0);
-GO
-
--- Insert chi tiet nhap -> trigger trg_PurchaseReceiptDetails_Insert se tu cong kho
--- + tu ghi InventoryTransactions (TransactionType='IMPORT'), KHONG can UPDATE Products thu cong nua
-INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice) VALUES
-((SELECT TOP 1 ReceiptID FROM PurchaseReceipts ORDER BY ReceiptID DESC),
- (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 30, 65000);
-GO
-
-UPDATE r
-SET r.TotalAmount = t.Sum
-FROM PurchaseReceipts r
-JOIN (SELECT ReceiptID, SUM(Quantity * ImportPrice) AS Sum FROM PurchaseReceiptDetails GROUP BY ReceiptID) t
-  ON t.ReceiptID = r.ReceiptID;
 GO
 
 -- ---- 13. Doi/tra hang mau (co Approval that su, dung thu tu PENDING -> APPROVED) ----
@@ -293,23 +341,21 @@ INSERT INTO AuditLogs (UserID, Action, TableName, RecordID, OldValue, NewValue, 
 GO
 
 -- ---- 18. Cau hinh he thong mau ----
+-- QUAN TRONG: ca 5 dong PHAI nam chung 1 cau INSERT (1 danh sach VALUES) -
+-- truoc day dong POINT_RATE bi tach roi ra sau dau ';' (do 1 comment chen
+-- giua danh sach VALUES), thanh 1 tuple "mo coi" khong thuoc cau lenh INSERT
+-- nao ca -> loi cu phap T-SQL lam HONG CA BATCH nay, khien StoreConfig
+-- khong duoc nap (hoac chi nap duoc mot phan tuy client), POS/thanh toan
+-- doc nham VAT_RATE/POINT_RATE mac dinh hoac rong -> tinh sai VAT va diem
+-- thanh vien luc lap hoa don.
 -- So VND khach can chi de duoc cong 1 diem thanh vien (xem StoreConfigDAO.getPointRate()
 -- va InvoiceDAO.createInvoice - tich diem tu dong khi lap hoa don co gan khach hang).
--- DEFAULT_MARGIN: chenh lech (VND) mac dinh giua SellPrice va ImportPrice khi
--- 1 SP khong dat Margin rieng (xem StoreConfigDAO.getDefaultMargin() va
--- trigger trg_Products_SyncSellPrice trong Trigger_SIMS.sql).
--- RETURN_APPROVAL_THRESHOLD: nguong gia tri (VND) tong hang IN cua 1 phieu
--- doi/tra ke tu do bat buoc Quan ly ban hang duyet truoc khi kho/hoa don goc
--- duoc dieu chinh (R4, xem StoreConfigDAO.getApprovalThreshold() va
--- ReturnExchangeDAO.createReturnExchange).
 INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('VAT_RATE', '8'),
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái'),
-('POINT_RATE', '10000'),
-('DEFAULT_MARGIN', '5000'),
-('RETURN_APPROVAL_THRESHOLD', '0');
+('POINT_RATE', '10000');
 GO
 
 UPDATE Products
@@ -476,115 +522,3 @@ WHERE Username IN ('salesmgr', 'invmgr');
 UPDATE Users 
 SET PasswordHash = '$2a$12$rULa7sQqQB78UAMj4a.8IOPHPuspkHU2zffYsu75HhmFDVGPl3csS'
 WHERE Username IN ('staff01', 'staff02');
-
-
-USE SIMS_DB;
-GO
-
--- Xóa mã mẫu cũ (nếu chạy lại)
-DELETE FROM Promotions WHERE Code IN (
-    'SUMMER10', 'GIAM50K', 'FREESHIP', 'WELCOME15', 'FLASH20'
-);
-GO
-
-INSERT INTO Promotions (
-    Code, Name, DiscountType, DiscountValue,
-    MaxDiscountAmount, MinOrderAmount,
-    StartDate, EndDate, UsageLimit, UsedCount,
-    IsActive, IsDeleted, CreatedBy, CreatedAt
-) VALUES
--- Giảm 10% tối đa 30.000đ, đơn từ 100.000đ
-(
-    'SUMMER10',
-    N'Khuyến mãi hè - Giảm 10%',
-    'PERCENT',
-    10,
-    30000,
-    100000,
-    '2026-01-01',
-    '2026-12-31',
-    1000,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Giảm cố định 50.000đ, đơn từ 300.000đ
-(
-    'GIAM50K',
-    N'Giảm ngay 50.000đ',
-    'AMOUNT',
-    50000,
-    NULL,
-    300000,
-    '2026-01-01',
-    '2026-12-31',
-    500,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Giảm 15% cho khách mới, tối đa 40.000đ, đơn từ 150.000đ
-(
-    'WELCOME15',
-    N'Chào thành viên mới - Giảm 15%',
-    'PERCENT',
-    15,
-    40000,
-    150000,
-    '2026-01-01',
-    '2026-12-31',
-    NULL,          -- không giới hạn lượt
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Flash sale giảm 20%, tối đa 100.000đ, đơn từ 200.000đ
-(
-    'FLASH20',
-    N'Flash sale - Giảm 20%',
-    'PERCENT',
-    20,
-    100000,
-    200000,
-    CAST(GETDATE() AS DATE),
-    DATEADD(DAY, 30, CAST(GETDATE() AS DATE)),
-    200,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Giảm 20.000đ, đơn từ 99.000đ (dùng test nhanh)
-(
-    'FREESHIP',
-    N'Ưu đãi 20.000đ',
-    'AMOUNT',
-    20000,
-    NULL,
-    99000,
-    '2026-01-01',
-    '2026-12-31',
-    9999,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-);
-GO
-
--- Kiểm tra
-SELECT PromotionID, Code, Name, DiscountType, DiscountValue,
-       MaxDiscountAmount, MinOrderAmount, StartDate, EndDate,
-       UsageLimit, UsedCount, IsActive
-FROM Promotions
-WHERE IsDeleted = 0
-ORDER BY PromotionID;
-GO
