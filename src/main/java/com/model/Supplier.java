@@ -1,5 +1,7 @@
 package com.model;
 
+import java.math.BigDecimal;
+
 public class Supplier {
 
     private int supplierId;
@@ -9,6 +11,8 @@ public class Supplier {
     private String email;
     private String suppliedItems;
     private int productCount;
+    /** So tien NCC dang no lai cua hang, phat sinh tu cac phieu tra hang lo (SupplierReturns). */
+    private BigDecimal debtBalance;
 
     public int getSupplierId() { return supplierId; }
     public void setSupplierId(int supplierId) { this.supplierId = supplierId; }
@@ -30,4 +34,7 @@ public class Supplier {
 
     public int getProductCount() { return productCount; }
     public void setProductCount(int productCount) { this.productCount = productCount; }
+
+    public BigDecimal getDebtBalance() { return debtBalance; }
+    public void setDebtBalance(BigDecimal debtBalance) { this.debtBalance = debtBalance; }
 }

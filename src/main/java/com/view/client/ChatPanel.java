@@ -16,6 +16,7 @@ import com.ws.ChatMessage;
 import com.ws.VoiceNotePlayer;
 import com.ws.VoiceNoteSender;
 import com.components.common.SoundWaveIcon;
+import com.components.common.VoiceMessageBubble;
 import com.service.ai.voice.TextToSpeechService;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -404,57 +405,9 @@ public class ChatPanel extends JPanel {
     }
 
 
-    /** Nút phát tin thoại — dễ bấm, báo lỗi rõ. */
+    /** Khung phát tin thoại kiểu hiện đại: nút play tròn + waveform + thời lượng. */
     private JComponent buildVoicePlayControl(String voiceBase64, boolean isMine) {
-        FontIcon playIcon = FontIcon.of(FontAwesomeSolid.PLAY_CIRCLE, 18);
-        playIcon.setIconColor(isMine ? Color.WHITE : AppColor.ACCENT_HOVER);
-        JButton playBtn = new JButton(" Nghe tin thoại", playIcon);
-        playBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        playBtn.setForeground(isMine ? Color.WHITE : AppColor.TEXT_PRIMARY);
-        playBtn.setFocusPainted(false);
-        playBtn.setBorderPainted(true);
-        playBtn.setContentAreaFilled(true);
-        playBtn.setOpaque(true);
-        playBtn.setBackground(isMine ? new Color(255, 255, 255, 50) : AppColor.BG_LIGHT);
-        playBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        playBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        playBtn.setHorizontalAlignment(SwingConstants.LEFT);
-        playBtn.setPreferredSize(new Dimension(168, 34));
-        playBtn.setMaximumSize(new Dimension(240, 36));
-        final String vb64 = voiceBase64;
-        playBtn.addActionListener(ev -> {
-            System.out.println("[Chat] Play clicked, dataLen=" + (vb64 == null ? 0 : vb64.length()));
-            if (vb64 == null || vb64.isBlank()) {
-                AppAlert.warning(ChatPanel.this, "Không có dữ liệu âm thanh.");
-                return;
-            }
-            VoiceNotePlayer player = VoiceNotePlayer.getInstance();
-            if (player.isPlaying()) {
-                player.stop();
-                playBtn.setText(" Nghe tin thoại");
-                return;
-            }
-            playBtn.setEnabled(false);
-            playBtn.setText(" Đang phát…");
-            new Thread(() -> {
-                try {
-                    player.play(vb64);
-                    SwingUtilities.invokeLater(() -> {
-                        playBtn.setText(" Nghe tin thoại");
-                        playBtn.setEnabled(true);
-                    });
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
-                    SwingUtilities.invokeLater(() -> {
-                        playBtn.setText(" Nghe tin thoại");
-                        playBtn.setEnabled(true);
-                        AppAlert.error(ChatPanel.this, "Không phát được:\\n" + msg);
-                    });
-                }
-            }, "play-voice").start();
-        });
-        return playBtn;
+        return new VoiceMessageBubble(voiceBase64, isMine, this);
     }
 
     private void toggleVoiceNote() {

@@ -162,6 +162,52 @@ public class InventoryReportDAO {
         return list;
     }
 
+
+    /** Tổng hợp biến động tồn kho trong N ngày gần nhất, dùng cho Dashboard kho. */
+    public static class MovementSummary {
+        public final long inboundQuantity;
+        public final long outboundQuantity;
+        public final long disposalQuantity;
+        public final long transactionCount;
+
+        public MovementSummary(long inboundQuantity, long outboundQuantity,
+                               long disposalQuantity, long transactionCount) {
+            this.inboundQuantity = inboundQuantity;
+            this.outboundQuantity = outboundQuantity;
+            this.disposalQuantity = disposalQuantity;
+            this.transactionCount = transactionCount;
+        }
+    }
+
+    /**
+     * Nhập/xuất/tiêu huỷ trong khoảng N ngày gần nhất. Chỉ đọc sổ cái
+     * InventoryTransactions để giữ đúng nguyên tắc một nguồn sự thật.
+     */
+    public MovementSummary getMovementSummary(int days) {
+        int safeDays = Math.max(1, days);
+        String sql = "SELECT "
+                + "ISNULL(SUM(CASE WHEN Direction = 'IN' THEN Quantity ELSE 0 END), 0) AS InQty, "
+                + "ISNULL(SUM(CASE WHEN Direction = 'OUT' THEN Quantity ELSE 0 END), 0) AS OutQty, "
+                + "ISNULL(SUM(CASE WHEN TransactionType = 'DISPOSAL' THEN Quantity ELSE 0 END), 0) AS DisposalQty, "
+                + "COUNT(*) AS TxCount "
+                + "FROM InventoryTransactions "
+                + "WHERE CreatedAt >= DATEADD(DAY, ?, CAST(GETDATE() AS DATE))";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, -(safeDays - 1));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new MovementSummary(rs.getLong("InQty"), rs.getLong("OutQty"),
+                            rs.getLong("DisposalQty"), rs.getLong("TxCount"));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "InventoryReportDAO.getMovementSummary", e);
+        }
+        return new MovementSummary(0, 0, 0, 0);
+    }
+
     // ---------------------------------------------------------------
     // Tong quan
     // ---------------------------------------------------------------

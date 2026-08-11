@@ -307,7 +307,7 @@ INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái'),
-('POINT_RATE', '10000'),
+('POINT_RATE', '100000'),
 ('DEFAULT_MARGIN', '5000'),
 ('RETURN_APPROVAL_THRESHOLD', '0');
 GO

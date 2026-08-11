@@ -213,6 +213,21 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
         return result;
     }
 
+    /** Đếm lô đã hết hạn nhưng vẫn còn tồn vật lý. */
+    public int countExpiredWithStock() {
+        syncExpiredStatus();
+        String sql = "SELECT COUNT(*) FROM InventoryBatch "
+                + "WHERE Status = 'EXPIRED' AND RemainingQty > 0";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : 0;
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "InventoryBatchDAO.countExpiredWithStock", e);
+            return 0;
+        }
+    }
+
     /** Dem so lo sap het han trong vong {@code days} ngay toi (dung cho canh bao tren Dashboard). */
     public int countExpiringSoon(int days) {
         String sql = "SELECT COUNT(*) FROM InventoryBatch "

@@ -18,6 +18,8 @@ public class StoreConfigDAO {
     public static final String KEY_VAT_RATE = "VAT_RATE";
     /** So VND khach can chi de duoc cong 1 diem thanh vien (vd "10000" = 10.000d/diem). */
     public static final String KEY_POINT_RATE = "POINT_RATE";
+    /** 1 diem = bao nhieu VND khi DOI diem tru tien (mac dinh 1000). */
+    public static final String KEY_POINT_REDEEM_RATE = "POINT_REDEEM_RATE";
     public static final String KEY_DEFAULT_MARGIN = "DEFAULT_MARGIN";
     /**
      * Nguong gia tri (VND) cua tong hang IN (khach tra) trong 1 phieu doi/tra
@@ -27,16 +29,12 @@ public class StoreConfigDAO {
      */
     public static final String KEY_APPROVAL_THRESHOLD = "RETURN_APPROVAL_THRESHOLD";
 
-    /** Giá trị mặc định khi bảng chưa được seed hoặc đọc lỗi - khớp DEFAULT 8 của cột Invoices.VATRate. */
     private static final BigDecimal DEFAULT_VAT_RATE = new BigDecimal("8");
-    /** Mac dinh 10.000d = 1 diem neu chua cau hinh / cau hinh loi. */
     private static final BigDecimal DEFAULT_POINT_RATE = new BigDecimal("10000");
-    /** Mac dinh 5.000d neu chua cau hinh / cau hinh loi - phai KHOP voi fallback trong fn_GetDefaultMargin() (SQL). */
+    private static final BigDecimal DEFAULT_POINT_REDEEM_RATE = new BigDecimal("1000");
     private static final BigDecimal DEFAULT_MARGIN = new BigDecimal("5000");
-    /** Mac dinh 0d (moi phieu doi/tra co gia tri > 0 deu can duyet) neu chua cau hinh / cau hinh loi. */
     private static final BigDecimal DEFAULT_APPROVAL_THRESHOLD = new BigDecimal("0");
 
-    /** Đọc tỉ lệ VAT hiện hành (%). Không bao giờ trả về null - fallback DEFAULT_VAT_RATE nếu thiếu/lỗi. */
     public BigDecimal getVatRate() {
         String raw = getValue(KEY_VAT_RATE, null);
         if (raw == null || raw.isBlank()) return DEFAULT_VAT_RATE;
@@ -49,12 +47,6 @@ public class StoreConfigDAO {
         }
     }
 
-    /**
-     * Đọc "định mức" điểm thành viên hiện hành: số VNĐ khách cần chi để được
-     * cộng 1 điểm (vd 10.000 nghĩa là hóa đơn 35.000đ -> cộng 3 điểm, phần dư
-     * làm tròn xuống - xem InvoiceDAO#createInvoice). Không bao giờ trả về
-     * null hoặc <= 0 - fallback DEFAULT_POINT_RATE nếu thiếu/lỗi/âm.
-     */
     public BigDecimal getPointRate() {
         String raw = getValue(KEY_POINT_RATE, null);
         if (raw == null || raw.isBlank()) return DEFAULT_POINT_RATE;
@@ -69,12 +61,22 @@ public class StoreConfigDAO {
     }
 
     /**
-     * Doc chenh lech mac dinh (VND) hien hanh giua Gia ban va Gia nhap
-     * (KEY_DEFAULT_MARGIN). Khong bao gio tra ve null/am - fallback
-     * DEFAULT_MARGIN neu thieu/loi/am. Dung de HIEN THI xem truoc (preview)
-     * o UI (ProductFormDialog) - gia tri that su duoc DATABASE tinh boi
-     * trigger trg_Products_SyncSellPrice, day chi la doc lai de show cho dung.
+     * So VND quy doi tu 1 diem thanh vien khi DOI (tru tien).
+     * Vi du POINT_REDEEM_RATE=1000 → 1 diem = 1.000d. Khong bao gio null/am.
      */
+    public BigDecimal getPointRedeemRate() {
+        String raw = getValue(KEY_POINT_REDEEM_RATE, null);
+        if (raw == null || raw.isBlank()) return DEFAULT_POINT_REDEEM_RATE;
+        try {
+            BigDecimal rate = new BigDecimal(raw.trim());
+            return rate.signum() > 0 ? rate : DEFAULT_POINT_REDEEM_RATE;
+        } catch (NumberFormatException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StoreConfigDAO.getPointRedeemRate - gia tri POINT_REDEEM_RATE khong hop le: " + raw, e);
+            return DEFAULT_POINT_REDEEM_RATE;
+        }
+    }
+
     public BigDecimal getDefaultMargin() {
         String raw = getValue(KEY_DEFAULT_MARGIN, null);
         if (raw == null || raw.isBlank()) return DEFAULT_MARGIN;
@@ -88,11 +90,6 @@ public class StoreConfigDAO {
         }
     }
 
-    /**
-     * Đọc ngưỡng giá trị (VND) buộc phải có Quản lý bán hàng duyệt trước khi
-     * phiếu đổi/trả được áp dụng vào kho/hoá đơn gốc (R4, KEY_APPROVAL_THRESHOLD).
-     * Không bao giờ trả về null/âm - fallback DEFAULT_APPROVAL_THRESHOLD nếu thiếu/lỗi/âm.
-     */
     public BigDecimal getApprovalThreshold() {
         String raw = getValue(KEY_APPROVAL_THRESHOLD, null);
         if (raw == null || raw.isBlank()) return DEFAULT_APPROVAL_THRESHOLD;
@@ -106,7 +103,6 @@ public class StoreConfigDAO {
         }
     }
 
-    /** Đọc 1 giá trị cấu hình theo khoá; trả về defaultValue nếu chưa có / lỗi DB. */
     public String getValue(String key, String defaultValue) {
         String sql = "SELECT ConfigValue FROM StoreConfig WHERE ConfigKey = ?";
         try (Connection con = DBConnection.getConnection();
@@ -121,7 +117,6 @@ public class StoreConfigDAO {
         }
     }
 
-    /** Toàn bộ cấu hình hiện có, giữ nguyên thứ tự khoá trong DB - dùng cho trang Cài đặt. */
     public Map<String, String> getAll() {
         Map<String, String> result = new LinkedHashMap<>();
         String sql = "SELECT ConfigKey, ConfigValue FROM StoreConfig ORDER BY ConfigKey";
@@ -137,11 +132,6 @@ public class StoreConfigDAO {
         return result;
     }
 
-    /**
-     * Ghi 1 giá trị cấu hình - update nếu khoá đã tồn tại, insert nếu chưa
-     * (StoreConfig luôn được seed sẵn 4 khoá trong Insert_SIMS.sql nên nhánh
-     * insert hiếm khi chạy tới, nhưng vẫn xử lý cho chắc).
-     */
     public boolean setValue(String key, String value) {
         String updateSql = "UPDATE StoreConfig SET ConfigValue = ? WHERE ConfigKey = ?";
         try (Connection con = DBConnection.getConnection();
@@ -166,12 +156,6 @@ public class StoreConfigDAO {
         }
     }
 
-    /**
-     * Ghi nhiều giá trị trong 1 transaction (dùng cho form Cài đặt lưu tất cả
-     * field 1 lần). Dùng MERGE (upsert) thay vì UPDATE đơn thuần để vẫn đúng
-     * ngay cả khi 1 khoá nào đó chưa tồn tại sẵn trong bảng (vd DB cũ chưa
-     * được seed đủ 4 khoá mặc định trong Insert_SIMS.sql).
-     */
     public boolean setValues(Map<String, String> values) {
         String mergeSql = "MERGE StoreConfig AS target "
                 + "USING (SELECT ? AS ConfigKey, ? AS ConfigValue) AS src "

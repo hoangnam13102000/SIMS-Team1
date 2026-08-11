@@ -6,36 +6,37 @@ import java.time.LocalDateTime;
 public class Invoice {
 
     private int invoiceId;
-    private String invoiceCode;   // "ORD_" + InvoiceID dem 4 so (vd ORD_0001)
+    private String invoiceCode;
 
-    private int shiftId;          // Ca ban hang dang mo luc lap hoa don (xem ShiftDAO)
+    private int shiftId;
     private int createdBy;
     private String createdByName;
 
-    private Integer customerId;   // null = khach le (khong co tai khoan)
+    private Integer customerId;
     private String customerName;
 
     private LocalDateTime createdAt;
     private BigDecimal subTotal;
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+    private Integer promotionId;
+    private String promotionCode;
     private BigDecimal vatRate;
     private BigDecimal vatAmount;
     private BigDecimal totalAmount;
 
-    private String paymentMethod; // CASH | BANK_TRANSFER | PAYPAL | CARD
-    private String status;        // ACTIVE | CANCELLED
+    private String paymentMethod;
+    private String status;
     private String cancelReason;
     private LocalDateTime cancelledAt;
 
-    // Chi duoc set khi paymentMethod = PAYPAL (xem PosPanel#payWithPayPalThenCreateInvoice) -
-    // luu lai de doi soat/tra cuu giao dich tren PayPal Dashboard (sandbox) khi can.
     private String payPalOrderId;
     private String payPalCaptureId;
 
-    private int itemCount; // so dong san pham khac nhau trong hoa don
+    private int itemCount;
 
-    // Chi duoc gan (KHONG luu cot rieng trong Invoices) ngay sau khi tao hoa
-    // don thanh cong cho khach co tai khoan (xem InvoiceDAO#createInvoice) -
-    // dung de hien thong bao "+N diem" tren PosPanel.
+    private int pointsUsed;
+    private BigDecimal pointsDiscountAmount = BigDecimal.ZERO;
+
     private int pointsEarned;
 
     public Invoice() {
@@ -67,6 +68,19 @@ public class Invoice {
     public BigDecimal getSubTotal() { return subTotal; }
     public void setSubTotal(BigDecimal subTotal) { this.subTotal = subTotal; }
 
+    public BigDecimal getDiscountAmount() {
+        return discountAmount != null ? discountAmount : BigDecimal.ZERO;
+    }
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount != null ? discountAmount : BigDecimal.ZERO;
+    }
+
+    public Integer getPromotionId() { return promotionId; }
+    public void setPromotionId(Integer promotionId) { this.promotionId = promotionId; }
+
+    public String getPromotionCode() { return promotionCode; }
+    public void setPromotionCode(String promotionCode) { this.promotionCode = promotionCode; }
+
     public BigDecimal getVatRate() { return vatRate; }
     public void setVatRate(BigDecimal vatRate) { this.vatRate = vatRate; }
 
@@ -97,6 +111,16 @@ public class Invoice {
     public int getItemCount() { return itemCount; }
     public void setItemCount(int itemCount) { this.itemCount = itemCount; }
 
+    public int getPointsUsed() { return pointsUsed; }
+    public void setPointsUsed(int pointsUsed) { this.pointsUsed = Math.max(0, pointsUsed); }
+
+    public BigDecimal getPointsDiscountAmount() {
+        return pointsDiscountAmount != null ? pointsDiscountAmount : BigDecimal.ZERO;
+    }
+    public void setPointsDiscountAmount(BigDecimal pointsDiscountAmount) {
+        this.pointsDiscountAmount = pointsDiscountAmount != null ? pointsDiscountAmount : BigDecimal.ZERO;
+    }
+
     public int getPointsEarned() { return pointsEarned; }
     public void setPointsEarned(int pointsEarned) { this.pointsEarned = pointsEarned; }
 
@@ -104,8 +128,6 @@ public class Invoice {
         return "CANCELLED".equalsIgnoreCase(status);
     }
 
-    /** Chi hoa don ACTIVE + con trong ngay tao moi du dieu kien de HIEN nut huy tren UI
-     * (nghiep vu that su van do trigger trg_Invoices_CancelSameDayOnly quyet dinh o DB). */
     public boolean isCancellableToday() {
         return !isCancelled() && createdAt != null
                 && createdAt.toLocalDate().isEqual(java.time.LocalDate.now());

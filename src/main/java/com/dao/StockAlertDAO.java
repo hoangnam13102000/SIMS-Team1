@@ -148,6 +148,19 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         return getByCondition("sa.SeenByInventoryManager = 0");
     }
 
+    /** Đếm cảnh báo còn đang xử lý (NEW/PLANNED), không tính RESOLVED. */
+    public int countActive() {
+        String sql = "SELECT COUNT(*) FROM StockAlerts WHERE Status <> 'RESOLVED'";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : 0;
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "StockAlertDAO.countActive", e);
+            return 0;
+        }
+    }
+
     public int countUnseen() {
         String sql = "SELECT COUNT(*) FROM StockAlerts WHERE SeenByInventoryManager = 0";
         try (Connection con = DBConnection.getConnection();

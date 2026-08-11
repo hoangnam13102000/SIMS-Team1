@@ -173,9 +173,18 @@ CREATE TABLE Invoices (
     CustomerID      INT NULL FOREIGN KEY REFERENCES Customers(CustomerID),
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     SubTotal        DECIMAL(18,0) NOT NULL DEFAULT 0,
-    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8,   -- lấy từ StoreConfig VAT_RATE
-    VATAmount       AS (SubTotal * VATRate / 100) PERSISTED,
-    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,   -- SubTotal + VATAmount, duy tri qua trigger/app
+    DiscountAmount  DECIMAL(18,0) NOT NULL DEFAULT 0
+                        CHECK (DiscountAmount >= 0),              -- so tien giam tu ma KM (0 neu khong ap dung)
+    PromotionID     INT NULL,                                     -- FK them sau khi co bang Promotions
+    PromotionCode   VARCHAR(30) NULL,                             -- snapshot ma KM luc lap HD
+    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8,             -- lay tu StoreConfig VAT_RATE
+    -- VAT tinh tren (SubTotal - DiscountAmount); TotalAmount = taxable + VAT (duy tri qua app)
+    VATAmount       AS (
+                        CASE WHEN (SubTotal - DiscountAmount) < 0 THEN 0
+                             ELSE (SubTotal - DiscountAmount) * VATRate / 100
+                        END
+                    ) PERSISTED,
+    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,
     PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'CASH'
                         CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','PAYPAL','CARD')),
     PayPalOrderID   VARCHAR(50) NULL,     -- id don PayPal (Orders v2 API), chi co khi PaymentMethod = PAYPAL
@@ -183,7 +192,13 @@ CREATE TABLE Invoices (
     Status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'          -- R3: soft-delete
                         CHECK (Status IN ('ACTIVE', 'CANCELLED')),
     CancelReason    NVARCHAR(255) NULL,
-    CancelledAt     DATETIME NULL
+    CancelledAt     DATETIME NULL,
+    PointsUsed              INT NOT NULL DEFAULT 0
+                                CHECK (PointsUsed >= 0),             -- so diem KH dung de tru tien
+    PointsDiscountAmount    DECIMAL(18,0) NOT NULL DEFAULT 0
+                                CHECK (PointsDiscountAmount >= 0),   -- so tien quy doi tu diem
+    CONSTRAINT CK_Invoices_DiscountNotExceedSubTotal
+        CHECK (DiscountAmount <= SubTotal)
 );
 GO
 
@@ -310,7 +325,8 @@ CREATE TABLE InventoryTransactions (
     ProductID       INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
     TransactionType VARCHAR(20) NOT NULL
                         CHECK (TransactionType IN ('IMPORT','SALE','SALE_CANCEL',
-                                                    'RETURN_IN','RETURN_OUT','RECONCILE_ADJUST','DISPOSAL')),
+                                                    'RETURN_IN','RETURN_OUT','RECONCILE_ADJUST','DISPOSAL',
+                                                    'SUPPLIER_RETURN')),
     Direction       VARCHAR(3) NOT NULL CHECK (Direction IN ('IN','OUT')),
     Quantity        INT NOT NULL CHECK (Quantity > 0),
     StockBefore     INT NOT NULL,
@@ -425,9 +441,17 @@ CREATE TABLE Orders (
     ShippingAddress NVARCHAR(255) NOT NULL,
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     SubTotal        DECIMAL(18,0) NOT NULL DEFAULT 0,
+    DiscountAmount  DECIMAL(18,0) NOT NULL DEFAULT 0
+                        CHECK (DiscountAmount >= 0),              -- so tien giam tu ma KM
+    PromotionID     INT NULL,                                     -- FK them sau khi co bang Promotions
+    PromotionCode   VARCHAR(30) NULL,                             -- snapshot ma KM luc dat hang
     VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8,
-    VATAmount       AS (SubTotal * VATRate / 100) PERSISTED,
-    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,
+    VATAmount       AS (
+                        CASE WHEN (SubTotal - DiscountAmount) < 0 THEN 0
+                             ELSE (SubTotal - DiscountAmount) * VATRate / 100
+                        END
+                    ) PERSISTED,
+    TotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,              -- online: thuong = SubTotal - DiscountAmount
     PaymentMethod   VARCHAR(20) NOT NULL DEFAULT 'COD'
                         CHECK (PaymentMethod IN ('COD', 'PAYPAL')),
     PaymentStatus   VARCHAR(20) NOT NULL DEFAULT 'PENDING'
@@ -437,9 +461,11 @@ CREATE TABLE Orders (
     OrderStatus     VARCHAR(20) NOT NULL DEFAULT 'NEW'
                     CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED')),
     SeenByAdmin     BIT NOT NULL DEFAULT 0,
-    CancelReason    NVARCHAR(500) NULL,   -- lý do hủy đơn
+    CancelReason    NVARCHAR(500) NULL,   -- ly do huy don
     CompletedAt     DATETIME NULL,
-    InvoiceID       INT NULL FOREIGN KEY REFERENCES Invoices(InvoiceID)
+    InvoiceID       INT NULL FOREIGN KEY REFERENCES Invoices(InvoiceID),
+    CONSTRAINT CK_Orders_DiscountNotExceedSubTotal
+        CHECK (DiscountAmount <= SubTotal)
 );
 GO
 
@@ -517,6 +543,55 @@ CREATE INDEX IX_StockDisposalDetails_Product ON StockDisposalDetails(ProductID);
 GO
 
 /* ============================================================
+   XII. TRA HANG LO VE NHA CUNG CAP (loi/hong/sai quy cach)
+   Tru kho NGAY khi lap phieu (khong qua duyet), ghi nhan cong no
+   NCC (DebtBalance) de theo doi hoan tien.
+   ============================================================ */
+
+IF COL_LENGTH('Suppliers', 'DebtBalance') IS NULL
+BEGIN
+    ALTER TABLE Suppliers ADD DebtBalance DECIMAL(18,0) NOT NULL DEFAULT 0;
+END
+GO
+
+IF OBJECT_ID('SupplierReturnDetails', 'U') IS NOT NULL DROP TABLE SupplierReturnDetails;
+IF OBJECT_ID('SupplierReturns', 'U') IS NOT NULL DROP TABLE SupplierReturns;
+GO
+
+CREATE TABLE SupplierReturns (
+    SupplierReturnID   INT IDENTITY(1,1) PRIMARY KEY,
+    SupplierReturnCode AS ('TRNC_' + RIGHT('000000' + CAST(SupplierReturnID AS VARCHAR(10)), 6)) PERSISTED UNIQUE,
+    SupplierID          INT NOT NULL FOREIGN KEY REFERENCES Suppliers(SupplierID),
+    Reason              VARCHAR(20) NOT NULL
+                            CHECK (Reason IN ('DAMAGED','EXPIRED','QUALITY','WRONG_SPEC','OTHER')),
+    Status              VARCHAR(20) NOT NULL DEFAULT 'COMPLETED'
+                            CHECK (Status IN ('COMPLETED','CANCELLED')),
+    TotalRefundAmount   DECIMAL(18,0) NOT NULL DEFAULT 0 CHECK (TotalRefundAmount >= 0),
+    Note                NVARCHAR(500) NULL,
+    CreatedBy           INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+    CreatedAt           DATETIME NOT NULL DEFAULT GETDATE()
+);
+GO
+CREATE INDEX IX_SupplierReturns_CreatedAt ON SupplierReturns(CreatedAt DESC);
+GO
+CREATE INDEX IX_SupplierReturns_Supplier ON SupplierReturns(SupplierID);
+GO
+
+CREATE TABLE SupplierReturnDetails (
+    SupplierReturnDetailID INT IDENTITY(1,1) PRIMARY KEY,
+    SupplierReturnID       INT NOT NULL FOREIGN KEY REFERENCES SupplierReturns(SupplierReturnID),
+    ProductID               INT NOT NULL FOREIGN KEY REFERENCES Products(ProductID),
+    BatchID                 INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+    Quantity                INT NOT NULL CHECK (Quantity > 0),
+    UnitRefundPrice         DECIMAL(18,0) NOT NULL CHECK (UnitRefundPrice >= 0),
+    LineRefundAmount        AS (Quantity * UnitRefundPrice) PERSISTED,
+    CONSTRAINT UQ_SupplierReturn_Batch UNIQUE (SupplierReturnID, BatchID)
+);
+GO
+CREATE INDEX IX_SupplierReturnDetails_Product ON SupplierReturnDetails(ProductID);
+GO
+
+/* ============================================================
    SIMS - chat real-time
    ============================================================ */
 
@@ -591,4 +666,53 @@ GO
 
 CREATE INDEX IX_ChatMessages_Sender
     ON ChatMessages (SenderUserID, CreatedAt DESC);
+GO
+
+/* ============================================================
+   XV. KHUYEN MAI / MA GIAM GIA
+   Ap dung tai quay (POS) va online (Orders).
+   DiscountAmount / PromotionID / PromotionCode nam trong Invoices & Orders.
+   ============================================================ */
+
+CREATE TABLE Promotions (
+    PromotionID       INT IDENTITY(1,1) PRIMARY KEY,
+    Code              VARCHAR(30)    NOT NULL UNIQUE,   -- ma khuyen mai, vd SUMMER10
+    Name              NVARCHAR(150)  NOT NULL,          -- ten chuong trinh, vd "Khuyen mai he 2026"
+    DiscountType      VARCHAR(10)    NOT NULL
+                          CHECK (DiscountType IN ('PERCENT', 'AMOUNT')),
+    DiscountValue     DECIMAL(18,0)  NOT NULL CHECK (DiscountValue > 0),
+    MaxDiscountAmount DECIMAL(18,0)  NULL
+                          CHECK (MaxDiscountAmount IS NULL OR MaxDiscountAmount >= 0),
+    MinOrderAmount    DECIMAL(18,0)  NOT NULL DEFAULT 0 CHECK (MinOrderAmount >= 0),
+    StartDate         DATE           NOT NULL,
+    EndDate           DATE           NOT NULL,
+    UsageLimit        INT            NULL CHECK (UsageLimit IS NULL OR UsageLimit > 0),
+    UsedCount         INT            NOT NULL DEFAULT 0 CHECK (UsedCount >= 0),
+    IsActive          BIT            NOT NULL DEFAULT 1,
+    IsDeleted         BIT            NOT NULL DEFAULT 0,
+    DeletedAt         DATETIME       NULL,
+    CreatedBy         INT            NULL FOREIGN KEY REFERENCES Users(UserID),
+    CreatedAt         DATETIME       NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT CK_Promotions_DateRange CHECK (EndDate >= StartDate)
+);
+GO
+
+CREATE INDEX IX_Promotions_Code ON Promotions(Code);
+GO
+CREATE INDEX IX_Promotions_ActiveRange ON Promotions(IsActive, StartDate, EndDate);
+GO
+
+-- FK PromotionID (tao sau Promotions vi Invoices/Orders duoc tao truoc)
+ALTER TABLE Invoices
+    ADD CONSTRAINT FK_Invoices_Promotion
+        FOREIGN KEY (PromotionID) REFERENCES Promotions(PromotionID);
+GO
+ALTER TABLE Orders
+    ADD CONSTRAINT FK_Orders_Promotion
+        FOREIGN KEY (PromotionID) REFERENCES Promotions(PromotionID);
+GO
+
+CREATE INDEX IX_Invoices_PromotionID ON Invoices(PromotionID) WHERE PromotionID IS NOT NULL;
+GO
+CREATE INDEX IX_Orders_PromotionID ON Orders(PromotionID) WHERE PromotionID IS NOT NULL;
 GO

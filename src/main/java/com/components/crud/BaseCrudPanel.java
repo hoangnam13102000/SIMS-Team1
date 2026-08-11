@@ -53,6 +53,7 @@ public abstract class BaseCrudPanel<T> extends JPanel {
     private CardLayout dataCardLayout;
     private EmptyState emptyState;
     private JPanel statsCardsRow;
+    private JComponent additionalTopContent;
 
     protected BaseCrudPanel() {
         setLayout(new BorderLayout());
@@ -132,6 +133,7 @@ public abstract class BaseCrudPanel<T> extends JPanel {
     protected void initialLoad() {
         maybeAddTrashButton();
         maybeBuildStatsCards();
+        maybeBuildAdditionalTopContent();
         loadData(1, defaultPageSize());
         loadAutocompleteSuggestionsAsync();
     }
@@ -363,6 +365,30 @@ public abstract class BaseCrudPanel<T> extends JPanel {
      * BaseCrudPanel vì lúc đó field subclass chưa khởi tạo xong.
      */
     protected List<JComponent> buildStatsCards() { return null; }
+
+    /**
+     * Hook tùy chọn cho nội dung tổng hợp ngay dưới các StatCard. Dùng cho
+     * các trang có tính chất Dashboard nhưng vẫn muốn giữ bảng dữ liệu chính
+     * của BaseCrudPanel ở khu vực trung tâm. Mặc định không thêm gì.
+     */
+    protected JComponent buildAdditionalTopContent() { return null; }
+
+    private void maybeBuildAdditionalTopContent() {
+        if (additionalTopContent != null) return;
+        JComponent content = buildAdditionalTopContent();
+        if (content == null) return;
+        additionalTopContent = content;
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // statsCardsRow là phần tử cuối cùng của topSection. Chèn content ngay
+        // sau nó để Dashboard nằm trước khu vực bảng.
+        Container parent = statsCardsRow != null ? statsCardsRow.getParent() : null;
+        if (parent instanceof JPanel) {
+            JPanel topSection = (JPanel) parent;
+            topSection.add(content);
+            topSection.revalidate();
+            topSection.repaint();
+        }
+    }
 
     private void maybeBuildStatsCards() {
         List<JComponent> cards = buildStatsCards();

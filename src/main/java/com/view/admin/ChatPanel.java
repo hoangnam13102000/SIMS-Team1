@@ -22,6 +22,7 @@ import com.ws.ChatServer;
 import com.ws.VoiceNotePlayer;
 import com.ws.VoiceNoteSender;
 import com.components.common.SoundWaveIcon;
+import com.components.common.VoiceMessageBubble;
 import com.service.ai.voice.TextToSpeechService;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -109,12 +110,6 @@ public class ChatPanel extends JPanel {
 
     private final Consumer<ChatMessage> serverListener = this::onServerEvent;
     private final Consumer<ChatMessage> staffClientListener = this::onStaffClientEvent;
-    /** Chống double-notify khi cùng JVM vừa nhận qua ChatServer.dispatch vừa qua ChatClient. */
-    private final java.util.Set<String> recentIncomingKeys =
-            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
-    /** Fallback: poll DB tin khách mới (khi WebSocket miss). */
-    private javax.swing.Timer customerMsgPoller;
-    private volatile long lastPolledMessageId = 0L;
     private Consumer<Integer> onUnreadCountChanged;
     private Consumer<List<com.model.NotificationItem>> onUnreadNotifications;
     private boolean staffTabActive;
@@ -287,69 +282,6 @@ public class ChatPanel extends JPanel {
 
         ChatServer.getInstance().addListener(serverListener);
         ChatClient.getInstance().addMessageListener(staffClientListener);
-        startCustomerMessagePoller();
-    }
-
-    /**
-     * Poll DB mỗi 2s: bắt tin khách đã lưu nhưng UI chưa nhận realtime (WS miss).
-     * Watermark = max MessageID lúc start → chỉ lấy tin mới sau đó.
-     */
-    private void startCustomerMessagePoller() {
-        try {
-            lastPolledMessageId = com.service.ChatHistoryService.getInstance().getMaxMessageId();
-        } catch (Exception e) {
-            lastPolledMessageId = 0L;
-        }
-        if (customerMsgPoller != null) {
-            customerMsgPoller.stop();
-        }
-        customerMsgPoller = new javax.swing.Timer(2000, e -> pollNewCustomerMessages());
-        customerMsgPoller.setRepeats(true);
-        customerMsgPoller.start();
-    }
-
-    private void pollNewCustomerMessages() {
-        try {
-            java.util.List<com.model.chat.ChatHistoryMessage> news =
-                    com.service.ChatHistoryService.getInstance()
-                            .listNewCustomerMessagesSince(lastPolledMessageId, 30);
-            if (news == null || news.isEmpty()) return;
-            for (com.model.chat.ChatHistoryMessage h : news) {
-                if (h.getMessageId() > lastPolledMessageId) {
-                    lastPolledMessageId = h.getMessageId();
-                }
-                // Chỉ tin khách (FromStaff=false)
-                if (h.isFromStaff()) continue;
-                int customerId = h.getSenderUserId();
-                if (customerId <= 0) continue;
-                ChatMessage cm = toCustomerChatMessage(h, customerId);
-                // Đính file/voice nếu có trên disk
-                attachHistoryFile(cm, h);
-                handleIncomingCustomerChat(cm);
-            }
-        } catch (Exception ex) {
-            // Không spam UI; log nhẹ
-            com.core.log.AppLogger.getInstance().error(
-                    com.core.log.ErrorCode.DB_QUERY_FAIL,
-                    "ChatPanel.pollNewCustomerMessages", ex);
-        }
-    }
-
-    /** Đính file/voice từ đường dẫn đã lưu DB vào ChatMessage (base64) để phát/nghe được. */
-    private void attachHistoryFile(ChatMessage cm, com.model.chat.ChatHistoryMessage h) {
-        if (h == null || !h.hasFile()) return;
-        try {
-            java.io.File f = new java.io.File(h.getFilePath());
-            if (!f.isFile()) return;
-            byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
-            cm.fileBase64 = java.util.Base64.getEncoder().encodeToString(bytes);
-            cm.fileName = h.getFileName() != null ? h.getFileName() : f.getName();
-            if ("voice.wav".equalsIgnoreCase(cm.fileName) || cm.fileName.toLowerCase().endsWith(".wav")) {
-                cm.voiceBase64 = cm.fileBase64;
-                cm.voiceMime = "audio/wav";
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     public void setOnUnreadCountChanged(Consumer<Integer> callback) {
@@ -620,7 +552,6 @@ public class ChatPanel extends JPanel {
         cm.timestamp = toEpochMillis(h.getCreatedAt());
         cm.messageId = h.getMessageId();
         attachHistoryImage(cm, h);
-        attachHistoryFile(cm, h);
         return cm;
     }
 
@@ -787,57 +718,9 @@ public class ChatPanel extends JPanel {
     }
 
 
-    /** Nút phát tin thoại — dễ bấm, báo lỗi rõ. */
+    /** Khung phát tin thoại kiểu hiện đại: nút play tròn + waveform + thời lượng. */
     private JComponent buildVoicePlayControl(String voiceBase64, boolean isMine) {
-        FontIcon playIcon = FontIcon.of(FontAwesomeSolid.PLAY_CIRCLE, 18);
-        playIcon.setIconColor(isMine ? Color.WHITE : AppColor.ACCENT_HOVER);
-        JButton playBtn = new JButton(" Nghe tin thoại", playIcon);
-        playBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        playBtn.setForeground(isMine ? Color.WHITE : AppColor.TEXT_PRIMARY);
-        playBtn.setFocusPainted(false);
-        playBtn.setBorderPainted(true);
-        playBtn.setContentAreaFilled(true);
-        playBtn.setOpaque(true);
-        playBtn.setBackground(isMine ? new Color(255, 255, 255, 50) : AppColor.BG_LIGHT);
-        playBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        playBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        playBtn.setHorizontalAlignment(SwingConstants.LEFT);
-        playBtn.setPreferredSize(new Dimension(168, 34));
-        playBtn.setMaximumSize(new Dimension(240, 36));
-        final String vb64 = voiceBase64;
-        playBtn.addActionListener(ev -> {
-            System.out.println("[Chat] Play clicked, dataLen=" + (vb64 == null ? 0 : vb64.length()));
-            if (vb64 == null || vb64.isBlank()) {
-                AppAlert.warning(ChatPanel.this, "Không có dữ liệu âm thanh.");
-                return;
-            }
-            VoiceNotePlayer player = VoiceNotePlayer.getInstance();
-            if (player.isPlaying()) {
-                player.stop();
-                playBtn.setText(" Nghe tin thoại");
-                return;
-            }
-            playBtn.setEnabled(false);
-            playBtn.setText(" Đang phát…");
-            new Thread(() -> {
-                try {
-                    player.play(vb64);
-                    SwingUtilities.invokeLater(() -> {
-                        playBtn.setText(" Nghe tin thoại");
-                        playBtn.setEnabled(true);
-                    });
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
-                    SwingUtilities.invokeLater(() -> {
-                        playBtn.setText(" Nghe tin thoại");
-                        playBtn.setEnabled(true);
-                        AppAlert.error(ChatPanel.this, "Không phát được:\\n" + msg);
-                    });
-                }
-            }, "play-voice").start();
-        });
-        return playBtn;
+        return new VoiceMessageBubble(voiceBase64, isMine, this);
     }
 
     private void toggleVoiceNote() {
@@ -1100,78 +983,7 @@ public class ChatPanel extends JPanel {
         }.execute();
     }
 
-    /**
-     * Xử lý tin nhắn từ khách (CHAT, không fromAdmin): text / ảnh / file / thoại.
-     * Dùng chung cho listener ChatServer (cùng JVM) và ChatClient (mọi máy staff).
-     */
-    private void handleIncomingCustomerChat(ChatMessage message) {
-        if (message == null || !message.isChat() || message.fromAdmin) return;
-
-        String key = message.messageId > 0
-                ? ("id:" + message.messageId)
-                : (message.userId + "|" + message.timestamp + "|"
-                    + (message.hasVoice()
-                        ? ("V" + message.voiceDurationMs)
-                        : String.valueOf(message.text)));
-        String softKey = "soft:" + message.userId + "|"
-                + (message.hasVoice() ? "voice:" + message.voiceDurationMs
-                    : ("t:" + (message.text != null ? message.text : "")));
-        boolean seen = !recentIncomingKeys.add(key) | !recentIncomingKeys.add(softKey);
-        if (seen) {
-            return;
-        }
-        javax.swing.Timer clearKey = new javax.swing.Timer(5000, e -> {
-            recentIncomingKeys.remove(key);
-            recentIncomingKeys.remove(softKey);
-        });
-        clearKey.setRepeats(false);
-        clearKey.start();
-
-        customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>()).add(message);
-        onlineCustomers.putIfAbsent(message.userId,
-                message.userName != null && !message.userName.isBlank()
-                        ? message.userName : ("Khách #" + message.userId));
-        knownCustomerIds.add(message.userId);
-        if (message.userName != null && !message.userName.isBlank()) {
-            customerDisplayNames.put(message.userId, message.userName);
-        }
-
-        String preview = previewOf(message);
-        customerLastPreview.put(message.userId, preview);
-        customerLastTime.put(message.userId,
-                message.timestamp > 0 ? message.timestamp : System.currentTimeMillis());
-
-        NotificationSound.playMessageSound();
-
-        boolean viewing = !staffTabActive && isShowing()
-                && selectedCustomerId != null && selectedCustomerId == message.userId;
-
-        if (viewing) {
-            BufferedImage image = message.hasImage()
-                    ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-            long ts = message.timestamp > 0 ? message.timestamp : System.currentTimeMillis();
-            addBubble(
-                    message.text,
-                    image,
-                    message.hasFile() ? message.fileName : null,
-                    message.hasFile() ? message.fileBase64 : null,
-                    false,
-                    TIME_FORMAT.format(new Date(ts))
-            );
-            if (message.text != null && !message.text.isBlank() && !message.hasVoice()) {
-                speakIncomingIfEnabled(message.text);
-            }
-        } else {
-            customerUnread.put(message.userId, true);
-            customerList.repaint();
-            notifyUnreadCountChanged();
-        }
-        refreshCustomerListVisual();
-    }
-
     private void onServerEvent(ChatMessage message) {
-        if (message == null) return;
-
         if (message.isJoin()) {
             onlineCustomers.put(message.userId, message.userName);
             knownCustomerIds.add(message.userId);
@@ -1185,9 +997,29 @@ public class ChatPanel extends JPanel {
             if (!staffTabActive && selectedCustomerId != null && selectedCustomerId == message.userId)
                 selectCustomer(message.userId);
         } else if (message.isChat() && !message.fromAdmin) {
-            handleIncomingCustomerChat(message);
+            customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>()).add(message);
+            onlineCustomers.putIfAbsent(message.userId,
+                    message.userName != null ? message.userName : ("Khách #" + message.userId));
+            knownCustomerIds.add(message.userId);
+            String preview = previewOf(message);
+            customerLastPreview.put(message.userId, preview);
+            customerLastTime.put(message.userId,
+                    message.timestamp > 0 ? message.timestamp : System.currentTimeMillis());
+            NotificationSound.playMessageSound();
+            boolean viewing = !staffTabActive && isShowing()
+                    && selectedCustomerId != null && selectedCustomerId == message.userId;
+            if (viewing) {
+                BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
+                addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
+                if (message.text != null && !message.text.isBlank()) {
+                    speakIncomingIfEnabled(message.text);
+                }
+            } else {
+                customerUnread.put(message.userId, true);
+                customerList.repaint();
+                notifyUnreadCountChanged();
+            }
         }
-
         if (message.isStaffJoin() && message.userId != myUserId) {
             onlineStaffIds.add(message.userId);
             ensureStaffInDirectory(message);
@@ -1203,27 +1035,6 @@ public class ChatPanel extends JPanel {
     }
 
     private void onStaffClientEvent(ChatMessage message) {
-        if (message == null) return;
-
-        // FIX: nhận tin khách realtime (text / thoại / file) qua WebSocket staff
-        if (message.isChat() && !message.fromAdmin) {
-            handleIncomingCustomerChat(message);
-            return;
-        }
-
-        if (message.isJoin()) {
-            onlineCustomers.put(message.userId, message.userName);
-            knownCustomerIds.add(message.userId);
-            customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>());
-            refreshCustomerListVisual();
-            return;
-        }
-        if (message.isLeave() && !message.staff) {
-            onlineCustomers.remove(message.userId);
-            refreshCustomerListVisual();
-            return;
-        }
-
         if (message.isStaffJoin() && message.userId != myUserId) {
             onlineStaffIds.add(message.userId);
             ensureStaffInDirectory(message);
@@ -1241,7 +1052,6 @@ public class ChatPanel extends JPanel {
         }
         if (!message.isStaffChat()) return;
         if (message.userId == myUserId) return; // ignore echo of own message
-
         int peerId = message.userId;
         staffConversations.computeIfAbsent(peerId, k -> new ArrayList<>()).add(message);
         ensureStaffInDirectory(message);
@@ -1253,11 +1063,7 @@ public class ChatPanel extends JPanel {
                 && selectedStaffId != null && selectedStaffId == peerId;
         if (viewing) {
             BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-            long ts = message.timestamp > 0 ? message.timestamp : System.currentTimeMillis();
-            addBubble(message.text, image,
-                    message.hasFile() ? message.fileName : null,
-                    message.hasFile() ? message.fileBase64 : null,
-                    false, TIME_FORMAT.format(new Date(ts)));
+            addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
         } else {
             staffUnread.put(peerId, true);
             staffList.repaint();

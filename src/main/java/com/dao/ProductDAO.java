@@ -67,6 +67,67 @@ public class ProductDAO extends BaseDAO<Product> {
         return mapProduct(rs);
     }
 
+    /**
+     * Phân trang danh sách sản phẩm dùng cho Tổng quan kho. Chỉ lấy sản phẩm
+     * ACTIVE và hỗ trợ tìm theo mã/tên/danh mục/thương hiệu.
+     */
+    public PaginationHelper.PaginationResult<Product> getPagedInventoryOverview(
+            int page, int pageSize, String keyword) {
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+        conditions.add("p.Status = 'ACTIVE'");
+
+        String trimmed = keyword == null ? "" : keyword.trim();
+        if (!trimmed.isEmpty()) {
+            String like = "%" + escapeLike(trimmed) + "%";
+            StringBuilder condition = new StringBuilder("(");
+            String[] columns = getSearchableColumns();
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) condition.append(" OR ");
+                condition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(like);
+            }
+            condition.append(")");
+            conditions.add(condition.toString());
+        }
+
+        return getPaged(page, pageSize, String.join(" AND ", conditions), params.toArray());
+    }
+
+    /** Lấy toàn bộ sản phẩm ACTIVE cho chức năng xuất Excel của Tổng quan kho. */
+    public List<Product> getAllInventoryOverview(String keyword) {
+        List<Product> result = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("SELECT ").append(getColumns())
+                .append(" FROM ").append(getTableName())
+                .append(" WHERE p.Status = 'ACTIVE'");
+
+        String trimmed = keyword == null ? "" : keyword.trim();
+        if (!trimmed.isEmpty()) {
+            String like = "%" + escapeLike(trimmed) + "%";
+            StringBuilder condition = new StringBuilder(" AND (");
+            String[] columns = getSearchableColumns();
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) condition.append(" OR ");
+                condition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(like);
+            }
+            condition.append(")");
+            sql.append(condition);
+        }
+        sql.append(" ORDER BY ").append(getOrderBy());
+
+        try (Connection con = getConnection(); PreparedStatement ps = con.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) ps.setObject(i + 1, params.get(i));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(mapResultSet(rs));
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "ProductDAO.getAllInventoryOverview", e);
+        }
+        return result;
+    }
+
     // ---------------------------------------------------------------
     // Quan ly san pham (danh cho Admin) - them/sua, dung chung voi
     // ProductPanel/ProductFormDialog o view/admin/product.

@@ -12,6 +12,8 @@ public final class DataChangedEvent {
     public static final String RETURN_EXCHANGE = "RETURN_EXCHANGE";
     public static final String EXCEPTION_REPORT = "EXCEPTION_REPORT";
     public static final String DISPOSAL = "DISPOSAL";
+    /** Phieu tra hang lo ve nha cung cap (SupplierReturns) vua duoc tao. */
+    public static final String SUPPLIER_RETURN = "SUPPLIER_RETURN";
     /** Cau hinh he thong (StoreConfig) vua duoc sua o trang Cai dat - vd VAT_RATE. */
     public static final String CONFIG = "CONFIG";
     /**

@@ -17,6 +17,9 @@ public class Order {
 
     private LocalDateTime createdAt;
     private BigDecimal subTotal;
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+    private Integer promotionId;
+    private String promotionCode;
     private BigDecimal totalAmount;
 
     private String paymentMethod; // COD | PAYPAL
@@ -28,15 +31,15 @@ public class Order {
     private boolean seenByAdmin;
     private String cancelReason;
 
-    private LocalDateTime completedAt; // set khi chuyen sang COMPLETED - dung tinh han 1 ngay duoc bam "Tra hang"
-    private Integer invoiceId;         // hoa don duoc tu dong lap khi COMPLETED (null neu chua/khong co)
-    private boolean returnRequested;   // da co yeu cau doi/tra PENDING/APPROVED gan voi hoa don nay chua
-    private String latestReturnStatus; // PENDING | APPROVED | REJECTED - yeu cau gan nhat
-    private String latestReturnType;   // RETURN | EXCHANGE
+    private LocalDateTime completedAt;
+    private Integer invoiceId;
+    private boolean returnRequested;
+    private String latestReturnStatus;
+    private String latestReturnType;
     private BigDecimal latestReturnValue;
     private String latestReturnRejectionReason;
-    private String latestReturnReason;       // lý do khách hàng gửi yêu cầu
-    private LocalDateTime latestReturnCreatedAt; // thời gian khách gửi yêu cầu
+    private String latestReturnReason;
+    private LocalDateTime latestReturnCreatedAt;
 
     private int itemCount;
 
@@ -66,6 +69,19 @@ public class Order {
 
     public BigDecimal getSubTotal() { return subTotal; }
     public void setSubTotal(BigDecimal subTotal) { this.subTotal = subTotal; }
+
+    public BigDecimal getDiscountAmount() {
+        return discountAmount != null ? discountAmount : BigDecimal.ZERO;
+    }
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount != null ? discountAmount : BigDecimal.ZERO;
+    }
+
+    public Integer getPromotionId() { return promotionId; }
+    public void setPromotionId(Integer promotionId) { this.promotionId = promotionId; }
+
+    public String getPromotionCode() { return promotionCode; }
+    public void setPromotionCode(String promotionCode) { this.promotionCode = promotionCode; }
 
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
@@ -127,11 +143,6 @@ public class Order {
     public boolean isCompleted() { return "COMPLETED".equalsIgnoreCase(orderStatus); }
     public boolean isPaid() { return "PAID".equalsIgnoreCase(paymentStatus); }
 
-    /**
-     * Nut "Trả hàng" phía khách chỉ hiện khi: đơn đã COMPLETED, có hóa đơn đi
-     * kèm (mọi đơn COMPLETED đều có - xem OrderDAO), còn trong vòng 1 ngày kể
-     * từ lúc hoàn thành, và chưa có yêu cầu đổi/trả nào đang PENDING/APPROVED.
-     */
     public boolean canRequestReturn() {
         return isCompleted() && invoiceId != null && !returnRequested && completedAt != null
                 && completedAt.plusDays(1).isAfter(LocalDateTime.now());

@@ -186,7 +186,7 @@ public class MonthlyCategoryTrendPanel extends JComponent {
     private void drawEmptyState(Graphics2D g2, int w, int h) {
         g2.setFont(AppFont.BODY);
         g2.setColor(AppColor.TEXT_MUTED);
-        String msg = "Không có dữ liệu bán hàng trong khoảng thời gian này";
+        String msg = "Không có dữ liệu trong khoảng thời gian này";
         FontMetrics fm = g2.getFontMetrics();
         int tw = fm.stringWidth(msg);
         g2.drawString(msg, (w - tw) / 2, h / 2);

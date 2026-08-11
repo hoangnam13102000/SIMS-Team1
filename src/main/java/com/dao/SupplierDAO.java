@@ -34,7 +34,7 @@ public class SupplierDAO extends SoftDeleteDAO<Supplier> {
 
     @Override
     protected String getColumns() {
-        return "SupplierID, SupplierName, Address, Phone, Email, SuppliedItems";
+        return "SupplierID, SupplierName, Address, Phone, Email, SuppliedItems, DebtBalance";
     }
 
     @Override
@@ -70,6 +70,7 @@ public class SupplierDAO extends SoftDeleteDAO<Supplier> {
         supplier.setPhone(rs.getString("Phone"));
         supplier.setEmail(rs.getString("Email"));
         supplier.setSuppliedItems(rs.getString("SuppliedItems"));
+        supplier.setDebtBalance(rs.getBigDecimal("DebtBalance"));
         return supplier;
     }
 

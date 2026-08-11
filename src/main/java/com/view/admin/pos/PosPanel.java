@@ -90,9 +90,19 @@ public class PosPanel extends JPanel {
     private final JButton clearCustomerButton = new JButton();
     private final JTextField customerSearchField = new JTextField();
     private final JLabel subtotalValue = new JLabel();
+    private final JLabel discountValue = new JLabel();
     private final JLabel vatLabel = new JLabel();
     private final JLabel vatValue = new JLabel();
     private final JLabel totalValue = new JLabel();
+    private final JLabel pointsDiscountValue = new JLabel();
+    private final JCheckBox usePointsCheck = new JCheckBox("Dùng điểm");
+    private final JSpinner pointsSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 0, 1));
+    private final JLabel pointsHintLabel = new JLabel(" ");
+    private final JPanel pointsRowPanel = new JPanel(new BorderLayout(6, 0));
+    private final JTextField promoCodeField = new JTextField();
+    private final JButton applyPromoButton = new JButton("Áp dụng");
+    private final JButton clearPromoButton = new JButton("Bỏ");
+    private final JLabel promoStatusLabel = new JLabel(" ");
     private final JButton checkoutButton = new JButton();
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang lập hóa đơn...");
 
@@ -118,12 +128,15 @@ public class PosPanel extends JPanel {
         body.add(buildLeftPanel(), BorderLayout.CENTER);
 
         JPanel right = buildRightPanel();
-        right.setPreferredSize(new Dimension(380, 10));
+        // Chỉ cố định chiều rộng; chiều cao theo cửa sổ (BorderLayout.EAST)
+        right.setPreferredSize(new Dimension(420, 10));
+        right.setMinimumSize(new Dimension(360, 10));
         body.add(right, BorderLayout.EAST);
 
         add(LoadingOverlay.attach(body, loadingOverlay), BorderLayout.CENTER);
 
         vatRate = storeConfigDAO.getVatRate();
+        cart.setPointRedeemRate(storeConfigDAO.getPointRedeemRate());
 
         cart.addListener(cartListener);
         loadCategories();
@@ -280,23 +293,34 @@ public class PosPanel extends JPanel {
     // =================================================================
 
     private JPanel buildRightPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        // NORTH (khách gọn) + CENTER (giỏ lớn) + SOUTH (KM/tổng/TT nén để nhường chỗ giỏ)
+        JPanel panel = new JPanel(new BorderLayout(0, 4));
         panel.setOpaque(true);
         panel.setBackground(AppColor.WHITE);
         panel.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(AppSpacing.LG, AppSpacing.LG, AppSpacing.LG, AppSpacing.LG)));
+                new EmptyBorder(10, 12, 10, 12)));
 
-        panel.add(sectionLabel("Khách hàng"));
-        panel.add(Box.createVerticalStrut(AppSpacing.SM));
-        panel.add(fixedHeight(buildCustomerSearchRow(), 40));
-        panel.add(Box.createVerticalStrut(AppSpacing.SM));
-        panel.add(fixedHeight(buildCustomerStatusRow(), 26));
-        panel.add(Box.createVerticalStrut(AppSpacing.LG));
+        // ----- NORTH: khách hàng (gọn) -----
+        JPanel top = new JPanel() {
+            @Override
+            public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+            }
+        };
+        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+        top.setOpaque(false);
+        top.add(sectionLabel("Khách hàng"));
+        top.add(Box.createVerticalStrut(4));
+        top.add(fixedHeight(buildCustomerSearchRow(), 34));
+        top.add(Box.createVerticalStrut(2));
+        top.add(fixedHeight(buildCustomerStatusRow(), 20));
+        panel.add(top, BorderLayout.NORTH);
 
-        panel.add(sectionLabel("Giỏ hàng"));
-        panel.add(Box.createVerticalStrut(AppSpacing.SM));
+        // ----- CENTER: giỏ hàng (ưu tiên chiều cao) -----
+        JPanel cartSection = new JPanel(new BorderLayout(0, 2));
+        cartSection.setOpaque(false);
+        cartSection.add(sectionLabel("Giỏ hàng"), BorderLayout.NORTH);
 
         cartListPanel.setLayout(new BoxLayout(cartListPanel, BoxLayout.Y_AXIS));
         cartListPanel.setOpaque(false);
@@ -307,34 +331,175 @@ public class PosPanel extends JPanel {
         cartScroll.setOpaque(false);
         cartScroll.getViewport().setOpaque(false);
         cartScroll.getVerticalScrollBar().setUnitIncrement(14);
-        cartScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        cartScroll.setPreferredSize(new Dimension(10, 260));
-        cartScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 320));
-        panel.add(cartScroll);
+        // Min cao để luôn đủ chỗ ~3-4 dòng sản phẩm
+        cartScroll.setMinimumSize(new Dimension(10, 240));
+        cartSection.add(cartScroll, BorderLayout.CENTER);
+        panel.add(cartSection, BorderLayout.CENTER);
 
-        panel.add(Box.createVerticalStrut(AppSpacing.MD));
+        // ----- SOUTH: nén gọn — luôn hiện đủ nút thanh toán -----
+        JPanel bottom = new JPanel() {
+            @Override
+            public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+            }
+        };
+        bottom.setLayout(new BoxLayout(bottom, BoxLayout.Y_AXIS));
+        bottom.setOpaque(false);
+
         JSeparator sep = new JSeparator();
         sep.setForeground(AppColor.BORDER);
         sep.setAlignmentX(Component.LEFT_ALIGNMENT);
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
-        panel.add(sep);
-        panel.add(Box.createVerticalStrut(AppSpacing.MD));
+        bottom.add(Box.createVerticalStrut(4));
+        bottom.add(sep);
+        bottom.add(Box.createVerticalStrut(6));
 
-        panel.add(fixedHeight(summaryRow(new JLabel("Tạm tính"), subtotalValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 22));
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(fixedHeight(summaryRow(vatLabel, vatValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 22));
-        panel.add(Box.createVerticalStrut(6));
-        panel.add(fixedHeight(summaryRow(new JLabel("Tổng cộng"), totalValue, AppFont.HEADING_MD, AppColor.TEXT_TITLE), 30));
-        panel.add(Box.createVerticalStrut(AppSpacing.LG));
+        // Mã KM + nút trên 1 hàng (bỏ tiêu đề riêng để tiết kiệm chiều cao)
+        bottom.add(fixedHeight(buildPromoRowCompact(), 30));
+        promoStatusLabel.setFont(AppFont.SMALL);
+        promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
+        promoStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Chỉ chiếm chỗ khi có nội dung
+        promoStatusLabel.setText(" ");
+        bottom.add(promoStatusLabel);
+        bottom.add(Box.createVerticalStrut(4));
 
-        panel.add(sectionLabel("Phương thức thanh toán"));
-        panel.add(Box.createVerticalStrut(AppSpacing.SM));
-        panel.add(fixedHeight(buildPaymentMethodRow(), 36));
-        panel.add(Box.createVerticalStrut(AppSpacing.LG));
+        // Hang dung diem thanh vien (chi hien khi da chon KH co diem)
+        bottom.add(fixedHeight(buildPointsRow(), 28));
+        pointsHintLabel.setFont(AppFont.SMALL);
+        pointsHintLabel.setForeground(AppColor.TEXT_MUTED);
+        pointsHintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bottom.add(pointsHintLabel);
+        bottom.add(Box.createVerticalStrut(4));
 
-        panel.add(fixedHeight(buildCheckoutButton(), 48));
+        bottom.add(fixedHeight(summaryRow(new JLabel("Tạm tính"), subtotalValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 18));
+        bottom.add(fixedHeight(summaryRow(new JLabel("Giảm giá"), discountValue, AppFont.BODY, AppColor.SUCCESS), 18));
+        bottom.add(fixedHeight(summaryRow(vatLabel, vatValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 18));
+        bottom.add(fixedHeight(summaryRow(new JLabel("Trừ điểm"), pointsDiscountValue, AppFont.BODY, AppColor.SUCCESS), 18));
+        bottom.add(Box.createVerticalStrut(2));
+        bottom.add(fixedHeight(summaryRow(new JLabel("Tổng cộng"), totalValue, AppFont.HEADING_MD, AppColor.TEXT_TITLE), 26));
+        bottom.add(Box.createVerticalStrut(6));
+
+        bottom.add(fixedHeight(buildPaymentMethodRow(), 32));
+        bottom.add(Box.createVerticalStrut(6));
+        bottom.add(fixedHeight(buildCheckoutButton(), 42));
+
+        panel.add(bottom, BorderLayout.SOUTH);
 
         return panel;
+    }
+
+    /** Hàng mã KM gọn: nhãn + ô nhập + nút trên cùng 1 dòng. */
+    private JPanel buildPromoRowCompact() {
+        JPanel row = new JPanel(new BorderLayout(6, 0));
+        row.setOpaque(false);
+
+        JLabel label = new JLabel("Mã KM");
+        label.setFont(AppFont.SMALL_BOLD);
+        label.setForeground(AppColor.TEXT_TITLE);
+        row.add(label, BorderLayout.WEST);
+
+        promoCodeField.setFont(AppFont.BODY);
+        promoCodeField.setToolTipText("Nhập mã khuyến mãi rồi bấm Áp dụng");
+        // Tránh gắn listener trùng khi rebuild
+        for (var al : promoCodeField.getActionListeners()) {
+            promoCodeField.removeActionListener(al);
+        }
+        promoCodeField.addActionListener(e -> applyPromoFromField());
+        row.add(promoCodeField, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        buttons.setOpaque(false);
+
+        applyPromoButton.setText("Áp dụng");
+        applyPromoButton.setFont(AppFont.SMALL);
+        applyPromoButton.setFocusPainted(false);
+        applyPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        for (var al : applyPromoButton.getActionListeners()) {
+            applyPromoButton.removeActionListener(al);
+        }
+        applyPromoButton.addActionListener(e -> applyPromoFromField());
+        buttons.add(applyPromoButton);
+
+        clearPromoButton.setText("Bỏ");
+        clearPromoButton.setFont(AppFont.SMALL);
+        clearPromoButton.setFocusPainted(false);
+        clearPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearPromoButton.setVisible(false);
+        for (var al : clearPromoButton.getActionListeners()) {
+            clearPromoButton.removeActionListener(al);
+        }
+        clearPromoButton.addActionListener(e -> {
+            cart.clearPromotion();
+            promoCodeField.setText("");
+            promoCodeField.setEditable(true);
+            promoStatusLabel.setText(" ");
+            promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
+        });
+        buttons.add(clearPromoButton);
+
+        row.add(buttons, BorderLayout.EAST);
+        return row;
+    }
+
+    private JPanel buildPromoRow() {
+        JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
+        row.setOpaque(false);
+
+        promoCodeField.setFont(AppFont.BODY);
+        promoCodeField.setToolTipText("Nhập mã khuyến mãi rồi bấm Áp dụng");
+        promoCodeField.addActionListener(e -> applyPromoFromField());
+        row.add(promoCodeField, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        buttons.setOpaque(false);
+
+        applyPromoButton.setFont(AppFont.SMALL);
+        applyPromoButton.setFocusPainted(false);
+        applyPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        applyPromoButton.addActionListener(e -> applyPromoFromField());
+        buttons.add(applyPromoButton);
+
+        clearPromoButton.setFont(AppFont.SMALL);
+        clearPromoButton.setFocusPainted(false);
+        clearPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearPromoButton.setVisible(false);
+        clearPromoButton.addActionListener(e -> {
+            cart.clearPromotion();
+            promoCodeField.setText("");
+            promoCodeField.setEditable(true);
+            promoStatusLabel.setText(" ");
+            promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
+        });
+        buttons.add(clearPromoButton);
+
+        row.add(buttons, BorderLayout.EAST);
+        return row;
+    }
+
+    private void applyPromoFromField() {
+        String code = promoCodeField.getText() != null ? promoCodeField.getText().trim() : "";
+        if (code.isEmpty()) {
+            AppAlert.warning(this, "Vui lòng nhập mã khuyến mãi.");
+            return;
+        }
+        if (cart.isEmpty()) {
+            AppAlert.warning(this, "Giỏ hàng đang trống.");
+            return;
+        }
+        var result = cart.applyPromotionCode(code);
+        if (result.ok) {
+            promoStatusLabel.setText("Đã áp dụng: " + result.promotion.getName()
+                    + " (−" + NumberUtil.formatThousands(result.discountAmount.longValue()) + " đ)");
+            promoStatusLabel.setForeground(AppColor.SUCCESS);
+            clearPromoButton.setVisible(true);
+            promoCodeField.setEditable(false);
+        } else {
+            promoStatusLabel.setText(result.message != null ? result.message : "Mã không hợp lệ");
+            promoStatusLabel.setForeground(AppColor.ERROR);
+            clearPromoButton.setVisible(false);
+            promoCodeField.setEditable(true);
+        }
     }
 
     private JLabel sectionLabel(String text) {
@@ -465,8 +630,52 @@ public class PosPanel extends JPanel {
         // ngan biet truoc khi thanh toan (vd khach hoi doi diem lay qua tang).
         String label = customer.getFullName() + (phone.isEmpty() ? "" : " - " + phone)
                 + " - Điểm: " + customer.getMemberPoint();
-        cart.setCustomer(customer.getCustomerId(), label);
+        cart.setCustomer(customer.getCustomerId(), label, customer.getMemberPoint());
         customerSearchField.setText("");
+    }
+
+
+    /** Hàng dùng điểm thành viên trừ tiền (kiểu Bách Hóa Xanh). */
+    private JPanel buildPointsRow() {
+        pointsRowPanel.setOpaque(false);
+
+        usePointsCheck.setFont(AppFont.SMALL_BOLD);
+        usePointsCheck.setOpaque(false);
+        usePointsCheck.setFocusPainted(false);
+        for (var al : usePointsCheck.getActionListeners()) {
+            usePointsCheck.removeActionListener(al);
+        }
+        usePointsCheck.addActionListener(e -> {
+            boolean on = usePointsCheck.isSelected();
+            pointsSpinner.setEnabled(on);
+            if (!on) {
+                cart.setPointsToUse(0);
+            } else {
+                SpinnerNumberModel model = (SpinnerNumberModel) pointsSpinner.getModel();
+                int max = model.getMaximum() instanceof Number n ? n.intValue() : 0;
+                cart.setPointsToUse(max);
+                pointsSpinner.setValue(max);
+            }
+        });
+        pointsRowPanel.add(usePointsCheck, BorderLayout.WEST);
+
+        pointsSpinner.setFont(AppFont.BODY);
+        pointsSpinner.setEnabled(false);
+        JComponent editor = pointsSpinner.getEditor();
+        if (editor instanceof JSpinner.DefaultEditor de) {
+            de.getTextField().setColumns(6);
+        }
+        for (var cl : pointsSpinner.getChangeListeners()) {
+            pointsSpinner.removeChangeListener(cl);
+        }
+        pointsSpinner.addChangeListener(e -> {
+            if (!usePointsCheck.isSelected()) return;
+            int v = ((Number) pointsSpinner.getValue()).intValue();
+            cart.setPointsToUse(v);
+        });
+        pointsRowPanel.add(pointsSpinner, BorderLayout.CENTER);
+
+        return pointsRowPanel;
     }
 
     // ---------------- Phuong thuc thanh toan ----------------
@@ -516,13 +725,54 @@ public class PosPanel extends JPanel {
         clearCustomerButton.setVisible(cart.getCustomerId() != null);
 
         long subTotal = cart.getSubTotal();
-        long vat = calculateVat(subTotal);
-        long total = subTotal + vat;
+        long discount = cart.getDiscountAmountLong();
+        long taxable = Math.max(0, subTotal - discount);
+        long vat = calculateVat(taxable);
+        long totalBeforePoints = taxable + vat;
+        long pointsDisc = cart.getPointsDiscountAmount().longValue();
+        if (pointsDisc > totalBeforePoints) pointsDisc = totalBeforePoints;
+        long total = Math.max(0, totalBeforePoints - pointsDisc);
 
         vatLabel.setText("VAT (" + vatRate.stripTrailingZeros().toPlainString() + "%)");
         subtotalValue.setText(NumberUtil.formatThousands(subTotal) + " đ");
+        discountValue.setText((discount > 0 ? "−" : "") + NumberUtil.formatThousands(discount) + " đ");
         vatValue.setText(NumberUtil.formatThousands(vat) + " đ");
+        pointsDiscountValue.setText((pointsDisc > 0 ? "−" : "") + NumberUtil.formatThousands(pointsDisc) + " đ");
         totalValue.setText(NumberUtil.formatThousands(total) + " đ");
+
+        boolean hasPromo = cart.getAppliedPromotion() != null;
+        clearPromoButton.setVisible(hasPromo);
+        promoCodeField.setEditable(!hasPromo);
+        if (hasPromo) {
+            promoCodeField.setText(cart.getAppliedPromotion().getCode());
+        }
+
+        // Cap nhat UI doi diem
+        boolean hasCustomer = cart.getCustomerId() != null;
+        int memberPts = cart.getCustomerMemberPoint();
+        long redeem = cart.getPointRedeemRate().longValue();
+        pointsRowPanel.setVisible(hasCustomer && memberPts > 0);
+        pointsHintLabel.setVisible(hasCustomer && memberPts > 0);
+        if (hasCustomer && memberPts > 0) {
+            int maxByMoney = redeem > 0 ? (int) Math.min(memberPts, totalBeforePoints / redeem) : 0;
+            SpinnerNumberModel model = (SpinnerNumberModel) pointsSpinner.getModel();
+            model.setMinimum(0);
+            model.setMaximum(Math.max(0, maxByMoney));
+            int cur = cart.getPointsToUse();
+            if (cur > maxByMoney) cur = maxByMoney;
+            // Tranh vong lap change listener
+            if (((Number) pointsSpinner.getValue()).intValue() != cur) {
+                pointsSpinner.setValue(cur);
+            }
+            usePointsCheck.setSelected(cur > 0);
+            pointsSpinner.setEnabled(cur > 0 || usePointsCheck.isSelected());
+            pointsHintLabel.setText("Còn " + memberPts + " điểm · 1 điểm = "
+                    + NumberUtil.formatThousands(redeem) + " đ · tối đa dùng " + maxByMoney);
+        } else {
+            usePointsCheck.setSelected(false);
+            pointsSpinner.setEnabled(false);
+            pointsHintLabel.setText(" ");
+        }
 
         checkoutButton.setEnabled(!cart.isEmpty());
     }
@@ -558,10 +808,10 @@ public class PosPanel extends JPanel {
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 2));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 68));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 58));
         row.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(8, 10, 8, 10)));
+                new EmptyBorder(6, 8, 6, 8)));
 
         JLabel nameLabel = new JLabel("<html>" + escapeHtml(product.getProductName()) + "</html>");
         nameLabel.setFont(AppFont.SMALL_BOLD);
@@ -717,14 +967,30 @@ public class PosPanel extends JPanel {
         List<CartItem> snapshot = new ArrayList<>(cart.getItems());
         Integer customerId = cart.getCustomerId();
         long expectedSubTotal = cart.getSubTotal();
-        long vat = calculateVat(expectedSubTotal);
-        long expectedTotal = expectedSubTotal + vat;
+        long discount = cart.getDiscountAmountLong();
+        long taxable = Math.max(0, expectedSubTotal - discount);
+        long vat = calculateVat(taxable);
+        long totalBeforePoints = taxable + vat;
+        long pointsDisc = cart.getPointsDiscountAmount().longValue();
+        if (pointsDisc > totalBeforePoints) pointsDisc = totalBeforePoints;
+        long expectedTotal = Math.max(0, totalBeforePoints - pointsDisc);
+
+        BigDecimal discountBd = cart.getDiscountAmount();
+        Integer promotionId = cart.getAppliedPromotion() != null
+                ? cart.getAppliedPromotion().getPromotionId() : null;
+        String promotionCode = cart.getAppliedPromotion() != null
+                ? cart.getAppliedPromotion().getCode() : null;
+        int pointsToUse = cart.getPointsToUse();
+        BigDecimal pointsDiscountBd = cart.getPointsDiscountAmount();
 
         if ("PAYPAL".equals(selectedPaymentMethod)) {
-            payWithPayPalThenCreateInvoice(currentUser, snapshot, customerId, expectedSubTotal, expectedTotal);
+            payWithPayPalThenCreateInvoice(currentUser, snapshot, customerId,
+                    expectedSubTotal, expectedTotal, discountBd, promotionId, promotionCode,
+                    pointsToUse, pointsDiscountBd);
         } else {
             createInvoiceAndFinish(currentUser, snapshot, customerId, expectedSubTotal,
-                    selectedPaymentMethod, null, null);
+                    selectedPaymentMethod, null, null, discountBd, promotionId, promotionCode,
+                    pointsToUse, pointsDiscountBd);
         }
     }
 
@@ -735,7 +1001,9 @@ public class PosPanel extends JPanel {
      */
     private void createInvoiceAndFinish(User currentUser, List<CartItem> snapshot, Integer customerId,
                                          long expectedSubTotal, String paymentMethod,
-                                         String payPalOrderId, String payPalCaptureId) {
+                                         String payPalOrderId, String payPalCaptureId,
+                                         BigDecimal discountAmount, Integer promotionId, String promotionCode,
+                                         int pointsUsed, BigDecimal pointsDiscountAmount) {
         checkoutButton.setEnabled(false);
         loadingOverlay.start("Đang lập hóa đơn...");
 
@@ -754,9 +1022,12 @@ public class PosPanel extends JPanel {
                 invoice.setPaymentMethod(paymentMethod);
                 invoice.setPayPalOrderId(payPalOrderId);
                 invoice.setPayPalCaptureId(payPalCaptureId);
-                // Ghi lai dung ti le VAT dang ap dung tai thoi diem lap hoa don
-             // (doc tu StoreConfig qua storeConfigDAO.getVatRate(), xem constructor).
                 invoice.setVatRate(vatRate);
+                invoice.setDiscountAmount(discountAmount != null ? discountAmount : BigDecimal.ZERO);
+                invoice.setPromotionId(promotionId);
+                invoice.setPromotionCode(promotionCode);
+                invoice.setPointsUsed(pointsUsed);
+                invoice.setPointsDiscountAmount(pointsDiscountAmount != null ? pointsDiscountAmount : BigDecimal.ZERO);
 
                 List<InvoiceDetail> details = new ArrayList<>();
                 for (CartItem item : snapshot) {
@@ -782,12 +1053,19 @@ public class PosPanel extends JPanel {
 
                 if (ok) {
                     cart.clear();
-                    loadProducts(null, null); // ton kho vua doi
-                    // "+N diem" chi xuat hien khi hoa don gan voi 1 khach hang co
-                    // tai khoan (khach le khong tich diem) - xem InvoiceDAO#createInvoice.
+                    promoCodeField.setText("");
+                    promoCodeField.setEditable(true);
+                    promoStatusLabel.setText(" ");
+                    promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
+                    loadProducts(null, null);
+                    String pointsUsedSuffix = invoice.getPointsUsed() > 0
+                            ? " Đã trừ " + invoice.getPointsUsed() + " điểm (−"
+                              + NumberUtil.formatThousands(invoice.getPointsDiscountAmount().longValue()) + " đ)."
+                            : "";
                     String pointsSuffix = invoice.getPointsEarned() > 0
                             ? " Khách được cộng " + invoice.getPointsEarned() + " điểm thành viên."
                             : "";
+                    pointsSuffix = pointsUsedSuffix + pointsSuffix;
                     boolean stockLimited = invoice.getSubTotal() != null
                             && invoice.getSubTotal().longValue() < expectedSubTotal;
                     if (stockLimited) {
@@ -825,7 +1103,9 @@ public class PosPanel extends JPanel {
      * hang) de nhat quan trong toan he thong.
      */
     private void payWithPayPalThenCreateInvoice(User currentUser, List<CartItem> snapshot, Integer customerId,
-                                                 long expectedSubTotal, long totalVnd) {
+                                                 long expectedSubTotal, long totalVnd,
+                                                 BigDecimal discountAmount, Integer promotionId, String promotionCode,
+                                                 int pointsUsed, BigDecimal pointsDiscountAmount) {
         PayPalService payPalService = new PayPalService();
 
         JLabel qrLabel = new JLabel("Đang khởi tạo đơn PayPal...");
@@ -905,7 +1185,9 @@ public class PosPanel extends JPanel {
                     PayPalPosResult result = get();
                     if (result.success()) {
                         createInvoiceAndFinish(currentUser, snapshot, customerId, expectedSubTotal,
-                                "PAYPAL", result.orderId(), result.captureId());
+                                "PAYPAL", result.orderId(), result.captureId(),
+                                discountAmount, promotionId, promotionCode,
+                                pointsUsed, pointsDiscountAmount);
                     } else if (!"CANCELLED".equals(result.status())) {
                         AppAlert.error(PosPanel.this, "Thanh toán PayPal thất bại",
                                 "Không thể chốt giao dịch PayPal. Vui lòng thử lại hoặc chọn phương thức khác.");

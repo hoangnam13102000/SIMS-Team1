@@ -21,6 +21,13 @@
 *.log
 
 *.wav
+# Word
+*.doc
+*.docx
+
+# Excel
+*.xls
+*.xlsx
 
 # Database backups (file lớn, không đưa lên Git)
 /backups/

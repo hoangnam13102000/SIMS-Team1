@@ -53,4 +53,10 @@ public enum AppPermission implements Permission {
     STOCK_DISPOSE,
     /** Xem lich su tieu huy va bao cao ton that tai chinh. */
     STOCK_DISPOSE_VIEW,
+    /** Lap phieu tra hang lo ve nha cung cap (tru lo + ghi cong no NCC). */
+    SUPPLIER_RETURN_CREATE,
+    /** Xem lich su tra hang NCC va bao cao cong no. */
+    SUPPLIER_RETURN_VIEW,
+    /** Quan ly khuyen mai / ma giam gia (tao, sua, bat-tat, xoa). */
+    PROMOTION_MANAGE,
 }

@@ -22,7 +22,8 @@ public final class RolePermissions {
                 AppPermission.INVOICE_CANCEL,
                 AppPermission.RETURN_EXCHANGE_APPROVE,
                 AppPermission.EXCEPTION_REPORT_HANDLE,
-                AppPermission.STOCK_DISPOSE_VIEW
+                AppPermission.STOCK_DISPOSE_VIEW,
+                AppPermission.PROMOTION_MANAGE
         ));
 
         MAP.put(Role.INVENTORY_MANAGER, PermissionSet.of(
