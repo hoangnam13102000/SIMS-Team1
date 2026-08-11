@@ -54,23 +54,17 @@ public class FilterDropdown<T> extends JPanel {
         combo.setOpaque(false);
         combo.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
-        // FlatLaf: padding 0 để không thừa khoảng trắng giữa icon và chữ.
-        // buttonBackground phải CÙNG màu panel (không null, không để mặc định trắng)
-        // để vùng nút mũi tên chiếm hết chiều cao/nền — tránh khe trắng.
-        // Đồng thời set màu mũi tên rõ ràng để hover không làm mất mũi tên.
+        // FlatLaf: chỉ dùng style đã hỗ trợ ổn định trên JComboBox.
+        // Tránh buttonHoverBackground / buttonPressedBackground / buttonHoverArrowColor
+        // — một số bản FlatLaf (hoặc khi UI delegate không phải FlatComboBoxUI)
+        // ném UnknownStyleException (SEVERE: unknown style 'buttonHoverBackground').
         String bg = hex(AppColor.BG_LIGHT);
-        String hoverBg = hex(AppColor.BG_LIGHTER);
         String arrow = hex(AppColor.TEXT_MUTED);
-        String arrowHover = hex(AppColor.TEXT_PRIMARY);
         combo.putClientProperty("FlatLaf.style",
                 "padding: 0,0,0,0;"
                 + "background: " + bg + ";"
                 + "buttonBackground: " + bg + ";"
-                + "buttonHoverBackground: " + hoverBg + ";"
-                + "buttonPressedBackground: " + hoverBg + ";"
                 + "buttonArrowColor: " + arrow + ";"
-                + "buttonHoverArrowColor: " + arrowHover + ";"
-                + "buttonPressedArrowColor: " + arrowHover + ";"
                 + "buttonSeparatorWidth: 0");
 
         combo.setRenderer(new DefaultListCellRenderer() {
