@@ -3,36 +3,31 @@ package com.model;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-
 public class Order {
-
     private int orderId;
-    private String orderCode; // "DH" + OrderID đệm 4 số (cột COMPUTED trong DB)
-
-    private Integer customerId; // null = khách đặt không đăng nhập
+    private String orderCode;
+    private Integer customerId;
     private String customerName;
     private String customerEmail;
     private String customerPhone;
     private String shippingAddress;
-
     private LocalDateTime createdAt;
     private BigDecimal subTotal;
     private BigDecimal discountAmount = BigDecimal.ZERO;
     private Integer promotionId;
     private String promotionCode;
     private BigDecimal totalAmount;
-
-    private String paymentMethod; // COD | PAYPAL
-    private String paymentStatus; // PENDING | PAID | FAILED
+    private String paymentMethod;
+    private String paymentStatus;
     private String payPalOrderId;
     private String payPalCaptureId;
-
-    private String orderStatus; // NEW | CONFIRMED | SHIPPING | COMPLETED | CANCELLED
+    private String orderStatus;
     private boolean seenByAdmin;
     private String cancelReason;
-
     private LocalDateTime completedAt;
     private Integer invoiceId;
+    private int itemCount;
+
     private boolean returnRequested;
     private String latestReturnStatus;
     private String latestReturnType;
@@ -40,8 +35,6 @@ public class Order {
     private String latestReturnRejectionReason;
     private String latestReturnReason;
     private LocalDateTime latestReturnCreatedAt;
-
-    private int itemCount;
 
     public int getOrderId() { return orderId; }
     public void setOrderId(int orderId) { this.orderId = orderId; }
@@ -107,14 +100,14 @@ public class Order {
     public String getCancelReason() { return cancelReason; }
     public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
 
-    public int getItemCount() { return itemCount; }
-    public void setItemCount(int itemCount) { this.itemCount = itemCount; }
-
     public LocalDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
 
     public Integer getInvoiceId() { return invoiceId; }
     public void setInvoiceId(Integer invoiceId) { this.invoiceId = invoiceId; }
+
+    public int getItemCount() { return itemCount; }
+    public void setItemCount(int itemCount) { this.itemCount = itemCount; }
 
     public boolean isReturnRequested() { return returnRequested; }
     public void setReturnRequested(boolean returnRequested) { this.returnRequested = returnRequested; }
@@ -129,13 +122,17 @@ public class Order {
     public void setLatestReturnValue(BigDecimal latestReturnValue) { this.latestReturnValue = latestReturnValue; }
 
     public String getLatestReturnRejectionReason() { return latestReturnRejectionReason; }
-    public void setLatestReturnRejectionReason(String latestReturnRejectionReason) { this.latestReturnRejectionReason = latestReturnRejectionReason; }
+    public void setLatestReturnRejectionReason(String latestReturnRejectionReason) {
+        this.latestReturnRejectionReason = latestReturnRejectionReason;
+    }
 
     public String getLatestReturnReason() { return latestReturnReason; }
     public void setLatestReturnReason(String latestReturnReason) { this.latestReturnReason = latestReturnReason; }
 
     public LocalDateTime getLatestReturnCreatedAt() { return latestReturnCreatedAt; }
-    public void setLatestReturnCreatedAt(LocalDateTime latestReturnCreatedAt) { this.latestReturnCreatedAt = latestReturnCreatedAt; }
+    public void setLatestReturnCreatedAt(LocalDateTime latestReturnCreatedAt) {
+        this.latestReturnCreatedAt = latestReturnCreatedAt;
+    }
 
     public boolean isCancelled() { return "CANCELLED".equalsIgnoreCase(orderStatus); }
     public boolean isConfirmed() { return "CONFIRMED".equalsIgnoreCase(orderStatus); }

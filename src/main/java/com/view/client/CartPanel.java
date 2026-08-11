@@ -45,14 +45,13 @@ public class CartPanel extends JPanel {
 
     private final JLabel subtotalCaptionLabel;
     private final JLabel subtotalValueLabel;
-    private final JLabel discountCaptionLabel;
     private final JLabel discountValueLabel;
     private final JLabel totalValueLabel;
-    private final JTextField promoCodeField = new JTextField();
-    private final JButton applyPromoButton = new JButton();
-    private final JButton clearPromoButton = new JButton();
-    private final JLabel promoStatusLabel = new JLabel(" ");
     private final JButton checkoutButton;
+    private final JTextField promoCodeField = new JTextField();
+    private final JButton applyPromoButton = new JButton("Áp dụng");
+    private final JButton clearPromoButton = new JButton("Bỏ");
+    private final JLabel promoStatusLabel = new JLabel(" ");
 
     private JTextField nameField;
     private JTextField phoneField;
@@ -80,8 +79,7 @@ public class CartPanel extends JPanel {
 
         subtotalCaptionLabel = new JLabel();
         subtotalValueLabel = new JLabel();
-        discountCaptionLabel = new JLabel();
-        discountValueLabel = new JLabel();
+        discountValueLabel = new JLabel("0 đ");
         totalValueLabel = new JLabel();
         checkoutButton = buildCheckoutButton();
 
@@ -443,22 +441,16 @@ public class CartPanel extends JPanel {
         card.add(summaryRow(subtotalCaptionLabel, subtotalValueLabel, AppColor.TEXT_MUTED, AppColor.TEXT_PRIMARY, false));
         card.add(Box.createVerticalStrut(AppSpacing.SM));
 
-        card.add(buildPromoInputRow());
-        card.add(Box.createVerticalStrut(4));
-        promoStatusLabel.setFont(AppFont.SMALL);
-        promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
-        promoStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.add(promoStatusLabel);
-        card.add(Box.createVerticalStrut(AppSpacing.SM));
-
-        discountCaptionLabel.setText("Giảm giá");
-        card.add(summaryRow(discountCaptionLabel, discountValueLabel, AppColor.TEXT_MUTED, AppColor.SUCCESS, false));
+        JLabel discountLabel = new JLabel("Giảm giá");
+        card.add(summaryRow(discountLabel, discountValueLabel, AppColor.TEXT_MUTED, AppColor.SUCCESS, false));
         card.add(Box.createVerticalStrut(AppSpacing.SM));
 
         JLabel shippingLabel = new JLabel(Lang.get("cart.summary.shippingFee"));
         JLabel shippingValue = new JLabel(Lang.get("cart.summary.freeShipping"));
         card.add(summaryRow(shippingLabel, shippingValue, AppColor.TEXT_MUTED, AppColor.SUCCESS, false));
 
+        card.add(Box.createVerticalStrut(AppSpacing.MD));
+        card.add(buildPromoBlock());
         card.add(Box.createVerticalStrut(AppSpacing.MD));
         card.add(summaryDivider());
         card.add(Box.createVerticalStrut(AppSpacing.MD));
@@ -485,64 +477,6 @@ public class CartPanel extends JPanel {
      * Hàng nhãn trái – giá trị phải, chiếm full chiều ngang nội dung summary card
      * (SUMMARY_WIDTH - padding 20*2) để không còn khoảng trắng thừa bên trái/phải.
      */
-
-    private JPanel buildPromoInputRow() {
-        final int innerWidth = SUMMARY_WIDTH - 40;
-        JPanel row = new JPanel(new BorderLayout(6, 0));
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(innerWidth, 34));
-        row.setPreferredSize(new Dimension(innerWidth, 34));
-
-        promoCodeField.setFont(AppFont.BODY);
-        promoCodeField.putClientProperty("JTextField.placeholderText", "Nhập mã KM");
-        promoCodeField.addActionListener(e -> applyPromoFromField());
-        row.add(promoCodeField, BorderLayout.CENTER);
-
-        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        btns.setOpaque(false);
-
-        applyPromoButton.setText("Áp dụng");
-        applyPromoButton.setFont(AppFont.SMALL);
-        applyPromoButton.setFocusPainted(false);
-        applyPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        applyPromoButton.addActionListener(e -> applyPromoFromField());
-        btns.add(applyPromoButton);
-
-        clearPromoButton.setText("Bỏ");
-        clearPromoButton.setFont(AppFont.SMALL);
-        clearPromoButton.setFocusPainted(false);
-        clearPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        clearPromoButton.setVisible(false);
-        clearPromoButton.addActionListener(e -> {
-            CartService.getInstance().clearPromotion();
-            promoCodeField.setText("");
-            promoCodeField.setEditable(true);
-            promoStatusLabel.setText(" ");
-            promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
-        });
-        btns.add(clearPromoButton);
-
-        row.add(btns, BorderLayout.EAST);
-        return row;
-    }
-
-    private void applyPromoFromField() {
-        String code = promoCodeField.getText() != null ? promoCodeField.getText().trim() : "";
-        var result = CartService.getInstance().applyPromotionCode(code);
-        if (result.ok) {
-            promoStatusLabel.setText("Đã áp dụng: " + result.promotion.getName());
-            promoStatusLabel.setForeground(AppColor.SUCCESS);
-            clearPromoButton.setVisible(true);
-            promoCodeField.setEditable(false);
-        } else {
-            promoStatusLabel.setText(result.message != null ? result.message : "Mã không hợp lệ");
-            promoStatusLabel.setForeground(AppColor.ERROR);
-            clearPromoButton.setVisible(false);
-            promoCodeField.setEditable(true);
-        }
-    }
-
     private JPanel summaryRow(JLabel labelComp, JLabel valueComp, Color labelColor, Color valueColor, boolean big) {
         final int innerWidth = SUMMARY_WIDTH - 40;
         final int rowHeight = big ? 34 : 24;
@@ -604,6 +538,87 @@ public class CartPanel extends JPanel {
         return button;
     }
 
+
+    private JPanel buildPromoBlock() {
+        JPanel box = new JPanel();
+        box.setOpaque(false);
+        box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
+        box.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel title = new JLabel("Mã khuyến mãi");
+        title.setFont(AppFont.SMALL_BOLD);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        box.add(title);
+        box.add(Box.createVerticalStrut(6));
+
+        JPanel row = new JPanel(new BorderLayout(6, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(SUMMARY_WIDTH, 34));
+
+        promoCodeField.setFont(AppFont.BODY);
+        promoCodeField.putClientProperty("JTextField.placeholderText", "Nhập mã KM");
+        promoCodeField.addActionListener(e -> applyPromoFromField());
+        row.add(promoCodeField, BorderLayout.CENTER);
+
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        btns.setOpaque(false);
+        applyPromoButton.setFont(AppFont.SMALL);
+        applyPromoButton.setFocusPainted(false);
+        applyPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        applyPromoButton.addActionListener(e -> applyPromoFromField());
+        btns.add(applyPromoButton);
+
+        clearPromoButton.setFont(AppFont.SMALL);
+        clearPromoButton.setFocusPainted(false);
+        clearPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearPromoButton.setVisible(false);
+        clearPromoButton.addActionListener(e -> {
+            CartService.getInstance().clearPromotion();
+            promoCodeField.setText("");
+            promoCodeField.setEditable(true);
+            promoStatusLabel.setText(" ");
+            promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
+            loadCart();
+        });
+        btns.add(clearPromoButton);
+        row.add(btns, BorderLayout.EAST);
+        box.add(row);
+
+        promoStatusLabel.setFont(AppFont.SMALL);
+        promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
+        promoStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        box.add(promoStatusLabel);
+        return box;
+    }
+
+    private void applyPromoFromField() {
+        String code = promoCodeField.getText() != null ? promoCodeField.getText().trim() : "";
+        if (code.isEmpty()) {
+            BaseDialog.error(this, "Khuyến mãi", "Vui lòng nhập mã khuyến mãi.");
+            return;
+        }
+        if (CartService.getInstance().isEmpty()) {
+            BaseDialog.error(this, "Khuyến mãi", "Giỏ hàng đang trống.");
+            return;
+        }
+        var result = CartService.getInstance().applyPromotionCode(code);
+        if (result.ok) {
+            promoStatusLabel.setText("Đã áp dụng: " + result.promotion.getName()
+                    + " (−" + NumberUtil.formatThousands(result.discountAmount.longValue()) + " đ)");
+            promoStatusLabel.setForeground(AppColor.SUCCESS);
+            clearPromoButton.setVisible(true);
+            promoCodeField.setEditable(false);
+            loadCart();
+        } else {
+            promoStatusLabel.setText(result.message != null ? result.message : "Mã không hợp lệ");
+            promoStatusLabel.setForeground(AppColor.ERROR);
+            clearPromoButton.setVisible(false);
+            promoCodeField.setEditable(true);
+        }
+    }
+
     // ==================== Nap lai / thanh toan ====================
 
     /** Goi lai moi khi CartService bao thay doi (them/sua/xoa) hoac khi mo trang - cap nhat so lieu + danh sach. */
@@ -618,9 +633,10 @@ public class CartPanel extends JPanel {
         itemsCountLabel.setText(Lang.get("cart.itemCount", items.size()));
         rebuildItemRows(items);
 
-        long subtotal = CartService.getInstance().getTotal();
-        long discount = CartService.getInstance().getDiscountAmountLong();
-        long total = CartService.getInstance().getPayableTotal();
+        CartService cart = CartService.getInstance();
+        long subtotal = cart.getTotal();
+        long discount = cart.getDiscountAmountLong();
+        long total = cart.getPayableTotal();
 
         if (subtotalCaptionLabel != null) {
             subtotalCaptionLabel.setText(Lang.get("cart.summary.subtotal", items.size()));
@@ -628,14 +644,12 @@ public class CartPanel extends JPanel {
         subtotalValueLabel.setText(NumberUtil.formatThousands(subtotal) + " đ");
         discountValueLabel.setText((discount > 0 ? "−" : "") + NumberUtil.formatThousands(discount) + " đ");
         totalValueLabel.setText(NumberUtil.formatThousands(total) + " đ");
-
-        boolean hasPromo = CartService.getInstance().getAppliedPromotion() != null;
+        boolean hasPromo = cart.getAppliedPromotion() != null;
         clearPromoButton.setVisible(hasPromo);
         promoCodeField.setEditable(!hasPromo);
         if (hasPromo) {
-            promoCodeField.setText(CartService.getInstance().getAppliedPromotion().getCode());
+            promoCodeField.setText(cart.getAppliedPromotion().getCode());
         }
-
         checkoutButton.setEnabled(true);
 
         contentLayout.show(contentArea, "items");
@@ -658,10 +672,11 @@ public class CartPanel extends JPanel {
             return;
         }
 
-        List<CartItem> cartItems = CartService.getInstance().getItems();
+        CartService cart = CartService.getInstance();
+        List<CartItem> cartItems = cart.getItems();
         if (cartItems.isEmpty()) return;
-        long payable = CartService.getInstance().getPayableTotal();
-        PaymentDialog.Method method = PaymentDialog.show(this, cartItems, payable);
+        long total = cart.getPayableTotal();
+        PaymentDialog.Method method = PaymentDialog.show(this, cartItems, total);
         if (method == null) return;
 
         List<OrderDetail> details = new ArrayList<>();
@@ -673,9 +688,8 @@ public class CartPanel extends JPanel {
             subTotal = subTotal.add(unitPrice.multiply(BigDecimal.valueOf(item.getQuantity())));
         }
 
-        BigDecimal discount = CartService.getInstance().getDiscountAmount();
-        BigDecimal totalAmount = subTotal.subtract(discount);
-        if (totalAmount.signum() < 0) totalAmount = BigDecimal.ZERO;
+        BigDecimal discount = cart.getDiscountAmount();
+        BigDecimal payable = cart.getPayableTotalDecimal();
 
         Order order = new Order();
         if (AuthService.getInstance().isLoggedIn()) {
@@ -687,13 +701,12 @@ public class CartPanel extends JPanel {
         order.setShippingAddress(address);
         order.setSubTotal(subTotal);
         order.setDiscountAmount(discount);
-        order.setTotalAmount(totalAmount);
-        order.setOrderStatus("NEW");
-
-        if (CartService.getInstance().getAppliedPromotion() != null) {
-            order.setPromotionId(CartService.getInstance().getAppliedPromotion().getPromotionId());
-            order.setPromotionCode(CartService.getInstance().getAppliedPromotion().getCode());
+        if (cart.getAppliedPromotion() != null) {
+            order.setPromotionId(cart.getAppliedPromotion().getPromotionId());
+            order.setPromotionCode(cart.getAppliedPromotion().getCode());
         }
+        order.setTotalAmount(payable);
+        order.setOrderStatus("NEW");
 
         if (method == PaymentDialog.Method.COD) {
             order.setPaymentMethod("COD");
@@ -701,7 +714,7 @@ public class CartPanel extends JPanel {
             persistOrderAndFinish(order, details);
         } else {
             order.setPaymentMethod("PAYPAL");
-            payWithPayPalThenPersist(order, details, totalAmount);
+            payWithPayPalThenPersist(order, details, payable);
         }
     }
 
@@ -723,6 +736,9 @@ public class CartPanel extends JPanel {
                 }
                 if (ok) {
                     CartService.getInstance().clear();
+                    promoCodeField.setText("");
+                    promoCodeField.setEditable(true);
+                    promoStatusLabel.setText(" ");
                     BaseDialog.success(CartPanel.this, Lang.get("cart.checkout.success.title"),
                             Lang.get("cart.checkout.success.message"));
                     if (onCheckoutSuccess != null) onCheckoutSuccess.run();

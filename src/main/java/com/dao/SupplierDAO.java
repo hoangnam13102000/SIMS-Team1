@@ -206,7 +206,7 @@ public class SupplierDAO extends SoftDeleteDAO<Supplier> {
 
     /** Danh sach nha cung cap dang hoat dong (chua xoa mem), sap xep theo ten. */
     public List<Supplier> findAllOrderByName() {
-        String sql = "SELECT SupplierID, SupplierName, Address, Phone, Email, SuppliedItems "
+        String sql = "SELECT SupplierID, SupplierName, Address, Phone, Email, SuppliedItems,DebtBalance "
                 + "FROM Suppliers WHERE IsDeleted = 0 ORDER BY SupplierName";
         List<Supplier> result = new ArrayList<>();
 

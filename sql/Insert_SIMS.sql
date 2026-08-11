@@ -307,7 +307,7 @@ INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái'),
-('POINT_RATE', '100000'),
+('POINT_RATE', '10000'),
 ('DEFAULT_MARGIN', '5000'),
 ('RETURN_APPROVAL_THRESHOLD', '0');
 GO
@@ -476,3 +476,115 @@ WHERE Username IN ('salesmgr', 'invmgr');
 UPDATE Users 
 SET PasswordHash = '$2a$12$rULa7sQqQB78UAMj4a.8IOPHPuspkHU2zffYsu75HhmFDVGPl3csS'
 WHERE Username IN ('staff01', 'staff02');
+
+
+USE SIMS_DB;
+GO
+
+-- Xóa mã mẫu cũ (nếu chạy lại)
+DELETE FROM Promotions WHERE Code IN (
+    'SUMMER10', 'GIAM50K', 'FREESHIP', 'WELCOME15', 'FLASH20'
+);
+GO
+
+INSERT INTO Promotions (
+    Code, Name, DiscountType, DiscountValue,
+    MaxDiscountAmount, MinOrderAmount,
+    StartDate, EndDate, UsageLimit, UsedCount,
+    IsActive, IsDeleted, CreatedBy, CreatedAt
+) VALUES
+-- Giảm 10% tối đa 30.000đ, đơn từ 100.000đ
+(
+    'SUMMER10',
+    N'Khuyến mãi hè - Giảm 10%',
+    'PERCENT',
+    10,
+    30000,
+    100000,
+    '2026-01-01',
+    '2026-12-31',
+    1000,
+    0,
+    1,
+    0,
+    1,
+    GETDATE()
+),
+-- Giảm cố định 50.000đ, đơn từ 300.000đ
+(
+    'GIAM50K',
+    N'Giảm ngay 50.000đ',
+    'AMOUNT',
+    50000,
+    NULL,
+    300000,
+    '2026-01-01',
+    '2026-12-31',
+    500,
+    0,
+    1,
+    0,
+    1,
+    GETDATE()
+),
+-- Giảm 15% cho khách mới, tối đa 40.000đ, đơn từ 150.000đ
+(
+    'WELCOME15',
+    N'Chào thành viên mới - Giảm 15%',
+    'PERCENT',
+    15,
+    40000,
+    150000,
+    '2026-01-01',
+    '2026-12-31',
+    NULL,          -- không giới hạn lượt
+    0,
+    1,
+    0,
+    1,
+    GETDATE()
+),
+-- Flash sale giảm 20%, tối đa 100.000đ, đơn từ 200.000đ
+(
+    'FLASH20',
+    N'Flash sale - Giảm 20%',
+    'PERCENT',
+    20,
+    100000,
+    200000,
+    CAST(GETDATE() AS DATE),
+    DATEADD(DAY, 30, CAST(GETDATE() AS DATE)),
+    200,
+    0,
+    1,
+    0,
+    1,
+    GETDATE()
+),
+-- Giảm 20.000đ, đơn từ 99.000đ (dùng test nhanh)
+(
+    'FREESHIP',
+    N'Ưu đãi 20.000đ',
+    'AMOUNT',
+    20000,
+    NULL,
+    99000,
+    '2026-01-01',
+    '2026-12-31',
+    9999,
+    0,
+    1,
+    0,
+    1,
+    GETDATE()
+);
+GO
+
+-- Kiểm tra
+SELECT PromotionID, Code, Name, DiscountType, DiscountValue,
+       MaxDiscountAmount, MinOrderAmount, StartDate, EndDate,
+       UsageLimit, UsedCount, IsActive
+FROM Promotions
+WHERE IsDeleted = 0
+ORDER BY PromotionID;
+GO

@@ -8,6 +8,9 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Giỏ hàng session phía khách (online). Hỗ trợ mã khuyến mãi.
+ */
 public class CartService {
 
     private static CartService instance;
@@ -26,7 +29,9 @@ public class CartService {
     }
 
     public void addListener(Runnable listener) {
-        if (listener != null && !listeners.contains(listener)) listeners.add(listener);
+        if (listener != null && !listeners.contains(listener)) {
+            listeners.add(listener);
+        }
     }
 
     public void removeListener(Runnable listener) {
@@ -35,12 +40,16 @@ public class CartService {
 
     private void notifyChanged() {
         for (Runnable listener : new ArrayList<>(listeners)) {
-            try { listener.run(); } catch (Exception ignored) { }
+            try {
+                listener.run();
+            } catch (Exception ignored) {
+            }
         }
     }
 
     public void addToCart(Product product, int quantity) {
         if (product == null || quantity <= 0) return;
+
         for (CartItem item : items) {
             if (item.getProduct().getProductId() == product.getProductId()) {
                 int newQty = item.getQuantity() + quantity;
@@ -52,8 +61,9 @@ public class CartService {
                 return;
             }
         }
+        int qty = Math.min(quantity, Math.max(1, product.getStock()));
         if (product.getStock() <= 0) return;
-        items.add(new CartItem(product, Math.min(quantity, Math.max(1, product.getStock()))));
+        items.add(new CartItem(product, qty));
         revalidatePromotion();
         notifyChanged();
     }
@@ -68,8 +78,12 @@ public class CartService {
         for (int i = 0; i < items.size(); i++) {
             CartItem item = items.get(i);
             if (item.getProduct().getProductId() == productId) {
-                if (quantity <= 0) items.remove(i);
-                else item.setQuantity(Math.min(quantity, Math.max(1, item.getProduct().getStock())));
+                if (quantity <= 0) {
+                    items.remove(i);
+                } else {
+                    int max = Math.max(1, item.getProduct().getStock());
+                    item.setQuantity(Math.min(quantity, max));
+                }
                 revalidatePromotion();
                 notifyChanged();
                 return;
@@ -77,7 +91,9 @@ public class CartService {
         }
     }
 
-    public List<CartItem> getItems() { return items; }
+    public List<CartItem> getItems() {
+        return items;
+    }
 
     public long getTotal() {
         long total = 0;
@@ -89,20 +105,21 @@ public class CartService {
         return BigDecimal.valueOf(getTotal());
     }
 
-    /** Tong thanh toan sau tru KM (online khong tinh VAT o day). */
-    public long getPayableTotal() {
-        return Math.max(0, getTotal() - getDiscountAmountLong());
-    }
-
     public int getTotalQuantity() {
         int total = 0;
         for (CartItem item : items) total += item.getQuantity();
         return total;
     }
 
-    public boolean isEmpty() { return items.isEmpty(); }
+    public boolean isEmpty() {
+        return items.isEmpty();
+    }
 
-    public Promotion getAppliedPromotion() { return appliedPromotion; }
+    // ---------------- Khuyen mai ----------------
+
+    public Promotion getAppliedPromotion() {
+        return appliedPromotion;
+    }
 
     public BigDecimal getDiscountAmount() {
         return discountAmount != null ? discountAmount : BigDecimal.ZERO;
@@ -110,6 +127,15 @@ public class CartService {
 
     public long getDiscountAmountLong() {
         return getDiscountAmount().longValue();
+    }
+
+    /** Tổng sau KM (online: thường = total thanh toán). */
+    public long getPayableTotal() {
+        return Math.max(0, getTotal() - getDiscountAmountLong());
+    }
+
+    public BigDecimal getPayableTotalDecimal() {
+        return BigDecimal.valueOf(getPayableTotal());
     }
 
     public PromotionService.ApplyResult applyPromotionCode(String code) {

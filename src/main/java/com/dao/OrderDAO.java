@@ -38,8 +38,7 @@ public class OrderDAO extends BaseDAO<Order> {
     @Override
     protected String getColumns() {
         return "o.OrderID, o.OrderCode, o.CustomerID, o.CustomerName, o.CustomerEmail, o.CustomerPhone, "
-                + "o.ShippingAddress, o.CreatedAt, o.SubTotal, o.DiscountAmount, o.PromotionID, o.PromotionCode, "
-                + "o.TotalAmount, o.PaymentMethod, o.PaymentStatus, "
+                + "o.ShippingAddress, o.CreatedAt, o.SubTotal, o.DiscountAmount, o.PromotionID, o.PromotionCode, o.TotalAmount, o.PaymentMethod, o.PaymentStatus, "
                 + "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, o.CancelReason, o.CompletedAt, o.InvoiceID, "
                 + "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount, "
                 + "CASE WHEN EXISTS (SELECT 1 FROM ReturnExchanges r "
@@ -84,11 +83,15 @@ public class OrderDAO extends BaseDAO<Order> {
         order.setCreatedAt(createdAt != null ? createdAt.toLocalDateTime() : null);
 
         order.setSubTotal(rs.getBigDecimal("SubTotal"));
-        java.math.BigDecimal discount = rs.getBigDecimal("DiscountAmount");
-        order.setDiscountAmount(discount != null ? discount : java.math.BigDecimal.ZERO);
-        int promoId = rs.getInt("PromotionID");
-        order.setPromotionId(rs.wasNull() ? null : promoId);
-        order.setPromotionCode(rs.getString("PromotionCode"));
+        try {
+            java.math.BigDecimal disc = rs.getBigDecimal("DiscountAmount");
+            order.setDiscountAmount(disc != null ? disc : java.math.BigDecimal.ZERO);
+            int promoId = rs.getInt("PromotionID");
+            order.setPromotionId(rs.wasNull() ? null : promoId);
+            order.setPromotionCode(rs.getString("PromotionCode"));
+        } catch (SQLException ignore) {
+            order.setDiscountAmount(java.math.BigDecimal.ZERO);
+        }
         order.setTotalAmount(rs.getBigDecimal("TotalAmount"));
         order.setPaymentMethod(rs.getString("PaymentMethod"));
         order.setPaymentStatus(rs.getString("PaymentStatus"));
@@ -125,8 +128,8 @@ public class OrderDAO extends BaseDAO<Order> {
      */
     public boolean createOrder(Order order, List<OrderDetail> items) {
         String insertOrderSql = "INSERT INTO Orders (CustomerID, CustomerName, CustomerEmail, CustomerPhone, "
-                + "ShippingAddress, SubTotal, TotalAmount, PaymentMethod, PaymentStatus, PayPalOrderID, PayPalCaptureID, "
-                + "DiscountAmount, PromotionID, PromotionCode) "
+                + "ShippingAddress, SubTotal, DiscountAmount, PromotionID, PromotionCode, TotalAmount, "
+                + "PaymentMethod, PaymentStatus, PayPalOrderID, PayPalCaptureID) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         String insertDetailSql = "INSERT INTO OrderDetails (OrderID, ProductID, ProductName, Quantity, UnitPrice) "
                 + "VALUES (?, ?, ?, ?, ?)";
@@ -146,23 +149,25 @@ public class OrderDAO extends BaseDAO<Order> {
                     ps.setString(4, order.getCustomerPhone());
                     ps.setString(5, order.getShippingAddress());
                     ps.setBigDecimal(6, order.getSubTotal());
-                    ps.setBigDecimal(7, order.getTotalAmount());
-                    ps.setString(8, order.getPaymentMethod());
-                    ps.setString(9, order.getPaymentStatus());
-                    ps.setString(10, order.getPayPalOrderId());
-                    ps.setString(11, order.getPayPalCaptureId());
-                    ps.setBigDecimal(12, order.getDiscountAmount() != null
-                            ? order.getDiscountAmount() : java.math.BigDecimal.ZERO);
+                    java.math.BigDecimal discAmt = order.getDiscountAmount() != null
+                            ? order.getDiscountAmount() : java.math.BigDecimal.ZERO;
+                    if (discAmt.signum() < 0) discAmt = java.math.BigDecimal.ZERO;
+                    ps.setBigDecimal(7, discAmt);
                     if (order.getPromotionId() != null) {
-                        ps.setInt(13, order.getPromotionId());
+                        ps.setInt(8, order.getPromotionId());
                     } else {
-                        ps.setNull(13, Types.INTEGER);
+                        ps.setNull(8, Types.INTEGER);
                     }
                     if (order.getPromotionCode() != null) {
-                        ps.setString(14, order.getPromotionCode());
+                        ps.setString(9, order.getPromotionCode());
                     } else {
-                        ps.setNull(14, Types.VARCHAR);
+                        ps.setNull(9, Types.VARCHAR);
                     }
+                    ps.setBigDecimal(10, order.getTotalAmount());
+                    ps.setString(11, order.getPaymentMethod());
+                    ps.setString(12, order.getPaymentStatus());
+                    ps.setString(13, order.getPayPalOrderId());
+                    ps.setString(14, order.getPayPalCaptureId());
                     ps.executeUpdate();
 
                     try (ResultSet keys = ps.getGeneratedKeys()) {
@@ -183,17 +188,6 @@ public class OrderDAO extends BaseDAO<Order> {
                     ps.executeBatch();
                 }
 
-                // Tang UsedCount ma KM (cung transaction)
-                if (order.getPromotionId() != null
-                        && order.getDiscountAmount() != null
-                        && order.getDiscountAmount().signum() > 0) {
-                    try (PreparedStatement ps = con.prepareStatement(
-                            "UPDATE Promotions SET UsedCount = UsedCount + 1 WHERE PromotionID = ?")) {
-                        ps.setInt(1, order.getPromotionId());
-                        ps.executeUpdate();
-                    }
-                }
-
                 // PAYPAL da thu tien thuc su qua PayPalService.captureOrder()
                 // TRUOC khi goi ham nay (xem javadoc + CartPanel) - lap Invoice
                 // ngay de doanh thu duoc ghi nhan dung luc thu tien, khong phai
@@ -206,6 +200,16 @@ public class OrderDAO extends BaseDAO<Order> {
                                 "Khong tim thay tai khoan ADMIN nao de lap hoa don cho don PayPal.");
                     }
                     createInvoiceForOrder(con, orderId, adminActorId);
+                }
+
+                if (order.getPromotionId() != null
+                        && order.getDiscountAmount() != null
+                        && order.getDiscountAmount().signum() > 0) {
+                    try (PreparedStatement ps = con.prepareStatement(
+                            "UPDATE Promotions SET UsedCount = UsedCount + 1 WHERE PromotionID = ?")) {
+                        ps.setInt(1, order.getPromotionId());
+                        ps.executeUpdate();
+                    }
                 }
 
                 con.commit();
@@ -434,13 +438,11 @@ public class OrderDAO extends BaseDAO<Order> {
                     if ("CANCELLED".equals(newStatus)) {
                         Integer linkedInvoiceId = getInvoiceIdForUpdate(con, orderId);
                         if (linkedInvoiceId != null) {
-                            try (PreparedStatement ps = con.prepareStatement(
-                                    "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, "
-                                            + "CancelledAt = GETDATE() WHERE InvoiceID = ? AND Status = 'ACTIVE'")) {
-                                ps.setString(1, cancelReason.trim());
-                                ps.setInt(2, linkedInvoiceId);
-                                ps.executeUpdate();
-                            }
+                            // Huy HĐ + hoàn điểm đã dùng / thu hồi điểm tích / giảm UsedCount KM
+                            cancelLinkedInvoiceFully(con, linkedInvoiceId, cancelReason.trim());
+                        } else {
+                            // Đơn chưa có HĐ: chỉ hoàn UsedCount mã KM trên Order (nếu có)
+                            restoreOrderPromotionUsage(con, orderId);
                         }
                     }
                 }
@@ -500,13 +502,9 @@ public class OrderDAO extends BaseDAO<Order> {
         java.math.BigDecimal vatRate;
         java.math.BigDecimal subTotal;
         java.math.BigDecimal totalAmount;
-        java.math.BigDecimal discountAmount = java.math.BigDecimal.ZERO;
-        Integer promotionId = null;
-        String promotionCode = null;
 
         String selectSql = "SELECT CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
-                + "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode "
-                + "FROM Orders WHERE OrderID = ?";
+                + "VATRate, SubTotal, TotalAmount FROM Orders WHERE OrderID = ?";
         try (PreparedStatement ps = con.prepareStatement(selectSql)) {
             ps.setInt(1, orderId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -519,11 +517,6 @@ public class OrderDAO extends BaseDAO<Order> {
                 vatRate = rs.getBigDecimal("VATRate");
                 subTotal = rs.getBigDecimal("SubTotal");
                 totalAmount = rs.getBigDecimal("TotalAmount");
-                java.math.BigDecimal disc = rs.getBigDecimal("DiscountAmount");
-                discountAmount = disc != null ? disc : java.math.BigDecimal.ZERO;
-                int pid = rs.getInt("PromotionID");
-                promotionId = rs.wasNull() ? null : pid;
-                promotionCode = rs.getString("PromotionCode");
             }
         }
 
@@ -533,8 +526,7 @@ public class OrderDAO extends BaseDAO<Order> {
         int invoiceId;
         String insertInvoiceSql = "INSERT INTO Invoices "
                 + "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
-                + "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "VATRate, SubTotal, TotalAmount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = con.prepareStatement(insertInvoiceSql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, "TMP-" + System.nanoTime());
             ps.setInt(2, shiftId);
@@ -546,9 +538,6 @@ public class OrderDAO extends BaseDAO<Order> {
             ps.setBigDecimal(8, vatRate);
             ps.setBigDecimal(9, subTotal);
             ps.setBigDecimal(10, totalAmount);
-            ps.setBigDecimal(11, discountAmount);
-            if (promotionId != null) ps.setInt(12, promotionId); else ps.setNull(12, Types.INTEGER);
-            if (promotionCode != null) ps.setString(13, promotionCode); else ps.setNull(13, Types.VARCHAR);
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("Không lấy được InvoiceID vừa tạo.");
@@ -948,4 +937,116 @@ public class OrderDAO extends BaseDAO<Order> {
             return false;
         }
     }
+
+
+    /**
+     * Huy hoa don lien ket don hang: Status=CANCELLED + hoan/thu hoi diem + UsedCount KM.
+     * Goi trong transaction dang mo cua updateOrderStatus.
+     */
+    private void cancelLinkedInvoiceFully(Connection con, int invoiceId, String reason) throws SQLException {
+        Integer customerId = null;
+        int pointsUsed = 0;
+        java.math.BigDecimal totalAmount = java.math.BigDecimal.ZERO;
+        Integer promotionId = null;
+        java.math.BigDecimal discountAmount = java.math.BigDecimal.ZERO;
+
+        try (PreparedStatement ps = con.prepareStatement(
+                "SELECT CustomerID, TotalAmount, PointsUsed, PromotionID, DiscountAmount "
+                        + "FROM Invoices WITH (UPDLOCK, ROWLOCK) WHERE InvoiceID = ? AND Status = 'ACTIVE'")) {
+            ps.setInt(1, invoiceId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return;
+                int cid = rs.getInt("CustomerID");
+                customerId = rs.wasNull() ? null : cid;
+                totalAmount = rs.getBigDecimal("TotalAmount");
+                if (totalAmount == null) totalAmount = java.math.BigDecimal.ZERO;
+                try {
+                    pointsUsed = Math.max(0, rs.getInt("PointsUsed"));
+                } catch (SQLException ignore) {
+                    pointsUsed = 0;
+                }
+                int pid = rs.getInt("PromotionID");
+                promotionId = rs.wasNull() ? null : pid;
+                discountAmount = rs.getBigDecimal("DiscountAmount");
+                if (discountAmount == null) discountAmount = java.math.BigDecimal.ZERO;
+            }
+        }
+
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, CancelledAt = GETDATE() "
+                        + "WHERE InvoiceID = ? AND Status = 'ACTIVE'")) {
+            ps.setString(1, reason);
+            ps.setInt(2, invoiceId);
+            ps.executeUpdate();
+        }
+
+        if (customerId != null) {
+            int pointsEarned = 0;
+            if (totalAmount.signum() > 0) {
+                // Doc POINT_RATE tu StoreConfig
+                java.math.BigDecimal pointRate = new java.math.BigDecimal("100000");
+                try (PreparedStatement ps = con.prepareStatement(
+                        "SELECT ConfigValue FROM StoreConfig WHERE ConfigKey = 'POINT_RATE'")) {
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            try {
+                                pointRate = new java.math.BigDecimal(rs.getString(1).trim());
+                            } catch (Exception ignore) {
+                            }
+                        }
+                    }
+                }
+                if (pointRate.signum() > 0) {
+                    pointsEarned = totalAmount.divide(pointRate, 0, java.math.RoundingMode.DOWN).intValue();
+                }
+            }
+            int delta = pointsUsed - pointsEarned;
+            if (delta != 0) {
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE Customers SET MemberPoint = CASE "
+                                + "WHEN MemberPoint + ? < 0 THEN 0 ELSE MemberPoint + ? END "
+                                + "WHERE CustomerID = ?")) {
+                    ps.setInt(1, delta);
+                    ps.setInt(2, delta);
+                    ps.setInt(3, customerId);
+                    ps.executeUpdate();
+                }
+            }
+        }
+
+        if (promotionId != null && discountAmount.signum() > 0) {
+            try (PreparedStatement ps = con.prepareStatement(
+                    "UPDATE Promotions SET UsedCount = CASE WHEN UsedCount > 0 THEN UsedCount - 1 ELSE 0 END "
+                            + "WHERE PromotionID = ?")) {
+                ps.setInt(1, promotionId);
+                ps.executeUpdate();
+            }
+        }
+    }
+
+    /** Don chua co HD: giam UsedCount theo PromotionID tren Order. */
+    private void restoreOrderPromotionUsage(Connection con, int orderId) throws SQLException {
+        Integer promotionId = null;
+        java.math.BigDecimal discount = java.math.BigDecimal.ZERO;
+        try (PreparedStatement ps = con.prepareStatement(
+                "SELECT PromotionID, DiscountAmount FROM Orders WHERE OrderID = ?")) {
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return;
+                int pid = rs.getInt("PromotionID");
+                promotionId = rs.wasNull() ? null : pid;
+                discount = rs.getBigDecimal("DiscountAmount");
+                if (discount == null) discount = java.math.BigDecimal.ZERO;
+            }
+        }
+        if (promotionId != null && discount.signum() > 0) {
+            try (PreparedStatement ps = con.prepareStatement(
+                    "UPDATE Promotions SET UsedCount = CASE WHEN UsedCount > 0 THEN UsedCount - 1 ELSE 0 END "
+                            + "WHERE PromotionID = ?")) {
+                ps.setInt(1, promotionId);
+                ps.executeUpdate();
+            }
+        }
+    }
+
 }
