@@ -502,9 +502,15 @@ public class OrderDAO extends BaseDAO<Order> {
         java.math.BigDecimal vatRate;
         java.math.BigDecimal subTotal;
         java.math.BigDecimal totalAmount;
+        java.math.BigDecimal discountAmount = java.math.BigDecimal.ZERO;
+        Integer promotionId = null;
+        String promotionCode = null;
 
+        // Copy DiscountAmount / PromotionID / PromotionCode tu don de hoa don
+        // online (PayPal) van giu dung so tien giam va ma KM da ap dung.
         String selectSql = "SELECT CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
-                + "VATRate, SubTotal, TotalAmount FROM Orders WHERE OrderID = ?";
+                + "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode "
+                + "FROM Orders WHERE OrderID = ?";
         try (PreparedStatement ps = con.prepareStatement(selectSql)) {
             ps.setInt(1, orderId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -517,7 +523,17 @@ public class OrderDAO extends BaseDAO<Order> {
                 vatRate = rs.getBigDecimal("VATRate");
                 subTotal = rs.getBigDecimal("SubTotal");
                 totalAmount = rs.getBigDecimal("TotalAmount");
+                java.math.BigDecimal disc = rs.getBigDecimal("DiscountAmount");
+                if (disc != null && disc.signum() > 0) discountAmount = disc;
+                int pid = rs.getInt("PromotionID");
+                if (!rs.wasNull()) promotionId = pid;
+                promotionCode = rs.getString("PromotionCode");
             }
+        }
+
+        // Dam bao khong vi pham CHECK (DiscountAmount <= SubTotal)
+        if (subTotal != null && discountAmount.compareTo(subTotal) > 0) {
+            discountAmount = subTotal;
         }
 
         int shiftId = new ShiftDAO().getOrOpenShiftId(actorUserId);
@@ -526,7 +542,8 @@ public class OrderDAO extends BaseDAO<Order> {
         int invoiceId;
         String insertInvoiceSql = "INSERT INTO Invoices "
                 + "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
-                + "VATRate, SubTotal, TotalAmount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = con.prepareStatement(insertInvoiceSql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, "TMP-" + System.nanoTime());
             ps.setInt(2, shiftId);
@@ -538,6 +555,9 @@ public class OrderDAO extends BaseDAO<Order> {
             ps.setBigDecimal(8, vatRate);
             ps.setBigDecimal(9, subTotal);
             ps.setBigDecimal(10, totalAmount);
+            ps.setBigDecimal(11, discountAmount);
+            if (promotionId != null) ps.setInt(12, promotionId); else ps.setNull(12, Types.INTEGER);
+            if (promotionCode != null) ps.setString(13, promotionCode); else ps.setNull(13, Types.VARCHAR);
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("Không lấy được InvoiceID vừa tạo.");

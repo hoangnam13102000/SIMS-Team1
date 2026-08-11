@@ -192,11 +192,16 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
         if (items == null || items.isEmpty()) return false;
 
+        // SubTotal/TotalAmount/DiscountAmount/Points* insert = 0 truoc.
+        // Bang Invoices co CHECK (DiscountAmount <= SubTotal). Neu insert
+        // DiscountAmount > 0 khi SubTotal van = 0 → loi CHECK khi ap ma KM.
+        // Gia tri that tinh sau khi insert chi tiet + doc LineTotal, roi UPDATE
+        // trong cung transaction (updateTotalsSql).
         String insertInvoiceSql = "INSERT INTO Invoices "
                 + "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
                 + "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode, "
                 + "PointsUsed, PointsDiscountAmount) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)";
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 0, 0)";
         String insertDetailSql = "INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES (?, ?, ?, ?)";
         String sumLineTotalSql = "SELECT ISNULL(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
         String updateTotalsSql = "UPDATE Invoices SET InvoiceCode = ?, SubTotal = ?, "
@@ -233,23 +238,17 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                         ps.setNull(7, Types.VARCHAR);
                     }
                     ps.setBigDecimal(8, invoice.getVatRate());
-                    ps.setBigDecimal(9, requestedDiscount);
+                    // PromotionID / PromotionCode (snapshot). DiscountAmount = 0 o buoc nay.
                     if (invoice.getPromotionId() != null) {
-                        ps.setInt(10, invoice.getPromotionId());
+                        ps.setInt(9, invoice.getPromotionId());
                     } else {
-                        ps.setNull(10, Types.INTEGER);
+                        ps.setNull(9, Types.INTEGER);
                     }
                     if (invoice.getPromotionCode() != null) {
-                        ps.setString(11, invoice.getPromotionCode());
+                        ps.setString(10, invoice.getPromotionCode());
                     } else {
-                        ps.setNull(11, Types.VARCHAR);
+                        ps.setNull(10, Types.VARCHAR);
                     }
-                    // Diem (tam thoi; se clamp lai sau khi biet total that)
-                    ps.setInt(12, Math.max(0, invoice.getPointsUsed()));
-                    BigDecimal ptsDisc = invoice.getPointsDiscountAmount() != null
-                            ? invoice.getPointsDiscountAmount() : BigDecimal.ZERO;
-                    if (ptsDisc.signum() < 0) ptsDisc = BigDecimal.ZERO;
-                    ps.setBigDecimal(13, ptsDisc);
                     ps.executeUpdate();
 
                     try (ResultSet keys = ps.getGeneratedKeys()) {
