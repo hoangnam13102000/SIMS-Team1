@@ -19,10 +19,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * DAO rieng cho trang "Bao cao doanh thu" (khong extends BaseDAO vi day la
- * cac truy van THONG KE/GOP NHOM, khong phai CRUD 1 entity/1 bang nhu cac
- * DAO khac). Chi tinh tren hoa don Status = 'ACTIVE' (hoa don da HUY khong
- * duoc tinh vao doanh thu).
+ * DAO riêng cho trang "Báo cáo doanh thu".
+ * Chỉ tính trên hóa đơn Status = 'ACTIVE'.
+ * Đã trừ hàng trả (ReturnExchange APPROVED, Direction = 'IN') để
+ * doanh thu / giá vốn / lợi nhuận phản ánh đúng sau khi trả hàng.
  */
 public class RevenueReportDAO {
 
@@ -31,8 +31,7 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
-    // DTO ket qua (chi doc, khong phai entity luu DB nen khong dat rieng
-    // trong package com.model - dung noi bo cho man hinh bao cao nay).
+    // DTO kết quả
     // ---------------------------------------------------------------
 
     public static class Summary {
@@ -51,7 +50,7 @@ public class RevenueReportDAO {
             return totalRevenue.divide(BigDecimal.valueOf(invoiceCount), 0, java.math.RoundingMode.HALF_UP);
         }
 
-        /** % tang/giam so voi 1 Summary khac (thuong la ky truoc). Null neu ky truoc = 0 (khong co gi de so sanh). */
+        /** % tăng/giảm so với 1 Summary khác (thường là kỳ trước). Null nếu kỳ trước = 0. */
         public Double growthPercent(Summary previous) {
             if (previous == null || previous.totalRevenue.signum() == 0) return null;
             return totalRevenue.subtract(previous.totalRevenue)
@@ -74,11 +73,9 @@ public class RevenueReportDAO {
     }
 
     /**
-     * 1 diem du lieu "Thu / Chi / Loi nhuan rong" theo ngay, dung cho bieu do
-     * cot nhom trong tab Loi nhuan (xem {@link com.components.report.FinanceChartPanel}).
-     * "Thu" = doanh thu ban hang (chua VAT). "Chi" = gia von hang ban + thiet
-     * hai hang huy trong ngay do (disposalLoss). Tach rieng cost/disposalLoss
-     * (khong gop san) de chart/tooltip van hien duoc tung phan cau thanh "Chi".
+     * 1 điểm dữ liệu "Thu / Chi / Lợi nhuận ròng" theo ngày.
+     * "Thu" = doanh thu bán hàng (đã trừ trả hàng).
+     * "Chi" = giá vốn hàng bán (đã trừ trả hàng) + thiệt hại hàng hủy.
      */
     public static class DailyFinancePoint {
         public final LocalDate date;
@@ -96,12 +93,12 @@ public class RevenueReportDAO {
             this.invoiceCount = invoiceCount;
         }
 
-        /** Tong "Chi" = gia von + thiet hai. */
+        /** Tổng "Chi" = giá vốn + thiệt hại. */
         public BigDecimal totalExpense() {
             return cost.add(disposalLoss);
         }
 
-        /** Loi nhuan rong cua ngay = Thu - Chi. */
+        /** Lợi nhuận ròng của ngày = Thu - Chi. */
         public BigDecimal netProfit() {
             return revenue.subtract(totalExpense());
         }
@@ -131,23 +128,14 @@ public class RevenueReportDAO {
         }
     }
 
-    // ---------------------------------------------------------------
-    // DTO rieng cho BAO CAO LOI NHUAN (de bai muc 3.3 - "Bao cao loi nhuan,
-    // so sanh giua gia nhap va gia ban"). Gia von lay tu Products.ImportPrice
-    // HIEN TAI (he thong khong luu lai gia nhap tai thoi diem ban trong
-    // InvoiceDetails) - neu gia nhap 1 SP thay doi theo thoi gian, loi nhuan
-    // cua cac hoa don CU se duoc tinh lai theo gia nhap MOI NHAT. Day la gioi
-    // han da biet, chap nhan duoc voi quy mo du lieu hien tai cua SIMS.
-    // ---------------------------------------------------------------
-
     public static class ProfitSummary {
         public final BigDecimal totalRevenue;
         public final BigDecimal totalCost;
-        /** Tong thiet hai hang huy (StockDisposals.TotalLossAmount) trong ky - xem StockDisposalDAO.sumLossBetween. */
+        /** Tổng thiệt hại hàng hủy (StockDisposals.TotalLossAmount) trong kỳ. */
         public final BigDecimal totalLoss;
-        /** Loi nhuan GOP = Revenue - Cost (chua tru thiet hai) - giu de tuong thich cac noi dang dung. */
+        /** Lợi nhuận gộp = Revenue - Cost (chưa trừ thiệt hại). */
         public final BigDecimal totalProfit;
-        /** Loi nhuan RONG = Revenue - Cost - Loss (da tru ca hang huy) - so "that" nen dung de bao cao. */
+        /** Lợi nhuận ròng = Revenue - Cost - Loss. */
         public final BigDecimal netProfit;
 
         public ProfitSummary(BigDecimal totalRevenue, BigDecimal totalCost) {
@@ -162,7 +150,7 @@ public class RevenueReportDAO {
             this.netProfit = this.totalProfit.subtract(this.totalLoss);
         }
 
-        /** Bien loi nhuan RONG (%) = Loi nhuan rong / Doanh thu * 100. Null neu doanh thu = 0. */
+        /** Biên lợi nhuận ròng (%) = Lợi nhuận ròng / Doanh thu * 100. Null nếu doanh thu = 0. */
         public Double netMarginPercent() {
             if (totalRevenue.signum() == 0) return null;
             return netProfit.divide(totalRevenue, 4, java.math.RoundingMode.HALF_UP)
@@ -170,7 +158,7 @@ public class RevenueReportDAO {
                     .doubleValue();
         }
 
-        /** Bien loi nhuan (%) = Loi nhuan / Doanh thu * 100. Null neu doanh thu = 0 (khong co gi de tinh %). */
+        /** Biên lợi nhuận (%) = Lợi nhuận / Doanh thu * 100. Null nếu doanh thu = 0. */
         public Double marginPercent() {
             if (totalRevenue.signum() == 0) return null;
             return totalProfit.divide(totalRevenue, 4, java.math.RoundingMode.HALF_UP)
@@ -209,13 +197,6 @@ public class RevenueReportDAO {
         }
     }
 
-    // ---------------------------------------------------------------
-    // DTO rieng cho "Xu huong ban hang theo thang & danh muc" (bieu do
-    // duong nhieu chuoi so lieu - 1 duong / danh muc). Tach 2 lop: 1 diem
-    // tho tu SQL (MonthlyCategoryPoint) va 1 goi da PIVOT san theo thang de
-    // MonthlyCategoryTrendPanel chi viec ve, khong phai tu gop nhom lai.
-    // ---------------------------------------------------------------
-
     public static class MonthlyCategoryPoint {
         public final YearMonth month;
         public final String categoryName;
@@ -230,7 +211,7 @@ public class RevenueReportDAO {
         }
     }
 
-    /** 1 duong (danh muc) tren bieu do: so lieu da can chinh du cho MOI thang trong khoang loc. */
+    /** 1 đường (danh mục) trên biểu đồ: số liệu đã can chỉnh đủ cho MỌI tháng trong khoảng lọc. */
     public static class CategorySeries {
         public final String categoryName;
         public final List<Long> quantityByMonth;
@@ -246,7 +227,7 @@ public class RevenueReportDAO {
         }
     }
 
-    /** Ket qua da PIVOT: truc thang (day du, khong thieu thang nao) + danh sach duong theo danh muc. */
+    /** Kết quả đã PIVOT: trục tháng (đầy đủ) + danh sách đường theo danh mục. */
     public static class MonthlyCategoryTrend {
         public final List<YearMonth> months;
         public final List<CategorySeries> series;
@@ -258,15 +239,34 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
-    // Truy van
+    // Subquery dùng chung để trừ hàng trả đã duyệt
+    // ---------------------------------------------------------------
+    private static final String RETURN_JOIN =
+            "LEFT JOIN ( "
+            + "    SELECT r.InvoiceID, rd.ProductID, "
+            + "           SUM(rd.Quantity) AS ReturnedQty, "
+            + "           SUM(rd.Quantity * rd.UnitPrice) AS ReturnedValue "
+            + "    FROM ReturnExchangeDetails rd "
+            + "    JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
+            + "    WHERE r.Status = 'APPROVED' AND rd.Direction = 'IN' "
+            + "    GROUP BY r.InvoiceID, rd.ProductID "
+            + ") ret ON ret.InvoiceID = d.InvoiceID AND ret.ProductID = d.ProductID ";
+
+    // ---------------------------------------------------------------
+    // Truy vấn
     // ---------------------------------------------------------------
 
-    /** Tong quan (doanh thu, so hoa don, so mat hang da ban) trong [from, to] (bao gom ca 2 dau). */
+    /** Tổng quan (doanh thu, số hóa đơn, số mặt hàng đã bán net) trong [from, to]. */
     public Summary getSummary(LocalDate from, LocalDate to) {
+        // TotalAmount đã được trigger giảm khi trả hàng → dùng luôn
         String invoiceSql = "SELECT ISNULL(SUM(TotalAmount), 0) AS Revenue, COUNT(*) AS Cnt "
                 + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ?";
-        String itemsSql = "SELECT ISNULL(SUM(d.Quantity), 0) FROM InvoiceDetails d "
+
+        // Số lượng bán net = Quantity - ReturnedQty
+        String itemsSql = "SELECT ISNULL(SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)), 0) "
+                + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
 
         BigDecimal revenue = BigDecimal.ZERO;
@@ -299,9 +299,8 @@ public class RevenueReportDAO {
     }
 
     /**
-     * Doanh thu tung ngay trong [from, to]. Luon tra ve DU moi ngay trong
-     * khoang (kha nang khong co hoa don nao trong ngay do -> revenue = 0),
-     * de RevenueChartPanel ve truc lien tuc, khong bi "nhay coc" ngay thieu du lieu.
+     * Doanh thu từng ngày trong [from, to].
+     * Dùng TotalAmount (đã được trigger điều chỉnh khi trả hàng).
      */
     public List<DailyPoint> getDailyRevenue(LocalDate from, LocalDate to) {
         String sql = "SELECT CAST(CreatedAt AS DATE) AS Day, SUM(TotalAmount) AS Revenue, COUNT(*) AS Cnt "
@@ -331,7 +330,7 @@ public class RevenueReportDAO {
         return result;
     }
 
-    /** Doanh thu gop nhom theo phuong thuc thanh toan (CASH/BANK_TRANSFER/PAYPAL/CARD), sap xep giam dan. */
+    /** Doanh thu nhóm theo phương thức thanh toán. */
     public List<PaymentSlice> getRevenueByPaymentMethod(LocalDate from, LocalDate to) {
         String sql = "SELECT PaymentMethod, SUM(TotalAmount) AS Revenue, COUNT(*) AS Cnt "
                 + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -354,14 +353,18 @@ public class RevenueReportDAO {
         return list;
     }
 
-    /** Top san pham ban chay nhat (theo doanh thu) trong [from, to], toi da {@code limit} dong. */
+    /** Top sản phẩm bán chạy (đã trừ số lượng trả). */
     public List<TopProduct> getTopProducts(LocalDate from, LocalDate to, int limit) {
-        String sql = "SELECT TOP (?) p.ProductName, SUM(d.Quantity) AS Qty, SUM(d.LineTotal) AS Revenue "
+        String sql = "SELECT TOP (?) p.ProductName, "
+                + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
+                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY p.ProductID, p.ProductName "
+                + "HAVING SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) > 0 "
                 + "ORDER BY Revenue DESC";
 
         List<TopProduct> list = new ArrayList<>();
@@ -383,15 +386,18 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
-    // Bao cao loi nhuan (doanh thu - gia von theo Products.ImportPrice hien tai)
+    // Báo cáo lợi nhuận
     // ---------------------------------------------------------------
 
-    /** Tong doanh thu, tong gia von va loi nhuan trong [from, to]. */
+    /** Tổng doanh thu, giá vốn, lợi nhuận (đã trừ hàng trả). */
     public ProfitSummary getProfitSummary(LocalDate from, LocalDate to) {
-        String sql = "SELECT ISNULL(SUM(d.LineTotal), 0) AS Revenue, ISNULL(SUM(d.Quantity * p.ImportPrice), 0) AS Cost "
+        String sql = "SELECT "
+                + "ISNULL(SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)), 0) AS Revenue, "
+                + "ISNULL(SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ), 0) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
 
         BigDecimal revenue = BigDecimal.ZERO;
@@ -410,29 +416,26 @@ public class RevenueReportDAO {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "RevenueReportDAO.getProfitSummary - from=" + from + " to=" + to, e);
         }
-        // Thiet hai hang huy trong ky - tai su dung StockDisposalDAO (cung package
-        // com.dao) thay vi lap lai query, de luon dong bo voi StockDisposalPanel.
         BigDecimal loss = new StockDisposalDAO().sumLossBetween(from, to);
         return new ProfitSummary(revenue, cost, loss);
     }
 
     /**
-     * "Thu / Chi / Loi nhuan rong" tung ngay trong [from, to], tra du moi ngay
-     * (ngay khong co du lieu thi = 0) de bieu do cot nhom ve truc lien tuc.
-     * "Chi" gom 2 phan: gia von hang ban (tu InvoiceDetails, JOIN Products
-     * lay gia nhap HIEN TAI - cung gioi han da ghi chu o getDailyProfit) va
-     * thiet hai hang huy trong ngay (tu StockDisposals.TotalLossAmount, chi
-     * tinh phieu Status='COMPLETED').
+     * "Thu / Chi / Lợi nhuận ròng" từng ngày – dùng cho biểu đồ cột.
+     * ĐÃ TRỪ hàng trả nên cột Doanh thu và Chi sẽ thay đổi khi có trả hàng.
      */
     public List<DailyFinancePoint> getDailyFinance(LocalDate from, LocalDate to) {
         String salesSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
-                + "SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost, "
+                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
+                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost, "
                 + "COUNT(DISTINCT inv.InvoiceID) AS Cnt "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY CAST(inv.CreatedAt AS DATE)";
+
         String lossSql = "SELECT CAST(CreatedAt AS DATE) AS Day, SUM(TotalLossAmount) AS Loss "
                 + "FROM StockDisposals WHERE Status = 'COMPLETED' "
                 + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -480,19 +483,16 @@ public class RevenueReportDAO {
         return result;
     }
 
-    /**
-     * Loi nhuan tung ngay trong [from, to], tra ve du moi ngay (ngay khong co
-     * hoa don thi loi nhuan = 0) de {@link com.components.report.RevenueChartPanel}
-     * ve truc lien tuc - tai su dung lai DailyPoint (truong {@code revenue} o
-     * day mang y nghia la LOI NHUAN cua ngay do, khong phai doanh thu).
-     */
+    /** Lợi nhuận từng ngày (đã trừ hàng trả). */
     public List<DailyPoint> getDailyProfit(LocalDate from, LocalDate to) {
         String sql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
-                + "SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost, "
+                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
+                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost, "
                 + "COUNT(DISTINCT inv.InvoiceID) AS Cnt "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY CAST(inv.CreatedAt AS DATE) ORDER BY Day ASC";
 
@@ -523,16 +523,21 @@ public class RevenueReportDAO {
         return result;
     }
 
-    /** Top san pham theo LOI NHUAN (khong phai doanh thu) trong [from, to], toi da {@code limit} dong. */
+    /** Top sản phẩm theo lợi nhuận (đã trừ hàng trả). */
     public List<ProductProfit> getTopProductsByProfit(LocalDate from, LocalDate to, int limit) {
-        String sql = "SELECT TOP (?) p.ProductName, SUM(d.Quantity) AS Qty, "
-                + "SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost "
+        String sql = "SELECT TOP (?) p.ProductName, "
+                + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
+                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
+                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY p.ProductID, p.ProductName "
-                + "ORDER BY (SUM(d.LineTotal) - SUM(d.Quantity * p.ImportPrice)) DESC";
+                + "HAVING SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) > 0 "
+                + "ORDER BY (SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) "
+                + "        - SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice )) DESC";
 
         List<ProductProfit> list = new ArrayList<>();
         try (Connection con = getConnection();
@@ -553,16 +558,20 @@ public class RevenueReportDAO {
         return list;
     }
 
-    /** Loi nhuan gop nhom theo danh muc san pham trong [from, to], sap xep giam dan theo loi nhuan. */
+    /** Lợi nhuận theo danh mục (đã trừ hàng trả). */
     public List<CategoryProfit> getProfitByCategory(LocalDate from, LocalDate to) {
-        String sql = "SELECT c.CategoryName, SUM(d.LineTotal) AS Revenue, SUM(d.Quantity * p.ImportPrice) AS Cost "
+        String sql = "SELECT c.CategoryName, "
+                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
+                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
                 + "JOIN Categories c ON c.CategoryID = p.CategoryID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY c.CategoryID, c.CategoryName "
-                + "ORDER BY (SUM(d.LineTotal) - SUM(d.Quantity * p.ImportPrice)) DESC";
+                + "ORDER BY (SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) "
+                + "        - SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice )) DESC";
 
         List<CategoryProfit> list = new ArrayList<>();
         try (Connection con = getConnection();
@@ -583,23 +592,19 @@ public class RevenueReportDAO {
     }
 
     // ---------------------------------------------------------------
-    // Xu huong ban hang theo thang & danh muc (bieu do duong nhieu chuoi)
+    // Xu hướng bán hàng theo tháng & danh mục
     // ---------------------------------------------------------------
 
-    /**
-     * So luong + doanh thu ban ra, gop nhom theo (nam, thang, danh muc) trong
-     * [from, to]. Tra ve dang "tho" (1 dong / thang / danh muc co du lieu) -
-     * dung {@link #getMonthlyCategoryTrend(LocalDate, LocalDate)} de co ban
-     * da PIVOT san, dien du thang trong ("hut" thang khong co doanh so = 0)
-     * cho bieu do duong ve truc lien tuc.
-     */
     public List<MonthlyCategoryPoint> getMonthlySalesByCategory(LocalDate from, LocalDate to) {
         String sql = "SELECT YEAR(inv.CreatedAt) AS Yr, MONTH(inv.CreatedAt) AS Mo, "
-                + "c.CategoryName AS CategoryName, SUM(d.Quantity) AS Qty, SUM(d.LineTotal) AS Revenue "
+                + "c.CategoryName AS CategoryName, "
+                + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
+                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
                 + "JOIN Categories c ON c.CategoryID = p.CategoryID "
+                + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY YEAR(inv.CreatedAt), MONTH(inv.CreatedAt), c.CategoryID, c.CategoryName "
                 + "ORDER BY Yr ASC, Mo ASC, CategoryName ASC";
@@ -624,12 +629,8 @@ public class RevenueReportDAO {
     }
 
     /**
-     * Ban PIVOT san cua {@link #getMonthlySalesByCategory(LocalDate, LocalDate)}:
-     * dien DU moi thang trong [from, to] (thang khong co don hang -> so luong = 0)
-     * de {@link com.components.report.MonthlyCategoryTrendPanel} ve cac duong
-     * lien tuc, khong bi "gay khuc" o thang thieu du lieu. Danh muc duoc sap
-     * xep giam dan theo tong so luong ban ra (danh muc ban chay nhat len dau
-     * danh sach chu thich).
+     * Bản PIVOT sẵn của getMonthlySalesByCategory:
+     * điền ĐỦ mọi tháng trong [from, to] để biểu đồ đường vẽ trục liên tục.
      */
     public MonthlyCategoryTrend getMonthlyCategoryTrend(LocalDate from, LocalDate to) {
         List<MonthlyCategoryPoint> raw = getMonthlySalesByCategory(from, to);
@@ -647,7 +648,7 @@ public class RevenueReportDAO {
 
         for (MonthlyCategoryPoint p : raw) {
             int idx = months.indexOf(p.month);
-            if (idx < 0) continue; // an toan: khong roi vao khoang loc thi bo qua
+            if (idx < 0) continue;
 
             long[] qtyArr = qtyByCategory.computeIfAbsent(p.categoryName, k -> new long[n]);
             BigDecimal[] revArr = revenueByCategory.computeIfAbsent(p.categoryName, k -> {

@@ -28,7 +28,7 @@
 # Excel
 *.xls
 *.xlsx
-
+**/merged.properties
 # Database backups (file lớn, không đưa lên Git)
 /backups/
 *.bak

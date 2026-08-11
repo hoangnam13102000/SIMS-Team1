@@ -622,13 +622,77 @@ BEGIN
         FROM @ApprovedNow a
         JOIN ReturnExchangeDetails d ON d.ReturnID = a.ReturnID
         GROUP BY a.InvoiceID
+    ), OriginalGross AS (
+        SELECT n.InvoiceID,
+               n.NetChange,
+               inv.SubTotal AS CurrentSubTotal,
+               inv.DiscountAmount AS CurrentDiscount,
+               inv.PointsDiscountAmount AS CurrentPointsDiscount,
+               inv.VATRate,
+               ISNULL((
+                   SELECT SUM(id.Quantity * id.UnitPrice)
+                   FROM InvoiceDetails id
+                   WHERE id.InvoiceID = inv.InvoiceID
+               ), 0) AS OriginalSubTotal
+        FROM NetAdjust n
+        JOIN Invoices inv ON inv.InvoiceID = n.InvoiceID
+    ), Calc AS (
+        SELECT InvoiceID,
+               CASE WHEN CurrentSubTotal + NetChange < 0 THEN 0
+                    ELSE CurrentSubTotal + NetChange END AS NewSubTotal,
+               CurrentDiscount,
+               CurrentPointsDiscount,
+               VATRate,
+               OriginalSubTotal
+        FROM OriginalGross
+    ), Amounts AS (
+        SELECT InvoiceID, NewSubTotal, VATRate,
+               CASE
+                   WHEN OriginalSubTotal <= 0 THEN 0
+                   WHEN CurrentDiscount <= 0 THEN 0
+                   WHEN CurrentDiscount * NewSubTotal / OriginalSubTotal > CurrentDiscount
+                       THEN CurrentDiscount
+                   ELSE CurrentDiscount * NewSubTotal / OriginalSubTotal
+               END AS NewDiscount,
+               CASE
+                   WHEN OriginalSubTotal <= 0 THEN 0
+                   WHEN CurrentPointsDiscount <= 0 THEN 0
+                   WHEN CurrentPointsDiscount * NewSubTotal / OriginalSubTotal > CurrentPointsDiscount
+                       THEN CurrentPointsDiscount
+                   ELSE CurrentPointsDiscount * NewSubTotal / OriginalSubTotal
+               END AS NewPointsDiscount
+        FROM Calc
     )
     UPDATE inv
-    SET inv.SubTotal    = inv.SubTotal + n.NetChange,
-        inv.TotalAmount = (inv.SubTotal + n.NetChange)
-                          + ((inv.SubTotal + n.NetChange) * inv.VATRate / 100)
+    SET inv.SubTotal = a.NewSubTotal,
+        inv.DiscountAmount = CASE
+                                WHEN a.NewDiscount < 0 THEN 0
+                                WHEN a.NewDiscount > a.NewSubTotal THEN a.NewSubTotal
+                                ELSE a.NewDiscount
+                            END,
+        inv.PointsDiscountAmount = CASE
+                                       WHEN a.NewPointsDiscount < 0 THEN 0
+                                       ELSE a.NewPointsDiscount
+                                   END,
+        inv.TotalAmount =
+            CASE
+                WHEN (a.NewSubTotal -
+                      CASE WHEN a.NewDiscount < 0 THEN 0
+                           WHEN a.NewDiscount > a.NewSubTotal THEN a.NewSubTotal
+                           ELSE a.NewDiscount END) < 0
+                    THEN 0
+                ELSE (a.NewSubTotal -
+                      CASE WHEN a.NewDiscount < 0 THEN 0
+                           WHEN a.NewDiscount > a.NewSubTotal THEN a.NewSubTotal
+                           ELSE a.NewDiscount END)
+                     + ((a.NewSubTotal -
+                         CASE WHEN a.NewDiscount < 0 THEN 0
+                              WHEN a.NewDiscount > a.NewSubTotal THEN a.NewSubTotal
+                              ELSE a.NewDiscount END) * a.VATRate / 100)
+                     - CASE WHEN a.NewPointsDiscount < 0 THEN 0 ELSE a.NewPointsDiscount END
+            END
     FROM Invoices inv
-    JOIN NetAdjust n ON n.InvoiceID = inv.InvoiceID;
+    JOIN Amounts a ON a.InvoiceID = inv.InvoiceID;
 END;
 GO
 

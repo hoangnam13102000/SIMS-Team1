@@ -351,7 +351,7 @@ GO
 -- So VND khach can chi de duoc cong 1 diem thanh vien (xem StoreConfigDAO.getPointRate()
 -- va InvoiceDAO.createInvoice - tich diem tu dong khi lap hoa don co gan khach hang).
 INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
-('VAT_RATE', '8'),
+('VAT_RATE', '0'),
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái'),
@@ -630,4 +630,70 @@ SELECT PromotionID, Code, Name, DiscountType, DiscountValue,
 FROM Promotions
 WHERE IsDeleted = 0
 ORDER BY PromotionID;
+GO
+
+
+/* ============================================================
+   Tài khoản khách hàng mẫu
+   Username : customer1
+   Password : 123456
+   PasswordHash: BCrypt cost 12 (tương thích PasswordUtils / jBCrypt)
+   ============================================================ */
+
+-- 1) Đảm bảo có role CUSTOMER
+IF NOT EXISTS (SELECT 1 FROM Roles WHERE RoleCode = 'CUSTOMER')
+BEGIN
+    INSERT INTO Roles (RoleCode, RoleName, Description)
+    VALUES ('CUSTOMER', N'Khách hàng', N'Tự đăng ký, xem sản phẩm và mua hàng ở phía client');
+END
+GO
+
+-- 2) Tạo user (bỏ qua nếu đã tồn tại)
+IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'customer1')
+BEGIN
+    INSERT INTO Users (
+        Username, PasswordHash, FullName, Email, Phone,
+        RoleID, IsLocked, FailedLoginCount, Status
+    )
+    VALUES (
+        'customer1',
+        '$2a$12$bu9a8NWQ5nLvEzmP9KmDbOmZxADF8e83Lrf/w60dhBTXaUyxRl4zi',  -- = BCrypt("123456")
+        N'Khách hàng Demo',
+        'customer1@sims.local',
+        '0901234567',
+        (SELECT RoleID FROM Roles WHERE RoleCode = 'CUSTOMER'),
+        0,
+        0,
+        'ACTIVE'
+    );
+END
+ELSE
+BEGIN
+    -- Nếu đã có user: reset mật khẩu + mở khóa
+    UPDATE Users
+    SET PasswordHash     = '$2a$12$bu9a8NWQ5nLvEzmP9KmDbOmZxADF8e83Lrf/w60dhBTXaUyxRl4zi',
+        IsLocked         = 0,
+        FailedLoginCount = 0,
+        Status           = 'ACTIVE',
+        RoleID           = (SELECT RoleID FROM Roles WHERE RoleCode = 'CUSTOMER')
+    WHERE Username = 'customer1';
+END
+GO
+
+-- 3) Tạo hồ sơ Customers (CustomerID = UserID)
+IF NOT EXISTS (
+    SELECT 1
+    FROM Customers c
+    JOIN Users u ON u.UserID = c.CustomerID
+    WHERE u.Username = 'customer1'
+)
+BEGIN
+    INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint)
+    SELECT
+        u.UserID,
+        'CUS_' + RIGHT('0000' + CAST(u.UserID AS VARCHAR(10)), 4),
+        0
+    FROM Users u
+    WHERE u.Username = 'customer1';
+END
 GO

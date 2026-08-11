@@ -262,13 +262,14 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                 }
 
                 if (!requiresApproval) {
+                    // Tính và hoàn/thu hồi điểm TRƯỚC khi trigger cập nhật hóa đơn.
+                    // Làm vậy vẫn giữ được dữ liệu gốc ngay cả khi trả 100% làm SubTotal = 0.
+                    adjustPointsForApprovedReturn(con, header.getInvoiceId(), returnId);
                     try (PreparedStatement ps = con.prepareStatement(approveSql)) {
                         ps.setInt(1, header.getCreatedBy());
                         ps.setInt(2, returnId);
                         ps.executeUpdate();
                     }
-                    // Hoàn/thu hồi điểm theo tỷ lệ (sau khi đã APPROVED)
-                    adjustPointsForApprovedReturn(con, header.getInvoiceId());
                 }
 
                 con.commit();
@@ -338,6 +339,11 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     }
                 }
 
+                // Tính và hoàn/thu hồi điểm TRƯỚC khi trigger cập nhật hóa đơn.
+                // Sau UPDATE, trigger có thể đưa SubTotal/discount về 0 nên không
+                // thể dùng các giá trị đó để khôi phục điểm gốc một cách an toàn.
+                adjustPointsForApprovedReturn(con, invoiceId, returnId);
+
                 try (PreparedStatement ps = con.prepareStatement(updateSql)) {
                     ps.setInt(1, approverId);
                     ps.setInt(2, returnId);
@@ -347,8 +353,6 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                         return "Yêu cầu này không còn ở trạng thái chờ duyệt.";
                     }
                 }
-
-                adjustPointsForApprovedReturn(con, invoiceId);
 
                 con.commit();
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.RETURN_EXCHANGE));
@@ -418,11 +422,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                 if (rs.next()) {
                     subTotal = nvl(rs.getBigDecimal("SubTotal"));
                     discount = nvl(rs.getBigDecimal("DiscountAmount"));
-                    try {
-                        pointsDisc = nvl(rs.getBigDecimal("PointsDiscountAmount"));
-                    } catch (SQLException ignore) {
-                        pointsDisc = BigDecimal.ZERO;
-                    }
+                    pointsDisc = nvl(rs.getBigDecimal("PointsDiscountAmount"));
                     vatRate = nvl(rs.getBigDecimal("VATRate"));
                 }
             }
@@ -430,11 +430,11 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         if (subTotal.signum() <= 0) {
             return returnedGross; // fallback
         }
-        // Không vượt phần còn có thể trả theo gross
-        BigDecimal alreadyReturned = sumApprovedReturnedGross(con, invoiceId);
-        BigDecimal maxGrossLeft = subTotal.subtract(alreadyReturned);
-        if (maxGrossLeft.signum() < 0) maxGrossLeft = BigDecimal.ZERO;
-        BigDecimal gross = returnedGross.min(maxGrossLeft);
+
+        // SubTotal/DiscountAmount da duoc trigger dieu chinh sau cac lan
+        // doi/tra APPROVED truoc. Vi vay chi can gioi han theo phan gia tri
+        // con lai hien tai; khong tru them alreadyReturned de tranh tru 2 lan.
+        BigDecimal gross = returnedGross.min(subTotal);
 
         BigDecimal ratio = gross.divide(subTotal, 8, RoundingMode.HALF_UP);
         BigDecimal discShare = discount.multiply(ratio).setScale(0, RoundingMode.HALF_UP);
@@ -466,68 +466,73 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
      * chênh lệch tỷ lệ hàng đã trả (tránh hoàn trùng khi trả nhiều lần).
      * delta = (pointsUsed - pointsEarned) * (grossReturned / subTotal)  − alreadyApplied
      */
-    private void adjustPointsForApprovedReturn(Connection con, int invoiceId) throws SQLException {
+    private void adjustPointsForApprovedReturn(Connection con, int invoiceId, int returnId) throws SQLException {
         Integer customerId = null;
         int pointsUsed = 0;
         BigDecimal subTotal = BigDecimal.ZERO;
-        BigDecimal totalAmount = BigDecimal.ZERO;
+        BigDecimal discount = BigDecimal.ZERO;
+        BigDecimal pointsDiscount = BigDecimal.ZERO;
+        BigDecimal vatRate = BigDecimal.ZERO;
+        BigDecimal originalSubTotal = BigDecimal.ZERO;
 
+        // Phuong thuc nay duoc goi TRUOC UPDATE Status='APPROVED', vi vay
+        // cac gia tri invoice van la gia tri truoc phieu hien tai. Điều nay
+        // tranh mat du lieu diem khi trigger da dua SubTotal ve 0 (tra 100%).
         try (PreparedStatement ps = con.prepareStatement(
-                "SELECT CustomerID, SubTotal, TotalAmount, PointsUsed FROM Invoices WHERE InvoiceID = ?")) {
+                "SELECT CustomerID, PointsUsed, SubTotal, DiscountAmount, PointsDiscountAmount, VATRate, "
+                        + "ISNULL((SELECT SUM(id.Quantity * id.UnitPrice) FROM InvoiceDetails id WHERE id.InvoiceID = i.InvoiceID), 0) AS OriginalSubTotal "
+                        + "FROM Invoices i WHERE i.InvoiceID = ?")) {
             ps.setInt(1, invoiceId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return;
                 int cid = rs.getInt("CustomerID");
                 if (rs.wasNull()) return;
                 customerId = cid;
+                pointsUsed = Math.max(0, rs.getInt("PointsUsed"));
                 subTotal = nvl(rs.getBigDecimal("SubTotal"));
-                totalAmount = nvl(rs.getBigDecimal("TotalAmount"));
-                try {
-                    pointsUsed = Math.max(0, rs.getInt("PointsUsed"));
-                } catch (SQLException ignore) {
-                    pointsUsed = 0;
-                }
+                discount = nvl(rs.getBigDecimal("DiscountAmount"));
+                pointsDiscount = nvl(rs.getBigDecimal("PointsDiscountAmount"));
+                vatRate = nvl(rs.getBigDecimal("VATRate"));
+                originalSubTotal = nvl(rs.getBigDecimal("OriginalSubTotal"));
             }
         }
-        if (customerId == null || subTotal.signum() <= 0) return;
+        if (customerId == null || subTotal.signum() <= 0 || originalSubTotal.signum() <= 0) return;
+
+        // Neu da co cac lan tra truoc, trigger da thu hep discount theo ty le
+        // SubTotal con lai. Khoi phuc discount/points-discount goc de tinh
+        // pointsEarned cua hoa don ban dau.
+        BigDecimal restoreRatio = originalSubTotal.divide(subTotal, 8, RoundingMode.HALF_UP);
+        if (restoreRatio.compareTo(BigDecimal.ONE) < 0) restoreRatio = BigDecimal.ONE;
+        BigDecimal originalDiscount = discount.multiply(restoreRatio).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal originalPointsDiscount = pointsDiscount.multiply(restoreRatio).setScale(0, RoundingMode.HALF_UP);
+
+        BigDecimal originalTaxable = originalSubTotal.subtract(originalDiscount);
+        if (originalTaxable.signum() < 0) originalTaxable = BigDecimal.ZERO;
+        BigDecimal originalVat = originalTaxable.multiply(vatRate)
+                .divide(new BigDecimal("100"), 0, RoundingMode.HALF_UP);
+        BigDecimal originalTotal = originalTaxable.add(originalVat).subtract(originalPointsDiscount);
+        if (originalTotal.signum() < 0) originalTotal = BigDecimal.ZERO;
 
         int pointsEarned = 0;
-        if (totalAmount.signum() > 0) {
-            BigDecimal pointRate = storeConfigDAO.getPointRate();
-            if (pointRate != null && pointRate.signum() > 0) {
-                pointsEarned = totalAmount.divide(pointRate, 0, RoundingMode.DOWN).intValue();
-            }
+        BigDecimal pointRate = storeConfigDAO.getPointRate();
+        if (pointRate != null && pointRate.signum() > 0 && originalTotal.signum() > 0) {
+            pointsEarned = originalTotal.divide(pointRate, 0, RoundingMode.DOWN).intValue();
         }
 
-        // net điểm cần hoàn trên toàn HĐ nếu trả 100%: +pointsUsed −pointsEarned
         int netFull = pointsUsed - pointsEarned;
 
-        BigDecimal returnedGross = sumApprovedReturnedGross(con, invoiceId);
-        // target = netFull * (returnedGross / subTotal), làm tròn xuống
+        // Gross da tra truoc + gross cua phieu dang duyet.
+        BigDecimal previousReturnedGross = sumApprovedReturnedGross(con, invoiceId);
+        BigDecimal currentReturnedGross = sumReturnGross(con, returnId);
+        BigDecimal returnedGross = previousReturnedGross.add(currentReturnedGross);
+
         int targetDelta = BigDecimal.valueOf(netFull)
                 .multiply(returnedGross)
-                .divide(subTotal, 0, RoundingMode.DOWN)
+                .divide(originalSubTotal, 0, RoundingMode.DOWN)
                 .intValue();
-
-        // Đã áp dụng trước đó? Ước lượng từ MemberPoint không được → dùng công thức
-        // dựa trên gross trước phiếu vừa duyệt: already = netFull * prevGross/sub
-        // prevGross = returnedGross - gross của phiếu vừa duyệt cuối cùng — đơn giản hơn:
-        // vì mỗi lần approve chỉ cộng phần chênh so với “target theo toàn bộ approved hiện tại”,
-        // ta lưu không được → tính already bằng cách: không có cột → giả định
-        // chỉ điều chỉnh đúng target − 0 nếu đây là lần đầu, hoặc…
-        //
-        // Cách an toàn không cần cột mới: set điểm về mốc tuyệt đối dựa trên
-        // “điểm sau mua” + targetDelta, nhưng không biết điểm trước mua.
-        //
-        // Thực tế: chỉ cộng delta = targetDelta - previousTargetDelta
-        // previousTarget = netFull * (returnedGross - lastReturnGross) / sub
-        // lastReturnGross = gross of this return only.
-
-        // Lấy gross của các return APPROVED TRỪ return có ApprovedAt mới nhất (vừa duyệt)
-        BigDecimal prevGross = sumApprovedReturnedGrossExceptLatest(con, invoiceId);
         int prevTarget = BigDecimal.valueOf(netFull)
-                .multiply(prevGross)
-                .divide(subTotal, 0, RoundingMode.DOWN)
+                .multiply(previousReturnedGross)
+                .divide(originalSubTotal, 0, RoundingMode.DOWN)
                 .intValue();
         int delta = targetDelta - prevTarget;
         if (delta == 0) return;
@@ -543,26 +548,17 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         }
     }
 
-    /** Tổng gross IN đã APPROVED, trừ phiếu có ApprovedAt mới nhất (phiếu vừa duyệt). */
-    private BigDecimal sumApprovedReturnedGrossExceptLatest(Connection con, int invoiceId)
-            throws SQLException {
+    private BigDecimal sumReturnGross(Connection con, int returnId) throws SQLException {
         String sql = "SELECT ISNULL(SUM(d.Quantity * d.UnitPrice), 0) "
-                + "FROM ReturnExchangeDetails d "
-                + "JOIN ReturnExchanges r ON r.ReturnID = d.ReturnID "
-                + "WHERE r.InvoiceID = ? AND r.Status = 'APPROVED' AND d.Direction = 'IN' "
-                + "AND r.ReturnID <> ("
-                + "  SELECT TOP 1 ReturnID FROM ReturnExchanges "
-                + "  WHERE InvoiceID = ? AND Status = 'APPROVED' "
-                + "  ORDER BY ApprovedAt DESC, ReturnID DESC"
-                + ")";
+                + "FROM ReturnExchangeDetails d WHERE d.ReturnID = ? AND d.Direction = 'IN'";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, invoiceId);
-            ps.setInt(2, invoiceId);
+            ps.setInt(1, returnId);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? nvl(rs.getBigDecimal(1)) : BigDecimal.ZERO;
             }
         }
     }
+
 
     private static BigDecimal nvl(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
