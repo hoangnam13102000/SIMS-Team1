@@ -119,6 +119,16 @@ public final class AppAlert {
 
         toast.add(card, BorderLayout.CENTER);
         toast.pack();
+
+        // Chi lam "con" cua owner (JWindow(owner)) khong dam bao toast luon noi
+        // tren TAT CA cua so khac trong app - no chi dam bao noi tren rieng
+        // owner cua no. Neu co dialog modal khac (vd ReturnExchangeDialog) mo
+        // sau va cung la "anh em" (sibling, cung 1 owner) voi cua so anchor cua
+        // toast, dialog do van co the ve de len toast (nhu bao cao cua nguoi
+        // dung). setAlwaysOnTop() ep he dieu hanh giu toast o lop tren cung,
+        // bat ke thu tu z-order/dialog modal nao khac dang mo.
+        try { toast.setAlwaysOnTop(true); } catch (Exception ignored) {} // 1 so he thong khong ho tro - bo qua, khong anh huong chuc nang
+
         return toast;
     }
 
@@ -161,6 +171,7 @@ public final class AppAlert {
         // huong chuc nang, va day la hieu ung tham my chay lien tuc nen khong dang ghi log.
         try { toast.setOpacity(0f); } catch (Exception ignored) {}
         toast.setVisible(true);
+        toast.toFront();
 
         float[] opacity = {0f};
         Timer timer = new Timer(FADE_STEP_MS, null);

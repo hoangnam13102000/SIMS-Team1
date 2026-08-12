@@ -22,6 +22,7 @@ import com.model.Product;
 import com.model.Role;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
+import com.security.AiRateLimiter;
 import com.service.AuthService;
 import com.utils.PaginationHelper;
 
@@ -64,6 +65,20 @@ public final class AiToolExecutor {
         if (!tool.isAllowedFor(isCustomer, p -> PermissionManager.getInstance().can(p))) {
             logDenied(toolName, isCustomer);
             return "KHÔNG ĐỦ THẨM QUYỀN: Bạn không được phép sử dụng chức năng \"" + tool.getName() + "\".";
+        }
+
+        String identity = resolveIdentity(isCustomer);
+        boolean sensitive = !tool.getRequiredPermissions().isEmpty();
+        AiRateLimiter.Result rate = AiRateLimiter.getInstance().check(identity, tool.getName(), sensitive);
+        if (!rate.allowed) {
+            if (rate.justTriggered) {
+                AppLogger.getInstance().error(ErrorCode.AI_CHAT_FAIL,
+                        "AiTool RATE_LIMIT_EXCEEDED tool=" + toolName + " by=" + identity
+                                + " sensitive=" + sensitive, null);
+            }
+            long minutes = Math.max(1, rate.remainingSeconds / 60);
+            return "TẠM KHÓA: Bạn đã thao tác quá nhiều lần trong thời gian ngắn. "
+                    + "Vui lòng thử lại sau khoảng " + minutes + " phút hoặc liên hệ quản trị viên nếu cần gấp.";
         }
 
         try {
@@ -1233,5 +1248,19 @@ public final class AiToolExecutor {
                 : "UNKNOWN");
         AppLogger.getInstance().error(ErrorCode.AI_CHAT_FAIL,
                 "AiTool DENIED tool=" + toolName + " by=" + who, null);
+    }
+
+    /**
+     * Danh tinh dung de tinh rate-limit. Uu tien username that (neu da dang nhap,
+     * ke ca khach da dang ky). Khach chua dang nhap gom chung 1 nhom "GUEST" -
+     * han che vi khong co dinh danh rieng tren desktop app, nhung van chan
+     * duoc kieu spam lien tuc tu cung 1 phien chat.
+     */
+    private String resolveIdentity(boolean isCustomer) {
+        var user = AuthService.getInstance().getCurrentUser();
+        if (user != null && user.getUsername() != null && !user.getUsername().isBlank()) {
+            return (isCustomer ? "CUSTOMER:" : "STAFF:") + user.getUsername();
+        }
+        return "GUEST";
     }
 }

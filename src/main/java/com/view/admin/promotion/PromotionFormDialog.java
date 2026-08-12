@@ -33,6 +33,8 @@ public class PromotionFormDialog extends BaseFormDialog<Promotion> {
     private DatePickerField endDatePicker;
     private JTextField usageLimitField;
     private JCheckBox activeCheckbox;
+    private JCheckBox showOnBannerCheckbox;
+    private JTextField bannerSortOrderField;
 
     public PromotionFormDialog(Frame owner, CrudMode mode, Promotion editingEntity, PromotionDAO promotionDAO) {
         super(owner, "khuyến mãi", mode, editingEntity);
@@ -44,7 +46,7 @@ public class PromotionFormDialog extends BaseFormDialog<Promotion> {
     protected int getDialogWidth() { return 500; }
 
     @Override
-    protected int getDialogHeight() { return 660; }
+    protected int getDialogHeight() { return 720; }
 
     @Override
     protected void buildFields(JPanel panel) {
@@ -79,7 +81,15 @@ public class PromotionFormDialog extends BaseFormDialog<Promotion> {
         activeCheckbox.setFont(nameField.getFont());
         panel.add(activeCheckbox);
 
-        panel.add(hintLabel("Khách/thu ngân nhập đúng \"Mã khuyến mãi\" tại quầy để được áp dụng giảm giá."));
+        showOnBannerCheckbox = new JCheckBox("Hiển thị trên banner quảng bá (trang chủ)");
+        showOnBannerCheckbox.setSelected(false);
+        showOnBannerCheckbox.setOpaque(false);
+        showOnBannerCheckbox.setFont(nameField.getFont());
+        panel.add(showOnBannerCheckbox);
+
+        bannerSortOrderField = addTextField(panel, "Thứ tự trên banner (số nhỏ hiện trước, để trống = cuối)", false);
+
+        panel.add(hintLabel("Khách/thu ngân nhập đúng \"Mã khuyến mãi\" tại quầy để được áp dụng giảm giá. Bật \"Hiển thị trên banner\" để đưa mã vào carousel trang chủ."));
     }
 
     @Override
@@ -95,6 +105,8 @@ public class PromotionFormDialog extends BaseFormDialog<Promotion> {
         if (entity.getEndDate() != null) endDatePicker.setValue(entity.getEndDate());
         usageLimitField.setText(entity.getUsageLimit() != null ? String.valueOf(entity.getUsageLimit()) : "");
         activeCheckbox.setSelected(entity.isActive());
+        showOnBannerCheckbox.setSelected(entity.isShowOnBanner());
+        bannerSortOrderField.setText(entity.getBannerSortOrder() != null ? String.valueOf(entity.getBannerSortOrder()) : "");
     }
 
     @Override
@@ -154,6 +166,14 @@ public class PromotionFormDialog extends BaseFormDialog<Promotion> {
             }
         }
 
+        if (!isBlank(bannerSortOrderField.getText())) {
+            try {
+                Integer.parseInt(bannerSortOrderField.getText().trim());
+            } catch (NumberFormatException e) {
+                return "Thứ tự trên banner phải là số nguyên (hoặc để trống).";
+            }
+        }
+
         return validator.validate();
     }
 
@@ -173,6 +193,16 @@ public class PromotionFormDialog extends BaseFormDialog<Promotion> {
         p.setEndDate(endDatePicker.getValue());
         p.setUsageLimit(isBlank(usageLimitField.getText()) ? null : Integer.parseInt(usageLimitField.getText().trim()));
         p.setActive(activeCheckbox.isSelected());
+        p.setShowOnBanner(showOnBannerCheckbox.isSelected());
+        if (isBlank(bannerSortOrderField.getText())) {
+            p.setBannerSortOrder(null);
+        } else {
+            try {
+                p.setBannerSortOrder(Integer.parseInt(bannerSortOrderField.getText().trim()));
+            } catch (NumberFormatException ex) {
+                p.setBannerSortOrder(null);
+            }
+        }
         if (mode == CrudMode.ADD) {
             var me = AuthService.getInstance().isLoggedIn() ? AuthService.getInstance().getCurrentUser() : null;
             p.setCreatedBy(me != null ? me.getUserId() : 0);

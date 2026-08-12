@@ -20,6 +20,10 @@ public class Promotion {
     private Integer usageLimit;
     private int usedCount;
     private boolean active = true;
+    /** Hiển thị trên banner/carousel quảng bá mã giảm giá (trang chủ client). */
+    private boolean showOnBanner = false;
+    /** Thứ tự trên carousel (nhỏ hơn = ưu tiên hơn). null = cuối danh sách. */
+    private Integer bannerSortOrder;
     private int createdBy;
     private java.time.LocalDateTime createdAt;
 
@@ -61,21 +65,22 @@ public class Promotion {
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
 
+    public boolean isShowOnBanner() { return showOnBanner; }
+    public void setShowOnBanner(boolean showOnBanner) { this.showOnBanner = showOnBanner; }
+
+    public Integer getBannerSortOrder() { return bannerSortOrder; }
+    public void setBannerSortOrder(Integer bannerSortOrder) { this.bannerSortOrder = bannerSortOrder; }
+
     public int getCreatedBy() { return createdBy; }
     public void setCreatedBy(int createdBy) { this.createdBy = createdBy; }
 
     public java.time.LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(java.time.LocalDateTime createdAt) { this.createdAt = createdAt; }
 
-    /** true neu con luot su dung (chua cham UsageLimit, hoac khong gioi han). */
     public boolean hasUsageLeft() {
         return usageLimit == null || usedCount < usageLimit;
     }
 
-    /**
-     * Trang thai hien thi (khong luu DB, tinh tu du lieu hien co):
-     * TAT (IsActive=0) > HET_LUOT (het UsageLimit) > CHUA_BAT_DAU / DA_KET_THUC (ngoai khoang ngay) > DANG_DIEN_RA.
-     */
     public String computeStatus() {
         if (!active) return "PAUSED";
         if (!hasUsageLeft()) return "EXHAUSTED";
@@ -85,12 +90,6 @@ public class Promotion {
         return "RUNNING";
     }
 
-    /**
-     * Tinh so tien duoc giam cho 1 don hang co tong tien {@code orderAmount}.
-     * Tra ve BigDecimal.ZERO neu khong du dieu kien (chua/da het hieu luc, bi
-     * tat, het luot dung, hoac don hang chua dat MinOrderAmount) - KHONG nem
-     * exception, de noi goi (POS...) chi can kiem tra kt qua > 0.
-     */
     public BigDecimal calculateDiscount(BigDecimal orderAmount) {
         if (orderAmount == null || orderAmount.signum() <= 0) return BigDecimal.ZERO;
         if (!"RUNNING".equals(computeStatus())) return BigDecimal.ZERO;

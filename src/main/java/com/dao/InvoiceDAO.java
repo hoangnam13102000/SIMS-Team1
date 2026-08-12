@@ -114,12 +114,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 
     /**
      * Tim kiem + loc hoa don theo tu khoa (ma HD/nguoi tao/khach hang) va/hoac
-     * khoang ngay tao (ca 2 dau co the null neu khong loc). Dung chung 1
-     * whereClause tham so hoa (giong ProductDAO.getPagedFiltered) de vua an
-     * toan SQL injection vua tranh phai tu escape ky tu dac biet cua LIKE.
-     *
-     * @param fromDate ngay bat dau (bao gom ca ngay nay), null = khong gioi han duoi
-     * @param toDate   ngay ket thuc (bao gom ca ngay nay), null = khong gioi han tren
+     * khoang ngay tao (ca 2 dau co the null neu khong loc).
      */
     public PaginationHelper.PaginationResult<Invoice> getPagedFiltered(
             int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
@@ -140,8 +135,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
             keywordCondition.append(")");
             conditions.add(keywordCondition.toString());
         }
-        // Loc theo [fromDate 00:00:00, toDate+1 00:00:00) - vua danh cho kieu
-        // DATETIME co gio/phut/giay, vua bao gom tron ven ca ngay toDate.
         if (fromDate != null) {
             conditions.add("inv.CreatedAt >= ?");
             params.add(Timestamp.valueOf(fromDate.atStartOfDay()));
@@ -152,7 +145,12 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
         }
 
         String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
-        return getPaged(page, pageSize, whereClause, params.toArray());
+        PaginationHelper.PaginationResult<Invoice> result =
+                getPaged(page, pageSize, whereClause, params.toArray());
+        if (result != null && result.getData() != null) {
+            attachReturnSummary(result.getData());
+        }
+        return result;
     }
 
     private String escapeLike(String raw) {
@@ -163,40 +161,11 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     }
 
     /**
-     * Lap 1 hoa don ban hang THAT SU (dung cho trang POS - ban hang tai
-     * quay). Day la nguoc lai voi javadoc cu o dau class: DAO nay tu do
-     * khong con "chi doc + huy" nua.
-     * <p>
-     * Trinh tu bat buoc (dung 1 transaction, dung y trigger duoi DB):
-     * <ol>
-     *   <li>INSERT Invoices voi InvoiceCode tam (se cap nhat lai ngay sau
-     *   khi co InvoiceID, vi cot nay KHONG phai computed column nhu
-     *   ProductCode/OrderCode).</li>
-     *   <li>INSERT tung dong InvoiceDetails - trigger INSTEAD OF INSERT
-     *   trg_InvoiceDetails_CheckStock se tu tru kho theo FEFO, co the CAT
-     *   BOT so luong neu vuot ton kho con lai (xem javadoc trigger), va tu
-     *   chan hoan toan neu san pham da het hang.</li>
-     *   <li>Doc lai LineTotal thuc te (sau khi trigger co the da cat bot so
-     *   luong) de tinh dung SubTotal/TotalAmount, roi UPDATE lai Invoices -
-     *   2 cot nay KHONG tu tinh, "duy tri qua trigger/app" (xem SIMS.sql).</li>
-     *   <li>Ap dung DiscountAmount (neu co) tren subTotal that, VAT tinh tren
-     *   (subTotal - discount).</li>
-     *   <li>Neu hoa don co gan khach hang (co tai khoan): cong diem thanh
-     *   vien theo StoreConfig.POINT_RATE, TRONG CUNG transaction nay.</li>
-     *   <li>Neu co PromotionID: tang UsedCount trong cung transaction.</li>
-     * </ol>
-     * Tra ve true + gan lai invoiceId/invoiceCode/subTotal/totalAmount/pointsEarned
-     * vao {@code invoice} neu thanh cong; false neu that bai (het hang, loi
-     * DB...) - chi tiet loi da duoc log qua AppLogger.
+     * Lap 1 hoa don ban hang THAT SU (POS).
      */
     public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
         if (items == null || items.isEmpty()) return false;
 
-        // SubTotal/TotalAmount/DiscountAmount/Points* insert = 0 truoc.
-        // Bang Invoices co CHECK (DiscountAmount <= SubTotal). Neu insert
-        // DiscountAmount > 0 khi SubTotal van = 0 → loi CHECK khi ap ma KM.
-        // Gia tri that tinh sau khi insert chi tiet + doc LineTotal, roi UPDATE
-        // trong cung transaction (updateTotalsSql).
         String insertInvoiceSql = "INSERT INTO Invoices "
                 + "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
                 + "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode, "
@@ -216,8 +185,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                 if (requestedDiscount.signum() < 0) requestedDiscount = BigDecimal.ZERO;
 
                 try (PreparedStatement ps = con.prepareStatement(insertInvoiceSql, Statement.RETURN_GENERATED_KEYS)) {
-                    // Ma tam thoi duy nhat (chi ton tai trong pham vi transaction nay,
-                    // se bi ghi de ngay ben duoi) - tranh vi pham UNIQUE(InvoiceCode).
                     ps.setString(1, "TMP-" + System.nanoTime());
                     ps.setInt(2, invoice.getShiftId());
                     ps.setInt(3, invoice.getCreatedBy());
@@ -238,7 +205,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                         ps.setNull(7, Types.VARCHAR);
                     }
                     ps.setBigDecimal(8, invoice.getVatRate());
-                    // PromotionID / PromotionCode (snapshot). DiscountAmount = 0 o buoc nay.
                     if (invoice.getPromotionId() != null) {
                         ps.setInt(9, invoice.getPromotionId());
                     } else {
@@ -263,7 +229,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                         ps.setInt(2, item.getProductId());
                         ps.setInt(3, item.getQuantity());
                         ps.setBigDecimal(4, item.getUnitPrice());
-                        ps.executeUpdate(); // tung dong 1 - de trigger (INSTEAD OF) xu ly dung tung san pham
+                        ps.executeUpdate();
                     }
                 }
 
@@ -275,26 +241,20 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     }
                 }
                 if (subTotal == null || subTotal.signum() == 0) {
-                    // Khong co dong nao duoc tao that su (vd tat ca san pham da het
-                    // hang khi trigger chay) - huy toan bo, khong lap hoa don rong.
                     con.rollback();
                     return false;
                 }
 
-                // Giam gia KM khong vuot subTotal that (sau khi trigger co the cat bot SL)
                 BigDecimal discount = requestedDiscount.min(subTotal);
                 BigDecimal taxable = subTotal.subtract(discount);
                 BigDecimal vatRate = invoice.getVatRate() != null ? invoice.getVatRate() : BigDecimal.ZERO;
                 BigDecimal totalBeforePoints = taxable.add(taxable.multiply(vatRate)
                         .divide(new BigDecimal(100), 0, java.math.RoundingMode.HALF_UP));
 
-                // --- Doi diem thanh vien (tru tien) ---
-                // Chi ap dung khi co CustomerID. Tru diem + giam total trong CUNG transaction.
                 int pointsUsed = Math.max(0, invoice.getPointsUsed());
                 BigDecimal pointsDiscount = BigDecimal.ZERO;
                 if (invoice.getCustomerId() != null && pointsUsed > 0) {
                     BigDecimal redeemRate = storeConfigDAO.getPointRedeemRate();
-                    // Khoa so diem hien co (UPDLOCK) de tranh doi qua so diem thuc te
                     int available = 0;
                     try (PreparedStatement ps = con.prepareStatement(
                             "SELECT MemberPoint FROM Customers WITH (UPDLOCK, ROWLOCK) WHERE CustomerID = ?")) {
@@ -306,10 +266,8 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     pointsUsed = Math.min(pointsUsed, available);
                     pointsDiscount = redeemRate.multiply(BigDecimal.valueOf(pointsUsed))
                             .setScale(0, java.math.RoundingMode.DOWN);
-                    // Khong cho tru diem vuot so tien phai tra
                     if (pointsDiscount.compareTo(totalBeforePoints) > 0) {
                         pointsDiscount = totalBeforePoints;
-                        // tinh lai so diem tuong ung (lam tron xuong)
                         if (redeemRate.signum() > 0) {
                             pointsUsed = pointsDiscount.divide(redeemRate, 0, java.math.RoundingMode.DOWN).intValue();
                             pointsDiscount = redeemRate.multiply(BigDecimal.valueOf(pointsUsed))
@@ -328,7 +286,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                             ps.setInt(3, pointsUsed);
                             int updated = ps.executeUpdate();
                             if (updated != 1) {
-                                // Khong du diem (race) → bo doi diem, van lap HD
                                 pointsUsed = 0;
                                 pointsDiscount = BigDecimal.ZERO;
                             }
@@ -357,7 +314,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     ps.executeUpdate();
                 }
 
-                // Tich diem MOI tren so tien khach THUC TRA (sau doi diem) — giong BHX
                 int pointsEarned = 0;
                 if (invoice.getCustomerId() != null && totalAmount.signum() > 0) {
                     BigDecimal pointRate = storeConfigDAO.getPointRate();
@@ -372,7 +328,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     }
                 }
 
-                // Tang UsedCount ma KM (cung transaction)
                 if (invoice.getPromotionId() != null && discount.signum() > 0) {
                     try (PreparedStatement ps = con.prepareStatement(
                             "UPDATE Promotions SET UsedCount = UsedCount + 1 WHERE PromotionID = ?")) {
@@ -405,10 +360,16 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
         }
     }
 
-    /** Danh sach dong san pham (InvoiceDetails) cua 1 hoa don, dung khi xem chi tiet. */
+    /** Danh sach dong SP + so luong da tra (APPROVED). */
     public List<InvoiceDetail> getDetails(int invoiceId) {
         String sql = "SELECT d.InvoiceDetailID, d.InvoiceID, d.ProductID, p.ProductName, p.ProductCode, "
-                + "p.ImageUrl, d.Quantity, d.UnitPrice, d.LineTotal "
+                + "p.ImageUrl, d.Quantity, d.UnitPrice, d.LineTotal, "
+                + "ISNULL(( "
+                + "  SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
+                + "  JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
+                + "  WHERE r.InvoiceID = d.InvoiceID AND r.Status = 'APPROVED' "
+                + "    AND rd.Direction = 'IN' AND rd.ProductID = d.ProductID "
+                + "), 0) AS ReturnedQty "
                 + "FROM InvoiceDetails d "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
                 + "WHERE d.InvoiceID = ? "
@@ -430,6 +391,11 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     detail.setQuantity(rs.getInt("Quantity"));
                     detail.setUnitPrice(rs.getBigDecimal("UnitPrice"));
                     detail.setLineTotal(rs.getBigDecimal("LineTotal"));
+                    try {
+                        detail.setReturnedQuantity(rs.getInt("ReturnedQty"));
+                    } catch (SQLException ignore) {
+                        detail.setReturnedQuantity(0);
+                    }
                     list.add(detail);
                 }
             }
@@ -440,12 +406,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
         return list;
     }
 
-    /**
-     * Huy 1 hoa don dang ACTIVE. Tra ve null neu huy thanh cong, hoac thong
-     * diep loi (da la tieng Viet, hien thang len UI duoc) neu that bai -
-     * hoac do trigger tu choi (khac ngay/ca da dong) hoac do hoa don khong
-     * con o trang thai ACTIVE nua (da bi huy truoc do / khong ton tai).
-     */
     /**
      * Huy hoa don ACTIVE + hoan diem da dung, thu hoi diem da tich, giam UsedCount KM.
      * Tra ve null neu OK, message loi neu that bai.
@@ -505,7 +465,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     }
                 }
 
-                // Hoan diem da dung + thu hoi diem da tich (cung transaction)
                 if (customerId != null) {
                     int pointsEarned = 0;
                     if (totalAmount.signum() > 0) {
@@ -514,7 +473,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                             pointsEarned = totalAmount.divide(pointRate, 0, java.math.RoundingMode.DOWN).intValue();
                         }
                     }
-                    int delta = pointsUsed - pointsEarned; // +hoan dung, -thu hoi tich
+                    int delta = pointsUsed - pointsEarned;
                     if (delta != 0) {
                         try (PreparedStatement ps = con.prepareStatement(
                                 "UPDATE Customers SET MemberPoint = CASE "
@@ -528,7 +487,6 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     }
                 }
 
-                // Giam UsedCount ma KM
                 if (promotionId != null && discountAmount.signum() > 0) {
                     try (PreparedStatement ps = con.prepareStatement(
                             "UPDATE Promotions SET UsedCount = CASE WHEN UsedCount > 0 THEN UsedCount - 1 ELSE 0 END "
@@ -554,7 +512,120 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
         }
     }
 
-    /** Tong doanh thu hoa don ACTIVE trong ngay hom nay (dung cho Dashboard neu can). */
+    @Override
+    public PaginationHelper.PaginationResult<Invoice> search(String keyword, int pageNumber, int pageSize) {
+        PaginationHelper.PaginationResult<Invoice> result = super.search(keyword, pageNumber, pageSize);
+        if (result != null && result.getData() != null) {
+            attachReturnSummary(result.getData());
+        }
+        return result;
+    }
+
+    @Override
+    public PaginationHelper.PaginationResult<Invoice> getPaged(int pageNumber, int pageSize) {
+        PaginationHelper.PaginationResult<Invoice> result = super.getPaged(pageNumber, pageSize);
+        if (result != null && result.getData() != null) {
+            attachReturnSummary(result.getData());
+        }
+        return result;
+    }
+
+    // ---------------------------------------------------------------
+    // Tom tat doi/tra hang (khong luu DB - tinh tu ReturnExchanges)
+    // ---------------------------------------------------------------
+
+    public void attachReturnSummary(Invoice invoice) {
+        if (invoice == null) return;
+        List<Invoice> one = new ArrayList<>();
+        one.add(invoice);
+        attachReturnSummary(one);
+    }
+
+    public void attachReturnSummary(List<Invoice> invoices) {
+        if (invoices == null || invoices.isEmpty()) return;
+        for (Invoice inv : invoices) {
+            fillReturnSummary(inv);
+        }
+    }
+
+    private void fillReturnSummary(Invoice inv) {
+        String sqlRefund = "SELECT "
+                + "ISNULL(SUM(CASE WHEN Status = 'APPROVED' THEN TotalValue ELSE 0 END), 0) AS Refunded, "
+                + "SUM(CASE WHEN Status = 'APPROVED' THEN 1 ELSE 0 END) AS Cnt "
+                + "FROM ReturnExchanges WHERE InvoiceID = ?";
+
+        String sqlOriginal = "SELECT ISNULL(SUM(Quantity * UnitPrice), 0) AS OriginalSub "
+                + "FROM InvoiceDetails WHERE InvoiceID = ?";
+
+        String sqlQty = "SELECT "
+                + "ISNULL((SELECT SUM(d.Quantity) FROM InvoiceDetails d WHERE d.InvoiceID = ?), 0) AS SoldQty, "
+                + "ISNULL((SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
+                + "         JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
+                + "         WHERE r.InvoiceID = ? AND r.Status = 'APPROVED' AND rd.Direction = 'IN'), 0) AS ReturnedQty";
+
+        try (Connection con = DBConnection.getConnection()) {
+            try (PreparedStatement ps = con.prepareStatement(sqlRefund)) {
+                ps.setInt(1, inv.getInvoiceId());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        BigDecimal refunded = rs.getBigDecimal("Refunded");
+                        inv.setRefundedAmount(refunded != null ? refunded : BigDecimal.ZERO);
+                        inv.setApprovedReturnCount(rs.getInt("Cnt"));
+                    }
+                }
+            }
+            try (PreparedStatement ps = con.prepareStatement(sqlOriginal)) {
+                ps.setInt(1, inv.getInvoiceId());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        BigDecimal orig = rs.getBigDecimal("OriginalSub");
+                        inv.setOriginalSubTotal(orig != null ? orig : BigDecimal.ZERO);
+                    }
+                }
+            }
+            try (PreparedStatement ps = con.prepareStatement(sqlQty)) {
+                ps.setInt(1, inv.getInvoiceId());
+                ps.setInt(2, inv.getInvoiceId());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        int sold = rs.getInt("SoldQty");
+                        int returned = rs.getInt("ReturnedQty");
+                        if (returned <= 0) {
+                            inv.setReturnState("NONE");
+                        } else if (sold > 0 && returned >= sold) {
+                            inv.setReturnState("FULL");
+                        } else {
+                            inv.setReturnState("PARTIAL");
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "InvoiceDAO.fillReturnSummary - invoiceId=" + inv.getInvoiceId(), e);
+        }
+    }
+
+    public Invoice findById(int invoiceId) {
+        String sql = "SELECT " + getColumns() + " FROM " + getTableName()
+                + " WHERE inv.InvoiceID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, invoiceId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    Invoice inv = mapResultSet(rs);
+                    attachReturnSummary(inv);
+                    return inv;
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "InvoiceDAO.findById - invoiceId=" + invoiceId, e);
+        }
+        return null;
+    }
+
     public BigDecimal sumTodayRevenue() {
         String sql = "SELECT ISNULL(SUM(TotalAmount), 0) FROM Invoices "
                 + "WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) = CAST(GETDATE() AS DATE)";

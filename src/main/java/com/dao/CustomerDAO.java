@@ -78,6 +78,22 @@ public class CustomerDAO extends SoftDeleteDAO<Customer> {
     protected String[] getSearchableColumns() {
         return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone", "c.CustomerCode"};
     }
+    
+    public Customer findById(int userId) {
+        String sql = "SELECT " + getColumns() + " FROM " + getTableName()
+                + " WHERE u.UserID = ? AND u.IsDeleted = 0";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? mapResultSet(rs) : null;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "CustomerDAO.findById - userId=" + userId, e);
+            return null;
+        }
+    }
 
     /**
      * Tim 1 khach hang khop CHINH XAC theo CustomerCode (vd "CUS_0007") - dung

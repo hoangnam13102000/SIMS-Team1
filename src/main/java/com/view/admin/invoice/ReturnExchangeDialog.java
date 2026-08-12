@@ -363,6 +363,8 @@ public class ReturnExchangeDialog extends JDialog {
         // nen dung setProductName truc tiep
         exchangeOutLines.get(exchangeOutLines.size() - 1).setProductName(selected.getProductName());
         refreshExchangeList();
+        // reset SL ve 1 sau khi them, tranh giu lai gia tri cu cho lan them tiep theo
+        exchangeQtySpinner.setValue(1);
     }
 
     private void refreshExchangeList() {
@@ -485,7 +487,11 @@ public class ReturnExchangeDialog extends JDialog {
                 ? "Đã tạo yêu cầu đổi/trả cho hóa đơn " + invoice.getInvoiceCode()
                         + ". Giá trị lớn nên cần Quản lý bán hàng duyệt trước khi cập nhật kho."
                 : "Đã tạo và xử lý xong yêu cầu đổi/trả cho hóa đơn " + invoice.getInvoiceCode() + ".";
-        BaseDialog.success(this, "Thành công", message);
+        // dung getOwner() (Frame chinh) lam anchor, KHONG dung "this": dialog nay se
+        // dispose() ngay ben duoi, ma dispose() mot Window se keo theo dispose() cac
+        // window no so huu (owned windows) - neu anchor vao "this" thi toast toast bi
+        // huy theo ngay lap tuc, chua kip hien len nguoi dung da khong thay thong bao.
+        BaseDialog.success(getOwner(), "Thành công", message);
         dispose();
     }
 }

@@ -1,5 +1,4 @@
 package com.view.admin.inventory;
-
 import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.DatePickerField;
@@ -13,56 +12,65 @@ import com.theme.AppColor;
 import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
-
 import javax.swing.*;
 import javax.swing.event.TableModelEvent;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableModel;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.EventObject;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
 /**
- * Man hinh "Đối chiếu / kiểm kê kho cuối ngày":
- * - Moi ngay tu dong tao du danh sach san pham ACTIVE de doi chieu.
- * - Co the sua truc tiep cot "Ton thuc te" tren bang (chi dong cua hom nay).
+ * Man hinh "Doi chieu / kiem ke kho cuoi ngay":
+ * - Moi ngay 00:00 TU DONG khoa phien cu (khong sua ton thuc te nua) va tao
+ *   phien moi cho ngay hom nay voi day du danh sach SP ACTIVE.
+ * - Khi app dang mo, Timer chay moi 30s de phat hien diem chuyen ngay.
+ * - Cac dong ngay HOM NAY: cho phep sua "Ton thuc te" truc tiep.
+ * - Cac dong NGAY CU: icon KHOA, chi xem, khong chinh sua duoc.
+ * - Sap xep: phien hom nay LUON o dau, cac phien cu theo thu tu ngay giam.
  * - Loc theo khoang ngay; mac dinh hien phien hom nay.
  */
 public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation> {
-
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    /** Chi so cot model: Ton thuc te — cho phep sua truc tiep. */
+    /** Chi so cot model: Ton thuc te — cho phep sua truc tiep (CHI dong hom nay). */
     private static final int COL_ACTUAL = 3;
     private static final int COL_DIFF = 4;
+    /** Tan suat kiem tra diem chuyen ngay (ms) — 30 giay mot lan. */
+    private static final int DAY_ROLLOVER_CHECK_MS = 30_000;
 
     private final StockReconciliationDAO reconciliationDAO = new StockReconciliationDAO();
     private final ProductDAO productDAO = new ProductDAO();
-
     private DatePickerField fromDateFilter;
     private DatePickerField toDateFilter;
     private JLabel clearDateFilterLink;
-
     /** Chan TableModelListener khi dang reload de tranh luu nham. */
     private boolean suppressActualEdit = false;
+    /** Ngay ma Panel dang theo doi — khi thay doi nghia la da sang ngay moi. */
+    private LocalDate trackedDate;
+    /** Timer kiem tra diem chuyen ngay 00:00. */
+    private Timer rolloverTimer;
 
     public StockReconciliationPanel() {
         super();
+        trackedDate = LocalDate.now();
 
-        // Cột: Mã SP | Sản phẩm | Tồn hệ thống | Tồn thực tế | Chênh lệch | Người đối chiếu | Thời gian
+        // Cot: Ma SP | San pham | Ton he thong | Ton thuc te | Chenh lech | Nguoi doi chieu | Thoi gian
         table.setColumnWidths(90, 170, 100, 100, 90, 130, 130);
         table.setColumnMinWidths(70, 130, 80, 80, 70, 100, 110);
         table.setBadgeColumn(COL_DIFF, this::discrepancyLabel, this::discrepancyColor);
 
-        // Cho sua truc tiep cot "Ton thuc te"
-        table.setEditableColumns(COL_ACTUAL);
-        installActualStockEditor();
+        // KHONG su dung setEditableColumns — chung ta se override isCellEditable
+        // bang DefaultCellEditor tuy chinh + chan them trong TableModelListener.
+        installConditionalActualEditor();
 
-        // Cột "Mã SP" (index 0): thêm icon copy
+        // Cot "Ma SP" (index 0): them icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -80,7 +88,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     c.setIcon(copyIcon);
                     c.setIconTextGap(6);
                     c.setHorizontalTextPosition(SwingConstants.LEFT);
-                    c.setToolTipText("Click để copy mã sản phẩm: " + text);
+                    c.setToolTipText("Click de copy ma san pham: " + text);
                 } else {
                     c.setIcon(null);
                     c.setToolTipText(null);
@@ -89,7 +97,10 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             }
         });
 
-        // Gợi ý cột tồn thực tế có thể sửa (icon bút)
+        // Cot "Ton thuc te" (COL_ACTUAL): render khac biet theo ngay
+        //  - Hom nay: icon BUT mau xanh → cho phep sua
+        //  - Ngay cu: icon LOCK mau xam + chu mo → chi xem, da khoa
+        //  → NEN CAC O DEU NHAU, KHONG to mau khac biet (khong gay khoi mat)
         table.getTable().getColumnModel().getColumn(COL_ACTUAL).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable tbl, Object value,
@@ -98,32 +109,45 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                         tbl, value, isSelected, hasFocus, row, column);
                 c.setHorizontalAlignment(SwingConstants.CENTER);
                 c.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+                int modelRow = tbl.convertRowIndexToModel(row);
+                StockReconciliation item = rowToItem(modelRow);
+                boolean isToday = item != null && item.getCreatedAt() != null
+                        && item.getCreatedAt().toLocalDate().equals(LocalDate.now());
+
+                // ✅ NEN LUON DEU NHAU — theo mau dong chan/le MAC DINH cua bang
                 c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG
                         : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
 
-                int modelRow = tbl.convertRowIndexToModel(row);
-                StockReconciliation item = rowToItem(modelRow);
-                boolean editableToday = item != null && item.getCreatedAt() != null
-                        && item.getCreatedAt().toLocalDate().equals(LocalDate.now());
-
-                if (editableToday) {
+                if (isToday) {
+                    // ——— DONG HOM NAY ———
+                    c.setForeground(AppColor.TEXT_PRIMARY);
                     FontIcon editIcon = FontIcon.of(FontAwesomeSolid.PEN, 11);
                     editIcon.setIconColor(AppColor.ACCENT);
                     c.setIcon(editIcon);
                     c.setIconTextGap(6);
                     c.setHorizontalTextPosition(SwingConstants.LEFT);
-                    c.setToolTipText("Double-click hoặc F2 để sửa tồn thực tế");
+                    c.setToolTipText("Double-click hoac F2 de sua ton thuc te (phiên hom nay)");
                     c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 } else {
-                    c.setIcon(null);
-                    c.setToolTipText("Chỉ được sửa tồn thực tế của phiên hôm nay");
+                    // ——— DONG NGAY CU (DA KHOA) ———
+                    // Nen GIU NGUYEN nhu dong binh thuong, chi thay:
+                    //   + chu → TEXT_MUTED (mo hon)
+                    //   + icon → LOCK (xam) thay vi PEN (xanh)
+                    //   + cursor → mac dinh (khong co ban tay)
+                    c.setForeground(AppColor.TEXT_MUTED);
+                    FontIcon lockIcon = FontIcon.of(FontAwesomeSolid.LOCK, 11);
+                    lockIcon.setIconColor(AppColor.TEXT_MUTED);
+                    c.setIcon(lockIcon);
+                    c.setIconTextGap(6);
+                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setToolTipText("Phiên đã khóa lúc 00:00 — chỉ xem, không sửa được");
                     c.setCursor(Cursor.getDefaultCursor());
                 }
                 return c;
             }
         });
 
-        // Xử lý click vào icon copy mã SP
+        // Xu ly click vao icon copy ma SP
         table.getTable().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -135,7 +159,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     String text = value != null ? value.toString() : "";
                     if (text != null && !text.isBlank()) {
                         copyToClipboard(text);
-                        AppAlert.success(StockReconciliationPanel.this, "Copy thành công", "Đã copy mã sản phẩm: " + text);
+                        AppAlert.success(StockReconciliationPanel.this, "Copy thanh cong", "Da copy ma san pham: " + text);
                     }
                 }
             }
@@ -151,36 +175,209 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             clearDateFilterLink.setVisible(true);
         }
 
+        // Khoi tao Timer kiem tra diem chuyen ngay
+        installDayRolloverTimer();
+
         // Tao phien hom nay (neu chua co) roi moi load
         ensureTodaySessionThenLoad();
     }
 
+    // ------------------------------------------------------------------
+    // Timer kiem tra diem chuyen ngay 00:00
+    // ------------------------------------------------------------------
+    private void installDayRolloverTimer() {
+        rolloverTimer = new Timer(DAY_ROLLOVER_CHECK_MS, e -> rolloverToNewDayIfNeeded());
+        rolloverTimer.setRepeats(true);
+        rolloverTimer.setCoalesce(true);
+        rolloverTimer.start();
+    }
+
     /**
-     * Tao du danh sach SP ACTIVE cho hom nay (neu thieu), roi load bang.
+     * Neu LocalDate.now() da khac trackedDate nghia la da sang ngay moi
+     * (qua moc 00:00). Khi do:
+     *   1. Khoa toan bo phien cu (DAO already chi cho sua hom nay)
+     *   2. Tao phien moi cho ngay hom nay
+     *   3. Thong bao cho nguoi dung
+     *   4. Chuyen filter ve hom nay + reload bang → SP cu tu dong ra sau
      */
+    private void rolloverToNewDayIfNeeded() {
+        LocalDate now = LocalDate.now();
+        if (now.equals(trackedDate)) return; // chua sang ngay moi
+
+        final LocalDate oldDate = trackedDate;
+        trackedDate = now;
+
+        Integer userId = currentUserId();
+        SwingWorker<Integer, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Integer doInBackground() {
+                return userId != null
+                        ? reconciliationDAO.ensureDailySession(now, userId)
+                        : 0;
+            }
+            @Override
+            protected void done() {
+                try {
+                    int created = get();
+                    String msg = "Đã qua 00:00 — Phiên đối chiếu ngày "
+                            + oldDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                            + " đã bị KHÓA (không sửa được nữa). ";
+                    if (created > 0) {
+                        msg += "Đã tự động tạo phiên mới cho hôm nay (" + created + " SP).";
+                    } else {
+                        msg += "Đã sẵn sàng phiên mới cho hôm nay.";
+                    }
+                    AppAlert.info(StockReconciliationPanel.this, "Chuyển ngày", msg);
+                    // Chuyen filter ve hom nay + reload → SP moi len dau, SP cu xuong cuoi
+                    fromDateFilter.setValue(now);
+                    toDateFilter.setValue(now);
+                    if (clearDateFilterLink != null) clearDateFilterLink.setVisible(true);
+                    reload();
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    // ------------------------------------------------------------------
+    // Editor "Ton thuc te" — CHI cho phep sua dong hom nay (3 lop chan)
+    // ------------------------------------------------------------------
+    private void installConditionalActualEditor() {
+        // LOP 1 (UI thap nhat): CellEditor — KHONG CHO MO editor neu la ngay cu
+        JTable jt = table.getTable();
+        jt.getColumnModel().getColumn(COL_ACTUAL).setCellEditor(new DefaultCellEditor(new JTextField()) {
+            @Override
+            public boolean isCellEditable(EventObject anEvent) {
+                if (!super.isCellEditable(anEvent)) return false;
+                int row = jt.getEditingRow();
+                if (row < 0) return false;
+                int modelRow = jt.convertRowIndexToModel(row);
+                StockReconciliation item = rowToItem(modelRow);
+                boolean editable = item != null && item.getCreatedAt() != null
+                        && item.getCreatedAt().toLocalDate().equals(LocalDate.now());
+                if (!editable) {
+                    SwingUtilities.invokeLater(() ->
+                        AppAlert.warning(StockReconciliationPanel.this,
+                                "Phiên đã khóa",
+                                "Đã qua 00:00 — chỉ được sửa tồn thực tế của phiên hôm nay."));
+                }
+                return editable;
+            }
+        });
+
+        // LOP 2 (Model): TableModelListener — bao ve them, neu lọt qua Lop 1
+        table.getModel().addTableModelListener(e -> {
+            if (suppressActualEdit) return;
+            if (e.getType() != TableModelEvent.UPDATE) return;
+            if (e.getColumn() != COL_ACTUAL && e.getColumn() != TableModelEvent.ALL_COLUMNS) return;
+            int modelRow = e.getFirstRow();
+            if (modelRow < 0) return;
+            StockReconciliation item = rowToItem(modelRow);
+            if (item == null) return;
+
+            // Chan ngay cu
+            if (item.getCreatedAt() == null
+                    || !item.getCreatedAt().toLocalDate().equals(LocalDate.now())) {
+                suppressActualEdit = true;
+                try {
+                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                } finally {
+                    suppressActualEdit = false;
+                }
+                AppAlert.error(this, "Khong the sua",
+                        "Da qua 00:00 — phien cu da khoa. Chi duoc sua phien hom nay.");
+                return;
+            }
+
+            Object raw = table.getModel().getValueAt(modelRow, COL_ACTUAL);
+            int newActual;
+            try {
+                if (raw == null || raw.toString().isBlank()) {
+                    throw new NumberFormatException("empty");
+                }
+                newActual = Integer.parseInt(raw.toString().trim().replace(",", "").replace(".", ""));
+                if (newActual < 0) throw new NumberFormatException("negative");
+            } catch (NumberFormatException ex) {
+                suppressActualEdit = true;
+                try {
+                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                } finally {
+                    suppressActualEdit = false;
+                }
+                AppAlert.error(this, "So khong hop le", "Ton thuc te phai la so nguyen ≥ 0.");
+                return;
+            }
+            if (newActual == item.getActualStock()) return;
+
+            Integer userId = currentUserId();
+            if (userId == null) return;
+            boolean ok = reconciliationDAO.updateActualStock(
+                    item.getReconciliationId(), newActual, userId);
+            if (!ok) {
+                suppressActualEdit = true;
+                try {
+                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                } finally {
+                    suppressActualEdit = false;
+                }
+                AppAlert.error(this, "Cap nhat that bai",
+                        "Khong the cap nhat ton thuc te. Vui long thu lai.");
+                return;
+            }
+            // Cap nhat model local + cot chenh lech
+            item.setActualStock(newActual);
+            item.setDiscrepancy(newActual - item.getSystemStock());
+            suppressActualEdit = true;
+            try {
+                table.getModel().setValueAt(discrepancyText(item.getDiscrepancy()), modelRow, COL_DIFF);
+            } finally {
+                suppressActualEdit = false;
+            }
+            table.getTable().repaint();
+            AppAlert.success(this, "Da cap nhat",
+                    "Ton thuc te \"" + item.getProductName() + "\" = " + newActual
+                            + " (chenh lech: " + discrepancyText(item.getDiscrepancy()) + ")");
+        });
+    }
+
+    @Override
+    protected void afterRender(PaginationHelper.PaginationResult<StockReconciliation> result) {
+        suppressActualEdit = true;
+        try {
+            table.getTable().repaint();
+            // Sau moi lan reload, kiem tra lai xem co sang ngay moi khong
+            // (phong truong hop mo app tu hom qua den sang hom sau)
+            rolloverToNewDayIfNeeded();
+        } finally {
+            SwingUtilities.invokeLater(() -> suppressActualEdit = false);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Khoi tao phien hom nay
+    // ------------------------------------------------------------------
     private void ensureTodaySessionThenLoad() {
         Integer userId = currentUserId();
         if (userId == null) {
             initialLoad();
             return;
         }
-        // Chay ensure o background de khong treo UI
         SwingWorker<Integer, Void> worker = new SwingWorker<>() {
             @Override
             protected Integer doInBackground() {
                 return reconciliationDAO.ensureDailySession(LocalDate.now(), userId);
             }
-
             @Override
             protected void done() {
                 try {
                     int created = get();
                     if (created > 0) {
-                        AppAlert.success(StockReconciliationPanel.this, "Phiên đối chiếu hôm nay",
-                                "Đã tạo " + created + " sản phẩm để đối chiếu kho.");
+                        AppAlert.success(StockReconciliationPanel.this, "Phien doi chieu hom nay",
+                                "Da tao " + created + " san pham de doi chieu kho.");
                     }
                 } catch (Exception ignored) {
-                    // Bo qua, van load binh thuong
                 }
                 initialLoad();
             }
@@ -193,39 +390,33 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 ? AuthService.getInstance().getCurrentUser().getUserId() : null;
     }
 
-    // ---------------------------------------------------------------
+    // ------------------------------------------------------------------
     // Bo loc ngay
-    // ---------------------------------------------------------------
-
+    // ------------------------------------------------------------------
     private void buildDateFilterBar() {
         fromDateFilter = new DatePickerField(null, true);
         toDateFilter = new DatePickerField(null, true);
-
-        JLabel fromLabel = new JLabel("Từ ngày");
+        JLabel fromLabel = new JLabel("Tu ngay");
         fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         fromLabel.setForeground(AppColor.TEXT_MUTED);
-
-        JLabel toLabel = new JLabel("Đến ngày");
+        JLabel toLabel = new JLabel("Den ngay");
         toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         toLabel.setForeground(AppColor.TEXT_MUTED);
-
         JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         dateRow.setOpaque(false);
         dateRow.add(fromLabel);
         dateRow.add(fromDateFilter);
         dateRow.add(toLabel);
         dateRow.add(toDateFilter);
-
         fromDateFilter.onChange(d -> onDateFilterChanged());
         toDateFilter.onChange(d -> onDateFilterChanged());
-
         addToolbarFilter(dateRow);
 
         FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 14);
         clearIcon.setIconColor(AppColor.TEXT_MUTED);
         clearDateFilterLink = new JLabel(clearIcon);
         clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        clearDateFilterLink.setToolTipText("Xóa lọc ngày");
+        clearDateFilterLink.setToolTipText("Xoa loc ngay");
         clearDateFilterLink.setVisible(false);
         clearDateFilterLink.addMouseListener(new MouseAdapter() {
             @Override
@@ -265,116 +456,27 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         return toDateFilter == null ? null : toDateFilter.getValue();
     }
 
-    // ---------------------------------------------------------------
-    // Sua ton thuc te truc tiep tren bang
-    // ---------------------------------------------------------------
-
-    private void installActualStockEditor() {
-        table.getModel().addTableModelListener(e -> {
-            if (suppressActualEdit) return;
-            if (e.getType() != TableModelEvent.UPDATE) return;
-            if (e.getColumn() != COL_ACTUAL && e.getColumn() != TableModelEvent.ALL_COLUMNS) return;
-
-            int modelRow = e.getFirstRow();
-            if (modelRow < 0) return;
-
-            StockReconciliation item = rowToItem(modelRow);
-            if (item == null) return;
-
-            // Chi cho sua dong cua hom nay
-            if (item.getCreatedAt() == null || !item.getCreatedAt().toLocalDate().equals(LocalDate.now())) {
-                suppressActualEdit = true;
-                try {
-                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
-                } finally {
-                    suppressActualEdit = false;
-                }
-                AppAlert.error(this, "Không thể sửa",
-                        "Chỉ được sửa tồn thực tế của phiên đối chiếu hôm nay.");
-                return;
-            }
-
-            Object raw = table.getModel().getValueAt(modelRow, COL_ACTUAL);
-            int newActual;
-            try {
-                if (raw == null || raw.toString().isBlank()) {
-                    throw new NumberFormatException("empty");
-                }
-                newActual = Integer.parseInt(raw.toString().trim().replace(",", "").replace(".", ""));
-                if (newActual < 0) throw new NumberFormatException("negative");
-            } catch (NumberFormatException ex) {
-                suppressActualEdit = true;
-                try {
-                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
-                } finally {
-                    suppressActualEdit = false;
-                }
-                AppAlert.error(this, "Số không hợp lệ", "Tồn thực tế phải là số nguyên ≥ 0.");
-                return;
-            }
-
-            if (newActual == item.getActualStock()) return;
-
-            Integer userId = currentUserId();
-            if (userId == null) return;
-
-            boolean ok = reconciliationDAO.updateActualStock(
-                    item.getReconciliationId(), newActual, userId);
-            if (!ok) {
-                suppressActualEdit = true;
-                try {
-                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
-                } finally {
-                    suppressActualEdit = false;
-                }
-                AppAlert.error(this, "Cập nhật thất bại",
-                        "Không thể cập nhật tồn thực tế. Vui lòng thử lại.");
-                return;
-            }
-
-            // Cap nhat model local + cot chenh lech
-            item.setActualStock(newActual);
-            item.setDiscrepancy(newActual - item.getSystemStock());
-            suppressActualEdit = true;
-            try {
-                table.getModel().setValueAt(discrepancyText(item.getDiscrepancy()), modelRow, COL_DIFF);
-            } finally {
-                suppressActualEdit = false;
-            }
-            table.getTable().repaint();
-            AppAlert.success(this, "Đã cập nhật",
-                    "Tồn thực tế \"" + item.getProductName() + "\" = " + newActual
-                            + " (chênh lệch: " + discrepancyText(item.getDiscrepancy()) + ")");
-        });
-    }
-
-    @Override
-    protected void afterRender(PaginationHelper.PaginationResult<StockReconciliation> result) {
-        // Khi reload, chan listener de khong ghi de du lieu
-        suppressActualEdit = true;
-        try {
-            table.getTable().repaint();
-        } finally {
-            // Delay nhe de model settle
-            SwingUtilities.invokeLater(() -> suppressActualEdit = false);
-        }
-    }
-
+    // ------------------------------------------------------------------
+    // Override metadata
+    // ------------------------------------------------------------------
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.BALANCE_SCALE; }
+
     @Override
-    protected String getPageTitle() { return "Đối chiếu kho cuối ngày"; }
+    protected String getPageTitle() { return "Doi chieu kho cuoi ngay"; }
+
     @Override
     protected String getPageSubtitle() {
-        return "Mỗi ngày tự tạo đủ danh sách SP — sửa tồn thực tế trực tiếp trên bảng";
+        return "00:00 tự động KHÓA phiên cũ + tạo phiên mới hôm nay — sửa tồn thực tế trực tiếp trên bảng";
     }
+
     @Override
-    protected String getAddButtonLabel() { return "Đồng bộ SP hôm nay"; }
+    protected String getAddButtonLabel() { return "Dong bo SP hom nay"; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Mã SP", "Sản phẩm", "Tồn hệ thống", "Tồn thực tế",
-                "Chênh lệch", "Người đối chiếu", "Thời gian"};
+        return new String[]{"Ma SP", "San pham", "Ton he thong", "Ton thuc te",
+                "Chenh lech", "Nguoi doi chieu", "Thoi gian"};
     }
 
     @Override
@@ -394,11 +496,12 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     protected int[] numericColumns() { return new int[]{2, 3}; }
 
     @Override
-    protected String getEntityLabel() { return "phiên đối chiếu kho"; }
+    protected String getEntityLabel() { return "phien doi chieu kho"; }
 
     @Override
     protected String getItemDisplayName(StockReconciliation item) {
-        return item.getProductName() + " - " + (item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "");
+        return item.getProductName() + " - "
+                + (item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "");
     }
 
     @Override
@@ -417,12 +520,14 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo tên sản phẩm, mã SP, người đối chiếu..."; }
+    protected String getSearchPlaceholder() { return "Tim theo ten san pham, ma SP, nguoi doi chieu..."; }
 
     @Override
     protected boolean supportsEdit() { return false; }
+
     @Override
     protected boolean supportsDelete() { return false; }
+
     @Override
     protected boolean supportsView() { return true; }
 
@@ -438,33 +543,33 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
 
     /**
      * Nut "Dong bo SP hom nay": chen cac SP ACTIVE moi chua co trong phien hom nay.
-     * (Khong mo StockCountDialog nua — sua ton thuc te truc tiep tren bang.)
+     * Neu da sang ngay moi ma chua tao phien → cung tao luon.
      */
     @Override
     protected void openForm(StockReconciliation item) {
         Integer userId = currentUserId();
         if (userId == null) return;
+        // Kiem tra diem chuyen ngay truoc khi dong bo
+        rolloverToNewDayIfNeeded();
 
         List<Product> activeProducts = productDAO.findAllActive();
         if (activeProducts.isEmpty()) {
-            BaseDialog.info(this, "Không có sản phẩm",
-                    "Chưa có sản phẩm đang bán nào để đối chiếu. Vui lòng thêm sản phẩm trước.");
+            BaseDialog.info(this, "Khong co san pham",
+                    "Chua co san pham dang ban nao de doi chieu. Vui long them san pham truoc.");
             return;
         }
-
         int created = reconciliationDAO.ensureDailySession(LocalDate.now(), userId);
         if (created > 0) {
-            AppAlert.success(this, "Đồng bộ thành công",
-                    "Đã thêm " + created + " sản phẩm vào phiên đối chiếu hôm nay.");
-            // Dam bao filter dang o hom nay
+            AppAlert.success(this, "Dong bo thanh cong",
+                    "Da them " + created + " san pham vao phien doi chieu hom nay.");
             LocalDate today = LocalDate.now();
             fromDateFilter.setValue(today);
             toDateFilter.setValue(today);
             if (clearDateFilterLink != null) clearDateFilterLink.setVisible(true);
             reload();
         } else {
-            AppAlert.success(this, "Đã đồng bộ",
-                    "Phiên hôm nay đã có đủ " + activeProducts.size() + " sản phẩm đang bán.");
+            AppAlert.success(this, "Da dong bo",
+                    "Phien hom nay da co du " + activeProducts.size() + " san pham dang ban.");
             LocalDate today = LocalDate.now();
             fromDateFilter.setValue(today);
             toDateFilter.setValue(today);
@@ -481,8 +586,11 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         reload();
     }
 
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
     private String discrepancyText(int discrepancy) {
-        if (discrepancy == 0) return "Khớp";
+        if (discrepancy == 0) return "Khop";
         return (discrepancy > 0 ? "+" : "") + discrepancy;
     }
 
@@ -492,7 +600,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
 
     private Color discrepancyColor(Object value) {
         String label = String.valueOf(value);
-        if ("Khớp".equals(label)) return AppColor.SUCCESS;
+        if ("Khop".equals(label)) return AppColor.SUCCESS;
         return label.startsWith("+") ? AppColor.WARNING : AppColor.ERROR;
     }
 
@@ -503,5 +611,9 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             clipboard.setContents(selection, null);
         } catch (Exception ignored) {
         }
+    }
+
+    private static Color hexColor(String hex) {
+        return Color.decode(hex);
     }
 }

@@ -42,9 +42,9 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
     public PromotionPanel() {
         super();
 
-        table.setColumnWidths(130, 200, 130, 140, 170, 100, 130);
-        table.setColumnMinWidths(100, 150, 100, 110, 150, 80, 110);
-        table.setBadgeColumn(6, this::statusLabel, this::statusColor);
+        table.setColumnWidths(120, 180, 120, 120, 160, 90, 80, 120);
+        table.setColumnMinWidths(90, 140, 90, 100, 140, 70, 70, 100);
+        table.setBadgeColumn(7, this::statusLabel, this::statusColor);
 
         // Cột "Mã" (index 0): thêm icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
@@ -106,7 +106,7 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
     @Override
     protected String[] getColumnNames() {
         return new String[]{"Mã", "Tên chương trình", "Giá trị giảm", "Đơn tối thiểu",
-                "Hiệu lực", "Đã dùng", "Trạng thái"};
+                "Hiệu lực", "Đã dùng", "Banner", "Trạng thái"};
     }
 
     @Override
@@ -118,6 +118,7 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
                 moneyOrDash(item.getMinOrderAmount()),
                 formatDate(item.getStartDate()) + " - " + formatDate(item.getEndDate()),
                 item.getUsedCount() + (item.getUsageLimit() != null ? "/" + item.getUsageLimit() : ""),
+                item.isShowOnBanner() ? "Có" : "—",
                 statusLabel(item)
         };
     }

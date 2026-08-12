@@ -36,17 +36,14 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
     @Override
     protected String getColumns() {
         return "PromotionID, Code, Name, DiscountType, DiscountValue, MaxDiscountAmount, "
-                + "MinOrderAmount, StartDate, EndDate, UsageLimit, UsedCount, IsActive, CreatedBy, CreatedAt";
+                + "MinOrderAmount, StartDate, EndDate, UsageLimit, UsedCount, IsActive, "
+                + "ShowOnBanner, BannerSortOrder, CreatedBy, CreatedAt";
     }
 
     @Override
     protected String getOrderBy() {
         return "PromotionID DESC";
     }
-
-    // ---------------------------------------------------------------
-    // SoftDeleteDAO hooks
-    // ---------------------------------------------------------------
 
     @Override
     protected String getBaseTableName() {
@@ -81,6 +78,17 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
         p.setUsageLimit(rs.wasNull() ? null : usageLimit);
         p.setUsedCount(rs.getInt("UsedCount"));
         p.setActive(rs.getBoolean("IsActive"));
+        try {
+            p.setShowOnBanner(rs.getBoolean("ShowOnBanner"));
+        } catch (SQLException ignored) {
+            p.setShowOnBanner(false);
+        }
+        try {
+            int order = rs.getInt("BannerSortOrder");
+            p.setBannerSortOrder(rs.wasNull() ? null : order);
+        } catch (SQLException ignored) {
+            p.setBannerSortOrder(null);
+        }
         p.setCreatedBy(rs.getInt("CreatedBy"));
         java.sql.Timestamp createdAt = rs.getTimestamp("CreatedAt");
         p.setCreatedAt(createdAt != null ? createdAt.toLocalDateTime() : null);
@@ -89,14 +97,15 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
 
     public boolean insert(Promotion p) {
         String sql = "INSERT INTO Promotions (Code, Name, DiscountType, DiscountValue, MaxDiscountAmount, "
-                + "MinOrderAmount, StartDate, EndDate, UsageLimit, IsActive, CreatedBy, CreatedAt) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "MinOrderAmount, StartDate, EndDate, UsageLimit, IsActive, ShowOnBanner, BannerSortOrder, "
+                + "CreatedBy, CreatedAt) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
-            bindPromotion(ps, p);
-            ps.setObject(11, p.getCreatedBy() > 0 ? p.getCreatedBy() : null);
-            ps.setTimestamp(12, java.sql.Timestamp.valueOf(LocalDateTime.now()));
+            int next = bindPromotion(ps, p);
+            ps.setObject(next++, p.getCreatedBy() > 0 ? p.getCreatedBy() : null);
+            ps.setTimestamp(next, java.sql.Timestamp.valueOf(LocalDateTime.now()));
 
             if (ps.executeUpdate() == 0) return false;
 
@@ -113,7 +122,7 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
     public boolean update(Promotion p) {
         String sql = "UPDATE Promotions SET Code = ?, Name = ?, DiscountType = ?, DiscountValue = ?, "
                 + "MaxDiscountAmount = ?, MinOrderAmount = ?, StartDate = ?, EndDate = ?, UsageLimit = ?, "
-                + "IsActive = ? WHERE PromotionID = ?";
+                + "IsActive = ?, ShowOnBanner = ?, BannerSortOrder = ? WHERE PromotionID = ?";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
 
@@ -127,6 +136,7 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
         }
     }
 
+    /** Gán tham số 1..12: Code..BannerSortOrder. @return index tiếp theo (13) */
     private int bindPromotion(PreparedStatement ps, Promotion p) throws SQLException {
         ps.setString(1, p.getCode());
         ps.setString(2, p.getName());
@@ -138,10 +148,11 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
         ps.setDate(8, p.getEndDate() != null ? Date.valueOf(p.getEndDate()) : null);
         ps.setObject(9, p.getUsageLimit());
         ps.setBoolean(10, p.isActive());
-        return 11;
+        ps.setBoolean(11, p.isShowOnBanner());
+        ps.setObject(12, p.getBannerSortOrder());
+        return 13;
     }
 
-    /** true neu Code da ton tai o 1 khuyen mai KHAC (dung khi validate form, tranh trung ma). */
     public boolean codeExists(String code, Integer excludePromotionId) {
         String sql = "SELECT COUNT(*) FROM Promotions WHERE Code = ? AND IsDeleted = 0"
                 + (excludePromotionId != null ? " AND PromotionID <> ?" : "");
@@ -158,12 +169,6 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
         }
     }
 
-    /**
-     * Tra cuu 1 khuyen mai theo ma (khong phan biet hoa/thuong), dung cho noi
-     * ap dung ma giam gia (vd POS) o cac buoc tich hop sau nay. Chi tra ve
-     * ban ghi CHUA xoa mem; con dieu kien hieu luc/luot dung do
-     * {@link Promotion#calculateDiscount} tu quyet dinh o tang goi.
-     */
     public Promotion findByCode(String code) {
         if (code == null || code.isBlank()) return null;
         String sql = "SELECT " + getColumns() + " FROM Promotions WHERE IsDeleted = 0 AND UPPER(Code) = UPPER(?)";
@@ -179,7 +184,6 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
         }
     }
 
-    /** Tang UsedCount len 1 - goi sau khi 1 don hang da ap dung thanh cong ma nay. */
     public boolean incrementUsedCount(int promotionId) {
         String sql = "UPDATE Promotions SET UsedCount = UsedCount + 1 WHERE PromotionID = ?";
         try (Connection con = DBConnection.getConnection();
@@ -193,12 +197,10 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
         }
     }
 
-    /** Xoa vinh vien (chi goi tu man hinh Thung rac). Khong co bang con nao tham chieu Promotions nen xoa thang. */
     public boolean hardDeletePromotion(int promotionId) {
         return hardDelete(promotionId);
     }
 
-    /** Danh sach khuyen mai dang hoat dong (IsActive=1, chua xoa mem), sap xep theo ten - dung cho combo chon nhanh. */
     public List<Promotion> findAllActiveOrderByName() {
         String sql = "SELECT " + getColumns() + " FROM Promotions WHERE IsDeleted = 0 AND IsActive = 1 ORDER BY Name";
         List<Promotion> result = new ArrayList<>();
@@ -208,6 +210,29 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
             while (rs.next()) result.add(mapResultSet(rs));
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "PromotionDAO.findAllActiveOrderByName", e);
+        }
+        return result;
+    }
+
+    /**
+     * Mã đang được quảng bá trên banner/carousel:
+     * ShowOnBanner=1, IsActive=1, IsDeleted=0, còn trong khoảng ngày, còn lượt dùng.
+     */
+    public List<Promotion> findBannerPromotions() {
+        String sql = "SELECT " + getColumns() + " FROM Promotions "
+                + "WHERE IsDeleted = 0 AND IsActive = 1 AND ShowOnBanner = 1 "
+                + "  AND StartDate <= CAST(GETDATE() AS DATE) "
+                + "  AND EndDate   >= CAST(GETDATE() AS DATE) "
+                + "  AND (UsageLimit IS NULL OR UsedCount < UsageLimit) "
+                + "ORDER BY CASE WHEN BannerSortOrder IS NULL THEN 1 ELSE 0 END, "
+                + "         BannerSortOrder ASC, CreatedAt DESC";
+        List<Promotion> result = new ArrayList<>();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) result.add(mapResultSet(rs));
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "PromotionDAO.findBannerPromotions", e);
         }
         return result;
     }

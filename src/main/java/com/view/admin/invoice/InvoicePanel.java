@@ -19,13 +19,6 @@ import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
-import java.awt.Color;
-import java.awt.Cursor;
-import java.awt.Desktop;
-import java.awt.Font;
-import java.awt.FlowLayout;
-import java.awt.Frame;
-import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
@@ -34,10 +27,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
 
 public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
@@ -54,8 +43,9 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
     public InvoicePanel() {
         super();
 
-        // Không STT / Số mặt hàng. Ngày tạo chỉ dd/MM/yyyy.
+        // Cot trang thai HD (index 6) + cot doi/tra (index 8)
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
+        table.setBadgeColumn(8, this::returnStateLabel, this::returnStateColor);
 
         // Cột "Mã hóa đơn" (index 0): thêm icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
@@ -63,12 +53,13 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
             public Component getTableCellRendererComponent(JTable table, Object value,
                     boolean isSelected, boolean hasFocus, int row, int column) {
                 JLabel c = (JLabel) super.getTableCellRendererComponent(
-                    table, value, isSelected, hasFocus, row, column);
+                        table, value, isSelected, hasFocus, row, column);
                 String text = value != null ? value.toString() : "";
                 c.setText(text);
                 c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
                 c.setHorizontalAlignment(SwingConstants.LEFT);
-                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG
+                        : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 if (text != null && !text.isBlank()) {
                     FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
                     copyIcon.setIconColor(AppColor.ACCENT);
@@ -83,20 +74,21 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
                 return c;
             }
         });
-        
+
         // Xử lý click vào icon copy mã hóa đơn
         table.getTable().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int viewCol = table.getTable().columnAtPoint(e.getPoint());
                 int viewRow = table.getTable().rowAtPoint(e.getPoint());
-                if (viewCol == 0 && viewRow >= 0) { // Cột Mã hóa đơn
+                if (viewCol == 0 && viewRow >= 0) {
                     int modelRow = table.getTable().convertRowIndexToModel(viewRow);
                     Object value = table.getTable().getModel().getValueAt(modelRow, 0);
                     String text = value != null ? value.toString() : "";
                     if (text != null && !text.isBlank()) {
                         copyToClipboard(text);
-                        AppAlert.success(InvoicePanel.this, "Copy thành công", "Đã copy mã hóa đơn: " + text);
+                        AppAlert.success(InvoicePanel.this, "Copy thành công",
+                                "Đã copy mã hóa đơn: " + text);
                     }
                 }
             }
@@ -106,17 +98,17 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         initialLoad();
         applyColumnWidths();
 
-        // Them icon "Xuat PDF" canh icon Xem, de xuat hoa don ngay tren bang
-        // ma khong can mo dialog chi tiet.
         table.setActionColumn(new ActionColumn()
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
-                        modelRow -> { if (supportsView()) viewRow(modelRow); })
+                        modelRow -> {
+                            if (supportsView()) viewRow(modelRow);
+                        })
                 .add("export", FontAwesomeSolid.FILE_PDF, AppColor.ACCENT, "Xuất hóa đơn PDF",
                         this::exportRowPdf));
     }
 
     // ---------------------------------------------------------------
-    // Bo loc: khoang ngay tao hoa don (hien canh o tim kiem tren toolbar)
+    // Bo loc: khoang ngay tao hoa don
     // ---------------------------------------------------------------
 
     private void buildDateFilterBar() {
@@ -140,7 +132,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
         fromDateFilter.onChange(d -> onDateFilterChanged());
         toDateFilter.onChange(d -> onDateFilterChanged());
-
         addToolbarFilter(dateRow);
 
         FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
@@ -158,10 +149,12 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
                 toDateFilter.setValue(null);
                 onDateFilterChanged();
             }
+
             @Override
             public void mouseEntered(MouseEvent e) {
                 clearDateFilterLink.setForeground(AppColor.ERROR);
             }
+
             @Override
             public void mouseExited(MouseEvent e) {
                 clearDateFilterLink.setForeground(AppColor.TEXT_MUTED);
@@ -172,7 +165,8 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
     private void onDateFilterChanged() {
         if (clearDateFilterLink != null) {
-            clearDateFilterLink.setVisible(fromDateFilter.getValue() != null || toDateFilter.getValue() != null);
+            clearDateFilterLink.setVisible(
+                    fromDateFilter.getValue() != null || toDateFilter.getValue() != null);
         }
         applyFilters();
     }
@@ -186,32 +180,49 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
     }
 
     private void applyColumnWidths() {
-        // Mã HĐ | Khách hàng | Người tạo | Ngày tạo | Tổng tiền | PT thanh toán | Trạng thái
-        table.setColumnWidths(175, 150, 130, 110, 120, 120, 110);
-        table.setColumnMinWidths(165, 110, 100, 100, 100, 100, 95);
+        // Mã HĐ | KH | Người tạo | Ngày | Tổng | PT TT | Trạng thái | Đã hoàn | Đổi/trả
+        table.setColumnWidths(165, 140, 120, 100, 110, 110, 100, 110, 120);
+        table.setColumnMinWidths(150, 100, 90, 90, 90, 90, 90, 90, 100);
         if (table.getTable().getColumnModel().getColumnCount() > 0) {
             var col = table.getTable().getColumnModel().getColumn(0);
-            col.setMinWidth(165);
-            col.setPreferredWidth(175);
+            col.setMinWidth(150);
+            col.setPreferredWidth(165);
         }
     }
 
     @Override
-    protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.RECEIPT; }
-    @Override
-    protected String getPageTitle() { return "Quản lý hóa đơn"; }
-    @Override
-    protected String getPageSubtitle() { return "Tra cứu lịch sử các hóa đơn bán hàng đã lập"; }
+    protected FontAwesomeSolid getIcon() {
+        return FontAwesomeSolid.RECEIPT;
+    }
 
-    // Lap hoa don moi thuc hien o luong ban hang (gio hang/thanh toan) -
-    // trang nay chi tra cuu lai, nen an nut them.
     @Override
-    protected String getAddButtonLabel() { return null; }
+    protected String getPageTitle() {
+        return "Quản lý hóa đơn";
+    }
+
+    @Override
+    protected String getPageSubtitle() {
+        return "Tra cứu lịch sử các hóa đơn bán hàng đã lập";
+    }
+
+    @Override
+    protected String getAddButtonLabel() {
+        return null;
+    }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Mã hóa đơn", "Khách hàng", "Người tạo", "Ngày tạo",
-                "Tổng tiền", "PT thanh toán", "Trạng thái"};
+        return new String[]{
+                "Mã hóa đơn",
+                "Khách hàng",
+                "Người tạo",
+                "Ngày tạo",
+                "Tổng tiền",
+                "PT thanh toán",
+                "Trạng thái",
+                "Đã hoàn",
+                "Đổi/trả"
+        };
     }
 
     @Override
@@ -221,22 +232,30 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
                 item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ",
                 item.getCreatedByName(),
                 item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_FORMAT) : "-",
-                NumberUtil.formatThousands(item.getTotalAmount().longValue()),
+                NumberUtil.formatThousands(item.getTotalAmount() != null
+                        ? item.getTotalAmount().longValue() : 0L),
                 paymentMethodLabel(item.getPaymentMethod()),
-                statusLabel(item)
+                statusLabel(item),
+                refundedLabel(item),
+                returnStateLabel(item)
         };
     }
 
-    /** Tổng tiền (chỉ số 4) — sort theo số. */
+    /** Tổng tiền (4) + Đã hoàn (7) — sort theo số. */
     @Override
-    protected int[] numericColumns() { return new int[]{4}; }
+    protected int[] numericColumns() {
+        return new int[]{4, 7};
+    }
 
     @Override
-    protected String getEntityLabel() { return "hóa đơn"; }
+    protected String getEntityLabel() {
+        return "hóa đơn";
+    }
 
     @Override
     protected String getItemDisplayName(Invoice item) {
-        return item.getInvoiceCode() + " - " + (item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ");
+        return item.getInvoiceCode() + " - "
+                + (item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ");
     }
 
     @Override
@@ -251,13 +270,16 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
     @Override
     protected List<Invoice> fetchAllForExport() {
-        return invoiceDAO.getAll();
+        List<Invoice> all = invoiceDAO.getAll();
+        invoiceDAO.attachReturnSummary(all);
+        return all;
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo mã hóa đơn, khách hàng, người tạo..."; }
+    protected String getSearchPlaceholder() {
+        return "Tìm theo mã hóa đơn, khách hàng, người tạo...";
+    }
 
-    /** Gợi ý autocomplete: mã hóa đơn, tên khách hàng, người tạo. */
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
         List<String> names = new ArrayList<>();
@@ -272,35 +294,42 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
                 names.add(inv.getCreatedByName());
             }
         }
-        return new ArrayList<>(new LinkedHashSet<>(names)); // loại trùng, giữ thứ tự
+        return new ArrayList<>(new LinkedHashSet<>(names));
     }
 
-    // ---------------------------------------------------------------
-    // Chi xem chi tiet - khong sua/xoa (xem ly do o javadoc dau file).
-    // Huy hoa don thuc hien ben trong InvoiceDetailDialog.
-    // ---------------------------------------------------------------
+    @Override
+    protected boolean supportsEdit() {
+        return false;
+    }
 
     @Override
-    protected boolean supportsEdit() { return false; }
+    protected boolean supportsDelete() {
+        return false;
+    }
+
     @Override
-    protected boolean supportsDelete() { return false; }
-    @Override
-    protected boolean supportsView() { return true; }
+    protected boolean supportsView() {
+        return true;
+    }
 
     @Override
     protected void viewRow(int modelRow) {
         Invoice item = rowToItem(modelRow);
         if (item == null) return;
+        // Dam bao co tom tat doi/tra khi mo chi tiet
+        invoiceDAO.attachReturnSummary(item);
         openDetailDialog(item);
     }
 
     @Override
     protected void openForm(Invoice item) {
-        // Khong bao gio duoc goi: getAddButtonLabel() = null va supportsEdit() = false.
+        // Khong bao gio duoc goi
     }
 
     @Override
-    protected boolean deleteItem(Invoice item) { return false; }
+    protected boolean deleteItem(Invoice item) {
+        return false;
+    }
 
     private void openDetailDialog(Invoice item) {
         Window owner = SwingUtilities.getWindowAncestor(this);
@@ -322,7 +351,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         return inv.isCancelled() ? "Đã hủy" : "Hoàn tất";
     }
 
-    /** BaseTable.setBadgeColumn goi lai ham nay voi gia tri DA la chuoi nhan (khong phai Invoice). */
     private String statusLabel(Object value) {
         return String.valueOf(value);
     }
@@ -331,35 +359,75 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         return "Đã hủy".equals(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
     }
 
+    // ---------------------------------------------------------------
+    // Doi/tra + da hoan
+    // ---------------------------------------------------------------
+
+    private String refundedLabel(Invoice inv) {
+        if (inv == null || inv.getRefundedAmount() == null
+                || inv.getRefundedAmount().signum() <= 0) {
+            return "—";
+        }
+        return NumberUtil.formatThousands(inv.getRefundedAmount().longValue());
+    }
+
+    private String returnStateLabel(Invoice inv) {
+        if (inv == null || inv.isCancelled()) return "—";
+        String state = inv.getReturnState();
+        if (state == null || "NONE".equalsIgnoreCase(state)) return "—";
+        if ("FULL".equalsIgnoreCase(state)) return "Đã trả hết";
+        if ("PARTIAL".equalsIgnoreCase(state)) return "Trả một phần";
+        // fallback neu model co getReturnStateLabel()
+        try {
+            return inv.getReturnStateLabel();
+        } catch (Exception ignore) {
+            return state;
+        }
+    }
+
+    private String returnStateLabel(Object value) {
+        return String.valueOf(value);
+    }
+
+    private Color returnStateColor(Object value) {
+        String s = String.valueOf(value);
+        if ("Đã trả hết".equals(s)) return AppColor.WARNING;
+        if ("Trả một phần".equals(s)) return AppColor.ACCENT;
+        return AppColor.TEXT_MUTED;
+    }
+
     static String paymentMethodLabel(String method) {
         if (method == null) return "-";
         switch (method) {
-            case "CASH": return "Tiền mặt";
-            case "BANK_TRANSFER": return "Chuyển khoản";
-            case "PAYPAL": return "PayPal";
-            case "CARD": return "Thẻ";
-            default: return method;
+            case "CASH":
+                return "Tiền mặt";
+            case "BANK_TRANSFER":
+                return "Chuyển khoản";
+            case "PAYPAL":
+                return "PayPal";
+            case "CARD":
+                return "Thẻ";
+            default:
+                return method;
         }
     }
 
     // ---------------------------------------------------------------
-    // Xuat hoa don PDF truc tiep tu icon tren bang (khong can mo dialog)
+    // Xuat PDF
     // ---------------------------------------------------------------
 
     private void exportRowPdf(int modelRow) {
         Invoice item = rowToItem(modelRow);
         if (item == null) return;
         try {
+            invoiceDAO.attachReturnSummary(item);
             List<InvoiceDetail> details = invoiceDAO.getDetails(item.getInvoiceId());
-
             String fileName = "HoaDon_" + item.getInvoiceCode()
                     .replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
             File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
             if (!tempDir.exists()) tempDir.mkdirs();
             File pdfFile = new File(tempDir, fileName);
-
             InvoicePdfExporter.exportInvoice(item, details, pdfFile);
-
             if (Desktop.isDesktopSupported()) {
                 Desktop.getDesktop().open(pdfFile);
             } else {
@@ -374,18 +442,12 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         }
     }
 
-    // ---------------------------------------------------------------
-    // Helper: copy mã hóa đơn vào clipboard
-    // ---------------------------------------------------------------
-
-    /** Copy chuỗi vào clipboard hệ thống. */
     private void copyToClipboard(String text) {
         try {
             StringSelection selection = new StringSelection(text);
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
             clipboard.setContents(selection, null);
         } catch (Exception ignored) {
-            // Bỏ qua nếu không copy được
         }
     }
 }

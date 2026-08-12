@@ -39,13 +39,27 @@ public class Invoice {
 
     private int pointsEarned;
 
+    // ---- Tóm tắt đổi/trả (không lưu DB, gắn từ InvoiceDAO.attachReturnSummary) ----
+    /** Tổng tiền hoàn thực tế (Σ ReturnExchanges.TotalValue APPROVED). */
+    private BigDecimal refundedAmount = BigDecimal.ZERO;
+    /** SubTotal gốc theo dòng InvoiceDetails (trước khi trigger thu hẹp). */
+    private BigDecimal originalSubTotal = BigDecimal.ZERO;
+    /** Số phiếu đổi/trả đã duyệt. */
+    private int approvedReturnCount;
+    /**
+     * NONE | PARTIAL | FULL — suy từ hàng đã trả vs hàng bán.
+     * Không thay Status DB (vẫn ACTIVE/CANCELLED).
+     */
+    private String returnState = "NONE";
+
     public Invoice() {
     }
 
     public int getInvoiceId() { return invoiceId; }
+    public void setInvoiceId(int invoiceId) { this.invoiceId = invoiceId; }
+
     public int getShiftId() { return shiftId; }
     public void setShiftId(int shiftId) { this.shiftId = shiftId; }
-    public void setInvoiceId(int invoiceId) { this.invoiceId = invoiceId; }
 
     public String getInvoiceCode() { return invoiceCode; }
     public void setInvoiceCode(String invoiceCode) { this.invoiceCode = invoiceCode; }
@@ -124,6 +138,30 @@ public class Invoice {
     public int getPointsEarned() { return pointsEarned; }
     public void setPointsEarned(int pointsEarned) { this.pointsEarned = pointsEarned; }
 
+    public BigDecimal getRefundedAmount() {
+        return refundedAmount != null ? refundedAmount : BigDecimal.ZERO;
+    }
+    public void setRefundedAmount(BigDecimal refundedAmount) {
+        this.refundedAmount = refundedAmount != null ? refundedAmount : BigDecimal.ZERO;
+    }
+
+    public BigDecimal getOriginalSubTotal() {
+        return originalSubTotal != null ? originalSubTotal : BigDecimal.ZERO;
+    }
+    public void setOriginalSubTotal(BigDecimal originalSubTotal) {
+        this.originalSubTotal = originalSubTotal != null ? originalSubTotal : BigDecimal.ZERO;
+    }
+
+    public int getApprovedReturnCount() { return approvedReturnCount; }
+    public void setApprovedReturnCount(int approvedReturnCount) {
+        this.approvedReturnCount = Math.max(0, approvedReturnCount);
+    }
+
+    public String getReturnState() { return returnState != null ? returnState : "NONE"; }
+    public void setReturnState(String returnState) {
+        this.returnState = returnState != null ? returnState : "NONE";
+    }
+
     public boolean isCancelled() {
         return "CANCELLED".equalsIgnoreCase(status);
     }
@@ -131,5 +169,29 @@ public class Invoice {
     public boolean isCancellableToday() {
         return !isCancelled() && createdAt != null
                 && createdAt.toLocalDate().isEqual(java.time.LocalDate.now());
+    }
+
+    public boolean hasReturns() {
+        return approvedReturnCount > 0 || getRefundedAmount().signum() > 0;
+    }
+
+    /** Nhãn hiển thị cột trạng thái đổi/trả trên bảng hóa đơn. */
+    public String getReturnStateLabel() {
+        if (isCancelled()) return "Đã hủy";
+        return switch (getReturnState()) {
+            case "FULL" -> "Đã trả hết";
+            case "PARTIAL" -> "Trả một phần";
+            default -> "—";
+        };
+    }
+
+    /**
+     * Ghi chú ngắn cho chi tiết HD / tooltip:
+     * vd "Đã hoàn 15.000đ · 1 phiếu trả".
+     */
+    public String getReturnNote() {
+        if (!hasReturns()) return "";
+        String money = String.format("%,.0fđ", getRefundedAmount());
+        return "Đã hoàn " + money + " · " + approvedReturnCount + " phiếu trả";
     }
 }

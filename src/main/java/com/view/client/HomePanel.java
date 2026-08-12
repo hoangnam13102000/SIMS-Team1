@@ -1,6 +1,7 @@
 package com.view.client;
 
 import com.components.EmptyState;
+import com.components.PromoBannerCarousel;
 import com.components.LoadingOverlay;
 import com.components.product.ProductGrid;
 import com.core.log.AppLogger;
@@ -42,6 +43,8 @@ public class HomePanel extends JPanel {
     private final JPanel contentArea;
     private final ProductGrid productGrid;
     private final LoadingOverlay loadingOverlay;
+
+    private final PromoBannerCarousel promoCarousel = new PromoBannerCarousel();
 
     private String currentKeyword = "";
     private java.util.function.Consumer<Product> onProductClickListener;
@@ -125,6 +128,18 @@ public class HomePanel extends JPanel {
         wrapper.setOpaque(false);
         wrapper.setBorder(new EmptyBorder(AppSpacing.XL, AppSpacing.XL, 0, AppSpacing.XL));
 
+        // Hero + promo carousel
+        JPanel top = new JPanel(new BorderLayout());
+        top.setOpaque(false);
+        top.add(buildHeroBanner(), BorderLayout.NORTH);
+
+        promoCarousel.setOnCodeCopied(code ->
+                AppAlert.success(this, "Đã sao chép",
+                        "Mã \"" + code + "\" đã được copy. Dùng khi thanh toán."));
+        promoCarousel.reload();
+        top.add(promoCarousel, BorderLayout.SOUTH);
+
+        // Feature strip + section title
         JPanel featureWrap = new JPanel(new BorderLayout());
         featureWrap.setOpaque(false);
         featureWrap.setBorder(new EmptyBorder(AppSpacing.XL, 0, 0, 0));
@@ -137,7 +152,7 @@ public class HomePanel extends JPanel {
 
         featureWrap.add(sectionWrap, BorderLayout.SOUTH);
 
-        wrapper.add(buildHeroBanner(), BorderLayout.NORTH);
+        wrapper.add(top, BorderLayout.NORTH);
         wrapper.add(featureWrap, BorderLayout.SOUTH);
         return wrapper;
     }

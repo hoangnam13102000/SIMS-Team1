@@ -9,6 +9,7 @@ import com.lowagie.text.pdf.*;
 import java.awt.Color;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -88,7 +89,8 @@ public class InvoicePdfExporter {
         document.add(spacer);
 
         addInvoiceInfo(document, invoice);
-        addProductTable(document, details);
+        addProductTable(document, invoice, details);
+        addReturnNote(document, invoice);
         addTotalSection(document, invoice);
         addFooter(document);
 
@@ -175,13 +177,26 @@ public class InvoicePdfExporter {
         document.add(s);
     }
 
-    private static void addProductTable(Document document, List<InvoiceDetail> details) throws DocumentException {
-        PdfPTable table = new PdfPTable(new float[]{0.6f, 3.5f, 1.2f, 1f, 1.5f});
+    private static void addProductTable(Document document, Invoice invoice, List<InvoiceDetail> details)
+            throws DocumentException {
+        // Hoa don co doi/tra -> them cot DA TRA / CON LAI va tinh lai THANH TIEN
+        // theo so luong CON LAI, de khop voi Invoice.getSubTotal()/getTotalAmount()
+        // (da duoc trigger DB dieu chinh giam ngay khi phieu tra duoc duyet).
+        // Khong lam vay se in ra SL/Thanh tien GOC (truoc khi tra) trong khi dong
+        // TONG CONG lai la so MOI (sau khi tra) -> lech so, gay hieu lam.
+        boolean showReturns = invoice.hasReturns();
+
+        float[] widths = showReturns
+                ? new float[]{0.5f, 2.6f, 1f, 0.65f, 0.7f, 0.7f, 1.35f}
+                : new float[]{0.6f, 3.5f, 1.2f, 1f, 1.5f};
+        PdfPTable table = new PdfPTable(widths);
         table.setWidthPercentage(100);
         table.setSpacingBefore(4);
         table.setSpacingAfter(8);
 
-        String[] headers = {"STT", "SAN PHAM", "DON GIA", "SL", "THANH TIEN"};
+        String[] headers = showReturns
+                ? new String[]{"STT", "SAN PHAM", "DON GIA", "SL", "DA TRA", "CON LAI", "THANH TIEN"}
+                : new String[]{"STT", "SAN PHAM", "DON GIA", "SL", "THANH TIEN"};
         for (String h : headers) {
             PdfPCell cell = new PdfPCell(new Phrase(h, tableHeaderFont));
             cell.setBackgroundColor(HEADER_BG);
@@ -196,56 +211,54 @@ public class InvoicePdfExporter {
         for (InvoiceDetail d : details) {
             boolean alt = stt % 2 == 0;
 
-            PdfPCell sttCell = new PdfPCell(new Phrase(String.valueOf(stt), tableBodyFont));
-            sttCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            sttCell.setPadding(8);
-            sttCell.setBorder(Rectangle.NO_BORDER);
-            sttCell.setBorderWidthBottom(0.5f);
-            sttCell.setBorderColorBottom(BORDER_COLOR);
-            if (alt) sttCell.setBackgroundColor(ROW_ALT_BG);
+            table.addCell(bodyCell(String.valueOf(stt), Element.ALIGN_CENTER, alt));
+            table.addCell(bodyCell(d.getProductName(), Element.ALIGN_LEFT, alt));
+            table.addCell(bodyCell(NumberUtil.formatThousands(d.getUnitPrice().longValue()),
+                    Element.ALIGN_RIGHT, alt));
+            table.addCell(bodyCell(String.valueOf(d.getQuantity()), Element.ALIGN_CENTER, alt));
 
-            PdfPCell nameCell = new PdfPCell(new Phrase(d.getProductName(), tableBodyFont));
-            nameCell.setPadding(8);
-            nameCell.setBorder(Rectangle.NO_BORDER);
-            nameCell.setBorderWidthBottom(0.5f);
-            nameCell.setBorderColorBottom(BORDER_COLOR);
-            if (alt) nameCell.setBackgroundColor(ROW_ALT_BG);
-
-            PdfPCell priceCell = new PdfPCell(new Phrase(
-                    NumberUtil.formatThousands(d.getUnitPrice().longValue()), tableBodyFont));
-            priceCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            priceCell.setPadding(8);
-            priceCell.setBorder(Rectangle.NO_BORDER);
-            priceCell.setBorderWidthBottom(0.5f);
-            priceCell.setBorderColorBottom(BORDER_COLOR);
-            if (alt) priceCell.setBackgroundColor(ROW_ALT_BG);
-
-            PdfPCell qtyCell = new PdfPCell(new Phrase(String.valueOf(d.getQuantity()), tableBodyFont));
-            qtyCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            qtyCell.setPadding(8);
-            qtyCell.setBorder(Rectangle.NO_BORDER);
-            qtyCell.setBorderWidthBottom(0.5f);
-            qtyCell.setBorderColorBottom(BORDER_COLOR);
-            if (alt) qtyCell.setBackgroundColor(ROW_ALT_BG);
-
-            PdfPCell totalCell = new PdfPCell(new Phrase(
-                    NumberUtil.formatThousands(d.getLineTotal().longValue()), tableBodyFont));
-            totalCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            totalCell.setPadding(8);
-            totalCell.setBorder(Rectangle.NO_BORDER);
-            totalCell.setBorderWidthBottom(0.5f);
-            totalCell.setBorderColorBottom(BORDER_COLOR);
-            if (alt) totalCell.setBackgroundColor(ROW_ALT_BG);
-
-            table.addCell(sttCell);
-            table.addCell(nameCell);
-            table.addCell(priceCell);
-            table.addCell(qtyCell);
-            table.addCell(totalCell);
+            if (showReturns) {
+                table.addCell(bodyCell(String.valueOf(d.getReturnedQuantity()), Element.ALIGN_CENTER, alt));
+                table.addCell(bodyCell(String.valueOf(d.getRemainingQuantity()), Element.ALIGN_CENTER, alt));
+                long netLineTotal = d.getUnitPrice()
+                        .multiply(BigDecimal.valueOf(d.getRemainingQuantity()))
+                        .longValue();
+                table.addCell(bodyCell(NumberUtil.formatThousands(netLineTotal), Element.ALIGN_RIGHT, alt));
+            } else {
+                table.addCell(bodyCell(NumberUtil.formatThousands(d.getLineTotal().longValue()),
+                        Element.ALIGN_RIGHT, alt));
+            }
             stt++;
         }
 
         document.add(table);
+    }
+
+    /** 1 o du lieu trong bang san pham - dung chung cho ca 2 layout (co/khong doi tra). */
+    private static PdfPCell bodyCell(String text, int align, boolean alt) {
+        PdfPCell cell = new PdfPCell(new Phrase(text, tableBodyFont));
+        cell.setHorizontalAlignment(align);
+        cell.setPadding(8);
+        cell.setBorder(Rectangle.NO_BORDER);
+        cell.setBorderWidthBottom(0.5f);
+        cell.setBorderColorBottom(BORDER_COLOR);
+        if (alt) cell.setBackgroundColor(ROW_ALT_BG);
+        return cell;
+    }
+
+    /** Ghi chu "Da hoan ... / N phieu tra" ngay duoi bang san pham, chi hien khi hoa don co doi/tra. */
+    private static void addReturnNote(Document document, Invoice invoice) throws DocumentException {
+        if (!invoice.hasReturns()) return;
+
+        String note = "Da hoan: " + formatVND(invoice.getRefundedAmount().longValue())
+                + "  -  " + invoice.getApprovedReturnCount() + " phieu doi/tra da duyet"
+                + " (SL/thanh tien tren da tru hang tra, xem chi tiet phieu doi/tra tai quay).";
+        Font noteFont = new Font(totalLabelFont.getBaseFont(), 9, Font.ITALIC, new Color(180, 83, 9)); // Amber-700
+
+        Paragraph p = new Paragraph(note, noteFont);
+        p.setSpacingBefore(2);
+        p.setSpacingAfter(6);
+        document.add(p);
     }
 
     private static void addTotalSection(Document document, Invoice invoice) throws DocumentException {

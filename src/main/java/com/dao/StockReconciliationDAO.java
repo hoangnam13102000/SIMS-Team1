@@ -1,5 +1,4 @@
 package com.dao;
-
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.event.AppEventBus;
@@ -7,7 +6,6 @@ import com.event.DataChangedEvent;
 import com.model.StockReconciliation;
 import com.utils.DBConnection;
 import com.utils.PaginationHelper;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -17,7 +15,6 @@ import java.sql.Types;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-
 /**
  * DAO cho StockReconciliation (Doi chieu / kiem ke kho cuoi ngay).
  *
@@ -28,44 +25,36 @@ import java.util.List;
  * ho tro sua/xoa - xem trg_StockReconciliation_BlockDelete (R3).
  */
 public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
-
     private static final String BASE_TABLE =
             "StockReconciliation r "
                     + "JOIN Products p ON r.ProductID = p.ProductID "
                     + "JOIN Users u ON r.CreatedBy = u.UserID";
-
     @Override
     protected Connection getConnection() throws SQLException {
         return DBConnection.getConnection();
     }
-
     @Override
     protected String getTableName() {
         return BASE_TABLE;
     }
-
     @Override
     protected String getJoinClause() {
         return null;
     }
-
     @Override
     protected String getColumns() {
         return "r.ReconciliationID, r.ProductID, p.ProductName, p.ProductCode, "
                 + "r.SystemStock, r.ActualStock, r.Discrepancy, r.Note, "
                 + "r.CreatedBy, u.FullName AS CreatedByName, r.CreatedAt";
     }
-
     @Override
     protected String getOrderBy() {
         return "r.CreatedAt DESC, r.ReconciliationID DESC";
     }
-
     @Override
     protected String[] getSearchableColumns() {
         return new String[]{"p.ProductName", "p.ProductCode", "u.FullName"};
     }
-
     @Override
     protected StockReconciliation mapResultSet(ResultSet rs) throws SQLException {
         StockReconciliation r = new StockReconciliation();
@@ -83,7 +72,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
         r.setCreatedAt(createdAt != null ? createdAt.toLocalDateTime() : null);
         return r;
     }
-
     /**
      * Luu ca 1 phien kiem ke (nhieu san pham cung luc) trong 1 transaction
      * duy nhat - hoac tat ca deu duoc ghi, hoac khong dong nao ca. SystemStock
@@ -92,10 +80,8 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
      */
     public boolean saveSession(List<StockReconciliation> rows, int createdByUserId) {
         if (rows == null || rows.isEmpty()) return true;
-
         String sql = "INSERT INTO StockReconciliation (ProductID, SystemStock, ActualStock, Note, CreatedBy) "
                 + "VALUES (?, 0, ?, ?, ?)";
-
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
@@ -129,7 +115,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             return false;
         }
     }
-
     /** Dem so dong lech (Discrepancy <> 0) trong 1 khoang thoi gian - dung cho thong ke/dashboard neu can. */
     public int countDiscrepanciesSince(java.time.LocalDateTime since) {
         String sql = "SELECT COUNT(*) FROM StockReconciliation WHERE Discrepancy <> 0 AND CreatedAt >= ?";
@@ -144,7 +129,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             return 0;
         }
     }
-
     /**
      * Tim kiem + loc doi chieu kho theo tu khoa (ten SP / ma SP / nguoi doi chieu)
      * va/hoac khoang ngay tao phien doi chieu.
@@ -154,10 +138,8 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
      */
     public PaginationHelper.PaginationResult<StockReconciliation> getPagedFiltered(
             int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
-
         List<String> conditions = new ArrayList<>();
         List<Object> params = new ArrayList<>();
-
         String trimmedKeyword = keyword == null ? "" : keyword.trim();
         if (!trimmedKeyword.isEmpty()) {
             String[] columns = getSearchableColumns();
@@ -171,7 +153,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             keywordCondition.append(")");
             conditions.add(keywordCondition.toString());
         }
-
         // Loc theo [fromDate 00:00:00, toDate+1 00:00:00) de bao gom tron ca ngay toDate
         if (fromDate != null) {
             conditions.add("r.CreatedAt >= ?");
@@ -181,18 +162,15 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             conditions.add("r.CreatedAt < ?");
             params.add(Timestamp.valueOf(toDate.plusDays(1).atStartOfDay()));
         }
-
         String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
         return getPaged(page, pageSize, whereClause, params.toArray());
     }
-
     private String escapeLike(String raw) {
         return raw.replace("\\", "\\\\")
                 .replace("%", "\\%")
                 .replace("_", "\\_")
                 .replace("[", "\\[");
     }
-
     /**
      * Kiem tra da co it nhat 1 dong doi chieu trong ngay {@code date} chua.
      */
@@ -213,7 +191,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             return false;
         }
     }
-
     /**
      * Tao phien doi chieu cho ngay {@code date}: chen MOI san pham dang ACTIVE
      * (va category ACTIVE) chua co trong phien ngay do. ActualStock = Stock hien
@@ -224,7 +201,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
      */
     public int ensureDailySession(LocalDate date, int createdByUserId) {
         if (date == null) return 0;
-
         // Lay cac ProductID ACTIVE chua co dong doi chieu trong ngay
         String selectMissing = ""
                 + "SELECT p.ProductID, p.Stock "
@@ -236,10 +212,8 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                 + "  WHERE r.ProductID = p.ProductID "
                 + "    AND r.CreatedAt >= ? AND r.CreatedAt < ?"
                 + ")";
-
         String insertSql = "INSERT INTO StockReconciliation (ProductID, SystemStock, ActualStock, Note, CreatedBy) "
                 + "VALUES (?, 0, ?, NULL, ?)";
-
         int created = 0;
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
@@ -254,7 +228,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                         }
                     }
                 }
-
                 if (!missing.isEmpty()) {
                     try (PreparedStatement ps = con.prepareStatement(insertSql)) {
                         for (int[] row : missing) {
@@ -270,7 +243,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                         }
                     }
                 }
-
                 con.commit();
                 if (created > 0) {
                     AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.STOCK_RECONCILIATION));
@@ -288,7 +260,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             return 0;
         }
     }
-
     /**
      * Cap nhat ton thuc te cua 1 dong doi chieu, dong thoi dieu chinh Products.Stock
      * ve dung so dem moi va ghi InventoryTransactions neu co chenh.
@@ -298,18 +269,15 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
      */
     public boolean updateActualStock(int reconciliationId, int newActualStock, int userId) {
         if (newActualStock < 0) return false;
-
         String selectSql = "SELECT r.ProductID, r.ActualStock, r.SystemStock, p.Stock AS CurrentStock, r.CreatedAt "
                 + "FROM StockReconciliation r "
                 + "JOIN Products p ON r.ProductID = p.ProductID "
                 + "WHERE r.ReconciliationID = ?";
-
         String updateReconSql = "UPDATE StockReconciliation SET ActualStock = ? WHERE ReconciliationID = ?";
         String updateProductSql = "UPDATE Products SET Stock = ? WHERE ProductID = ?";
         String insertTxSql = "INSERT INTO InventoryTransactions "
                 + "(ProductID, TransactionType, Direction, Quantity, StockBefore, StockAfter, RefTable, RefID, CreatedBy, Note) "
                 + "VALUES (?, 'RECONCILE_ADJUST', ?, ?, ?, ?, 'StockReconciliation', ?, ?, ?)";
-
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
@@ -317,7 +285,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                 int oldActual;
                 int currentStock;
                 java.sql.Timestamp createdAt;
-
                 try (PreparedStatement ps = con.prepareStatement(selectSql)) {
                     ps.setInt(1, reconciliationId);
                     try (ResultSet rs = ps.executeQuery()) {
@@ -331,36 +298,30 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                         createdAt = rs.getTimestamp("CreatedAt");
                     }
                 }
-
-                // Chi cho sua dong cua ngay hom nay
+                // Chi cho sua dong cua ngay hom nay → LOP 3 chặn ở tầng DB
                 LocalDate rowDate = createdAt.toLocalDateTime().toLocalDate();
                 if (!rowDate.equals(LocalDate.now())) {
                     con.rollback();
                     return false;
                 }
-
                 if (oldActual == newActualStock) {
                     con.commit();
                     return true;
                 }
-
                 try (PreparedStatement ps = con.prepareStatement(updateReconSql)) {
                     ps.setInt(1, newActualStock);
                     ps.setInt(2, reconciliationId);
                     ps.executeUpdate();
                 }
-
                 // Dieu chinh Products.Stock ve dung so dem thuc te
                 int stockBefore = currentStock;
                 int stockAfter = newActualStock;
                 int diff = stockAfter - stockBefore;
-
                 try (PreparedStatement ps = con.prepareStatement(updateProductSql)) {
                     ps.setInt(1, stockAfter);
                     ps.setInt(2, productId);
                     ps.executeUpdate();
                 }
-
                 if (diff != 0) {
                     try (PreparedStatement ps = con.prepareStatement(insertTxSql)) {
                         ps.setInt(1, productId);
@@ -374,7 +335,6 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                         ps.executeUpdate();
                     }
                 }
-
                 con.commit();
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.STOCK_RECONCILIATION));
                 return true;
@@ -389,5 +349,38 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                     "StockReconciliationDAO.updateActualStock id=" + reconciliationId, e);
             return false;
         }
+    }
+
+    // ===================== 2 METHOD MOI THEM =====================
+
+    /**
+     * Lay ngay cua phien doi chieu MOI NHAT trong CSDL (duoc dung de phat
+     * hien da sang ngay moi chua tao phien). Tra ve null neu chua co dong nao.
+     */
+    public LocalDate getLatestSessionDate() {
+        String sql = "SELECT TOP 1 CAST(CreatedAt AS DATE) AS SessionDate "
+                + "FROM StockReconciliation ORDER BY CreatedAt DESC";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                java.sql.Date d = rs.getDate("SessionDate");
+                return d != null ? d.toLocalDate() : null;
+            }
+            return null;
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StockReconciliationDAO.getLatestSessionDate", e);
+            return null;
+        }
+    }
+
+    /**
+     * Kiem tra xem ngay {@code date} co phai la "qua khu" so voi hom nay khong.
+     * Dung de phong nguoi dung sua doi dong lich su (bao toan doi soat).
+     */
+    public boolean isDateLocked(LocalDate date) {
+        if (date == null) return true;
+        return date.isBefore(LocalDate.now());
     }
 }

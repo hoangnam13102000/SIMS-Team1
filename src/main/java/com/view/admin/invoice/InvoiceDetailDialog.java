@@ -1,485 +1,541 @@
 package com.view.admin.invoice;
 
-import com.components.BaseDialog;
-import com.components.table.ImageColumn;
-import com.components.table.RowColorProvider;
+import com.components.AppAlert;
 import com.dao.InvoiceDAO;
 import com.dao.ReturnExchangeDAO;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
+import com.model.ReturnExchange;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
 import com.theme.AppColor;
-import com.theme.AppFont;
+import com.utils.ImageUtil;
 import com.utils.NumberUtil;
+import com.utils.PaginationHelper;
 import com.utils.pdf.InvoicePdfExporter;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.JDialog;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.KeyStroke;
-import javax.swing.SwingConstants;
-import javax.swing.WindowConstants;
+import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
+import java.awt.*;
 import java.awt.Desktop;
-import java.awt.Dialog;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.Frame;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.GridLayout;
-import java.awt.RenderingHints;
-import java.awt.event.KeyEvent;
 import java.io.File;
+import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Dialog xem chi tiet 1 hoa don ban hang — thiet ke dong bo voi OrderDetailDialog:
- * header (icon + ma + trang thai), card thong tin luoi 2 cot, bang san pham co anh.
- * Neu hoa don con ACTIVE + trong ngay + co quyen INVOICE_CANCEL thi hien nut "Huy hoa don".
+ * Chi tiet hoa don ban hang + tom tat doi/tra.
+ * Khong sua dong InvoiceDetails goc; chi hien thi SL da tra / con lai va so tien da hoan.
  */
 public class InvoiceDetailDialog extends JDialog {
 
-    private static final DateTimeFormatter DATE_TIME_FORMAT =
+    private static final DateTimeFormatter DATE_TIME =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
+    private final Invoice invoice;
     private final InvoiceDAO invoiceDAO;
     private final ReturnExchangeDAO returnExchangeDAO = new ReturnExchangeDAO();
-    private Invoice invoice;
-    private final List<InvoiceDetail> details;
+
+    private JLabel returnNoteLabel;
+    private JLabel refundedValueLabel;
+    private JLabel netValueLabel;
 
     public InvoiceDetailDialog(Frame owner, Invoice invoice, InvoiceDAO invoiceDAO) {
-        super(owner, "Chi tiết hóa đơn", Dialog.ModalityType.APPLICATION_MODAL);
+        super(owner, "Chi tiết hóa đơn", true);
         this.invoice = invoice;
         this.invoiceDAO = invoiceDAO;
-        this.details = invoiceDAO.getDetails(invoice.getInvoiceId());
 
-        setSize(780, 680);
-        setMinimumSize(new Dimension(640, 520));
-        setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-        setLayout(new BorderLayout());
+        // Dam bao co tom tat doi/tra
+        if (invoice != null) {
+            invoiceDAO.attachReturnSummary(invoice);
+        }
+
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        setSize(920, 640);
+        setLocationRelativeTo(owner);
+        setLayout(new BorderLayout(0, 0));
         getContentPane().setBackground(AppColor.WHITE);
 
         add(buildHeader(), BorderLayout.NORTH);
-        add(buildBody(this.details), BorderLayout.CENTER);
+        add(buildBody(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
-
-        getRootPane().registerKeyboardAction(e -> dispose(),
-                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
-                JComponent.WHEN_IN_FOCUSED_WINDOW);
-
-        setLocationRelativeTo(owner);
     }
 
     // ---------------------------------------------------------------
     // Header
     // ---------------------------------------------------------------
 
-    private JPanel buildHeader() {
-        JPanel header = new JPanel(new BorderLayout(14, 0));
+    private JComponent buildHeader() {
+        JPanel header = new JPanel(new BorderLayout(12, 8));
+        header.setBorder(new EmptyBorder(16, 20, 12, 20));
         header.setBackground(AppColor.WHITE);
-        header.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
-                new EmptyBorder(18, 24, 18, 24)));
 
-        boolean cancelled = invoice.isCancelled();
-        Color statusIconColor = cancelled ? AppColor.ERROR : AppColor.SUCCESS;
-        Color statusIconBg = cancelled ? AppColor.ERROR_BG : AppColor.SUCCESS_BG;
-        FontIcon icon = FontIcon.of(FontAwesomeSolid.RECEIPT, 18);
-        icon.setIconColor(statusIconColor);
-        JLabel iconBadge = new JLabel(icon, SwingConstants.CENTER) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(statusIconBg);
-                g2.fillOval(0, 0, getWidth(), getHeight());
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        iconBadge.setPreferredSize(new Dimension(44, 44));
+        JPanel titleCol = new JPanel();
+        titleCol.setOpaque(false);
+        titleCol.setLayout(new BoxLayout(titleCol, BoxLayout.Y_AXIS));
 
-        JPanel titleBox = new JPanel();
-        titleBox.setOpaque(false);
-        titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
+        JLabel title = new JLabel(invoice.getInvoiceCode() != null ? invoice.getInvoiceCode() : "—");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        title.setForeground(AppColor.TEXT_PRIMARY);
+        titleCol.add(title);
 
-        JLabel titleLabel = new JLabel(invoice.getInvoiceCode());
-        titleLabel.setFont(AppFont.DIALOG_TITLE);
-        titleLabel.setForeground(AppColor.TEXT_PRIMARY);
-        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel sub = new JLabel(buildSubtitle());
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        sub.setForeground(AppColor.TEXT_MUTED);
+        titleCol.add(Box.createVerticalStrut(4));
+        titleCol.add(sub);
 
-        String customer = invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ";
-        String statusText = cancelled ? "Đã hủy" : "Hoàn tất";
-        JLabel subtitleLabel = new JLabel(customer + "  ·  " + statusText);
-        subtitleLabel.setFont(AppFont.BODY);
-        subtitleLabel.setForeground(cancelled ? AppColor.ERROR : AppColor.TEXT_MUTED);
-        subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        returnNoteLabel = new JLabel(" ");
+        returnNoteLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        returnNoteLabel.setForeground(AppColor.ACCENT);
+        titleCol.add(Box.createVerticalStrut(4));
+        titleCol.add(returnNoteLabel);
+        refreshReturnNote();
 
-        titleBox.add(titleLabel);
-        titleBox.add(Box.createVerticalStrut(4));
-        titleBox.add(subtitleLabel);
+        header.add(titleCol, BorderLayout.CENTER);
 
-        header.add(iconBadge, BorderLayout.WEST);
-        header.add(titleBox, BorderLayout.CENTER);
+        JPanel badges = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        badges.setOpaque(false);
+        badges.add(badge(statusText(), statusColor()));
+        if (invoice.hasReturns()) {
+            badges.add(badge(returnStateText(), returnStateColor()));
+        }
+        header.add(badges, BorderLayout.EAST);
+
         return header;
     }
 
-    // ---------------------------------------------------------------
-    // Body: card thông tin 2 cột + bảng SP có hình
-    // ---------------------------------------------------------------
+    private String buildSubtitle() {
+        String customer = invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ";
+        String created = invoice.getCreatedAt() != null
+                ? invoice.getCreatedAt().format(DATE_TIME) : "—";
+        String creator = invoice.getCreatedByName() != null ? invoice.getCreatedByName() : "—";
+        return customer + "  ·  " + created + "  ·  NV: " + creator;
+    }
 
-    private JScrollPane buildBody(List<InvoiceDetail> details) {
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setBackground(AppColor.WHITE);
-        content.setBorder(new EmptyBorder(18, 24, 18, 24));
-
-        // Card thông tin
-        JPanel infoCard = new JPanel(new BorderLayout());
-        infoCard.setOpaque(true);
-        infoCard.setBackground(AppColor.BG_LIGHT);
-        infoCard.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(16, 16, 16, 16)));
-        infoCard.setAlignmentX(Component.LEFT_ALIGNMENT);
-        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 480));
-
-        JPanel cardInner = new JPanel();
-        cardInner.setOpaque(false);
-        cardInner.setLayout(new BoxLayout(cardInner, BoxLayout.Y_AXIS));
-
-        JPanel infoGrid = new JPanel(new GridLayout(0, 2, 28, 14));
-        infoGrid.setOpaque(false);
-        infoGrid.add(infoCell("Khách hàng",
-                invoice.getCustomerName() != null ? invoice.getCustomerName() : "Khách lẻ"));
-        infoGrid.add(infoCell("Người tạo",
-                invoice.getCreatedByName() != null ? invoice.getCreatedByName() : "-"));
-        infoGrid.add(infoCell("Ngày tạo",
-                invoice.getCreatedAt() != null ? invoice.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
-        infoGrid.add(infoCell("Phương thức thanh toán",
-                InvoicePanel.paymentMethodLabel(invoice.getPaymentMethod())));
-        infoGrid.add(infoCell("Tạm tính",
-                NumberUtil.formatThousands(invoice.getSubTotal().longValue()) + " đ"));
-
-        // Ma khuyen mai + so tien giam (kiem soat dong tien)
-        String promoCode = invoice.getPromotionCode();
-        boolean hasPromo = promoCode != null && !promoCode.isBlank()
-                && invoice.getDiscountAmount() != null
-                && invoice.getDiscountAmount().signum() > 0;
-        infoGrid.add(infoCell("Mã khuyến mãi",
-                hasPromo ? promoCode : "— Không áp dụng"));
-        infoGrid.add(infoCell("Giảm giá (KM)",
-                hasPromo
-                        ? ("−" + NumberUtil.formatThousands(invoice.getDiscountAmount().longValue()) + " đ")
-                        : "0 đ"));
-
-        // Diem thanh vien dung de tru tien
-        int pointsUsed = invoice.getPointsUsed();
-        boolean hasPoints = pointsUsed > 0
-                && invoice.getPointsDiscountAmount() != null
-                && invoice.getPointsDiscountAmount().signum() > 0;
-        infoGrid.add(infoCell("Điểm đã dùng",
-                hasPoints
-                        ? (pointsUsed + " điểm (−"
-                        + NumberUtil.formatThousands(invoice.getPointsDiscountAmount().longValue()) + " đ)")
-                        : "— Không dùng điểm"));
-
-        String vatLabel = "VAT";
-        if (invoice.getVatRate() != null) {
-            vatLabel = "VAT (" + invoice.getVatRate().stripTrailingZeros().toPlainString() + "%)";
+    private void refreshReturnNote() {
+        if (invoice.hasReturns()) {
+            returnNoteLabel.setText(invoice.getReturnNote());
+            returnNoteLabel.setVisible(true);
+        } else {
+            returnNoteLabel.setText(" ");
+            returnNoteLabel.setVisible(false);
         }
-        infoGrid.add(infoCell(vatLabel,
-                NumberUtil.formatThousands(
-                        invoice.getVatAmount() != null ? invoice.getVatAmount().longValue() : 0) + " đ"));
-        infoGrid.add(infoCell("Trạng thái",
-                invoice.isCancelled() ? "Đã hủy" : "Hoàn tất"));
-        infoGrid.add(infoCellTotal("Tổng tiền hóa đơn",
-                NumberUtil.formatThousands(invoice.getTotalAmount().longValue()) + " đ"));
-        cardInner.add(infoGrid);
+    }
 
-        if (invoice.isCancelled()) {
-            JPanel cancelRow = new JPanel(new GridLayout(0, 2, 28, 14));
-            cancelRow.setOpaque(false);
-            cancelRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-            cancelRow.add(infoCell("Lý do hủy",
-                    invoice.getCancelReason() != null ? invoice.getCancelReason() : "-"));
-            cancelRow.add(infoCell("Thời điểm hủy",
-                    invoice.getCancelledAt() != null
-                            ? invoice.getCancelledAt().format(DATE_TIME_FORMAT) : "-"));
-            cardInner.add(cancelRow);
+    // ---------------------------------------------------------------
+    // Body: info + lines + returns
+    // ---------------------------------------------------------------
+
+    private JComponent buildBody() {
+        JPanel body = new JPanel(new BorderLayout(0, 12));
+        body.setBorder(new EmptyBorder(0, 20, 12, 20));
+        body.setBackground(AppColor.WHITE);
+
+        body.add(buildMoneySummary(), BorderLayout.NORTH);
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        tabs.addTab("Sản phẩm", buildProductTable());
+        tabs.addTab("Phiếu đổi/trả", buildReturnTable());
+        body.add(tabs, BorderLayout.CENTER);
+
+        return body;
+    }
+
+    private JComponent buildMoneySummary() {
+        JPanel container = new JPanel(new BorderLayout(0, 10));
+        container.setOpaque(false);
+
+        JPanel row = new JPanel(new GridLayout(1, 4, 12, 0));
+        row.setOpaque(false);
+
+        row.add(summaryCard("Tạm tính",
+                formatMoney(invoice.getSubTotal()), AppColor.TEXT_PRIMARY));
+        row.add(summaryCard("Giảm giá + điểm",
+                formatMoney(nvl(invoice.getDiscountAmount()).add(nvl(invoice.getPointsDiscountAmount()))),
+                AppColor.TEXT_MUTED));
+        row.add(summaryCard("Tổng thanh toán",
+                formatMoney(invoice.getTotalAmount()), AppColor.SUCCESS));
+
+        JPanel refundCard = summaryCard("Đã hoàn",
+                formatMoney(invoice.getRefundedAmount()),
+                invoice.getRefundedAmount() != null && invoice.getRefundedAmount().signum() > 0
+                        ? AppColor.WARNING : AppColor.TEXT_MUTED);
+        row.add(refundCard);
+
+        // Luu label de refresh neu can
+        Component[] cards = row.getComponents();
+        if (cards.length >= 4 && cards[3] instanceof JPanel) {
+            // no-op; values set at build time after attachReturnSummary
         }
 
-        infoCard.add(cardInner, BorderLayout.CENTER);
-        content.add(infoCard);
-        content.add(Box.createVerticalStrut(20));
-
-        JLabel sectionLabel = new JLabel("Danh sách sản phẩm (" + details.size() + ")");
-        sectionLabel.setFont(AppFont.BODY_BOLD);
-        sectionLabel.setForeground(AppColor.TEXT_PRIMARY);
-        sectionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        content.add(sectionLabel);
-        content.add(Box.createVerticalStrut(10));
-
-        JTable table = buildDetailTable(details);
-        JScrollPane tableScroll = new JScrollPane(table);
-        tableScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        int tableH = Math.max(100, Math.min(240, 44 + details.size() * 56));
-        tableScroll.setPreferredSize(new Dimension(700, tableH));
-        tableScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, tableH + 20));
-        tableScroll.getViewport().setBackground(AppColor.WHITE);
-        tableScroll.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-                BorderFactory.createEmptyBorder(0, 0, 0, 0)));
-        tableScroll.setOpaque(false);
-        content.add(tableScroll);
-
-        JScrollPane scroll = new JScrollPane(content);
-        scroll.setBorder(null);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        scroll.getViewport().setBackground(AppColor.WHITE);
-        return scroll;
+        container.add(row, BorderLayout.NORTH);
+        container.add(buildPaymentInfoRow(), BorderLayout.CENTER);
+        return container;
     }
 
-    private JPanel infoCell(String label, String value) {
-        JPanel cell = new JPanel();
-        cell.setOpaque(false);
-        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+    /** Hang thong tin thanh toan: phuong thuc, ma khuyen mai da dung, diem da tru. */
+    private JComponent buildPaymentInfoRow() {
+        JPanel row = new JPanel(new GridLayout(1, 3, 12, 0));
+        row.setOpaque(false);
 
-        JLabel labelComp = new JLabel(label);
-        labelComp.setFont(AppFont.SMALL_BOLD);
-        labelComp.setForeground(AppColor.TEXT_MUTED);
-        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.add(summaryCard("Phương thức thanh toán",
+                InvoicePanel.paymentMethodLabel(invoice.getPaymentMethod()), AppColor.TEXT_PRIMARY));
 
-        JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
-        valueComp.setFont(AppFont.BODY);
-        valueComp.setForeground(AppColor.TEXT_PRIMARY);
-        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        String promo = invoice.getPromotionCode() != null && !invoice.getPromotionCode().isBlank()
+                ? invoice.getPromotionCode() : "—";
+        row.add(summaryCard("Mã khuyến mãi đã dùng", promo, AppColor.TEXT_PRIMARY));
 
-        cell.add(labelComp);
-        cell.add(Box.createVerticalStrut(2));
-        cell.add(valueComp);
-        return cell;
+        String pointsText = invoice.getPointsUsed() > 0
+                ? invoice.getPointsUsed() + " điểm  (-" + formatMoney(invoice.getPointsDiscountAmount()) + ")"
+                : "Không dùng điểm";
+        row.add(summaryCard("Điểm đã trừ", pointsText, AppColor.TEXT_PRIMARY));
+
+        return row;
     }
 
-    private JPanel infoCellTotal(String label, String value) {
-        JPanel cell = new JPanel();
-        cell.setOpaque(false);
-        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+    private JPanel summaryCard(String label, String value, Color valueColor) {
+        JPanel card = new JPanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1),
+                new EmptyBorder(10, 12, 10, 12)));
+        card.setBackground(AppColor.WHITE);
 
-        JLabel labelComp = new JLabel(label);
-        labelComp.setFont(AppFont.SMALL_BOLD);
-        labelComp.setForeground(AppColor.TEXT_MUTED);
-        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel lb = new JLabel(label);
+        lb.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lb.setForeground(AppColor.TEXT_MUTED);
+        card.add(lb);
 
-        JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
-        valueComp.setFont(AppFont.BODY_BOLD);
-        valueComp.setForeground(AppColor.ACCENT);
-        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        cell.add(labelComp);
-        cell.add(Box.createVerticalStrut(2));
-        cell.add(valueComp);
-        return cell;
+        JLabel val = new JLabel(value);
+        val.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        val.setForeground(valueColor != null ? valueColor : AppColor.TEXT_PRIMARY);
+        card.add(Box.createVerticalStrut(4));
+        card.add(val);
+        return card;
     }
 
-    private JTable buildDetailTable(List<InvoiceDetail> details) {
-        String[] columns = {"Hình", "Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
-        DefaultTableModel model = new DefaultTableModel(columns, 0) {
+    private JComponent buildProductTable() {
+        String[] cols = {
+                "Ảnh", "Mã SP", "Tên sản phẩm", "Đơn giá", "SL", "Đã trả", "Còn lại", "Thành tiền"
+        };
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
-
-            @Override
-            public Class<?> getColumnClass(int columnIndex) {
-                return columnIndex == 0 ? String.class : Object.class;
-            }
         };
 
+        List<InvoiceDetail> details = invoiceDAO.getDetails(invoice.getInvoiceId());
+        int thumbSize = 40;
         for (InvoiceDetail d : details) {
             model.addRow(new Object[]{
-                    d.getProductImageUrl() != null ? d.getProductImageUrl() : "",
-                    d.getProductName(),
+                    ImageUtil.loadIcon(d.getProductImageUrl(), thumbSize, thumbSize),
+                    d.getProductCode() != null ? d.getProductCode() : "—",
+                    d.getProductName() != null ? d.getProductName() : "—",
+                    formatMoney(d.getUnitPrice()),
                     d.getQuantity(),
-                    NumberUtil.formatThousands(d.getUnitPrice().longValue()),
-                    NumberUtil.formatThousands(d.getLineTotal().longValue())
+                    d.getReturnedQuantity(),
+                    d.getRemainingQuantity(),
+                    formatMoney(d.getLineTotal())
             });
         }
 
         JTable table = new JTable(model);
-        table.setFont(AppFont.BODY);
-        table.setRowHeight(56);
-        table.setBackground(AppColor.WHITE);
-        table.setForeground(AppColor.TEXT_PRIMARY);
-        table.setSelectionBackground(AppColor.ACCENT_BG_SOFT);
-        table.getTableHeader().setFont(AppFont.SMALL_BOLD);
-        table.getTableHeader().setBackground(AppColor.BG_LIGHT);
-        table.getTableHeader().setForeground(AppColor.TEXT_PRIMARY);
-        table.getTableHeader().setPreferredSize(new Dimension(0, 38));
-        table.getTableHeader().setReorderingAllowed(false);
-        table.setGridColor(AppColor.BORDER);
-        table.setShowVerticalLines(false);
-        table.setShowHorizontalLines(true);
-        table.setFillsViewportHeight(false);
+        table.setRowHeight(thumbSize + 8);
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        table.setFillsViewportHeight(true);
+        // Bang nay chi de xem, khong co hanh dong nao gan voi viec chon dong ->
+        // tat selection/focus de tranh hien tuong dong dau tien bi to sang
+        // (nhu dang hover) ngay khi mo dialog, chi tro lai binh thuong sau khi
+        // nguoi dung bam chuot vao bang.
         table.setRowSelectionAllowed(false);
-        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
-        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setColumnSelectionAllowed(false);
+        table.setCellSelectionEnabled(false);
+        table.setFocusable(false);
 
-        ImageColumn imageColumn = new ImageColumn(44, 10);
-        RowColorProvider colors = (row, selected) -> AppColor.WHITE;
-        table.getColumnModel().getColumn(0).setCellRenderer(imageColumn.renderer(colors));
-        table.getColumnModel().getColumn(0).setPreferredWidth(64);
-        table.getColumnModel().getColumn(0).setMinWidth(60);
-        table.getColumnModel().getColumn(0).setMaxWidth(72);
-        table.getColumnModel().getColumn(1).setPreferredWidth(260);
-        table.getColumnModel().getColumn(2).setPreferredWidth(56);
-        table.getColumnModel().getColumn(2).setMaxWidth(72);
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);
-        table.getColumnModel().getColumn(4).setPreferredWidth(120);
+        table.getColumnModel().getColumn(0).setMinWidth(thumbSize + 16);
+        table.getColumnModel().getColumn(0).setMaxWidth(thumbSize + 16);
+        table.getColumnModel().getColumn(0).setPreferredWidth(thumbSize + 16);
 
-        DefaultTableCellRenderer nameRenderer = new DefaultTableCellRenderer() {
+        DefaultTableCellRenderer right = new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                          boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setFont(AppFont.BODY_BOLD);
-                setForeground(AppColor.TEXT_PRIMARY);
-                setBackground(AppColor.WHITE);
-                setBorder(new EmptyBorder(0, 8, 0, 4));
+            public Component getTableCellRendererComponent(JTable tbl, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(
+                        tbl, value, false, false, row, column);
+                applyRowStyle(c, row, details);
                 return c;
             }
         };
-        table.getColumnModel().getColumn(1).setCellRenderer(nameRenderer);
+        right.setHorizontalAlignment(SwingConstants.RIGHT);
+        for (int c : new int[]{3, 4, 5, 6, 7}) {
+            table.getColumnModel().getColumn(c).setCellRenderer(right);
+        }
 
-        DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
+        // Cot anh: chi hien icon, canh giua, khong text.
+        // Luu y: DefaultTableCellRenderer.setValue() mac dinh CHI xu ly text
+        // (goi setText(value.toString())) - no KHONG tu nhan dien Icon nhu
+        // renderer noi bo rieng cua JTable (IconRenderer, chi ap dung khi
+        // KHONG set renderer rieng cho cot). Vi vay phai tu goi setIcon() +
+        // xoa text thay vi de super.getTableCellRendererComponent() tu xu ly,
+        // neu khong se in ra "javax.swing.ImageIcon@..." thay vi anh.
+        DefaultTableCellRenderer imageRenderer = new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                          boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setHorizontalAlignment(SwingConstants.CENTER);
-                setBackground(AppColor.WHITE);
-                setForeground(AppColor.TEXT_PRIMARY);
-                return c;
+            public Component getTableCellRendererComponent(JTable tbl, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel label = (JLabel) super.getTableCellRendererComponent(
+                        tbl, null, false, false, row, column);
+                label.setIcon(value instanceof Icon ? (Icon) value : null);
+                label.setText(null);
+                applyRowStyle(label, row, details);
+                return label;
             }
         };
-        table.getColumnModel().getColumn(2).setCellRenderer(center);
+        imageRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+        table.getColumnModel().getColumn(0).setCellRenderer(imageRenderer);
 
-        DefaultTableCellRenderer money = new DefaultTableCellRenderer() {
+        // To dam dong co doi/tra
+        table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                          boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setHorizontalAlignment(SwingConstants.RIGHT);
-                setBackground(AppColor.WHITE);
-                setForeground(column == 4 ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
-                setFont(column == 4 ? AppFont.BODY_BOLD : AppFont.BODY);
-                setBorder(new EmptyBorder(0, 4, 0, 12));
+            public Component getTableCellRendererComponent(JTable tbl, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(
+                        tbl, value, false, false, row, column);
+                applyRowStyle(c, row, details);
+                if (c instanceof JLabel) {
+                    int align = (column >= 3) ? SwingConstants.RIGHT : SwingConstants.LEFT;
+                    ((JLabel) c).setHorizontalAlignment(align);
+                    ((JLabel) c).setBorder(new EmptyBorder(0, 8, 0, 8));
+                }
                 return c;
             }
-        };
-        table.getColumnModel().getColumn(3).setCellRenderer(money);
-        table.getColumnModel().getColumn(4).setCellRenderer(money);
+        });
 
-        return table;
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setBorder(BorderFactory.createLineBorder(AppColor.BORDER));
+        return scroll;
+    }
+
+    /** Mau nen/chu co dinh cho 1 dong san pham, khong phu thuoc trang thai selected/focus. */
+    private void applyRowStyle(Component c, int row, List<InvoiceDetail> details) {
+        Color bg;
+        Color fg = AppColor.TEXT_PRIMARY;
+        if (row < details.size()) {
+            InvoiceDetail d = details.get(row);
+            if (d.isFullyReturned()) {
+                bg = new Color(0xFEF3C7);
+                fg = new Color(0x1E293B); // nen mau sang co dinh -> can chu toi co dinh de doc duoc o ca 2 theme
+            } else if (d.isPartiallyReturned()) {
+                bg = new Color(0xEFF6FF);
+                fg = new Color(0x1E293B);
+            } else {
+                bg = row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD;
+            }
+        } else {
+            bg = AppColor.WHITE;
+        }
+        c.setBackground(bg);
+        c.setForeground(fg);
+    }
+
+    private JComponent buildReturnTable() {
+        String[] cols = {"Mã phiếu", "Loại", "Giá trị hoàn", "Trạng thái", "Ngày tạo", "Lý do"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        // Lay cac phieu doi/tra cua hoa don (toi da 200)
+        PaginationHelper.PaginationResult<ReturnExchange> page =
+                returnExchangeDAO.getPaged(1, 200,
+                        "r.InvoiceID = " + invoice.getInvoiceId());
+        List<ReturnExchange> returns = page != null && page.getData() != null
+                ? page.getData() : List.of();
+
+        if (returns.isEmpty()) {
+            JLabel empty = new JLabel("Chưa có phiếu đổi/trả cho hóa đơn này.", SwingConstants.CENTER);
+            empty.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+            empty.setForeground(AppColor.TEXT_MUTED);
+            empty.setBorder(new EmptyBorder(40, 20, 40, 20));
+            return empty;
+        }
+
+        for (ReturnExchange r : returns) {
+            model.addRow(new Object[]{
+                    "PT-" + r.getReturnId(),
+                    ReturnExchange.TYPE_EXCHANGE.equalsIgnoreCase(r.getType()) ? "Đổi" : "Trả",
+                    formatMoney(r.getTotalValue()),
+                    statusReturn(r.getStatus()),
+                    r.getCreatedAt() != null ? r.getCreatedAt().format(DATE_TIME) : "—",
+                    r.getReason() != null ? r.getReason() : "—"
+            });
+        }
+
+        JTable table = new JTable(model);
+        table.setRowHeight(36);
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        table.setFillsViewportHeight(true);
+
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setBorder(BorderFactory.createLineBorder(AppColor.BORDER));
+        return scroll;
     }
 
     // ---------------------------------------------------------------
-    // Footer
+    // Footer actions
     // ---------------------------------------------------------------
 
-    private JPanel buildFooter() {
-        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        footer.setBackground(AppColor.BG_LIGHT);
-        footer.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
-                new EmptyBorder(12, 24, 12, 24)));
+    private JComponent buildFooter() {
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.setBorder(new EmptyBorder(12, 20, 16, 20));
+        footer.setBackground(AppColor.WHITE);
 
-        JButton exportPdfButton = new JButton("Xuất PDF");
-        exportPdfButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        exportPdfButton.setFocusPainted(false);
-        exportPdfButton.setBackground(AppColor.ACCENT_BG_SOFT);
-        exportPdfButton.setForeground(AppColor.ACCENT);
-        exportPdfButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-        exportPdfButton.setIcon(FontIcon.of(FontAwesomeSolid.FILE_PDF, 14, AppColor.ACCENT));
-        exportPdfButton.setIconTextGap(8);
-        exportPdfButton.addActionListener(e -> exportAndOpenPdf());
-        footer.add(exportPdfButton);
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        left.setOpaque(false);
 
-        boolean canCancel = invoice.isCancellableToday()
-                && PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL);
-
-        if (canCancel) {
-            JButton cancelButton = new JButton("Hủy hóa đơn");
-            cancelButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            cancelButton.setFocusPainted(false);
-            cancelButton.setBackground(AppColor.ERROR_BG);
-            cancelButton.setForeground(AppColor.ERROR);
-            cancelButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-            cancelButton.addActionListener(e -> handleCancel());
-            footer.add(cancelButton);
-        }
-
+        // Nut "Doi / tra hang": chi hien khi hoa don CHUA huy, con quyen tao
+        // phieu doi/tra, VA con it nhat 1 dong san pham CHUA tra het (con hang
+        // de tra). Da tra het het roi (het hang) -> an nut.
+        List<InvoiceDetail> footerDetails = invoiceDAO.getDetails(invoice.getInvoiceId());
+        boolean hasReturnableItems = footerDetails.stream()
+                .anyMatch(d -> d.getRemainingQuantity() > 0);
         boolean canReturnExchange = !invoice.isCancelled()
+                && hasReturnableItems
                 && PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_CREATE);
 
         if (canReturnExchange) {
-            JButton returnButton = new JButton("Đổi / trả hàng");
-            returnButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            returnButton.setFocusPainted(false);
-            returnButton.setBackground(AppColor.ACCENT_BG_SOFT);
-            returnButton.setForeground(AppColor.ACCENT);
-            returnButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-            returnButton.addActionListener(e -> handleReturnExchange());
-            footer.add(returnButton);
+            JButton returnBtn = new JButton("Đổi / trả hàng");
+            FontIcon returnIcon = FontIcon.of(FontAwesomeSolid.EXCHANGE_ALT, 14);
+            returnIcon.setIconColor(Color.WHITE);
+            returnBtn.setIcon(returnIcon);
+            styleButton(returnBtn, AppColor.ACCENT, Color.WHITE);
+            returnBtn.addActionListener(e -> onReturnExchange());
+            left.add(returnBtn);
         }
 
-        JButton closeButton = new JButton("Đóng");
-        closeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        closeButton.setFocusPainted(false);
-        closeButton.setBackground(AppColor.BORDER);
-        closeButton.setForeground(AppColor.TEXT_PRIMARY);
-        closeButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-        closeButton.addActionListener(e -> dispose());
-        footer.add(closeButton);
+        if (!invoice.isCancelled()) {
+            JButton cancelBtn = new JButton("Hủy hóa đơn");
+            styleButton(cancelBtn, AppColor.ERROR, Color.WHITE);
+            cancelBtn.addActionListener(e -> onCancelInvoice());
+            left.add(cancelBtn);
+        }
 
-        getRootPane().setDefaultButton(closeButton);
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        right.setOpaque(false);
+
+        JButton pdfBtn = new JButton("Xuất PDF");
+        FontIcon pdfIcon = FontIcon.of(FontAwesomeSolid.FILE_PDF, 14);
+        pdfIcon.setIconColor(Color.WHITE);
+        pdfBtn.setIcon(pdfIcon);
+        styleButton(pdfBtn, AppColor.ACCENT, Color.WHITE);
+        pdfBtn.addActionListener(e -> exportPdf());
+
+        JButton closeBtn = new JButton("Đóng");
+        styleButton(closeBtn, AppColor.CANCEL_BG, AppColor.TEXT_PRIMARY);
+        closeBtn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1),
+                new EmptyBorder(7, 15, 7, 15)));
+        closeBtn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                closeBtn.setBackground(AppColor.CANCEL_HOVER);
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                closeBtn.setBackground(AppColor.CANCEL_BG);
+            }
+        });
+        closeBtn.addActionListener(e -> dispose());
+
+        right.add(pdfBtn);
+        right.add(closeBtn);
+
+        footer.add(left, BorderLayout.WEST);
+        footer.add(right, BorderLayout.EAST);
         return footer;
     }
 
-    // ---------------------------------------------------------------
-    // Xuat hoa don ra PDF (dung chung InvoicePdfExporter voi trang POS)
-    // ---------------------------------------------------------------
+    private void styleButton(JButton btn, Color bg, Color fg) {
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btn.setBackground(bg);
+        btn.setForeground(fg);
+        btn.setFocusPainted(false);
+        btn.setBorder(new EmptyBorder(8, 16, 8, 16));
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    }
 
-    private void exportAndOpenPdf() {
+    private void onReturnExchange() {
+        List<InvoiceDetail> details = invoiceDAO.getDetails(invoice.getInvoiceId());
+        ReturnExchangeDialog dialog = new ReturnExchangeDialog(
+                (Frame) getOwner(), invoice, details, returnExchangeDAO);
+        dialog.setVisible(true);
+        if (dialog.isCreated()) {
+            // Dong dialog nay de nguoi dung mo lai tu InvoicePanel, luc do
+            // tong tien/SL da tra/con lai se duoc doc lai moi nhat.
+            dispose();
+        }
+    }
+
+    private void onCancelInvoice() {
+        if (invoice.hasReturns()) {
+            int ok = JOptionPane.showConfirmDialog(this,
+                    "Hóa đơn đã có phiếu đổi/trả. Vẫn hủy toàn bộ hóa đơn?\n"
+                            + "(Nên cân nhắc chỉ dùng đổi/trả thay vì hủy.)",
+                    "Xác nhận hủy",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (ok != JOptionPane.YES_OPTION) return;
+        }
+
+        String reason = JOptionPane.showInputDialog(this,
+                "Lý do hủy hóa đơn:",
+                "Hủy hóa đơn",
+                JOptionPane.QUESTION_MESSAGE);
+        if (reason == null) return;
+        if (reason.isBlank()) {
+            AppAlert.error(this, "Thiếu lý do", "Vui lòng nhập lý do hủy.");
+            return;
+        }
+
+        String err = invoiceDAO.cancelInvoice(invoice.getInvoiceId(), reason.trim());
+        if (err != null) {
+            AppAlert.error(this, "Không hủy được", err);
+            return;
+        }
+        AppAlert.success(this, "Đã hủy", "Hóa đơn " + invoice.getInvoiceCode() + " đã được hủy.");
+        dispose();
+    }
+
+    private void exportPdf() {
         try {
-            String fileName = "HoaDon_" + invoice.getInvoiceCode()
-                    .replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
+            List<InvoiceDetail> details = invoiceDAO.getDetails(invoice.getInvoiceId());
+            String safeCode = invoice.getInvoiceCode() != null
+                    ? invoice.getInvoiceCode().replaceAll("[^a-zA-Z0-9]", "_")
+                    : "HD";
+            // Ten file phai DUY NHAT cho moi lan xuat (them timestamp), KHONG dung
+            // ten co dinh theo ma hoa don: lan xuat truoc nguoi dung co the da mo
+            // file PDF do bang trinh xem ben ngoai (Desktop.open() ben duoi) va
+            // trinh xem van dang giu file mo -> Windows khoa file lai. Neu dung
+            // lai dung 1 ten, lan ghi tiep theo se bi loi "The process cannot
+            // access the file because it is being used by another process".
+            String timestamp = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            String fileName = "HoaDon_" + safeCode + "_" + timestamp + ".pdf";
             File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
             if (!tempDir.exists()) tempDir.mkdirs();
             File pdfFile = new File(tempDir, fileName);
-
             InvoicePdfExporter.exportInvoice(invoice, details, pdfFile);
-
             if (Desktop.isDesktopSupported()) {
                 Desktop.getDesktop().open(pdfFile);
             } else {
@@ -488,33 +544,62 @@ public class InvoiceDetailDialog extends JDialog {
                         "Xuất PDF", JOptionPane.INFORMATION_MESSAGE);
             }
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this,
-                    "Lỗi tạo file PDF: " + ex.getMessage(),
-                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+            AppAlert.error(this, "Lỗi PDF", ex.getMessage());
         }
     }
 
-    private void handleCancel() {
-        String reason = BaseDialog.inputText(this, "Hủy hóa đơn",
-                "Lý do hủy hóa đơn " + invoice.getInvoiceCode() + ":", "", "Hủy hóa đơn");
-        if (reason == null) return;
+    // ---------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------
 
-        String error = invoiceDAO.cancelInvoice(invoice.getInvoiceId(), reason);
-        if (error != null) {
-            BaseDialog.error(this, "Không thể hủy hóa đơn", error);
-            return;
-        }
-
-        BaseDialog.success(this, "Thành công", "Đã hủy hóa đơn " + invoice.getInvoiceCode() + ".");
-        dispose();
+    private static BigDecimal nvl(BigDecimal v) {
+        return v != null ? v : BigDecimal.ZERO;
     }
 
-    private void handleReturnExchange() {
-        ReturnExchangeDialog dialog = new ReturnExchangeDialog(
-                (Frame) getOwner(), invoice, details, returnExchangeDAO);
-        dialog.setVisible(true);
-        if (dialog.isCreated()) {
-            dispose(); // dong dialog nay de nguoi dung mo lai tu InvoicePanel, thay tong tien/SL da duoc trigger dieu chinh
-        }
+    private static String formatMoney(BigDecimal v) {
+        if (v == null) return "0";
+        return NumberUtil.formatThousands(v.longValue()) + "đ";
+    }
+
+    private String statusText() {
+        return invoice.isCancelled() ? "Đã hủy" : "Đã hoàn tất";
+    }
+
+    private Color statusColor() {
+        return invoice.isCancelled() ? AppColor.ERROR : AppColor.SUCCESS;
+    }
+
+    private String returnStateText() {
+        String s = invoice.getReturnState();
+        if ("FULL".equalsIgnoreCase(s)) return "Đã trả hết";
+        if ("PARTIAL".equalsIgnoreCase(s)) return "Trả một phần";
+        return "—";
+    }
+
+    private Color returnStateColor() {
+        String s = invoice.getReturnState();
+        if ("FULL".equalsIgnoreCase(s)) return AppColor.WARNING;
+        if ("PARTIAL".equalsIgnoreCase(s)) return AppColor.ACCENT;
+        return AppColor.TEXT_MUTED;
+    }
+
+    private static String statusReturn(String status) {
+        if (status == null) return "—";
+        return switch (status.toUpperCase()) {
+            case "APPROVED" -> "Đã duyệt";
+            case "PENDING" -> "Chờ duyệt";
+            case "REJECTED" -> "Từ chối";
+            default -> status;
+        };
+    }
+
+    private JLabel badge(String text, Color color) {
+        JLabel lb = new JLabel(text);
+        lb.setOpaque(true);
+        lb.setBackground(color);
+        lb.setForeground(Color.WHITE);
+        lb.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        lb.setBorder(new EmptyBorder(4, 10, 4, 10));
+        return lb;
     }
 }

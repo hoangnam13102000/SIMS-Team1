@@ -14,6 +14,8 @@ import com.model.Role;
 import com.model.User;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
+import com.security.FileSecurityScanner;
+import com.security.ScanResult;
 
 import java.io.File;
 import java.math.BigDecimal;
@@ -47,6 +49,12 @@ public final class AiExcelImportService {
             return "Chỉ hỗ trợ .xlsx (Excel) hoặc .docx (Word có bảng). File: " + file.getName();
         }
 
+        ScanResult scan = FileSecurityScanner.getInstance().scan(file);
+        if (scan.isBlocked()) {
+            return "File \"" + file.getName() + "\" bị từ chối import vì lý do bảo mật: " + scan.getMessage();
+        }
+        String scanWarning = scan.isWarning() ? scan.getMessage() : null;
+
         List<String[]> rows;
         try {
             rows = SpreadsheetImportReader.read(file);
@@ -75,13 +83,18 @@ public final class AiExcelImportService {
         String permError = checkPermission(type);
         if (permError != null) return permError;
 
-        return switch (type) {
+        String result = switch (type) {
             case CATEGORY -> importCategories(rows, col);
             case PRODUCT -> importProducts(rows, col);
             case EMPLOYEE -> importEmployees(rows, col);
             case CUSTOMER -> importCustomers(rows, col);
             default -> "Loại dữ liệu không hỗ trợ.";
         };
+
+        if (scanWarning != null) {
+            result += "\n\n⚠ Lưu ý bảo mật: " + scanWarning;
+        }
+        return result;
     }
 
     public String importBytes(byte[] bytes, String fileName, EntityType preferred) {

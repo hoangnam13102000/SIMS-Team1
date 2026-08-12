@@ -15,6 +15,11 @@ public class InvoiceDetail {
     private BigDecimal unitPrice;
     private BigDecimal lineTotal; // cot computed (Quantity * UnitPrice) tu DB
 
+    /** So luong da tra (Direction=IN, phieu APPROVED) — khong luu DB, gan tu InvoiceDAO.getDetails. */
+    private int returnedQuantity;
+    /** quantity - returnedQuantity. */
+    private int remainingQuantity;
+
     public InvoiceDetail() {
     }
 
@@ -37,11 +42,34 @@ public class InvoiceDetail {
     public void setProductImageUrl(String productImageUrl) { this.productImageUrl = productImageUrl; }
 
     public int getQuantity() { return quantity; }
-    public void setQuantity(int quantity) { this.quantity = quantity; }
+    public void setQuantity(int quantity) {
+        this.quantity = quantity;
+        syncRemaining();
+    }
 
     public BigDecimal getUnitPrice() { return unitPrice; }
     public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
 
     public BigDecimal getLineTotal() { return lineTotal; }
     public void setLineTotal(BigDecimal lineTotal) { this.lineTotal = lineTotal; }
+
+    public int getReturnedQuantity() { return returnedQuantity; }
+    public void setReturnedQuantity(int returnedQuantity) {
+        this.returnedQuantity = Math.max(0, returnedQuantity);
+        syncRemaining();
+    }
+
+    public int getRemainingQuantity() { return remainingQuantity; }
+
+    private void syncRemaining() {
+        this.remainingQuantity = Math.max(0, quantity - returnedQuantity);
+    }
+
+    public boolean isFullyReturned() {
+        return quantity > 0 && returnedQuantity >= quantity;
+    }
+
+    public boolean isPartiallyReturned() {
+        return returnedQuantity > 0 && returnedQuantity < quantity;
+    }
 }

@@ -1,11 +1,14 @@
 package com.view.client;
 
 
+import com.dao.CustomerDAO;
+import com.model.Customer;
+import com.model.Role;
 import com.theme.AppColor;
 import com.dao.UserDAO;
-import com.model.Role;
 import com.model.User;
 import com.service.AuthService;
+import com.utils.BarcodeUtil;
 import com.utils.FileUtil;
 import com.utils.ImageUtil;
 import com.validation.FormValidator;
@@ -17,15 +20,19 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.time.format.DateTimeFormatter;
 
 public class ProfilePanel extends JPanel {
 
 	private static final int AVATAR_SIZE = 120;
-	private static final int SIDE_CARD_WIDTH = 300; // tăng từ 260 để tên đủ chỗ hiển thị
+	private static final int SIDE_CARD_WIDTH = 300;
+	private static final int BARCODE_WIDTH = 240;
+	private static final int BARCODE_HEIGHT = 60;
 
     private final UserDAO userDAO = new UserDAO();
+    private final CustomerDAO customerDAO = new CustomerDAO();
     private Runnable onSavedListener;
 
     private JLabel avatarLabel;
@@ -35,6 +42,8 @@ public class ProfilePanel extends JPanel {
     private JLabel phoneValueLabel;
     private JLabel joinedLabel;
     private JLabel avatarMessage;
+    private JPanel barcodeCard;
+    private JLabel barcodeValueLabel;
 
     private JTextField fullNameField;
     private JTextField phoneField;
@@ -99,8 +108,6 @@ public class ProfilePanel extends JPanel {
         loadCurrentUser();
     }
 
-    // ==================== Khoi ben trai: avatar + thong tin nhanh ====================
-
     private JPanel buildSideCard() {
         JPanel card = sideCard();
 
@@ -137,7 +144,6 @@ public class ProfilePanel extends JPanel {
         nameLabel.setForeground(AppColor.TEXT_PRIMARY);
         nameLabel.setHorizontalAlignment(SwingConstants.CENTER);
         nameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        // Boc trong hang co glue de BoxLayout.Y_AXIS can giua chac chan
         JPanel nameRow = new JPanel();
         nameRow.setOpaque(false);
         nameRow.setLayout(new BoxLayout(nameRow, BoxLayout.X_AXIS));
@@ -214,13 +220,65 @@ public class ProfilePanel extends JPanel {
         joinedRow.add(Box.createHorizontalGlue());
         card.add(joinedRow);
 
+        // --- Mã vạch thành viên ---
+        card.add(Box.createVerticalStrut(16));
+        card.add(buildDivider());
+        card.add(Box.createVerticalStrut(12));
+
+        JLabel barcodeTitle = new JLabel("Mã vạch thành viên");
+        barcodeTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        barcodeTitle.setForeground(AppColor.TEXT_MUTED);
+        barcodeTitle.setHorizontalAlignment(SwingConstants.CENTER);
+        barcodeTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JPanel barcodeTitleRow = new JPanel();
+        barcodeTitleRow.setOpaque(false);
+        barcodeTitleRow.setLayout(new BoxLayout(barcodeTitleRow, BoxLayout.X_AXIS));
+        barcodeTitleRow.setAlignmentX(Component.CENTER_ALIGNMENT);
+        barcodeTitleRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+        barcodeTitleRow.add(Box.createHorizontalGlue());
+        barcodeTitleRow.add(barcodeTitle);
+        barcodeTitleRow.add(Box.createHorizontalGlue());
+        card.add(barcodeTitleRow);
+
+        card.add(Box.createVerticalStrut(8));
+
+        barcodeCard = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(Color.WHITE);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                g2.setColor(AppColor.BORDER);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
+                g2.dispose();
+            }
+        };
+        barcodeCard.setOpaque(false);
+        barcodeCard.setAlignmentX(Component.CENTER_ALIGNMENT);
+        barcodeCard.setMaximumSize(new Dimension(SIDE_CARD_WIDTH - 40, BARCODE_HEIGHT + 24));
+        barcodeCard.setBorder(new EmptyBorder(6, 8, 6, 8));
+
+        barcodeValueLabel = new JLabel(" ");
+        barcodeValueLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
+        barcodeValueLabel.setForeground(AppColor.TEXT_PRIMARY);
+        barcodeValueLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        JPanel barcodeCardRow = new JPanel();
+        barcodeCardRow.setOpaque(false);
+        barcodeCardRow.setLayout(new BoxLayout(barcodeCardRow, BoxLayout.X_AXIS));
+        barcodeCardRow.setAlignmentX(Component.CENTER_ALIGNMENT);
+        barcodeCardRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, BARCODE_HEIGHT + 30));
+        barcodeCardRow.add(Box.createHorizontalGlue());
+        barcodeCardRow.add(barcodeCard);
+        barcodeCardRow.add(Box.createHorizontalGlue());
+        card.add(barcodeCardRow);
+
         return card;
     }
 
     private JPanel infoRow(FontAwesomeSolid iconType, String label, JLabel value) {
-        // Dung BorderLayout + width co dinh theo SIDE_CARD de khong bi BoxLayout
-        // tao khoang trang le trai khi child khong stretch deu.
-        final int contentW = SIDE_CARD_WIDTH - 40; // tru padding trai/phai cua sideCard (20*2)
+        final int contentW = SIDE_CARD_WIDTH - 40;
 
         JPanel row = new JPanel(new BorderLayout(10, 0));
         row.setOpaque(false);
@@ -266,7 +324,7 @@ public class ProfilePanel extends JPanel {
         stacked.add(Box.createVerticalStrut(2));
         stacked.add(value);
 
-        textPanel.add(stacked, BorderLayout.WEST); // WEST = sat mep trai, khong bi can giua
+        textPanel.add(stacked, BorderLayout.WEST);
         row.add(textPanel, BorderLayout.CENTER);
 
         return row;
@@ -306,8 +364,6 @@ public class ProfilePanel extends JPanel {
             showMessage(avatarMessage, "Lưu ảnh đại diện thất bại, vui lòng thử lại.", AppColor.ERROR);
         }
     }
-
-    // ==================== Form: Thong tin ca nhan ====================
 
     private JPanel buildInfoFormCard() {
         JPanel card = card();
@@ -393,8 +449,6 @@ public class ProfilePanel extends JPanel {
         }
     }
 
-    // ==================== Form: Doi mat khau ====================
-
     private JPanel buildPasswordCard() {
         JPanel card = card();
         card.add(cardTitle("Đổi mật khẩu"));
@@ -475,8 +529,6 @@ public class ProfilePanel extends JPanel {
         }
     }
 
-    // ==================== Nap / lam moi du lieu ====================
-
     private void loadCurrentUser() {
         User user = AuthService.getInstance().getCurrentUser();
         fullNameField.setText(user.getFullName());
@@ -495,6 +547,44 @@ public class ProfilePanel extends JPanel {
             joinedLabel.setText(" ");
         }
         avatarLabel.setIcon(ImageUtil.circularIcon(user.getAvatarUrl(), AVATAR_SIZE, user.getFullName()));
+
+        // Cập nhật mã vạch
+        barcodeCard.removeAll();
+        if (Role.CUSTOMER.equals(user.getRole())) {
+            Customer customer = customerDAO.findById(user.getUserId());
+            if (customer != null && customer.getCustomerCode() != null && !customer.getCustomerCode().isBlank()) {
+                try {
+                    BufferedImage barcodeImage = BarcodeUtil.generateCode128(
+                            customer.getCustomerCode(), BARCODE_WIDTH, BARCODE_HEIGHT);
+                    JLabel barcodeLabel = new JLabel(new ImageIcon(barcodeImage));
+                    barcodeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+                    barcodeCard.add(barcodeLabel, BorderLayout.CENTER);
+
+                    barcodeValueLabel.setText(customer.getCustomerCode());
+                    barcodeCard.add(barcodeValueLabel, BorderLayout.SOUTH);
+                } catch (Exception e) {
+                    JLabel errorLabel = new JLabel("Không thể hiển thị mã vạch");
+                    errorLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                    errorLabel.setForeground(AppColor.ERROR);
+                    errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                    barcodeCard.add(errorLabel, BorderLayout.CENTER);
+                }
+            } else {
+                JLabel noCodeLabel = new JLabel("Chưa có mã thành viên");
+                noCodeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                noCodeLabel.setForeground(AppColor.TEXT_MUTED);
+                noCodeLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                barcodeCard.add(noCodeLabel, BorderLayout.CENTER);
+            }
+        } else {
+            JLabel notCustomerLabel = new JLabel("Chỉ áp dụng cho tài khoản khách hàng");
+            notCustomerLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            notCustomerLabel.setForeground(AppColor.TEXT_MUTED);
+            notCustomerLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            barcodeCard.add(notCustomerLabel, BorderLayout.CENTER);
+        }
+        barcodeCard.revalidate();
+        barcodeCard.repaint();
     }
 
     private static String roleLabel(Role role) {
@@ -512,8 +602,6 @@ public class ProfilePanel extends JPanel {
     public void onSaved(Runnable listener) {
         this.onSavedListener = listener;
     }
-
-    // ==================== UI helpers ====================
 
     private JPanel card() {
         JPanel card = new JPanel();
