@@ -20,9 +20,17 @@ import java.util.Map;
 
 /**
  * DAO riêng cho trang "Báo cáo doanh thu".
- * - Chỉ tính hóa đơn Status = 'ACTIVE'.
- * - Trừ hàng khách trả (ReturnExchange APPROVED, Direction = 'IN').
- * - Trừ tiền hoàn trả NCC (SupplierReturns COMPLETED) khỏi Chi / cộng vào lãi ròng.
+ * <p>
+ * <b>Doanh thu thuần (một nguồn sự thật)</b> =
+ * {@code SUM(Invoices.TotalAmount)} của HĐ {@code ACTIVE} trong kỳ
+ * − giá trị trả hàng đã duyệt (ReturnExchange APPROVED, Direction = IN)
+ * gắn với các HĐ đó (theo ngày tạo HĐ).
+ * <p>
+ * Dùng chung cho StatCard, biểu đồ Thu/Chi, pie PTTT, summary lợi nhuận
+ * để các số khớp nhau. Top SP / danh mục vẫn dùng LineTotal − trả
+ * (phân tích theo sản phẩm; tổng có thể khác doanh thu thuần vì giảm giá/điểm/VAT cấp HĐ).
+ * <p>
+ * Chi / lãi ròng: giá vốn sau trả + thiệt hại hủy − hoàn trả NCC.
  */
 public class RevenueReportDAO {
 
@@ -243,6 +251,8 @@ public class RevenueReportDAO {
     // ---------------------------------------------------------------
     // JOIN trừ hàng khách trả (APPROVED, Direction = IN)
     // ---------------------------------------------------------------
+
+    /** Theo dòng SP (dùng cho top SP / giá vốn / số lượng). Alias bảng chi tiết: d */
     private static final String RETURN_JOIN =
             "LEFT JOIN ( "
             + "    SELECT r.InvoiceID, rd.ProductID, "
@@ -254,13 +264,36 @@ public class RevenueReportDAO {
             + "    GROUP BY r.InvoiceID, rd.ProductID "
             + ") ret ON ret.InvoiceID = d.InvoiceID AND ret.ProductID = d.ProductID ";
 
+    /**
+     * Theo hóa đơn (dùng cho doanh thu thuần = TotalAmount − trả).
+     * Alias bảng hóa đơn: inv
+     */
+    private static final String RETURN_BY_INVOICE =
+            "LEFT JOIN ( "
+            + "    SELECT r.InvoiceID, "
+            + "           SUM(rd.Quantity * rd.UnitPrice) AS ReturnedValue "
+            + "    FROM ReturnExchangeDetails rd "
+            + "    JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
+            + "    WHERE r.Status = 'APPROVED' AND rd.Direction = 'IN' "
+            + "    GROUP BY r.InvoiceID "
+            + ") retInv ON retInv.InvoiceID = inv.InvoiceID ";
+
+    /** Doanh thu thuần 1 HĐ: TotalAmount − giá trị trả (không âm). */
+    private static final String NET_INVOICE_REVENUE =
+            "CASE WHEN inv.TotalAmount - ISNULL(retInv.ReturnedValue, 0) < 0 "
+            + "THEN 0 ELSE inv.TotalAmount - ISNULL(retInv.ReturnedValue, 0) END";
+
     // ---------------------------------------------------------------
     // Truy vấn
     // ---------------------------------------------------------------
 
     public Summary getSummary(LocalDate from, LocalDate to) {
-        String invoiceSql = "SELECT ISNULL(SUM(TotalAmount), 0) AS Revenue, COUNT(*) AS Cnt "
-                + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ?";
+        // Doanh thu thuần = TotalAmount HĐ ACTIVE − trả hàng đã duyệt (theo HĐ)
+        String invoiceSql = "SELECT ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+                + "COUNT(*) AS Cnt "
+                + "FROM Invoices inv "
+                + RETURN_BY_INVOICE
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
 
         String itemsSql = "SELECT ISNULL(SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)), 0) "
                 + "FROM InvoiceDetails d "
@@ -298,9 +331,13 @@ public class RevenueReportDAO {
     }
 
     public List<DailyPoint> getDailyRevenue(LocalDate from, LocalDate to) {
-        String sql = "SELECT CAST(CreatedAt AS DATE) AS Day, SUM(TotalAmount) AS Revenue, COUNT(*) AS Cnt "
-                + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
-                + "GROUP BY CAST(CreatedAt AS DATE) ORDER BY Day ASC";
+        String sql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
+                + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+                + "COUNT(*) AS Cnt "
+                + "FROM Invoices inv "
+                + RETURN_BY_INVOICE
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY CAST(inv.CreatedAt AS DATE) ORDER BY Day ASC";
 
         Map<LocalDate, DailyPoint> byDay = new LinkedHashMap<>();
         try (Connection con = getConnection();
@@ -326,9 +363,13 @@ public class RevenueReportDAO {
     }
 
     public List<PaymentSlice> getRevenueByPaymentMethod(LocalDate from, LocalDate to) {
-        String sql = "SELECT PaymentMethod, SUM(TotalAmount) AS Revenue, COUNT(*) AS Cnt "
-                + "FROM Invoices WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
-                + "GROUP BY PaymentMethod ORDER BY Revenue DESC";
+        String sql = "SELECT inv.PaymentMethod, "
+                + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+                + "COUNT(*) AS Cnt "
+                + "FROM Invoices inv "
+                + RETURN_BY_INVOICE
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY inv.PaymentMethod ORDER BY Revenue DESC";
 
         List<PaymentSlice> list = new ArrayList<>();
         try (Connection con = getConnection();
@@ -385,9 +426,14 @@ public class RevenueReportDAO {
     // ---------------------------------------------------------------
 
     public ProfitSummary getProfitSummary(LocalDate from, LocalDate to) {
-        String sql = "SELECT "
-                + "ISNULL(SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)), 0) AS Revenue, "
-                + "ISNULL(SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ), 0) AS Cost "
+        // Doanh thu thuần: cùng công thức với getSummary (TotalAmount − trả)
+        String revenueSql = "SELECT ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue "
+                + "FROM Invoices inv "
+                + RETURN_BY_INVOICE
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
+
+        // Giá vốn: theo số lượng còn lại sau trả × ImportPrice
+        String costSql = "SELECT ISNULL(SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ), 0) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
@@ -396,14 +442,19 @@ public class RevenueReportDAO {
 
         BigDecimal revenue = BigDecimal.ZERO;
         BigDecimal cost = BigDecimal.ZERO;
-        try (Connection con = getConnection();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setDate(1, Date.valueOf(from));
-            ps.setDate(2, Date.valueOf(to));
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    revenue = rs.getBigDecimal("Revenue");
-                    cost = rs.getBigDecimal("Cost");
+        try (Connection con = getConnection()) {
+            try (PreparedStatement ps = con.prepareStatement(revenueSql)) {
+                ps.setDate(1, Date.valueOf(from));
+                ps.setDate(2, Date.valueOf(to));
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) revenue = rs.getBigDecimal("Revenue");
+                }
+            }
+            try (PreparedStatement ps = con.prepareStatement(costSql)) {
+                ps.setDate(1, Date.valueOf(from));
+                ps.setDate(2, Date.valueOf(to));
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) cost = rs.getBigDecimal("Cost");
                 }
             }
         } catch (SQLException e) {
@@ -438,10 +489,18 @@ public class RevenueReportDAO {
     }
 
     public List<DailyFinancePoint> getDailyFinance(LocalDate from, LocalDate to) {
-        String salesSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
-                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
-                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost, "
-                + "COUNT(DISTINCT inv.InvoiceID) AS Cnt "
+        // Thu = doanh thu thuần (TotalAmount − trả), cùng công thức getSummary
+        String revenueSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
+                + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+                + "COUNT(*) AS Cnt "
+                + "FROM Invoices inv "
+                + RETURN_BY_INVOICE
+                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY CAST(inv.CreatedAt AS DATE)";
+
+        // Chi (giá vốn) vẫn theo số lượng còn lại sau trả
+        String costSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
+                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
@@ -468,15 +527,24 @@ public class RevenueReportDAO {
         Map<LocalDate, BigDecimal> refundByDay = new LinkedHashMap<>();
 
         try (Connection con = getConnection()) {
-            try (PreparedStatement ps = con.prepareStatement(salesSql)) {
+            try (PreparedStatement ps = con.prepareStatement(revenueSql)) {
                 ps.setDate(1, Date.valueOf(from));
                 ps.setDate(2, Date.valueOf(to));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         LocalDate day = rs.getDate("Day").toLocalDate();
                         revenueByDay.put(day, rs.getBigDecimal("Revenue"));
-                        costByDay.put(day, rs.getBigDecimal("Cost"));
                         cntByDay.put(day, rs.getInt("Cnt"));
+                    }
+                }
+            }
+            try (PreparedStatement ps = con.prepareStatement(costSql)) {
+                ps.setDate(1, Date.valueOf(from));
+                ps.setDate(2, Date.valueOf(to));
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        LocalDate day = rs.getDate("Day").toLocalDate();
+                        costByDay.put(day, rs.getBigDecimal("Cost"));
                     }
                 }
             }
@@ -519,63 +587,12 @@ public class RevenueReportDAO {
     }
 
     public List<DailyPoint> getDailyProfit(LocalDate from, LocalDate to) {
-        String sql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
-                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
-                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost, "
-                + "COUNT(DISTINCT inv.InvoiceID) AS Cnt "
-                + "FROM InvoiceDetails d "
-                + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
-                + "JOIN Products p ON p.ProductID = d.ProductID "
-                + RETURN_JOIN
-                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
-                + "GROUP BY CAST(inv.CreatedAt AS DATE) ORDER BY Day ASC";
-
-        Map<LocalDate, DailyPoint> byDay = new LinkedHashMap<>();
-        try (Connection con = getConnection();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setDate(1, Date.valueOf(from));
-            ps.setDate(2, Date.valueOf(to));
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    LocalDate day = rs.getDate("Day").toLocalDate();
-                    BigDecimal revenue = rs.getBigDecimal("Revenue");
-                    BigDecimal cost = rs.getBigDecimal("Cost");
-                    BigDecimal profit = (revenue != null ? revenue : BigDecimal.ZERO)
-                            .subtract(cost != null ? cost : BigDecimal.ZERO);
-                    byDay.put(day, new DailyPoint(day, profit, rs.getInt("Cnt")));
-                }
-            }
-        } catch (SQLException e) {
-            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
-                    "RevenueReportDAO.getDailyProfit - from=" + from + " to=" + to, e);
-        }
-
-        // Cộng hoàn trả NCC vào lợi nhuận ngày (cùng logic getDailyFinance)
-        Map<LocalDate, BigDecimal> refundByDay = new LinkedHashMap<>();
-        String refundSql = "SELECT CAST(CreatedAt AS DATE) AS Day, "
-                + "ISNULL(SUM(TotalRefundAmount), 0) AS Refund "
-                + "FROM SupplierReturns WHERE Status = 'COMPLETED' "
-                + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
-                + "GROUP BY CAST(CreatedAt AS DATE)";
-        try (Connection con = getConnection();
-             PreparedStatement ps = con.prepareStatement(refundSql)) {
-            ps.setDate(1, Date.valueOf(from));
-            ps.setDate(2, Date.valueOf(to));
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    refundByDay.put(rs.getDate("Day").toLocalDate(), rs.getBigDecimal("Refund"));
-                }
-            }
-        } catch (SQLException e) {
-            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
-                    "RevenueReportDAO.getDailyProfit refund - from=" + from + " to=" + to, e);
-        }
-
+        // Tái sử dụng getDailyFinance để profit ngày = netProfit (Thu − Chi + hoàn NCC)
+        // đồng bộ với biểu đồ Thu/Chi và ProfitSummary.
+        List<DailyFinancePoint> finance = getDailyFinance(from, to);
         List<DailyPoint> result = new ArrayList<>();
-        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            DailyPoint base = byDay.getOrDefault(d, new DailyPoint(d, BigDecimal.ZERO, 0));
-            BigDecimal refund = refundByDay.getOrDefault(d, BigDecimal.ZERO);
-            result.add(new DailyPoint(d, base.revenue.add(refund), base.invoiceCount));
+        for (DailyFinancePoint p : finance) {
+            result.add(new DailyPoint(p.date, p.netProfit(), p.invoiceCount));
         }
         return result;
     }

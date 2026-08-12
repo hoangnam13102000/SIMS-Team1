@@ -648,6 +648,73 @@ public class OrderDAO extends BaseDAO<Order> {
         return list.isEmpty() ? null : list.get(0);
     }
 
+    /**
+     * Đảm bảo đơn đã có hóa đơn liên kết. Dùng khi in lại lịch sử hóa đơn
+     * cho đơn online đã thanh toán / hoàn thành nhưng InvoiceID còn null
+     * (dữ liệu cũ, hoặc lần lập hóa đơn trước đó bị lỗi).
+     * <ul>
+     *   <li>Nếu đã có InvoiceID → trả về luôn.</li>
+     *   <li>Nếu đơn COMPLETED, hoặc PayPal đã PAID → lập hóa đơn rồi trả về ID mới.</li>
+     *   <li>Còn lại → trả về null (chưa đủ điều kiện lập hóa đơn).</li>
+     * </ul>
+     *
+     * @return InvoiceID đã liên kết, hoặc null nếu không lập được.
+     */
+    public Integer ensureInvoiceForOrder(int orderId, int actorUserId) {
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                Integer existing = getInvoiceIdForUpdate(con, orderId);
+                if (existing != null) {
+                    con.commit();
+                    return existing;
+                }
+
+                String status;
+                String paymentMethod;
+                String paymentStatus;
+                try (PreparedStatement ps = con.prepareStatement(
+                        "SELECT OrderStatus, PaymentMethod, PaymentStatus FROM Orders WITH (UPDLOCK, ROWLOCK) WHERE OrderID = ?")) {
+                    ps.setInt(1, orderId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) {
+                            con.rollback();
+                            return null;
+                        }
+                        status = rs.getString("OrderStatus");
+                        paymentMethod = rs.getString("PaymentMethod");
+                        paymentStatus = rs.getString("PaymentStatus");
+                    }
+                }
+
+                boolean canCreate = "COMPLETED".equalsIgnoreCase(status)
+                        || ("PAYPAL".equalsIgnoreCase(paymentMethod) && "PAID".equalsIgnoreCase(paymentStatus));
+                if (!canCreate) {
+                    con.rollback();
+                    return null;
+                }
+
+                createInvoiceForOrder(con, orderId, actorUserId);
+                Integer created = getInvoiceIdForUpdate(con, orderId);
+                con.commit();
+                if (created != null) {
+                    AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
+                    AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.INVOICE));
+                }
+                return created;
+            } catch (SQLException e) {
+                con.rollback();
+                throw e;
+            } finally {
+                con.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.ORDER_STATUS_UPDATE_FAIL,
+                    "OrderDAO.ensureInvoiceForOrder - orderId=" + orderId, e);
+            return null;
+        }
+    }
+
     /** Các bước chuyển trạng thái hợp lệ - SHIPPING có thể hoàn thành hoặc hủy. */
     private boolean isValidTransition(String oldStatus, String newStatus) {
         switch (oldStatus) {

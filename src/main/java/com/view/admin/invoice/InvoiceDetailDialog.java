@@ -12,6 +12,7 @@ import com.permission.PermissionManager;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.NumberUtil;
+import com.utils.pdf.InvoicePdfExporter;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -23,6 +24,7 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
@@ -35,6 +37,7 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Desktop;
 import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -45,6 +48,7 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
+import java.io.File;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -410,6 +414,17 @@ public class InvoiceDetailDialog extends JDialog {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
                 new EmptyBorder(12, 24, 12, 24)));
 
+        JButton exportPdfButton = new JButton("Xuất PDF");
+        exportPdfButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        exportPdfButton.setFocusPainted(false);
+        exportPdfButton.setBackground(AppColor.ACCENT_BG_SOFT);
+        exportPdfButton.setForeground(AppColor.ACCENT);
+        exportPdfButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+        exportPdfButton.setIcon(FontIcon.of(FontAwesomeSolid.FILE_PDF, 14, AppColor.ACCENT));
+        exportPdfButton.setIconTextGap(8);
+        exportPdfButton.addActionListener(e -> exportAndOpenPdf());
+        footer.add(exportPdfButton);
+
         boolean canCancel = invoice.isCancellableToday()
                 && PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL);
 
@@ -449,6 +464,34 @@ public class InvoiceDetailDialog extends JDialog {
 
         getRootPane().setDefaultButton(closeButton);
         return footer;
+    }
+
+    // ---------------------------------------------------------------
+    // Xuat hoa don ra PDF (dung chung InvoicePdfExporter voi trang POS)
+    // ---------------------------------------------------------------
+
+    private void exportAndOpenPdf() {
+        try {
+            String fileName = "HoaDon_" + invoice.getInvoiceCode()
+                    .replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
+            File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
+            if (!tempDir.exists()) tempDir.mkdirs();
+            File pdfFile = new File(tempDir, fileName);
+
+            InvoicePdfExporter.exportInvoice(invoice, details, pdfFile);
+
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(pdfFile);
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Đã tạo file PDF tại:\n" + pdfFile.getAbsolutePath(),
+                        "Xuất PDF", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Lỗi tạo file PDF: " + ex.getMessage(),
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void handleCancel() {

@@ -19,6 +19,7 @@ public class ProductGrid extends JPanel {
     private List<Product> products = List.of();
     private Consumer<Product> onCardClick;
     private Consumer<Product> onAddToCart;
+    private Consumer<Product> onReportStock;
     private int currentColumns = -1;
 
     public ProductGrid() {
@@ -45,14 +46,18 @@ public class ProductGrid extends JPanel {
         this.onAddToCart = listener;
     }
 
-    /** Nap danh sach san pham moi va ve lai toan bo luoi. */
+    /** Callback báo hết/sắp hết hàng thủ công (POS → Quản lý kho). */
+    public void onReportStock(Consumer<Product> listener) {
+        this.onReportStock = listener;
+    }
+
     public void setProducts(List<Product> products) {
         this.products = products != null ? products : List.of();
         rebuildCards();
     }
 
     private void rebuildCards() {
-        currentColumns = -1; // ep tinh lai layout vi noi dung (so luong the) da doi
+        currentColumns = -1;
         relayout(true);
     }
 
@@ -62,14 +67,14 @@ public class ProductGrid extends JPanel {
 
         int columns = Math.max(1, width / (CARD_MIN_WIDTH + GAP));
         if (!forceRebuildCards && columns == currentColumns) {
-            return; // so cot khong doi - khong can ve lai
+            return;
         }
         currentColumns = columns;
 
         grid.removeAll();
         grid.setLayout(new GridLayout(0, columns, GAP, GAP));
         for (Product product : products) {
-            ProductCard card = new ProductCard(product, onCardClick, onAddToCart, null);
+            ProductCard card = new ProductCard(product, onCardClick, onAddToCart, null, onReportStock);
             grid.add(card);
         }
 
@@ -81,7 +86,6 @@ public class ProductGrid extends JPanel {
         return products;
     }
 
-    /** Panel trong (chua co Product nao) de hien EmptyState/LoadingOverlay de len tren. */
     public boolean isEmpty() {
         return products.isEmpty();
     }

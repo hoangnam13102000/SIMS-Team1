@@ -1,5 +1,7 @@
 package com.view.admin.inventory;
 
+import com.dao.InventoryBatchDAO;
+import com.model.InventoryBatch;
 import com.model.StockReconciliation;
 import com.theme.AppColor;
 import com.theme.AppFont;
@@ -14,6 +16,7 @@ import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
@@ -24,18 +27,23 @@ import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Xem chi tiết 1 dòng đối chiếu kho dưới dạng so sánh trực quan (2 thẻ số
  * "Tồn hệ thống" / "Tồn thực tế" cạnh nhau + huy hiệu chênh lệch ở giữa),
- * thay cho việc liệt kê chữ như trước - dễ đối chiếu bằng mắt hơn nhiều,
- * đặc biệt khi xem nhanh nhiều dòng liên tiếp trong 1 phiên kiểm kê.
+ * kèm danh sách các lô còn hàng (tham chiếu) để hỗ trợ điều tra khi lệch tồn.
  *
  * Đây là dialog modal thật sự (đứng yên tới khi người dùng bấm Đóng), khác
  * với {@code BaseDialog.info(...)} vốn chỉ là 1 toast tự biến mất sau vài
@@ -44,6 +52,9 @@ import java.time.format.DateTimeFormatter;
 public class StockReconciliationDetailDialog extends JDialog {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm 'ngày' dd/MM/yyyy");
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    private final InventoryBatchDAO batchDAO = new InventoryBatchDAO();
 
     public StockReconciliationDetailDialog(java.awt.Frame owner, StockReconciliation item) {
         super(owner, "Chi tiết đối chiếu kho", Dialog.ModalityType.APPLICATION_MODAL);
@@ -51,14 +62,16 @@ public class StockReconciliationDetailDialog extends JDialog {
         int discrepancy = item.getDiscrepancy();
         Status status = Status.of(discrepancy);
 
-        setSize(520, discrepancyHasNote(item) ? 560 : 480);
-        setMinimumSize(new Dimension(460, 420));
+        List<InventoryBatch> activeBatches = loadActiveBatches(item.getProductId());
+
+        setSize(640, 640);
+        setMinimumSize(new Dimension(580, 480));
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
 
         add(buildHeader(item), BorderLayout.NORTH);
-        add(buildBody(item, status), BorderLayout.CENTER);
+        add(buildScrollBody(item, status, activeBatches), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
         getRootPane().registerKeyboardAction(e -> dispose(),
@@ -66,6 +79,13 @@ public class StockReconciliationDetailDialog extends JDialog {
                 JComponent.WHEN_IN_FOCUSED_WINDOW);
 
         setLocationRelativeTo(owner);
+    }
+
+    private List<InventoryBatch> loadActiveBatches(int productId) {
+        Map<Integer, List<InventoryBatch>> map =
+                batchDAO.getActiveBatchesByProductIds(Collections.singletonList(productId));
+        List<InventoryBatch> list = map.get(productId);
+        return list != null ? list : Collections.emptyList();
     }
 
     private boolean discrepancyHasNote(StockReconciliation item) {
@@ -118,14 +138,24 @@ public class StockReconciliationDetailDialog extends JDialog {
     }
 
     // ---------------------------------------------------------------
-    // Body: so sanh 2 the + huy hieu chenh lech + ghi chu + meta
+    // Body (scroll): so sanh + ghi chu + meta + lo con hang
     // ---------------------------------------------------------------
 
-    private JPanel buildBody(StockReconciliation item, Status status) {
+    private JScrollPane buildScrollBody(StockReconciliation item, Status status, List<InventoryBatch> batches) {
+        JPanel content = buildBody(item, status, batches);
+        JScrollPane scroll = new JScrollPane(content);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getViewport().setBackground(AppColor.WHITE);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
+    }
+
+    private JPanel buildBody(StockReconciliation item, Status status, List<InventoryBatch> batches) {
         JPanel content = new JPanel();
         content.setBackground(AppColor.WHITE);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setBorder(new EmptyBorder(20, 24, 8, 24));
+        content.setBorder(new EmptyBorder(20, 24, 16, 24));
 
         content.add(buildComparisonRow(item, status));
         content.add(javax.swing.Box.createVerticalStrut(16));
@@ -136,6 +166,9 @@ public class StockReconciliationDetailDialog extends JDialog {
         }
 
         content.add(buildMetaRow(item));
+        content.add(javax.swing.Box.createVerticalStrut(18));
+        content.add(buildBatchesSection(item, batches));
+
         return content;
     }
 
@@ -312,6 +345,260 @@ public class StockReconciliationDetailDialog extends JDialog {
     }
 
     // ---------------------------------------------------------------
+    // Các lô còn hàng (tham chiếu)
+    // ---------------------------------------------------------------
+
+    private JPanel buildBatchesSection(StockReconciliation item, List<InventoryBatch> batches) {
+        JPanel section = new JPanel();
+        section.setOpaque(false);
+        section.setLayout(new BoxLayout(section, BoxLayout.Y_AXIS));
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        // Tiêu đề + tổng
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
+        titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        titleRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+
+        JPanel titleLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        titleLeft.setOpaque(false);
+
+        FontIcon boxIcon = FontIcon.of(FontAwesomeSolid.BOXES, 14);
+        boxIcon.setIconColor(AppColor.ACCENT);
+        JLabel titleLabel = new JLabel("Các lô còn hàng", boxIcon, SwingConstants.LEFT);
+        titleLabel.setIconTextGap(8);
+        titleLabel.setFont(AppFont.BODY_BOLD);
+        titleLabel.setForeground(AppColor.TEXT_PRIMARY);
+        titleLeft.add(titleLabel);
+
+        int totalRemaining = 0;
+        for (InventoryBatch b : batches) {
+            totalRemaining += b.getRemainingQty();
+        }
+
+        JLabel totalChip = chip(FontAwesomeSolid.CUBE,
+                batches.size() + " lô · Σ " + totalRemaining,
+                AppColor.TEXT_MUTED, AppColor.BG_LIGHT);
+        titleLeft.add(totalChip);
+
+        titleRow.add(titleLeft, BorderLayout.WEST);
+
+        // Cảnh báo nếu tổng lô ≠ tồn hệ thống trên phiếu
+        if (!batches.isEmpty() && totalRemaining != item.getSystemStock()) {
+            JLabel warn = chip(FontAwesomeSolid.EXCLAMATION_TRIANGLE,
+                    "Σ lô ≠ tồn hệ thống (" + item.getSystemStock() + ")",
+                    AppColor.WARNING, AppColor.WARNING_BG);
+            titleRow.add(warn, BorderLayout.EAST);
+        }
+
+        section.add(titleRow);
+        section.add(javax.swing.Box.createVerticalStrut(4));
+
+        JLabel hint = new JLabel("Tham chiếu tại thời điểm xem — không phải snapshot lúc kiểm kê.");
+        hint.setFont(AppFont.SMALL);
+        hint.setForeground(AppColor.TEXT_MUTED);
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        section.add(hint);
+        section.add(javax.swing.Box.createVerticalStrut(10));
+
+        if (batches.isEmpty()) {
+            RoundedPanel empty = new RoundedPanel(10, AppColor.BG_LIGHT, AppColor.BORDER);
+            empty.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 10));
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            empty.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
+
+            FontIcon emptyIcon = FontIcon.of(FontAwesomeSolid.INBOX, 14);
+            emptyIcon.setIconColor(AppColor.TEXT_MUTED);
+            JLabel emptyLabel = new JLabel("Không có lô ACTIVE còn tồn cho sản phẩm này.", emptyIcon, SwingConstants.LEFT);
+            emptyLabel.setIconTextGap(8);
+            emptyLabel.setFont(AppFont.BODY);
+            emptyLabel.setForeground(AppColor.TEXT_MUTED);
+            empty.add(emptyLabel);
+            section.add(empty);
+            return section;
+        }
+
+        // Header cột
+        section.add(buildBatchHeaderRow());
+        section.add(javax.swing.Box.createVerticalStrut(4));
+
+        for (InventoryBatch batch : batches) {
+            section.add(buildBatchRow(batch));
+            section.add(javax.swing.Box.createVerticalStrut(6));
+        }
+
+        return section;
+    }
+
+    /** Tỷ lệ cột: Mã lô (rộng) | Còn lại | HSD | Ghi chú */
+    private static final double[] BATCH_COL_WEIGHTS = {0.42, 0.12, 0.24, 0.22};
+
+    private JPanel buildBatchColumnsRow(Component colCode, Component colQty, Component colExp, Component colNote) {
+        JPanel row = new JPanel(new GridBagLayout());
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridy = 0;
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 8);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        gbc.gridx = 0;
+        gbc.weightx = BATCH_COL_WEIGHTS[0];
+        row.add(colCode, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = BATCH_COL_WEIGHTS[1];
+        row.add(colQty, gbc);
+
+        gbc.gridx = 2;
+        gbc.weightx = BATCH_COL_WEIGHTS[2];
+        row.add(colExp, gbc);
+
+        gbc.gridx = 3;
+        gbc.weightx = BATCH_COL_WEIGHTS[3];
+        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        row.add(colNote, gbc);
+
+        return row;
+    }
+
+    private JPanel buildBatchHeaderRow() {
+        JPanel row = buildBatchColumnsRow(
+                colHeader("Mã lô / Số lô"),
+                colHeader("Còn lại"),
+                colHeader("HSD"),
+                colHeader("Ghi chú"));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+        return row;
+    }
+
+    private JLabel colHeader(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(AppFont.SMALL_BOLD);
+        l.setForeground(AppColor.TEXT_MUTED);
+        return l;
+    }
+
+    private JPanel buildBatchRow(InventoryBatch batch) {
+        // Mã lô + số lô NCC — không cắt chữ
+        JPanel codeBox = new JPanel();
+        codeBox.setOpaque(false);
+        codeBox.setLayout(new BoxLayout(codeBox, BoxLayout.Y_AXIS));
+
+        String batchCode = batch.getBatchCode() != null ? batch.getBatchCode() : ("#" + batch.getBatchId());
+        JLabel codeLabel = new JLabel(batchCode);
+        codeLabel.setFont(AppFont.BODY_BOLD);
+        codeLabel.setForeground(AppColor.TEXT_PRIMARY);
+        codeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Tooltip full text nếu vẫn dài
+        codeLabel.setToolTipText(batchCode);
+
+        String lot = batch.getLotNumber();
+        if (lot != null && !lot.isBlank()) {
+            String lotText = "NCC: " + lot;
+            JLabel lotLabel = new JLabel(lotText);
+            lotLabel.setFont(AppFont.SMALL);
+            lotLabel.setForeground(AppColor.TEXT_MUTED);
+            lotLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            lotLabel.setToolTipText(lotText);
+            codeBox.add(codeLabel);
+            codeBox.add(lotLabel);
+        } else {
+            codeBox.add(codeLabel);
+        }
+
+        // Còn lại
+        JLabel qtyLabel = new JLabel(String.valueOf(batch.getRemainingQty()));
+        qtyLabel.setFont(AppFont.BODY_BOLD);
+        qtyLabel.setForeground(AppColor.TEXT_PRIMARY);
+        qtyLabel.setHorizontalAlignment(SwingConstants.LEFT);
+
+        // HSD
+        JPanel expBox = new JPanel();
+        expBox.setOpaque(false);
+        expBox.setLayout(new BoxLayout(expBox, BoxLayout.Y_AXIS));
+
+        if (batch.getExpiryDate() != null) {
+            JLabel expLabel = new JLabel(batch.getExpiryDate().format(DATE_FORMAT));
+            expLabel.setFont(AppFont.BODY);
+            expLabel.setForeground(AppColor.TEXT_PRIMARY);
+            expLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            expBox.add(expLabel);
+
+            Long days = batch.daysUntilExpiry();
+            if (days != null) {
+                String dayText;
+                Color dayColor;
+                if (days < 0) {
+                    dayText = "Quá hạn " + Math.abs(days) + " ngày";
+                    dayColor = AppColor.ERROR;
+                } else if (days <= 30) {
+                    dayText = "Còn " + days + " ngày";
+                    dayColor = AppColor.WARNING;
+                } else {
+                    dayText = "Còn " + days + " ngày";
+                    dayColor = AppColor.TEXT_MUTED;
+                }
+                JLabel dayLabel = new JLabel(dayText);
+                dayLabel.setFont(AppFont.SMALL);
+                dayLabel.setForeground(dayColor);
+                dayLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                expBox.add(dayLabel);
+            }
+        } else {
+            JLabel noExp = new JLabel("Không HSD");
+            noExp.setFont(AppFont.BODY);
+            noExp.setForeground(AppColor.TEXT_MUTED);
+            noExp.setAlignmentX(Component.LEFT_ALIGNMENT);
+            expBox.add(noExp);
+        }
+
+        // Ghi chú FEFO / sắp hết hạn
+        String noteText = batchHint(batch);
+        Color noteColor = AppColor.TEXT_MUTED;
+        Color noteBg = AppColor.WHITE;
+        if (batch.getExpiryDate() != null) {
+            Long days = batch.daysUntilExpiry();
+            if (days != null && days < 0) {
+                noteColor = AppColor.ERROR;
+                noteBg = AppColor.ERROR_BG;
+            } else if (days != null && days <= 30) {
+                noteColor = AppColor.WARNING;
+                noteBg = AppColor.WARNING_BG;
+            }
+        }
+        JLabel noteChip = chip(FontAwesomeSolid.INFO_CIRCLE, noteText, noteColor, noteBg);
+        JPanel noteWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        noteWrap.setOpaque(false);
+        noteWrap.add(noteChip);
+
+        JPanel inner = buildBatchColumnsRow(codeBox, qtyLabel, expBox, noteWrap);
+
+        RoundedPanel row = new RoundedPanel(8, AppColor.BG_LIGHT, AppColor.BORDER);
+        row.setLayout(new BorderLayout());
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
+        row.setBorder(new EmptyBorder(8, 12, 8, 12));
+        row.add(inner, BorderLayout.CENTER);
+        return row;
+    }
+
+    private String batchHint(InventoryBatch batch) {
+        if (batch.getExpiryDate() == null) {
+            return "Không hạn dùng";
+        }
+        Long days = batch.daysUntilExpiry();
+        if (days == null) return "—";
+        if (days < 0) return "Đã quá hạn";
+        if (days == 0) return "Hết hạn hôm nay";
+        if (days <= 7) return "Sắp hết hạn";
+        if (days <= 30) return "Gần hạn";
+        return "Còn hạn";
+    }
+
+    // ---------------------------------------------------------------
     // Footer
     // ---------------------------------------------------------------
 
@@ -370,7 +657,6 @@ public class StockReconciliationDetailDialog extends JDialog {
         return label;
     }
 
-
     private static String escapeHtml(String text) {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>");
     }
@@ -403,7 +689,7 @@ public class StockReconciliationDetailDialog extends JDialog {
         }
     }
 
-    /** Trang thai truc quan (mau/icon/nhan) suy ra tu dau chenh lech - la 1 gia tri bat bien, khong dung enum singleton de tranh chia se state giua cac lan mo dialog. */
+    /** Trang thai truc quan (mau/icon/nhan) suy ra tu dau chenh lech. */
     private static final class Status {
         final Color accent;
         final Color bg;

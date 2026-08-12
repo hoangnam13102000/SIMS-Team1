@@ -14,6 +14,7 @@ import com.dao.InvoiceDAO;
 import com.dao.ProductDAO;
 import com.dao.ShiftDAO;
 import com.dao.StoreConfigDAO;
+import com.dao.StockAlertDAO;
 import com.event.AutoRefresher;
 import com.event.DataChangedEvent;
 import com.model.CartItem;
@@ -213,7 +214,31 @@ public class PosPanel extends JPanel {
             AppAlert.success(this, "Đã thêm \"" + product.getProductName() + "\" vào giỏ hàng.");
         });
 
+        // NV / QL bán hàng báo hết hàng hoặc sắp hết hàng thủ công tới kho
+        productGrid.onReportStock(this::openReportStockAlert);
+
         return panel;
+    }
+
+    private void openReportStockAlert(Product product) {
+        if (product == null) return;
+        User user = AuthService.getInstance().getCurrentUser();
+        if (user == null) {
+            AppAlert.error(this, "Chưa đăng nhập", "Vui lòng đăng nhập lại để gửi báo cáo tồn kho.");
+            return;
+        }
+        // Chặn sớm nếu đã có cảnh báo đang xử lý
+        StockAlertDAO alertDAO = new StockAlertDAO();
+        if (alertDAO.hasActiveAlert(product.getProductId())) {
+            AppAlert.warning(this, "Đã có cảnh báo đang xử lý",
+                    "Sản phẩm \"" + product.getProductName()
+                            + "\" đã có cảnh báo tồn kho chưa xử lý. Quản lý kho sẽ nhận được thông báo.");
+            return;
+        }
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        new ReportStockAlertDialog(owner instanceof Frame ? (Frame) owner : null,
+                product, user.getUserId())
+                .setVisible(true);
     }
 
     private JButton buildScanButton() {

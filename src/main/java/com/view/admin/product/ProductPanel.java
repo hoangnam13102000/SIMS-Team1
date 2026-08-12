@@ -236,7 +236,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"STT", "Ảnh", "Mã SP", "Tên sản phẩm", "Danh mục", "Giá nhập", "Giá bán", "Tồn kho", "Trạng thái"};
+        return new String[]{"STT", "Ảnh", "Mã sản phẩm", "Tên sản phẩm", "Danh mục", "Giá nhập", "Giá bán", "Tồn kho", "Trạng thái"};
     }
 
     @Override

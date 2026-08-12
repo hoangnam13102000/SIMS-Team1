@@ -3,11 +3,14 @@ package com.view.admin.invoice;
 import com.components.AppAlert;
 import com.components.DatePickerField;
 import com.components.crud.BaseCrudPanel;
+import com.components.table.ActionColumn;
 import com.dao.InvoiceDAO;
 import com.model.Invoice;
+import com.model.InvoiceDetail;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
+import com.utils.pdf.InvoicePdfExporter;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -18,12 +21,14 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
 import java.awt.Cursor;
+import java.awt.Desktop;
 import java.awt.Font;
 import java.awt.FlowLayout;
 import java.awt.Frame;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -100,6 +105,14 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         buildDateFilterBar();
         initialLoad();
         applyColumnWidths();
+
+        // Them icon "Xuat PDF" canh icon Xem, de xuat hoa don ngay tren bang
+        // ma khong can mo dialog chi tiet.
+        table.setActionColumn(new ActionColumn()
+                .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+                        modelRow -> { if (supportsView()) viewRow(modelRow); })
+                .add("export", FontAwesomeSolid.FILE_PDF, AppColor.ACCENT, "Xuất hóa đơn PDF",
+                        this::exportRowPdf));
     }
 
     // ---------------------------------------------------------------
@@ -326,6 +339,38 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
             case "PAYPAL": return "PayPal";
             case "CARD": return "Thẻ";
             default: return method;
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Xuat hoa don PDF truc tiep tu icon tren bang (khong can mo dialog)
+    // ---------------------------------------------------------------
+
+    private void exportRowPdf(int modelRow) {
+        Invoice item = rowToItem(modelRow);
+        if (item == null) return;
+        try {
+            List<InvoiceDetail> details = invoiceDAO.getDetails(item.getInvoiceId());
+
+            String fileName = "HoaDon_" + item.getInvoiceCode()
+                    .replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
+            File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
+            if (!tempDir.exists()) tempDir.mkdirs();
+            File pdfFile = new File(tempDir, fileName);
+
+            InvoicePdfExporter.exportInvoice(item, details, pdfFile);
+
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(pdfFile);
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Đã tạo file PDF tại:\n" + pdfFile.getAbsolutePath(),
+                        "Xuất PDF", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Lỗi tạo file PDF: " + ex.getMessage(),
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
         }
     }
 

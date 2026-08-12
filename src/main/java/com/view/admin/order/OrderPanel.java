@@ -3,11 +3,18 @@ package com.view.admin.order;
 import com.components.AppAlert;
 import com.components.DatePickerField;
 import com.components.crud.BaseCrudPanel;
+import com.components.table.ActionColumn;
+import com.dao.InvoiceDAO;
 import com.dao.OrderDAO;
+import com.model.Invoice;
+import com.model.InvoiceDetail;
 import com.model.Order;
+import com.model.OrderDetail;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
+import com.utils.pdf.InvoicePdfExporter;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -19,12 +26,14 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
 import java.awt.Cursor;
+import java.awt.Desktop;
 import java.awt.Font;
 import java.awt.FlowLayout;
 import java.awt.Frame;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -43,6 +52,7 @@ public class OrderPanel extends BaseCrudPanel<Order> {
             DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
 
     private final OrderDAO orderDAO = new OrderDAO();
+    private final InvoiceDAO invoiceDAO = new InvoiceDAO();
 
     /** Lọc theo khoảng ngày đặt hàng. allowEmpty = true: mặc định KHÔNG lọc (hiện tất cả). */
     private DatePickerField fromDateFilter;
@@ -104,6 +114,14 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         buildDateFilterBar();
         initialLoad();
         applyColumnWidths();
+
+        // Thêm icon "Xuất PDF" cạnh icon Xem, giống trang hóa đơn tại quầy.
+        // Luôn cho bấm được; nếu đơn chưa có hóa đơn liên kết thì hiện thông báo rõ ràng.
+        table.setActionColumn(new ActionColumn()
+                .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+                        modelRow -> { if (supportsView()) viewRow(modelRow); })
+                .add("export", FontAwesomeSolid.FILE_PDF, AppColor.ACCENT, "Xuất hóa đơn PDF",
+                        this::exportRowPdf));
     }
 
     // ---------------------------------------------------------------
@@ -361,6 +379,134 @@ public class OrderPanel extends BaseCrudPanel<Order> {
             case "CANCELLED": return "Đã hủy";
             default: return status;
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Xuất hóa đơn PDF trực tiếp từ icon trên bảng (không cần mở dialog).
+    // Ưu tiên hóa đơn đã liên kết; nếu thiếu (dữ liệu cũ) thì tự lập lại
+    // cho đơn đã hoàn thành / PayPal đã thanh toán; cuối cùng fallback
+    // xuất PDF từ chính dữ liệu đơn hàng để luôn tra cứu lịch sử được.
+    // ---------------------------------------------------------------
+
+    private void exportRowPdf(int modelRow) {
+        Order item = rowToItem(modelRow);
+        if (item == null) return;
+
+        try {
+            Integer invoiceId = item.getInvoiceId();
+
+            // Đơn đã hoàn thành / đã thanh toán nhưng chưa có HĐ → lập bù
+            if (invoiceId == null) {
+                boolean eligible = "COMPLETED".equalsIgnoreCase(item.getOrderStatus())
+                        || ("PAYPAL".equalsIgnoreCase(item.getPaymentMethod())
+                            && "PAID".equalsIgnoreCase(item.getPaymentStatus()));
+                if (eligible) {
+                    int actorId = AuthService.getInstance().getCurrentUser().getUserId();
+                    invoiceId = orderDAO.ensureInvoiceForOrder(item.getOrderId(), actorId);
+                    if (invoiceId != null) {
+                        item.setInvoiceId(invoiceId);
+                    }
+                }
+            }
+
+            Invoice invoice = null;
+            List<InvoiceDetail> details = null;
+
+            if (invoiceId != null) {
+                List<Invoice> found = invoiceDAO.getByCondition("inv.InvoiceID = " + invoiceId);
+                if (!found.isEmpty()) {
+                    invoice = found.get(0);
+                    details = invoiceDAO.getDetails(invoice.getInvoiceId());
+                }
+            }
+
+            // Fallback: dựng hóa đơn tạm từ đơn hàng để vẫn in được lịch sử
+            if (invoice == null) {
+                boolean canFallback = "COMPLETED".equalsIgnoreCase(item.getOrderStatus())
+                        || "PAID".equalsIgnoreCase(item.getPaymentStatus());
+                if (!canFallback) {
+                    JOptionPane.showMessageDialog(this,
+                            "Đơn hàng này chưa đủ điều kiện xuất hóa đơn.\n\n"
+                            + "• Đơn COD: cần chuyển sang \"Hoàn thành\".\n"
+                            + "• Đơn PayPal: cần trạng thái thanh toán \"Đã thanh toán\".",
+                            "Chưa thể xuất PDF", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                invoice = buildInvoiceFromOrder(item);
+                details = buildInvoiceDetailsFromOrder(item);
+                if (details.isEmpty()) {
+                    JOptionPane.showMessageDialog(this,
+                            "Đơn hàng không có sản phẩm để xuất hóa đơn.",
+                            "Lỗi", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
+
+            String code = invoice.getInvoiceCode() != null ? invoice.getInvoiceCode() : item.getOrderCode();
+            String fileName = "HoaDon_" + code.replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
+            File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
+            if (!tempDir.exists()) tempDir.mkdirs();
+            File pdfFile = new File(tempDir, fileName);
+
+            InvoicePdfExporter.exportInvoice(invoice, details, pdfFile);
+
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(pdfFile);
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Đã tạo file PDF tại:\n" + pdfFile.getAbsolutePath(),
+                        "Xuất PDF", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Lỗi tạo file PDF: " + ex.getMessage(),
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** Dựng object Invoice tạm từ Order để xuất PDF khi chưa có bản ghi Invoices. */
+    private Invoice buildInvoiceFromOrder(Order order) {
+        Invoice inv = new Invoice();
+        inv.setInvoiceCode(order.getOrderCode() != null ? "HD-" + order.getOrderCode() : "HD-ONLINE");
+        inv.setCustomerId(order.getCustomerId());
+        inv.setCustomerName(order.getCustomerName());
+        inv.setCreatedAt(order.getCompletedAt() != null ? order.getCompletedAt() : order.getCreatedAt());
+        inv.setCreatedByName("Online");
+        inv.setSubTotal(order.getSubTotal());
+        inv.setDiscountAmount(order.getDiscountAmount());
+        inv.setPromotionCode(order.getPromotionCode());
+        inv.setTotalAmount(order.getTotalAmount());
+        // Map PTTT đơn online sang nhãn hóa đơn
+        String pm = order.getPaymentMethod();
+        if ("PAYPAL".equalsIgnoreCase(pm)) {
+            inv.setPaymentMethod("PAYPAL");
+        } else if ("COD".equalsIgnoreCase(pm)) {
+            inv.setPaymentMethod("CASH");
+        } else {
+            inv.setPaymentMethod(pm);
+        }
+        inv.setStatus("ACTIVE");
+        return inv;
+    }
+
+    private List<InvoiceDetail> buildInvoiceDetailsFromOrder(Order order) {
+        List<InvoiceDetail> result = new ArrayList<>();
+        List<OrderDetail> lines = orderDAO.getDetailsByOrderId(order.getOrderId());
+        for (OrderDetail line : lines) {
+            InvoiceDetail d = new InvoiceDetail();
+            d.setProductId(line.getProductId());
+            d.setProductName(line.getProductName());
+            d.setQuantity(line.getQuantity());
+            d.setUnitPrice(line.getUnitPrice());
+            if (line.getLineTotal() != null) {
+                d.setLineTotal(line.getLineTotal());
+            } else if (line.getUnitPrice() != null) {
+                d.setLineTotal(line.getUnitPrice().multiply(
+                        java.math.BigDecimal.valueOf(line.getQuantity())));
+            }
+            result.add(d);
+        }
+        return result;
     }
 
     // ---------------------------------------------------------------

@@ -35,18 +35,28 @@ public class ProductCard extends JPanel {
     }
 
     public ProductCard(Product product, Consumer<Product> onClick) {
-        this(product, onClick, null, null);
+        this(product, onClick, null, null, null);
     }
 
     public ProductCard(Product product, Consumer<Product> onClick,
                         Consumer<Product> onAddToCart, Consumer<Product> onFavorite) {
+        this(product, onClick, onAddToCart, onFavorite, null);
+    }
+
+    /**
+     * @param onReportStock callback báo hết/sắp hết hàng thủ công (POS).
+     *                      null = không hiện nút báo cáo.
+     */
+    public ProductCard(Product product, Consumer<Product> onClick,
+                        Consumer<Product> onAddToCart, Consumer<Product> onFavorite,
+                        Consumer<Product> onReportStock) {
         setOpaque(false);
         setLayout(new BorderLayout());
         setCursor(new Cursor(Cursor.HAND_CURSOR));
-        setBorder(new EmptyBorder(2, 2, 2, 2)); // chua cho bong do khong bi cat vien
+        setBorder(new EmptyBorder(2, 2, 2, 2));
 
         add(buildImageStack(product, onFavorite), BorderLayout.NORTH);
-        add(buildInfoArea(product, onAddToCart), BorderLayout.CENTER);
+        add(buildInfoArea(product, onAddToCart, onReportStock), BorderLayout.CENTER);
 
         if (onClick != null) {
             addMouseListener(new MouseAdapter() {
@@ -69,8 +79,6 @@ public class ProductCard extends JPanel {
             });
         }
     }
-
-    // ---------- Vung anh (bo goc tren, pill danh muc + nut tim de len tren) ----------
 
     private JLayeredPane buildImageStack(Product product, Consumer<Product> onFavorite) {
         JLayeredPane stack = new JLayeredPane();
@@ -128,8 +136,6 @@ public class ProductCard extends JPanel {
         }
     }
 
-    /** Neu san pham co ImageUrl hop le thi ve anh that (cover-fit, bo goc tren); neu khong co/loi anh thi
-     *  dung icon dai dien theo danh muc tren nen mau nhe nhu truoc, bo goc tren giong khung anh that. */
     private JPanel buildImageArea(Product product) {
         BufferedImage realImage = loadProductImage(product.getImageUrl());
 
@@ -162,13 +168,11 @@ public class ProductCard extends JPanel {
         return wrapper;
     }
 
-    /** Doc anh san pham an toan tu duong dan/URL - tra ve null neu chua co hoac loi (khong lam crash luoi san pham). */
     private BufferedImage loadProductImage(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) return null;
         return ImageUtil.readSafe(imageUrl);
     }
 
-    /** Ve anh phu kin het vung (w x h) kieu "cover" - giu ty le, cat bot phan du, luon lap day khung, khong bien dang. */
     private void drawCoverFit(Graphics2D g2, BufferedImage img, int w, int h) {
         double scale = Math.max((double) w / img.getWidth(), (double) h / img.getHeight());
         int drawW = (int) Math.ceil(img.getWidth() * scale);
@@ -191,17 +195,15 @@ public class ProductCard extends JPanel {
     }
 
     private JLabel buildCategoryPill(String categoryName) {
-        // Dark mode: nền tối + chữ sáng (tránh chữ sáng trên nền trắng bị mờ)
         boolean dark = AppColor.getCurrentMode() == com.theme.ThemeMode.DARK;
         Color bg = dark ? new Color(28, 31, 38, 230) : new Color(255, 255, 255, 235);
         return pillLabel(categoryName, bg, AppColor.TEXT_PRIMARY);
     }
+
     private JLabel buildOutOfStockPill() {
         return pillLabel("Hết hàng", AppColor.ERROR, Color.WHITE);
     }
 
-    /** Pill nen + chu tren goc anh. Chu hay bi mo do thieu hint TEXT_ANTIALIASING va nen qua trong suot
-     *  lam giam tuong phan tren anh nen - fix bang cach ve nen dam (opaque) va bat AA cho ca text luc paint. */
     private JLabel pillLabel(String text, Color bg, Color fg) {
         JLabel label = new JLabel(text) {
             @Override
@@ -215,7 +217,6 @@ public class ProductCard extends JPanel {
                 g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
                 g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
 
-                // Nen mo nhe cho khoi cung (bong do), roi nen chinh dam mau de chu de doc tren moi loai anh
                 g2.setColor(new Color(15, 23, 42, 25));
                 g2.fillRoundRect(1, 2, getWidth(), getHeight(), getHeight(), getHeight());
                 g2.setColor(bg);
@@ -234,7 +235,6 @@ public class ProductCard extends JPanel {
         return label;
     }
 
-    /** Nut tim (yeu thich) noi tren goc phai anh - CHI toggle hien thi cuc bo, chua luu DB (xem javadoc lop nay). */
     private JButton buildHeartButton(Product product, Consumer<Product> onFavorite) {
         JButton heart = new JButton() {
             @Override
@@ -265,9 +265,8 @@ public class ProductCard extends JPanel {
         return heart;
     }
 
-    // ---------- Vung thong tin (ten, gia, nut them vao gio) ----------
-
-    private JPanel buildInfoArea(Product product, Consumer<Product> onAddToCart) {
+    private JPanel buildInfoArea(Product product, Consumer<Product> onAddToCart,
+                                 Consumer<Product> onReportStock) {
         JPanel info = new JPanel();
         info.setOpaque(false);
         info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
@@ -286,9 +285,84 @@ public class ProductCard extends JPanel {
 
         info.add(nameLabel);
         info.add(priceLabel);
-        info.add(buildAddToCartButton(product, onAddToCart));
+
+        if (product.isOutOfStock() && onReportStock != null) {
+            info.add(buildReportStockButton(product, onReportStock));
+        } else {
+            info.add(buildAddToCartButton(product, onAddToCart));
+            if (!product.isOutOfStock() && product.getStock() <= product.getMinStock()
+                    && onReportStock != null) {
+                info.add(Box.createVerticalStrut(6));
+                info.add(buildReportLowStockLink(product, onReportStock));
+            }
+        }
 
         return info;
+    }
+
+    private JButton buildReportStockButton(Product product, Consumer<Product> onReportStock) {
+        JButton button = new JButton() {
+            private boolean btnHover = false;
+            {
+                addMouseListener(new MouseAdapter() {
+                    @Override public void mouseEntered(MouseEvent e) { btnHover = true; repaint(); }
+                    @Override public void mouseExited(MouseEvent e) { btnHover = false; repaint(); }
+                });
+            }
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                Color bg = btnHover ? AppColor.WARNING : AppColor.WARNING_BG;
+                Color border = AppColor.WARNING;
+                Color fg = btnHover ? Color.WHITE : AppColor.WARNING;
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, getHeight(), getHeight());
+                g2.setColor(border);
+                g2.setStroke(new BasicStroke(1.4f));
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, getHeight(), getHeight());
+                g2.dispose();
+                setForeground(fg);
+                super.paintComponent(g);
+            }
+        };
+        FontIcon bell = FontIcon.of(FontAwesomeSolid.BELL, 12);
+        bell.setIconColor(AppColor.WARNING);
+        button.setText("Báo hết hàng");
+        button.setIcon(bell);
+        button.setFont(AppFont.SMALL_BOLD);
+        button.setIconTextGap(8);
+        button.setHorizontalAlignment(SwingConstants.CENTER);
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setBorder(new EmptyBorder(9, 0, 9, 0));
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setToolTipText("Gửi thông báo hết hàng tới Quản lý kho");
+        button.addActionListener(e -> onReportStock.accept(product));
+        return button;
+    }
+
+    private JButton buildReportLowStockLink(Product product, Consumer<Product> onReportStock) {
+        JButton link = new JButton("Báo sắp hết hàng");
+        FontIcon bell = FontIcon.of(FontAwesomeSolid.BELL, 11);
+        bell.setIconColor(AppColor.WARNING);
+        link.setIcon(bell);
+        link.setIconTextGap(6);
+        link.setFont(AppFont.SMALL);
+        link.setForeground(AppColor.WARNING);
+        link.setOpaque(false);
+        link.setContentAreaFilled(false);
+        link.setBorderPainted(false);
+        link.setFocusPainted(false);
+        link.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        link.setAlignmentX(Component.LEFT_ALIGNMENT);
+        link.setToolTipText("Gửi cảnh báo tồn thấp tới Quản lý kho");
+        link.addActionListener(e -> onReportStock.accept(product));
+        return link;
     }
 
     private JButton buildAddToCartButton(Product product, Consumer<Product> onAddToCart) {
@@ -356,7 +430,6 @@ public class ProductCard extends JPanel {
         return NumberUtil.formatThousands(price) + " đ";
     }
 
-    /** Chon icon dai dien don gian theo ten danh muc - suy doan tu chuoi, khong phu thuoc bang danh muc co dinh nao. */
     private FontAwesomeSolid categoryIcon(String categoryName) {
         if (categoryName == null) return FontAwesomeSolid.BOX;
         String c = categoryName.toLowerCase();
@@ -369,14 +442,13 @@ public class ProductCard extends JPanel {
         return FontAwesomeSolid.BOX;
     }
 
-    /** Mau nen "anh" thay doi nhe theo danh muc de cac the khong bi lap lai 1 mau don dieu tren luoi. */
     private Color categoryTint(String categoryName) {
         int hue = categoryName == null ? 0 : Math.floorMod(categoryName.toLowerCase().hashCode(), 5);
         return switch (hue) {
-            case 1 -> new Color(255, 244, 230); // cam nhat
-            case 2 -> new Color(232, 245, 233); // xanh la nhat
-            case 3 -> new Color(232, 240, 254); // xanh duong nhat
-            case 4 -> new Color(253, 235, 240); // hong nhat
+            case 1 -> new Color(255, 244, 230);
+            case 2 -> new Color(232, 245, 233);
+            case 3 -> new Color(232, 240, 254);
+            case 4 -> new Color(253, 235, 240);
             default -> AppColor.ACCENT_BG_SOFT;
         };
     }
@@ -405,7 +477,6 @@ public class ProductCard extends JPanel {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2.translate(2, 2);
 
-        // Bong do nhe nhieu lop de tao cam giac "noi" (blur gia lap) - dam hon khi hover.
         int shadowLayers = hover ? 5 : 3;
         int baseAlpha = hover ? 10 : 6;
         for (int i = shadowLayers; i >= 1; i--) {

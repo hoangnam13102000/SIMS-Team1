@@ -1,14 +1,18 @@
 /* ============================================================
-   X. DU LIEU MAU (INSERT) - PHIEN BAN DAY DU, KHOP SCHEMA MOI NHAT
-   (co SupplierProducts, AuditLogs voi OldValue/NewValue)
+   DU LIEU MAU (INSERT) - PHIEN BAN DAY DU DE DEMO/THUYET TRINH
+   Muc tieu: MOI BANG trong SIMS.sql deu co du lieu, va bieu do
+   doanh thu (RevenueChartPanel/RevenueReportDAO.getDailyRevenue)
+   co du 7 cot lien tuc = 7 ngay gan nhat tinh tu luc chay script.
+
+   CHAY THEO DUNG THU TU: SIMS.sql -> Trigger_SIMS.sql -> file nay.
+   Tat ca moc thoi gian deu tinh tuong doi qua DATEADD(..., GETDATE())
+   nen script luon "con han"/"gan day" bat ke chay vao ngay nao -
+   dung lai duoc (re-run) tren 1 CSDL SIMS_DB moi tao.
    ============================================================ */
 USE SIMS_DB;
 GO
 
 -- ---- 1. Roles ----
--- Da bo sung 'CUSTOMER' (truoc day bi thieu -> khien moi lan tu dang ky
--- qua RegisterFrame deu that bai vi Users.RoleID NOT NULL khong tim thay
--- RoleCode = 'CUSTOMER').
 INSERT INTO Roles (RoleCode, RoleName, Description) VALUES
 ('ADMIN',             N'Quản trị viên',        N'Toàn quyền hệ thống'),
 ('SALES_MANAGER',     N'Quản lý bán hàng',     N'Giám sát hoạt động bán hàng'),
@@ -18,6 +22,9 @@ INSERT INTO Roles (RoleCode, RoleName, Description) VALUES
 GO
 
 -- ---- 2. Permissions ----
+-- Gom du toan bo permission code duoc dung trong RolePermissions.java /
+-- PermissionManager (enforcement source that su la Java, bang SQL nay
+-- chi phuc vu hien thi/tra cuu, xem ghi chu trong AppPermission).
 INSERT INTO Permissions (PermissionCode, Description) VALUES
 ('USER_MANAGE',         N'Quản lý người dùng (tạo/khóa/gán quyền)'),
 ('CATEGORY_MANAGE',     N'Quản lý danh mục sản phẩm'),
@@ -38,7 +45,15 @@ INSERT INTO Permissions (PermissionCode, Description) VALUES
 ('AUDIT_VIEW',          N'Xem nhật ký hệ thống'),
 ('REPORT_INVENTORY',    N'Báo cáo tồn kho, biểu đồ xu hướng tồn'),
 ('REPORT_REVENUE',      N'Thống kê doanh thu, biểu đồ xu hướng bán'),
-('REPORT_PROFIT',       N'Báo cáo lợi nhuận');
+('REPORT_PROFIT',       N'Báo cáo lợi nhuận'),
+('ORDER_VIEW',          N'Xem đơn hàng online từ khách'),
+('ORDER_MANAGE',        N'Xác nhận / hủy đơn hàng online từ khách'),
+('BACKUP_MANAGE',       N'Xem trang Sao lưu & Khôi phục, tự sao lưu / khôi phục DB từ file backup'),
+('RETURN_EXCHANGE_CREATE',  N'Tạo yêu cầu đổi/trả hàng cho hóa đơn'),
+('RETURN_EXCHANGE_APPROVE', N'Duyệt / từ chối yêu cầu đổi/trả hàng giá trị lớn'),
+('EXCEPTION_REPORT_CREATE', N'Gửi báo cáo ngoại lệ cho Quản lý bán hàng'),
+('SETTINGS_MANAGE',     N'Xem và sửa trang Cài đặt hệ thống (VAT, tên cửa hàng, chính sách đổi trả...)'),
+('SUPPLIER_RETURN_MANAGE',  N'Lập phiếu trả hàng lỗi/hỏng về nhà cung cấp');
 GO
 
 -- ---- 3. RolePermissions ----
@@ -49,19 +64,20 @@ INSERT INTO RolePermissions (RoleID, PermissionID)
 SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'SALES_STAFF'), PermissionID
 FROM Permissions
 WHERE PermissionCode IN ('STOCK_VIEW','PRODUCT_SEARCH','INVOICE_CREATE','INVOICE_CANCEL',
-                          'RETURN_EXCHANGE','EXCEPTION_REPORT_SEND','CUSTOMER_MANAGE');
+                          'RETURN_EXCHANGE','RETURN_EXCHANGE_CREATE','EXCEPTION_REPORT_SEND',
+                          'EXCEPTION_REPORT_CREATE','CUSTOMER_MANAGE','ORDER_VIEW','ORDER_MANAGE');
 
 INSERT INTO RolePermissions (RoleID, PermissionID)
 SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'INVENTORY_MANAGER'), PermissionID
 FROM Permissions
 WHERE PermissionCode IN ('STOCK_VIEW','STOCK_IMPORT','STOCK_RECONCILE','REPORT_INVENTORY',
-                          'SUPPLIER_MANAGE','EXCEPTION_REPORT_HANDLE');
+                          'SUPPLIER_MANAGE','SUPPLIER_RETURN_MANAGE','EXCEPTION_REPORT_HANDLE');
 
 INSERT INTO RolePermissions (RoleID, PermissionID)
 SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'SALES_MANAGER'), PermissionID
 FROM Permissions
 WHERE PermissionCode IN ('REPORT_REVENUE','REPORT_PROFIT','EXCEPTION_REPORT_HANDLE',
-                          'RETURN_APPROVE','AUDIT_VIEW');
+                          'RETURN_APPROVE','RETURN_EXCHANGE_APPROVE','AUDIT_VIEW');
 
 -- Khach hang (tu dang ky o client): chi duoc tim/xem san pham
 INSERT INTO RolePermissions (RoleID, PermissionID)
@@ -71,7 +87,8 @@ WHERE PermissionCode IN ('PRODUCT_SEARCH');
 GO
 
 -- ---- 4. Users ----
--- Da them cot AvatarUrl (anh dai dien, co the NULL neu chua upload).
+-- Mat khau tat ca tai khoan mau (tru 'khach_le' - vo hieu hoa) la: 123456
+-- (BCrypt cost 12, xem UPDATE Users o cuoi file - dat sau khi bang Users co du dong).
 INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, RoleID) VALUES
 ('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Hoàng Trung Nam',  'nam@connectmart.vn',   '0900000001', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
 ('salesmgr', '$2a$10$examplehash.salesmgr.000000000000000000000000000', N'Hà Minh Tuấn',     'tuan.sm@connectmart.vn', '0900000002', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_MANAGER')),
@@ -81,6 +98,8 @@ INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, Ro
 -- Tai khoan khach hang (Role = CUSTOMER) - can co truoc vi Customers gio ke thua Users
 ('lan.nguyen',  '$2a$10$examplehash.customer1.00000000000000000000000', N'Nguyễn Thị Lan',  'lan.nguyen@gmail.com', '0912345678', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER')),
 ('hung.tran',   '$2a$10$examplehash.customer2.00000000000000000000000', N'Trần Văn Hùng',   'hung.tran@gmail.com',  '0987654321', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER')),
+('mai.pham',    '$2a$10$examplehash.customer3.00000000000000000000000', N'Phạm Thị Mai',    'mai.pham@gmail.com',   '0933112233', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER')),
+('duc.le',      '$2a$10$examplehash.customer4.00000000000000000000000', N'Lê Anh Đức',      'duc.le@gmail.com',     '0977665544', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER')),
 ('khach_le',    '$2a$10$examplehash.guest.000000000000000000000000000', N'Khách lẻ',        NULL,                    NULL,          NULL, (SELECT RoleID FROM Roles WHERE RoleCode='CUSTOMER'));
 GO
 
@@ -91,38 +110,52 @@ GO
 
 -- ---- 5. Categories ----
 INSERT INTO Categories (CategoryName) VALUES
-(N'Trái cây'), (N'Rau củ'), (N'Đồ uống'), (N'Thực phẩm khô');
+(N'Trái cây'), (N'Rau củ'), (N'Đồ uống'), (N'Thực phẩm khô'), (N'Sữa các loại'), (N'Bánh kẹo');
 GO
 
 -- ---- 6. Suppliers ----
+-- Them 1 NCC da bi xoa mem (IsDeleted=1) de trang Quan ly NCC co du truong hop
+-- loc "da xoa"/"dang hoat dong".
 INSERT INTO Suppliers (SupplierName, Address, Phone, Email, SuppliedItems) VALUES
 (N'Công ty TNHH Nông sản Miền Tây', N'123 Nguyễn Trãi, Cần Thơ', '0710123456', 'contact@mientaynongsan.vn', N'Trái cây, rau củ'),
 (N'Công ty CP Thực phẩm An Bình',   N'45 Lê Lợi, TP.HCM',        '0281234567', 'sales@anbinhfood.vn',       N'Đồ uống, thực phẩm khô'),
-(N'Công ty TNHH Rau sạch Đà Lạt',   N'88 Trần Phú, Đà Lạt',      '0263123456', 'contact@dalatveggie.vn',    N'Rau củ');
+(N'Công ty TNHH Rau sạch Đà Lạt',   N'88 Trần Phú, Đà Lạt',      '0263123456', 'contact@dalatveggie.vn',    N'Rau củ'),
+(N'Công ty CP Sữa & Bánh kẹo Việt', N'12 Cách Mạng Tháng 8, TP.HCM', '0287654321', 'sales@vietdairy.vn',    N'Sữa, bánh kẹo');
+GO
+
+INSERT INTO Suppliers (SupplierName, Address, Phone, Email, SuppliedItems) VALUES
+(N'Công ty TNHH Gia vị Miền Trung', N'56 Trần Hưng Đạo, Đà Nẵng', '0236123456', 'contact@giavimientrung.vn', N'Gia vị, thực phẩm khô');
+UPDATE Suppliers SET IsDeleted = 1, DeletedAt = DATEADD(DAY, -30, GETDATE())
+WHERE SupplierName = N'Công ty TNHH Gia vị Miền Trung';
 GO
 
 -- ---- 7. Products ----
 -- QUAN TRONG: Stock LUON de = 0 khi insert - day KHONG phai cot nhap tay,
 -- ma la cot duoc trigger trg_PurchaseReceiptDetails_Insert tu dong cong don
--- theo InventoryBatch (xem sql/Trigger_SIMS.sql). Neu insert thang mot con
--- so vao Stock ma khong tao InventoryBatch tuong ung, POS se bi "tam thay":
--- PosCartService doc Products.Stock nen van cho bo vao gio hang binh thuong
--- (hien "con hang"), nhung trigger trg_InvoiceDetails_CheckStock khi lap hoa
--- don lai tinh ton that theo SUM(InventoryBatch.RemainingQty) = 0 nen chan
--- luon voi loi "San pham da het hang" -> thanh toan tao bug lan lon giua 2
--- nguon du lieu. Tat ca ton kho ban dau vi vay PHAI di qua muc 11 (Phieu
--- nhap kho) ngay ben duoi, giong cach "Ca phe bot" da tung lam dung truoc day.
-INSERT INTO Products (ProductName, CategoryID, ImportPrice, SellPrice, Stock, MinStock) VALUES
-(N'Táo Envy',       (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      35000, 45000, 0, 10),
-(N'Chuối già',       (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      15000, 20000, 0, 15),
-(N'Cà chua',         (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        18000, 24000, 0, 10),
-(N'Cà rốt',          (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        12000, 17000, 0, 10),
-(N'Nước suối 500ml', (SELECT CategoryID FROM Categories WHERE CategoryName=N'Đồ uống'),        4000,  6000, 0, 30),
-(N'Cà phê bột 500g', (SELECT CategoryID FROM Categories WHERE CategoryName=N'Thực phẩm khô'), 65000, 89000, 0,  5);
+-- theo InventoryBatch (xem sql/Trigger_SIMS.sql). Margin duoc dat rieng cho
+-- tung SP de trg_Products_SyncSellPrice (chay ngay sau INSERT nay) tinh ra
+-- dung SellPrice mong muon = ImportPrice + Margin, khong bi roi ve muc
+-- DEFAULT_MARGIN chung (5000, fn_GetDefaultMargin). Tat ca ton kho ban dau
+-- PHAI di qua muc 11 (Phieu nhap kho) ben duoi.
+INSERT INTO Products (ProductName, CategoryID, ImportPrice, SellPrice, Margin, Stock, MinStock) VALUES
+(N'Táo Envy',                (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      35000, 45000, 10000, 0, 10),
+(N'Chuối già',                (SELECT CategoryID FROM Categories WHERE CategoryName=N'Trái cây'),      15000, 20000,  5000, 0, 15),
+(N'Cà chua',                  (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        17500, 24000,  6500, 0, 10),
+(N'Cà rốt',                   (SELECT CategoryID FROM Categories WHERE CategoryName=N'Rau củ'),        12000, 17000,  5000, 0, 10),
+(N'Nước suối 500ml',          (SELECT CategoryID FROM Categories WHERE CategoryName=N'Đồ uống'),        4000,  6000,  2000, 0, 30),
+(N'Trà xanh Không Độ 500ml',  (SELECT CategoryID FROM Categories WHERE CategoryName=N'Đồ uống'),        6000,  8500,  2500, 0, 20),
+(N'Cà phê bột 500g',          (SELECT CategoryID FROM Categories WHERE CategoryName=N'Thực phẩm khô'), 65000, 89000, 24000, 0,  5),
+(N'Mì tôm Hảo Hảo (thùng)',   (SELECT CategoryID FROM Categories WHERE CategoryName=N'Thực phẩm khô'), 90000,105000, 15000, 0,  5),
+(N'Sữa tươi Vinamilk 1L',     (SELECT CategoryID FROM Categories WHERE CategoryName=N'Sữa các loại'),  28000, 36000,  8000, 0, 20),
+(N'Bánh quy bơ 200g',         (SELECT CategoryID FROM Categories WHERE CategoryName=N'Bánh kẹo'),      20000, 28000,  8000, 0, 10);
+GO
+
+-- Mi tom Hao Hao khong nhap kho (Stock=0) va bi vo hieu hoa - minh hoa
+-- san pham DISABLED trong ProductPanel/StockOverview.
+UPDATE Products SET Status = 'DISABLED' WHERE ProductName = N'Mì tôm Hảo Hảo (thùng)';
 GO
 
 -- ---- 8. SupplierProducts ----
--- Minh hoa 1 SP co the lay tu nhieu NCC voi gia khac nhau (vd: Ca rot lay duoc ca 2 noi)
 INSERT INTO SupplierProducts (SupplierID, ProductID, SupplyPrice, IsPreferred) VALUES
 ((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Nông sản Miền Tây'),
  (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 35000, 1),
@@ -135,17 +168,22 @@ INSERT INTO SupplierProducts (SupplierID, ProductID, SupplyPrice, IsPreferred) V
 ((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
  (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 4000, 1),
 ((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 6000, 1),
+((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
  (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 65000, 1),
+((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Mì tôm Hảo Hảo (thùng)'), 90000, 1),
 ((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Rau sạch Đà Lạt'),
  (SELECT ProductID FROM Products WHERE ProductName=N'Cà chua'), 17500, 1),   -- gia tot hon -> NCC uu tien
 ((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Rau sạch Đà Lạt'),
- (SELECT ProductID FROM Products WHERE ProductName=N'Cà rốt'), 12000, 1);    -- gia tot hon -> NCC uu tien
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà rốt'), 12000, 1),    -- gia tot hon -> NCC uu tien
+((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Sữa & Bánh kẹo Việt'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 28000, 1),
+((SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Sữa & Bánh kẹo Việt'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Bánh quy bơ 200g'), 20000, 1);
 GO
 
 -- ---- 9. Customers ----
--- Customers gio ke thua Users (CustomerID = UserID), nen chi con insert
--- CustomerID (tro toi tai khoan da tao o buoc 4) + MemberPoint rieng cua
--- ho so khach hang. FullName/Phone/Email lay thang tu Users, khong luu trung.
 INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint)
 SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 120
 FROM Users WHERE Username = 'lan.nguyen'
@@ -153,65 +191,117 @@ UNION ALL
 SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 35
 FROM Users WHERE Username = 'hung.tran'
 UNION ALL
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 68
+FROM Users WHERE Username = 'mai.pham'
+UNION ALL
+SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 12
+FROM Users WHERE Username = 'duc.le'
+UNION ALL
 SELECT UserID, 'CUS_' + RIGHT('0000' + CAST(UserID AS VARCHAR(10)), 4), 0   -- dai dien cho khach vang lai khong luu thong tin
 FROM Users WHERE Username = 'khach_le';
 GO
 
--- ---- 10. Shift ----
--- Giu Status = 'OPEN' de dung voi trigger R4 moi (chi huy khi ca dang mo + cung ngay)
-INSERT INTO Shifts (UserID, StartTime, Status) VALUES
-((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, -3, GETDATE()), 'OPEN');
+-- ---- 10. Ca ban hang (Shifts) - 1 ca/ngay trong 7 ngay gan nhat ----
+-- Ca cua 6 ngay truoc da CLOSED, ca hom nay (ngay 0) con OPEN - dung lam
+-- ShiftID cho toan bo hoa don mau o muc 12 ben duoi (FK bat buoc).
+INSERT INTO Shifts (UserID, StartTime, EndTime, Status) VALUES
+((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, 8, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)), DATEADD(HOUR, 21, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)), 'CLOSED'),
+((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, 8, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)), DATEADD(HOUR, 21, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)), 'CLOSED'),
+((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, 8, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)), DATEADD(HOUR, 21, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)), 'CLOSED'),
+((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, 8, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)), DATEADD(HOUR, 21, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)), 'CLOSED'),
+((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, 8, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)), DATEADD(HOUR, 21, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)), 'CLOSED'),
+((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, 8, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)), DATEADD(HOUR, 21, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)), 'CLOSED'),
+((SELECT UserID FROM Users WHERE Username='staff01'), DATEADD(HOUR, 8, CAST(CAST(DATEADD(DAY, 0,GETDATE()) AS DATE) AS DATETIME)), NULL, 'OPEN');
 GO
 
 -- ---- 11. Phieu nhap kho mau (BAT BUOC chay TRUOC muc 12 - Hoa don mau) ----
--- Day la nguon DUY NHAT tao InventoryBatch (tung dong PurchaseReceiptDetails
--- sinh dung 1 lo qua trigger trg_PurchaseReceiptDetails_Insert), trigger se
--- tu cong Products.Stock tuong ung - KHONG duoc UPDATE Products.Stock thu
--- cong o bat ky dau khac. Nhap theo dung NCC uu tien (IsPreferred=1) da khai
--- bao o muc 8 cho nhat quan gia. HSD dat tuong doi theo GETDATE() de luon
--- "con han" bat ke script duoc chay vao ngay nao (R1/FEFO: b.ExpiryDate >=
--- CAST(GETDATE() AS DATE) moi duoc tinh vao ton kho ban duoc); hang kho
--- khong theo doi HSD (nuoc dong chai) de ManufactureDate/ExpiryDate = NULL.
+-- Day la nguon DUY NHAT tao InventoryBatch, trigger tu cong Products.Stock
+-- tuong ung - KHONG duoc UPDATE Products.Stock thu cong o bat ky dau khac.
+-- So luong nhap du de "song sot" qua 7 ngay ban hang mau o muc 12.
 INSERT INTO PurchaseReceipts (ReceiptCode, SupplierID, CreatedBy, TotalAmount) VALUES
-('PN-20260715-001',
+('PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-10,GETDATE()), 112) + '-001',
  (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Nông sản Miền Tây'),
  (SELECT UserID FROM Users WHERE Username='invmgr'), 0),
-('PN-20260716-001',
+('PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-9,GETDATE()), 112) + '-001',
  (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Rau sạch Đà Lạt'),
  (SELECT UserID FROM Users WHERE Username='invmgr'), 0),
-('PN-20260718-001',
+('PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-8,GETDATE()), 112) + '-001',
  (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
+ (SELECT UserID FROM Users WHERE Username='invmgr'), 0),
+('PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-7,GETDATE()), 112) + '-001',
+ (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Sữa & Bánh kẹo Việt'),
+ (SELECT UserID FROM Users WHERE Username='invmgr'), 0),
+-- Phieu rieng chi de tao 1 lo CA PHE BOT DA HET HAN (dung cho demo Tra NCC + Huy huy kho)
+('PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-30,GETDATE()), 112) + '-002',
+ (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình'),
+ (SELECT UserID FROM Users WHERE Username='invmgr'), 0),
+-- Phieu nhap bo sung giua tuan (Tao Envy + Chuoi gia) - minh hoa 1 SP co NHIEU lo (FEFO)
+('PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-3,GETDATE()), 112) + '-002',
+ (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty TNHH Nông sản Miền Tây'),
  (SELECT UserID FROM Users WHERE Username='invmgr'), 0);
 GO
 
 -- Nong san Mien Tay: Tao Envy + Chuoi gia (trai cay, mau nhanh het han hon)
 INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
-((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260715-001'),
- (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 50, 35000,
- N'LOT-TAO-001', DATEADD(DAY, -3, GETDATE()), DATEADD(DAY, 20, GETDATE())),
-((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260715-001'),
- (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 80, 15000,
- N'LOT-CHUOI-001', DATEADD(DAY, -1, GETDATE()), DATEADD(DAY, 7, GETDATE()));
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-10,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 300, 35000,
+ N'LOT-TAO-001', DATEADD(DAY, -13, GETDATE()), DATEADD(DAY, 30, GETDATE())),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-10,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 400, 15000,
+ N'LOT-CHUOI-001', DATEADD(DAY, -11, GETDATE()), DATEADD(DAY, 14, GETDATE()));
 GO
 
 -- Rau sach Da Lat (NCC uu tien - gia 17500/12000 theo SupplierProducts): Ca chua + Ca rot
 INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
-((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260716-001'),
- (SELECT ProductID FROM Products WHERE ProductName=N'Cà chua'), 40, 17500,
- N'LOT-CACHUA-001', DATEADD(DAY, -2, GETDATE()), DATEADD(DAY, 10, GETDATE())),
-((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260716-001'),
- (SELECT ProductID FROM Products WHERE ProductName=N'Cà rốt'), 60, 12000,
- N'LOT-CAROT-001', DATEADD(DAY, -2, GETDATE()), DATEADD(DAY, 25, GETDATE()));
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-9,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà chua'), 200, 17500,
+ N'LOT-CACHUA-001', DATEADD(DAY, -11, GETDATE()), DATEADD(DAY, 20, GETDATE())),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-9,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà rốt'), 250, 12000,
+ N'LOT-CAROT-001', DATEADD(DAY, -11, GETDATE()), DATEADD(DAY, 35, GETDATE()));
 GO
 
--- An Binh: Nuoc suoi (khong theo doi HSD) + Ca phe bot (kho, HSD dai)
+-- An Binh: Nuoc suoi (khong theo doi HSD) + Tra xanh + Ca phe bot (kho, HSD dai)
 INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
-((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260718-001'),
- (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 200, 4000,
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-8,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 500, 4000,
  N'LOT-NUOC-001', NULL, NULL),
-((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-20260718-001'),
- (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 30, 65000,
- N'LOT-CAPHE-001', DATEADD(DAY, -5, GETDATE()), DATEADD(DAY, 365, GETDATE()));
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-8,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 300, 6000,
+ N'LOT-TRAXANH-001', DATEADD(DAY, -10, GETDATE()), DATEADD(DAY, 180, GETDATE())),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-8,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 150, 65000,
+ N'LOT-CAPHE-001', DATEADD(DAY, -8, GETDATE()), DATEADD(DAY, 365, GETDATE()));
+GO
+
+-- Sua & Banh keo Viet: Sua tuoi (nhieu) + Banh quy bo (nhap it -> tu dong bao LOW_STOCK
+-- qua trg_Products_AutoStockAlert vi Stock=8 <= MinStock=10 ngay sau khi cong kho)
+INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-7,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 200, 28000,
+ N'LOT-SUA-001', DATEADD(DAY, -9, GETDATE()), DATEADD(DAY, 25, GETDATE())),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-7,GETDATE()), 112) + '-001'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Bánh quy bơ 200g'), 8, 20000,
+ N'LOT-BANHQUY-001', DATEADD(DAY, -9, GETDATE()), DATEADD(DAY, 60, GETDATE()));
+GO
+
+-- Lo Ca phe bot DA HET HAN (30 ngay truoc, HSD -5 ngay so voi hom nay) - khong tinh
+-- vao ton kho ban duoc (trigger loai b.ExpiryDate < GETDATE()), dung cho muc 13/14
+-- (Tra hang ve NCC + Huy huy kho) minh hoa xu ly hang qua han.
+INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-30,GETDATE()), 112) + '-002'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 20, 65000,
+ N'LOT-CAPHE-EXP-001', DATEADD(DAY, -395, GETDATE()), DATEADD(DAY, -5, GETDATE()));
+GO
+
+-- Nhap bo sung giua tuan: them 1 lo moi cho Tao Envy + Chuoi gia (2 lo/SP -> FEFO ro rang)
+INSERT INTO PurchaseReceiptDetails (ReceiptID, ProductID, Quantity, ImportPrice, LotNumber, ManufactureDate, ExpiryDate) VALUES
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-3,GETDATE()), 112) + '-002'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 80, 35000,
+ N'LOT-TAO-002', DATEADD(DAY, -4, GETDATE()), DATEADD(DAY, 25, GETDATE())),
+((SELECT ReceiptID FROM PurchaseReceipts WHERE ReceiptCode='PN-' + CONVERT(VARCHAR(8), DATEADD(DAY,-3,GETDATE()), 112) + '-002'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 60, 15000,
+ N'LOT-CHUOI-002', DATEADD(DAY, -4, GETDATE()), DATEADD(DAY, 10, GETDATE()));
 GO
 
 UPDATE r
@@ -221,51 +311,424 @@ JOIN (SELECT ReceiptID, SUM(Quantity * ImportPrice) AS Sum FROM PurchaseReceiptD
   ON t.ReceiptID = r.ReceiptID;
 GO
 
--- ---- 12. Hoa don mau (co CustomerID, PaymentMethod, VATRate) ----
--- Chay SAU muc 11 nen luc nay Tao Envy/Nuoc suoi da co InventoryBatch that ->
--- trg_InvoiceDetails_CheckStock moi cho phep insert (truoc day 2 dong nay
--- nam TRUOC phan nhap kho nen luon bi trigger tu choi vi ton kho theo batch = 0).
-INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, VATRate, TotalAmount) VALUES
-('HD-20260725-001',
- (SELECT TOP 1 ShiftID FROM Shifts ORDER BY ShiftID DESC),
+-- ---- 12. Hoa don ban hang 7 ngay gan nhat (phuc vu bieu do doanh thu) ----
+-- Invoice A (sang, staff01, khach quen Lan, CASH), B (trua, staff02, khach le, BANK_TRANSFER),
+-- C (chieu toi, staff01, khach quen Hung, CARD/PAYPAL xen ke) - moi ngay 3 hoa don
+-- => dam bao RevenueChartPanel (RevenueReportDAO.getDailyRevenue) co du 7 cot doanh thu lien tuc.
+
+-- Ngay -6
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-6,GETDATE()), 112) + '-A',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-6,GETDATE()) AS DATE)),
  (SELECT UserID FROM Users WHERE Username='staff01'),
- (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID = c.CustomerID WHERE u.FullName=N'Nguyễn Thị Lan'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ (CASE WHEN DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)) END),
  'CASH', 8, 0);
 GO
-
--- Insert chi tiet hoa don -> trigger trg_InvoiceDetails_CheckStock se tu tru kho
--- (theo FEFO, tru dan tren InventoryBatch) + tu ghi InventoryTransactions (TransactionType='SALE')
 INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
 ((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
- (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 3, 45000),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
 ((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
- (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 2, 6000);
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-6,GETDATE()), 112) + '-B',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-6,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff02'),
+ NULL,
+ (CASE WHEN DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'BANK_TRANSFER', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 1, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-6,GETDATE()), 112) + '-C',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-6,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ (CASE WHEN DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-6,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CARD', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 5, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Bánh quy bơ 200g'), 1, (SELECT SellPrice FROM Products WHERE ProductName=N'Bánh quy bơ 200g'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
 GO
 
--- Cap nhat SubTotal + TotalAmount (VATAmount la computed column tu SubTotal*VATRate/100)
-UPDATE i
-SET i.SubTotal    = t.Sum,
-    i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
-FROM Invoices i
-JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t
-  ON t.InvoiceID = i.InvoiceID;
+-- Ngay -5
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-5,GETDATE()), 112) + '-A',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-5,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ (CASE WHEN DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CASH', 8, 0);
 GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-5,GETDATE()), 112) + '-B',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-5,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff02'),
+ NULL,
+ (CASE WHEN DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'BANK_TRANSFER', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-5,GETDATE()), 112) + '-C',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-5,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ (CASE WHEN DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-5,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'PAYPAL', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+
+-- Ngay -4
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-4,GETDATE()), 112) + '-A',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-4,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ (CASE WHEN DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CASH', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-4,GETDATE()), 112) + '-B',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-4,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff02'),
+ NULL,
+ (CASE WHEN DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'BANK_TRANSFER', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 1, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-4,GETDATE()), 112) + '-C',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-4,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ (CASE WHEN DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-4,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CARD', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+
+-- Ngay -3
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-3,GETDATE()), 112) + '-A',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-3,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ (CASE WHEN DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CASH', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-3,GETDATE()), 112) + '-B',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-3,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff02'),
+ NULL,
+ (CASE WHEN DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'BANK_TRANSFER', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-3,GETDATE()), 112) + '-C',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-3,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ (CASE WHEN DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-3,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'PAYPAL', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 6, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Bánh quy bơ 200g'), 1, (SELECT SellPrice FROM Products WHERE ProductName=N'Bánh quy bơ 200g'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+
+-- Ngay -2
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-2,GETDATE()), 112) + '-A',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-2,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ (CASE WHEN DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CASH', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-2,GETDATE()), 112) + '-B',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-2,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff02'),
+ NULL,
+ (CASE WHEN DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'BANK_TRANSFER', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 1, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-2,GETDATE()), 112) + '-C',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-2,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ (CASE WHEN DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-2,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CARD', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 5, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+
+-- Ngay -1
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-1,GETDATE()), 112) + '-A',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-1,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ (CASE WHEN DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CASH', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-1,GETDATE()), 112) + '-B',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-1,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff02'),
+ NULL,
+ (CASE WHEN DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'BANK_TRANSFER', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-1,GETDATE()), 112) + '-C',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-1,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ (CASE WHEN DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-1,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'PAYPAL', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 4, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+
+-- Ngay -0
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-0,GETDATE()), 112) + '-A',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-0,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ (CASE WHEN DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-0,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 9, CAST(CAST(DATEADD(DAY,-0,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CASH', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-0,GETDATE()), 112) + '-B',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-0,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff02'),
+ NULL,
+ (CASE WHEN DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-0,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 13, CAST(CAST(DATEADD(DAY,-0,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'BANK_TRANSFER', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 1, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+INSERT INTO Invoices (InvoiceCode, ShiftID, CreatedBy, CustomerID, CreatedAt, PaymentMethod, VATRate, TotalAmount) VALUES
+('HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-0,GETDATE()), 112) + '-C',
+ (SELECT TOP 1 ShiftID FROM Shifts WHERE UserID=(SELECT UserID FROM Users WHERE Username='staff01') AND CAST(StartTime AS DATE)=CAST(DATEADD(DAY,-0,GETDATE()) AS DATE)),
+ (SELECT UserID FROM Users WHERE Username='staff01'),
+ (SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ (CASE WHEN DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-0,GETDATE()) AS DATE) AS DATETIME)) > GETDATE() THEN DATEADD(MINUTE,-1,GETDATE()) ELSE DATEADD(HOUR, 18, CAST(CAST(DATEADD(DAY,-0,GETDATE()) AS DATE) AS DATETIME)) END),
+ 'CARD', 8, 0);
+GO
+INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già')),
+((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'));
+GO
+UPDATE i SET i.SubTotal = t.Sum, i.TotalAmount = t.Sum + (t.Sum * i.VATRate / 100)
+FROM Invoices i JOIN (SELECT InvoiceID, SUM(LineTotal) AS Sum FROM InvoiceDetails GROUP BY InvoiceID) t ON t.InvoiceID = i.InvoiceID
+WHERE i.InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC);
+GO
+
+
 
 -- ---- 13. Doi/tra hang mau (co Approval that su, dung thu tu PENDING -> APPROVED) ----
 INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, RequiresApproval, Status, CreatedBy) VALUES
-((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
- 'RETURN', N'Khách phản ánh táo bị dập, xin trả lại 1 quả', 45000, 0, 'PENDING',
+((SELECT InvoiceID FROM Invoices WHERE InvoiceCode = 'HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-2,GETDATE()), 112) + '-C'),
+ 'RETURN', N'Khách phản ánh chuối bị dập, xin trả lại 1 nải', 20000, 0, 'PENDING',
  (SELECT UserID FROM Users WHERE Username='staff01'));
 GO
 
 INSERT INTO ReturnExchangeDetails (ReturnID, ProductID, Quantity, Direction, UnitPrice) VALUES
 ((SELECT TOP 1 ReturnID FROM ReturnExchanges ORDER BY ReturnID DESC),
- (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), 1, 'IN', 45000);
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), 1, 'IN',
+ (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già'));
 GO
 
--- Duyet return (gia tri nho, khong bat buoc RETURN_APPROVE nhung van co the ghi nhan nguoi xu ly)
--- Trigger trg_ReturnExchange_ApprovedStock se tu cong kho + ghi InventoryTransactions (RETURN_IN)
--- + tu dieu chinh lai Invoices.SubTotal/TotalAmount cua hoa don goc
+-- Duyet return (gia tri nho) - trigger trg_ReturnExchange_ApprovedStock se tu cong kho +
+-- ghi InventoryTransactions (RETURN_IN) + tu dieu chinh lai Invoices.SubTotal/TotalAmount
 UPDATE ReturnExchanges
 SET Status = 'APPROVED',
     ApprovedBy = (SELECT UserID FROM Users WHERE Username='salesmgr'),
@@ -273,23 +736,96 @@ SET Status = 'APPROVED',
 WHERE ReturnID = (SELECT TOP 1 ReturnID FROM ReturnExchanges ORDER BY ReturnID DESC);
 GO
 
--- ---- 14. Doi/tra gia tri lon, can duyet ----
+-- ---- 14. Doi/tra gia tri lon, can duyet (van PENDING de demo man hinh cho duyet) ----
 INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, RequiresApproval, Status, CreatedBy) VALUES
-((SELECT TOP 1 InvoiceID FROM Invoices ORDER BY InvoiceID DESC),
- 'EXCHANGE', N'Khách đổi nước suối 500ml lấy cà phê bột 500g do đặt nhầm', 89000, 1, 'PENDING',
- (SELECT UserID FROM Users WHERE Username='staff01'));
+((SELECT InvoiceID FROM Invoices WHERE InvoiceCode = 'HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-4,GETDATE()), 112) + '-B'),
+ 'EXCHANGE', N'Khách đổi cà phê bột lấy sữa tươi do đặt nhầm', 89000, 1, 'PENDING',
+ (SELECT UserID FROM Users WHERE Username='staff02'));
 GO
 
 INSERT INTO ReturnExchangeDetails (ReturnID, ProductID, Quantity, Direction, UnitPrice) VALUES
 ((SELECT TOP 1 ReturnID FROM ReturnExchanges ORDER BY ReturnID DESC),
- (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), 2, 'IN',  6000),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), 1, 'IN',
+ (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
 ((SELECT TOP 1 ReturnID FROM ReturnExchanges ORDER BY ReturnID DESC),
- (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'),  1, 'OUT', 89000);
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), 2, 'OUT',
+ (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'));
 GO
--- Gia tri lon (RequiresApproval=1) -> co tinh de PENDING, cho SALES_MANAGER duyet o buoc sau,
--- minh hoa constraint CK_Return_ApprovalRequired: khong the set APPROVED neu chua co ApprovedBy
+-- Gia tri lon (RequiresApproval=1) -> giu PENDING, cho SALES_MANAGER duyet o man hinh,
+-- minh hoa constraint CK_Return_ApprovalRequired
 
--- ---- 15. Doi chieu kho cuoi ngay mau ----
+-- ---- 15. Tra hang loi ve NCC (SupplierReturns) ----
+-- Bang nay KHONG co trigger rieng - logic tru kho/cong no NCC nam trong
+-- SupplierReturnDAO.java, tai lap y het o day: tru InventoryBatch.RemainingQty
+-- (lo Ca phe bot DA HET HAN), tru Products.Stock, ghi InventoryTransactions
+-- (SUPPLIER_RETURN, OUT), cong don Suppliers.DebtBalance.
+DECLARE @SR_SupplierID INT = (SELECT SupplierID FROM Suppliers WHERE SupplierName=N'Công ty CP Thực phẩm An Bình');
+DECLARE @SR_ProductID  INT = (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g');
+DECLARE @SR_BatchID    INT = (SELECT BatchID FROM InventoryBatch WHERE LotNumber = N'LOT-CAPHE-EXP-001');
+DECLARE @SR_Qty        INT = 10;
+DECLARE @SR_UnitPrice  DECIMAL(18,0) = 65000;
+
+INSERT INTO SupplierReturns (SupplierID, Reason, Status, TotalRefundAmount, Note, CreatedBy)
+VALUES (@SR_SupplierID, 'EXPIRED', 'COMPLETED', @SR_Qty * @SR_UnitPrice,
+        N'Trả lại lô cà phê bột hết hạn sử dụng, yêu cầu NCC hoàn tiền',
+        (SELECT UserID FROM Users WHERE Username='invmgr'));
+
+DECLARE @SR_ID INT = SCOPE_IDENTITY();
+
+INSERT INTO SupplierReturnDetails (SupplierReturnID, ProductID, BatchID, Quantity, UnitRefundPrice)
+VALUES (@SR_ID, @SR_ProductID, @SR_BatchID, @SR_Qty, @SR_UnitPrice);
+
+UPDATE InventoryBatch
+SET RemainingQty = RemainingQty - @SR_Qty,
+    Status = CASE WHEN RemainingQty - @SR_Qty = 0 THEN 'DEPLETED' ELSE Status END
+WHERE BatchID = @SR_BatchID;
+
+UPDATE Products SET Stock = Stock - @SR_Qty WHERE ProductID = @SR_ProductID;
+
+INSERT INTO InventoryTransactions (ProductID, TransactionType, Direction, Quantity,
+                                    StockBefore, StockAfter, RefTable, RefID, CreatedBy, Note)
+SELECT @SR_ProductID, 'SUPPLIER_RETURN', 'OUT', @SR_Qty,
+       Stock + @SR_Qty, Stock, 'SupplierReturns', @SR_ID,
+       (SELECT UserID FROM Users WHERE Username='invmgr'), N'Trả hàng hết hạn về NCC An Bình'
+FROM Products WHERE ProductID = @SR_ProductID;
+
+UPDATE Suppliers SET DebtBalance = DebtBalance + (@SR_Qty * @SR_UnitPrice) WHERE SupplierID = @SR_SupplierID;
+GO
+
+-- ---- 16. Huy huy kho (StockDisposals) ----
+-- Phan con lai (10 don vi) cua lo Ca phe bot het han -> huy bo (khong tra NCC duoc nua),
+-- tai lap logic StockDisposalDAO.java (khong co trigger rieng).
+DECLARE @DP_ProductID INT = (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g');
+DECLARE @DP_BatchID   INT = (SELECT BatchID FROM InventoryBatch WHERE LotNumber = N'LOT-CAPHE-EXP-001');
+DECLARE @DP_Qty       INT = 10;
+DECLARE @DP_UnitCost  DECIMAL(18,0) = 65000;
+
+INSERT INTO StockDisposals (Reason, Status, TotalLossAmount, Note, CreatedBy)
+VALUES ('EXPIRED', 'COMPLETED', @DP_Qty * @DP_UnitCost,
+        N'Hủy toàn bộ số cà phê bột còn lại trong lô đã hết hạn sử dụng',
+        (SELECT UserID FROM Users WHERE Username='invmgr'));
+
+DECLARE @DP_ID INT = SCOPE_IDENTITY();
+
+INSERT INTO StockDisposalDetails (DisposalID, ProductID, BatchID, Quantity, UnitCost)
+VALUES (@DP_ID, @DP_ProductID, @DP_BatchID, @DP_Qty, @DP_UnitCost);
+
+UPDATE InventoryBatch
+SET RemainingQty = RemainingQty - @DP_Qty,
+    Status = CASE WHEN RemainingQty - @DP_Qty = 0 THEN 'DEPLETED' ELSE Status END
+WHERE BatchID = @DP_BatchID;
+
+UPDATE Products SET Stock = Stock - @DP_Qty WHERE ProductID = @DP_ProductID;
+
+INSERT INTO InventoryTransactions (ProductID, TransactionType, Direction, Quantity,
+                                    StockBefore, StockAfter, RefTable, RefID, CreatedBy, Note)
+SELECT @DP_ProductID, 'DISPOSAL', 'OUT', @DP_Qty,
+       Stock + @DP_Qty, Stock, 'StockDisposals', @DP_ID,
+       (SELECT UserID FROM Users WHERE Username='invmgr'), N'Hủy lô hết hạn (phần còn lại sau khi đã trả NCC)'
+FROM Products WHERE ProductID = @DP_ProductID;
+GO
+
+-- ---- 17. Doi chieu kho cuoi ngay mau ----
 -- Gia su kiem ke thuc te phat hien Ca rot thieu 2 don vi so voi he thong
 INSERT INTO StockReconciliation (ProductID, SystemStock, ActualStock, Note, CreatedBy) VALUES
 ((SELECT ProductID FROM Products WHERE ProductName=N'Cà rốt'),
@@ -298,18 +834,40 @@ INSERT INTO StockReconciliation (ProductID, SystemStock, ActualStock, Note, Crea
  N'Kiểm kê cuối ca phát hiện thiếu, nghi do hao hụt khi bày quầy',
  (SELECT UserID FROM Users WHERE Username='invmgr'));
 GO
--- Trigger trg_StockReconciliation_Adjust se tu cap nhat Products.Stock ve ActualStock
+-- Trigger trg_StockReconciliation_Apply se tu cap nhat Products.Stock ve ActualStock
 -- + ghi InventoryTransactions (TransactionType='RECONCILE_ADJUST')
 
--- ---- 16. Bao cao ngoai le mau ----
+-- ---- 18. Bao cao ngoai le mau (1 PENDING, 1 da HANDLED) ----
 INSERT INTO ExceptionReports (CreatedBy, Content) VALUES
 ((SELECT UserID FROM Users WHERE Username='staff02'),
  N'Khách yêu cầu mua "Xoài cát Hòa Lộc" nhưng sản phẩm chưa có trong hệ thống.');
 GO
 
--- ---- 17. AuditLogs mau (co OldValue/NewValue de truy vet day du) ----
+INSERT INTO ExceptionReports (CreatedBy, Content, Status, HandledBy, HandledAt) VALUES
+((SELECT UserID FROM Users WHERE Username='staff01'),
+ N'Máy quét mã vạch ở quầy 2 quét không lên sản phẩm Nước suối 500ml, nghi lỗi tem.',
+ 'HANDLED', (SELECT UserID FROM Users WHERE Username='salesmgr'), DATEADD(HOUR, -6, GETDATE()));
+GO
+
+-- ---- 19. Canh bao ton kho (StockAlerts) ----
+-- 1 dong tu trigger trg_Products_AutoStockAlert da tu sinh khi Banh quy bo
+-- nhap kho (Stock=8 <= MinStock=10) o muc 11. Them thu cong 1 dong o trang
+-- thai PLANNED va 1 dong RESOLVED de demo day du vong doi xu ly.
+INSERT INTO StockAlerts (ProductID, AlertType, StockAtReport, Note, ReportedBy, Status) VALUES
+((SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'),
+ 'LOW_STOCK', (SELECT Stock FROM Products WHERE ProductName=N'Cà phê bột 500g'),
+ N'Sắp hết trước dịp cuối tuần, đề nghị nhập thêm', (SELECT UserID FROM Users WHERE Username='staff02'), 'PLANNED');
+GO
+
+INSERT INTO StockAlerts (ProductID, AlertType, StockAtReport, Note, ReportedBy, Status, ResolvedBy, ResolvedAt) VALUES
+((SELECT ProductID FROM Products WHERE ProductName=N'Cà rốt'),
+ 'LOW_STOCK', 8, N'Đã lên kế hoạch nhập bổ sung từ NCC Đà Lạt',
+ (SELECT UserID FROM Users WHERE Username='staff01'), 'RESOLVED',
+ (SELECT UserID FROM Users WHERE Username='invmgr'), DATEADD(DAY, -1, GETDATE()));
+GO
+
+-- ---- 20. AuditLogs mau (co OldValue/NewValue de truy vet day du) ----
 INSERT INTO AuditLogs (UserID, Action, TableName, RecordID, OldValue, NewValue, Detail, IPAddress) VALUES
--- Dang nhap: khong co OldValue/NewValue vi khong sua doi du lieu
 ((SELECT UserID FROM Users WHERE Username='admin'), 'LOGIN', 'Users',
    (SELECT UserID FROM Users WHERE Username='admin'),
    NULL, NULL, N'Đăng nhập thành công', '192.168.1.10'),
@@ -318,191 +876,60 @@ INSERT INTO AuditLogs (UserID, Action, TableName, RecordID, OldValue, NewValue, 
    (SELECT UserID FROM Users WHERE Username='staff01'),
    NULL, NULL, N'Đăng nhập thành công', '192.168.1.25'),
 
--- Duyet doi/tra: co snapshot truoc/sau trang thai
 ((SELECT UserID FROM Users WHERE Username='salesmgr'), 'RETURN_APPROVE', 'ReturnExchanges',
-   (SELECT TOP 1 ReturnID FROM ReturnExchanges ORDER BY ReturnID ASC),
+   (SELECT MIN(ReturnID) FROM ReturnExchanges),
    N'{"Status":"PENDING","ApprovedBy":null}',
    N'{"Status":"APPROVED","ApprovedBy":"salesmgr"}',
    N'Duyệt đổi/trả giá trị nhỏ', '192.168.1.40'),
 
--- Vi du Admin sua gia ban san pham: minh hoa truy vet OldValue/NewValue cho PRODUCT_MANAGE
 ((SELECT UserID FROM Users WHERE Username='admin'), 'PRODUCT_PRICE_UPDATE', 'Products',
    (SELECT ProductID FROM Products WHERE ProductName=N'Cà chua'),
+   N'{"SellPrice":23000}',
    N'{"SellPrice":24000}',
-   N'{"SellPrice":25000}',
    N'Điều chỉnh giá bán theo giá nhập mới từ NCC Đà Lạt', '192.168.1.10'),
 
--- Vi du khoa tai khoan sau 5 lan dang nhap sai: minh hoa cho R5
 ((SELECT UserID FROM Users WHERE Username='admin'), 'USER_LOCK', 'Users',
    (SELECT UserID FROM Users WHERE Username='staff02'),
    N'{"IsLocked":false,"FailedLoginCount":5}',
    N'{"IsLocked":true,"FailedLoginCount":5}',
-   N'Tài khoản tự động khóa sau 5 lần đăng nhập sai liên tiếp', NULL);
+   N'Tài khoản tự động khóa sau 5 lần đăng nhập sai liên tiếp', NULL),
+
+((SELECT UserID FROM Users WHERE Username='invmgr'), 'SUPPLIER_RETURN_CREATE', 'SupplierReturns',
+   (SELECT MAX(SupplierReturnID) FROM SupplierReturns),
+   NULL,
+   N'{"Reason":"EXPIRED","Status":"COMPLETED"}',
+   N'Lập phiếu trả hàng hết hạn về NCC An Bình', '192.168.1.30');
 GO
 
--- ---- 18. Cau hinh he thong mau ----
--- QUAN TRONG: ca 5 dong PHAI nam chung 1 cau INSERT (1 danh sach VALUES) -
--- truoc day dong POINT_RATE bi tach roi ra sau dau ';' (do 1 comment chen
--- giua danh sach VALUES), thanh 1 tuple "mo coi" khong thuoc cau lenh INSERT
--- nao ca -> loi cu phap T-SQL lam HONG CA BATCH nay, khien StoreConfig
--- khong duoc nap (hoac chi nap duoc mot phan tuy client), POS/thanh toan
--- doc nham VAT_RATE/POINT_RATE mac dinh hoac rong -> tinh sai VAT va diem
--- thanh vien luc lap hoa don.
--- So VND khach can chi de duoc cong 1 diem thanh vien (xem StoreConfigDAO.getPointRate()
--- va InvoiceDAO.createInvoice - tich diem tu dong khi lap hoa don co gan khach hang).
+-- ---- 21. Cau hinh he thong mau ----
+-- QUAN TRONG: tat ca cac dong PHAI nam chung 1 cau INSERT (1 danh sach VALUES) -
+-- 1 comment chen giua danh sach VALUES se tach roi tuple ra khoi cau lenh INSERT,
+-- gay loi cu phap T-SQL lam HONG CA BATCH nay.
 INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
-('VAT_RATE', '0'),
+('VAT_RATE', '8'),
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái'),
+('DEFAULT_MARGIN', '5000'),
 ('POINT_RATE', '100000');
 GO
 
-UPDATE Products
-SET ImageUrl = 'uploads/products/tao-envy.jpg'
-WHERE ProductName = N'Táo Envy';
-
-UPDATE Products
-SET ImageUrl = 'uploads/products/chuoi-gia.jpg'
-WHERE ProductName = N'Chuối già';
-
-UPDATE Products
-SET ImageUrl = 'uploads/products/ca-chua.jpg'
-WHERE ProductName = N'Cà chua';
-
-UPDATE Products
-SET ImageUrl = 'uploads/products/ca-rot.jpg'
-WHERE ProductName = N'Cà rốt';
-
-UPDATE Products
-SET ImageUrl = 'uploads/products/nuoc-suoi.jpg'
-WHERE ProductName = N'Nước suối 500ml';
-
-UPDATE Products
-SET ImageUrl = 'uploads/products/ca-phe-bot.jpg'
-WHERE ProductName = N'Cà phê bột 500g';
-
--- ---- Quyen han moi ----
-INSERT INTO Permissions (PermissionCode, Description) VALUES
-('ORDER_VIEW',   N'Xem đơn hàng online từ khách'),
-('ORDER_MANAGE', N'Xác nhận / hủy đơn hàng online từ khách');
+UPDATE Products SET ImageUrl = 'uploads/products/tao-envy.jpg'               WHERE ProductName = N'Táo Envy';
+UPDATE Products SET ImageUrl = 'uploads/products/chuoi-gia.jpg'              WHERE ProductName = N'Chuối già';
+UPDATE Products SET ImageUrl = 'uploads/products/ca-chua.jpg'                WHERE ProductName = N'Cà chua';
+UPDATE Products SET ImageUrl = 'uploads/products/ca-rot.jpg'                 WHERE ProductName = N'Cà rốt';
+UPDATE Products SET ImageUrl = 'uploads/products/nuoc-suoi.jpg'              WHERE ProductName = N'Nước suối 500ml';
+UPDATE Products SET ImageUrl = 'uploads/products/tra-xanh.jpg'               WHERE ProductName = N'Trà xanh Không Độ 500ml';
+UPDATE Products SET ImageUrl = 'uploads/products/ca-phe-bot.jpg'             WHERE ProductName = N'Cà phê bột 500g';
+UPDATE Products SET ImageUrl = 'uploads/products/mi-tom-hao-hao.jpg'         WHERE ProductName = N'Mì tôm Hảo Hảo (thùng)';
+UPDATE Products SET ImageUrl = 'uploads/products/sua-tuoi-vinamilk.jpg'      WHERE ProductName = N'Sữa tươi Vinamilk 1L';
+UPDATE Products SET ImageUrl = 'uploads/products/banh-quy-bo.jpg'            WHERE ProductName = N'Bánh quy bơ 200g';
 GO
-
--- ADMIN da co san TAT CA quyen qua cau insert blanket trong Insert_SIMS.sql
--- (SELECT ... FROM Permissions) - chi can cap them cho ADMIN neu bang da
--- duoc seed truoc do (script nay co the chay sau khi da co du lieu):
-INSERT INTO RolePermissions (RoleID, PermissionID)
-SELECT r.RoleID, p.PermissionID
-FROM Roles r CROSS JOIN Permissions p
-WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode IN ('ORDER_VIEW', 'ORDER_MANAGE')
-  AND NOT EXISTS (
-        SELECT 1 FROM RolePermissions rp
-        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
-      );
-
--- Nhan vien ban hang cung duoc xem + xac nhan don online
-INSERT INTO RolePermissions (RoleID, PermissionID)
-SELECT r.RoleID, p.PermissionID
-FROM Roles r CROSS JOIN Permissions p
-WHERE r.RoleCode = 'SALES_STAFF' AND p.PermissionCode IN ('ORDER_VIEW', 'ORDER_MANAGE')
-  AND NOT EXISTS (
-        SELECT 1 FROM RolePermissions rp
-        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
-      );
-GO
-
--- ---- Quyen "Sao luu & Khoi phuc" - chi ADMIN ----
-INSERT INTO Permissions (PermissionCode, Description) VALUES
-('BACKUP_MANAGE', N'Xem trang Sao lưu & Khôi phục, tự sao lưu / khôi phục DB từ file backup');
-GO
- 
-INSERT INTO RolePermissions (RoleID, PermissionID)
-SELECT r.RoleID, p.PermissionID
-FROM Roles r CROSS JOIN Permissions p
-WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'BACKUP_MANAGE'
-  AND NOT EXISTS (
-        SELECT 1 FROM RolePermissions rp
-        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
-      );
-GO
-
--- ---- Quyen "Doi/tra hang" (R4) ----
-INSERT INTO Permissions (PermissionCode, Description)
-SELECT 'RETURN_EXCHANGE_CREATE', N'Tạo yêu cầu đổi/trả hàng cho hóa đơn'
-WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'RETURN_EXCHANGE_CREATE');
-
-INSERT INTO Permissions (PermissionCode, Description)
-SELECT 'RETURN_EXCHANGE_APPROVE', N'Duyệt / từ chối yêu cầu đổi/trả hàng giá trị lớn'
-WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'RETURN_EXCHANGE_APPROVE');
-GO
-
--- ---- Quyen "Bao cao ngoai le" (NVBH gui -> QL Ban hang xu ly) ----
-INSERT INTO Permissions (PermissionCode, Description)
-SELECT 'EXCEPTION_REPORT_CREATE', N'Gửi báo cáo ngoại lệ cho Quản lý bán hàng'
-WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'EXCEPTION_REPORT_CREATE');
-
-INSERT INTO Permissions (PermissionCode, Description)
-SELECT 'EXCEPTION_REPORT_HANDLE', N'Xem và xử lý báo cáo ngoại lệ từ nhân viên bán hàng'
-WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'EXCEPTION_REPORT_HANDLE');
-GO
-
-INSERT INTO RolePermissions (RoleID, PermissionID)
-SELECT r.RoleID, p.PermissionID
-FROM Roles r CROSS JOIN Permissions p
-WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode IN ('EXCEPTION_REPORT_CREATE', 'EXCEPTION_REPORT_HANDLE')
-  AND NOT EXISTS (
-        SELECT 1 FROM RolePermissions rp
-        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
-      );
-
--- Nhan vien ban hang: gui bao cao ngoai le
-INSERT INTO RolePermissions (RoleID, PermissionID)
-SELECT r.RoleID, p.PermissionID
-FROM Roles r CROSS JOIN Permissions p
-WHERE r.RoleCode = 'SALES_STAFF' AND p.PermissionCode = 'EXCEPTION_REPORT_CREATE'
-  AND NOT EXISTS (
-        SELECT 1 FROM RolePermissions rp
-        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
-      );
-
--- Quan ly ban hang: xem va xu ly bao cao ngoai le
-INSERT INTO RolePermissions (RoleID, PermissionID)
-SELECT r.RoleID, p.PermissionID
-FROM Roles r CROSS JOIN Permissions p
-WHERE r.RoleCode = 'SALES_MANAGER' AND p.PermissionCode = 'EXCEPTION_REPORT_HANDLE'
-  AND NOT EXISTS (
-        SELECT 1 FROM RolePermissions rp
-        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
-      );
-GO
-
--- ---- Quyen "Cai dat he thong" (sua VAT_RATE va cac cau hinh StoreConfig khac) - chi ADMIN ----
-INSERT INTO Permissions (PermissionCode, Description)
-SELECT 'SETTINGS_MANAGE', N'Xem và sửa trang Cài đặt hệ thống (VAT, tên cửa hàng, chính sách đổi trả...)'
-WHERE NOT EXISTS (SELECT 1 FROM Permissions WHERE PermissionCode = 'SETTINGS_MANAGE');
-GO
-
-INSERT INTO RolePermissions (RoleID, PermissionID)
-SELECT r.RoleID, p.PermissionID
-FROM Roles r CROSS JOIN Permissions p
-WHERE r.RoleCode = 'ADMIN' AND p.PermissionCode = 'SETTINGS_MANAGE'
-  AND NOT EXISTS (
-        SELECT 1 FROM RolePermissions rp
-        WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID
-      );
-GO
-
 
 /* ============================================================
    Migration: Backfill Employees.EmployeeID cho cac tai khoan
-   nhan vien da ton tai TRUOC KHI co thay doi nay trong UserDAO
-   (register()/createByAdmin() truoc day KHONG insert vao bang
-   Employees cho bat ky role nao, chi Customers cho Role.CUSTOMER).
-
-   Chay 1 LAN sau khi da cap nhat code UserDAO.java. An toan de
-   chay lai nhieu lan (idempotent) nho dieu kien NOT EXISTS.
+   nhan vien (idempotent, an toan chay lai nhieu lan).
    ============================================================ */
-
 INSERT INTO Employees (UserID, EmployeeID)
 SELECT u.UserID, 'EMP_' + RIGHT('0000' + CAST(u.UserID AS VARCHAR(10)), 4)
 FROM Users u
@@ -513,21 +940,17 @@ WHERE r.RoleCode <> 'CUSTOMER'
       );
 GO
 
--- Hash BCrypt cost 12 cho password: 123456
-UPDATE Users 
+-- Hash BCrypt cost 12 cho password: 123456 - ap dung cho toan bo tai khoan mau
+-- (tru 'khach_le' da bi vo hieu hoa o muc 4) de dang nhap demo/thuyet trinh.
+UPDATE Users
 SET PasswordHash = '$2a$12$rULa7sQqQB78UAMj4a.8IOPHPuspkHU2zffYsu75HhmFDVGPl3csS'
-WHERE Username IN ('salesmgr', 'invmgr');
+WHERE Username IN ('salesmgr', 'invmgr', 'staff01', 'staff02', 'lan.nguyen', 'hung.tran', 'mai.pham', 'duc.le');
+GO
 
--- Cập nhật staff01 và staff02 với password 123456 (BCrypt cost 12)
-UPDATE Users 
-SET PasswordHash = '$2a$12$rULa7sQqQB78UAMj4a.8IOPHPuspkHU2zffYsu75HhmFDVGPl3csS'
-WHERE Username IN ('staff01', 'staff02');
-
-
--- Xóa mã mẫu cũ (nếu chạy lại)
-DELETE FROM Promotions WHERE Code IN (
-    'SUMMER10', 'GIAM50K', 'FREESHIP', 'WELCOME15', 'FLASH20'
-);
+/* ============================================================
+   22. KHUYEN MAI / MA GIAM GIA
+   ============================================================ */
+DELETE FROM Promotions WHERE Code IN ('SUMMER10', 'GIAM50K', 'FREESHIP', 'WELCOME15', 'FLASH20');
 GO
 
 INSERT INTO Promotions (
@@ -536,111 +959,118 @@ INSERT INTO Promotions (
     StartDate, EndDate, UsageLimit, UsedCount,
     IsActive, IsDeleted, CreatedBy, CreatedAt
 ) VALUES
--- Giảm 10% tối đa 30.000đ, đơn từ 100.000đ
-(
-    'SUMMER10',
-    N'Khuyến mãi hè - Giảm 10%',
-    'PERCENT',
-    10,
-    30000,
-    100000,
-    '2026-01-01',
-    '2026-12-31',
-    1000,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Giảm cố định 50.000đ, đơn từ 300.000đ
-(
-    'GIAM50K',
-    N'Giảm ngay 50.000đ',
-    'AMOUNT',
-    50000,
-    NULL,
-    300000,
-    '2026-01-01',
-    '2026-12-31',
-    500,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Giảm 15% cho khách mới, tối đa 40.000đ, đơn từ 150.000đ
-(
-    'WELCOME15',
-    N'Chào thành viên mới - Giảm 15%',
-    'PERCENT',
-    15,
-    40000,
-    150000,
-    '2026-01-01',
-    '2026-12-31',
-    NULL,          -- không giới hạn lượt
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Flash sale giảm 20%, tối đa 100.000đ, đơn từ 200.000đ
-(
-    'FLASH20',
-    N'Flash sale - Giảm 20%',
-    'PERCENT',
-    20,
-    100000,
-    200000,
-    CAST(GETDATE() AS DATE),
-    DATEADD(DAY, 30, CAST(GETDATE() AS DATE)),
-    200,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-),
--- Giảm 20.000đ, đơn từ 99.000đ (dùng test nhanh)
-(
-    'FREESHIP',
-    N'Ưu đãi 20.000đ',
-    'AMOUNT',
-    20000,
-    NULL,
-    99000,
-    '2026-01-01',
-    '2026-12-31',
-    9999,
-    0,
-    1,
-    0,
-    1,
-    GETDATE()
-);
+('SUMMER10', N'Khuyến mãi hè - Giảm 10%', 'PERCENT', 10, 30000, 100000,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 1000, 0, 1, 0,
+ (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
+('GIAM50K', N'Giảm ngay 50.000đ', 'AMOUNT', 50000, NULL, 300000,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 500, 0, 1, 0,
+ (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
+('WELCOME15', N'Chào thành viên mới - Giảm 15%', 'PERCENT', 15, 40000, 150000,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), NULL, 0, 1, 0,
+ (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
+('FLASH20', N'Flash sale - Giảm 20%', 'PERCENT', 20, 100000, 200000,
+ CAST(GETDATE() AS DATE), DATEADD(DAY, 30, CAST(GETDATE() AS DATE)), 200, 0, 1, 0,
+ (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
+('FREESHIP', N'Ưu đãi 20.000đ', 'AMOUNT', 20000, NULL, 99000,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 9999, 0, 1, 0,
+ (SELECT UserID FROM Users WHERE Username='admin'), GETDATE());
 GO
-
--- Kiểm tra
-SELECT PromotionID, Code, Name, DiscountType, DiscountValue,
-       MaxDiscountAmount, MinOrderAmount, StartDate, EndDate,
-       UsageLimit, UsedCount, IsActive
-FROM Promotions
-WHERE IsDeleted = 0
-ORDER BY PromotionID;
-GO
-
 
 /* ============================================================
-   Tài khoản khách hàng mẫu
-   Username : customer1
-   Password : 123456
-   PasswordHash: BCrypt cost 12 (tương thích PasswordUtils / jBCrypt)
+   23. Don hang online (Orders/OrderDetails) - du cac trang thai
+   de demo OrderPanel (Admin/NV) va OrderHistoryPanel (Client).
    ============================================================ */
+INSERT INTO Orders (CustomerID, CustomerName, CustomerEmail, CustomerPhone, ShippingAddress,
+                     CreatedAt, SubTotal, VATRate, TotalAmount, PaymentMethod, PaymentStatus, OrderStatus, SeenByAdmin) VALUES
+((SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='lan.nguyen'),
+ N'Nguyễn Thị Lan', 'lan.nguyen@gmail.com', '0912345678', N'12 Nguyễn Huệ, Q.1, TP.HCM',
+ DATEADD(HOUR, -2, GETDATE()), 0, 8, 0, 'COD', 'PENDING', 'NEW', 0),
 
--- 1) Đảm bảo có role CUSTOMER
+((SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='hung.tran'),
+ N'Trần Văn Hùng', 'hung.tran@gmail.com', '0987654321', N'45 Lý Thường Kiệt, Q.10, TP.HCM',
+ DATEADD(DAY, -1, GETDATE()), 0, 8, 0, 'PAYPAL', 'PAID', 'CONFIRMED', 1),
+
+((SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='mai.pham'),
+ N'Phạm Thị Mai', 'mai.pham@gmail.com', '0933112233', N'78 Điện Biên Phủ, Bình Thạnh, TP.HCM',
+ DATEADD(DAY, -2, GETDATE()), 0, 8, 0, 'COD', 'PENDING', 'SHIPPING', 1),
+
+((SELECT c.CustomerID FROM Customers c JOIN Users u ON u.UserID=c.CustomerID WHERE u.Username='duc.le'),
+ N'Lê Anh Đức', 'duc.le@gmail.com', '0977665544', N'9 Hoàng Diệu, Hải Châu, Đà Nẵng',
+ DATEADD(DAY, -4, GETDATE()), 0, 8, 0, 'PAYPAL', 'PAID', 'COMPLETED', 1),
+
+(NULL, N'Khách vãng lai - Đỗ Văn Kiên', 'kien.do.guest@gmail.com', '0909998888', N'23 Phan Đăng Lưu, Phú Nhuận, TP.HCM',
+ DATEADD(DAY, -3, GETDATE()), 0, 8, 0, 'COD', 'FAILED', 'CANCELLED', 1);
+GO
+
+UPDATE Orders SET CancelReason = N'Khách đổi ý, không còn nhu cầu mua nữa'
+WHERE OrderStatus = 'CANCELLED' AND CustomerEmail = 'kien.do.guest@gmail.com';
+GO
+UPDATE Orders SET CompletedAt = DATEADD(DAY, -3, GETDATE())
+WHERE OrderStatus = 'COMPLETED' AND CustomerEmail = 'duc.le@gmail.com';
+GO
+
+INSERT INTO OrderDetails (OrderID, ProductID, ProductName, Quantity, UnitPrice) VALUES
+((SELECT OrderID FROM Orders WHERE CustomerEmail='lan.nguyen@gmail.com' AND OrderStatus='NEW'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Táo Envy'), N'Táo Envy', 3, (SELECT SellPrice FROM Products WHERE ProductName=N'Táo Envy')),
+((SELECT OrderID FROM Orders WHERE CustomerEmail='lan.nguyen@gmail.com' AND OrderStatus='NEW'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L'), N'Sữa tươi Vinamilk 1L', 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Sữa tươi Vinamilk 1L')),
+
+((SELECT OrderID FROM Orders WHERE CustomerEmail='hung.tran@gmail.com'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà phê bột 500g'), N'Cà phê bột 500g', 1, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà phê bột 500g')),
+
+((SELECT OrderID FROM Orders WHERE CustomerEmail='mai.pham@gmail.com'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml'), N'Trà xanh Không Độ 500ml', 6, (SELECT SellPrice FROM Products WHERE ProductName=N'Trà xanh Không Độ 500ml')),
+((SELECT OrderID FROM Orders WHERE CustomerEmail='mai.pham@gmail.com'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Nước suối 500ml'), N'Nước suối 500ml', 6, (SELECT SellPrice FROM Products WHERE ProductName=N'Nước suối 500ml')),
+
+((SELECT OrderID FROM Orders WHERE CustomerEmail='duc.le@gmail.com'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Cà chua'), N'Cà chua', 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Cà chua')),
+
+((SELECT OrderID FROM Orders WHERE CustomerEmail='kien.do.guest@gmail.com'),
+ (SELECT ProductID FROM Products WHERE ProductName=N'Chuối già'), N'Chuối già', 2, (SELECT SellPrice FROM Products WHERE ProductName=N'Chuối già'));
+GO
+
+UPDATE o
+SET o.SubTotal = t.Sum, o.TotalAmount = t.Sum
+FROM Orders o
+JOIN (SELECT OrderID, SUM(LineTotal) AS Sum FROM OrderDetails GROUP BY OrderID) t ON t.OrderID = o.OrderID;
+GO
+
+/* ============================================================
+   24. Chat real-time (ChatConversations/ChatMessages) - demo
+   ho tro khach hang + tin nhan noi bo giua nhan vien.
+   ============================================================ */
+INSERT INTO ChatConversations (ConversationType, CustomerUserID, CreatedAt, LastMessageAt, IsClosed) VALUES
+('CUSTOMER_SUPPORT', (SELECT UserID FROM Users WHERE Username='lan.nguyen'),
+ DATEADD(HOUR, -3, GETDATE()), DATEADD(MINUTE, -20, GETDATE()), 0);
+GO
+
+INSERT INTO ChatMessages (ConversationID, SenderUserID, SenderName, FromStaff, BodyText, CreatedAt, IsReadByPeer) VALUES
+((SELECT TOP 1 ConversationID FROM ChatConversations WHERE ConversationType='CUSTOMER_SUPPORT' ORDER BY ConversationID DESC),
+ (SELECT UserID FROM Users WHERE Username='lan.nguyen'), N'Nguyễn Thị Lan', 0,
+ N'Shop ơi, đơn hàng của mình khi nào giao vậy ạ?', DATEADD(HOUR, -3, GETDATE()), 1),
+((SELECT TOP 1 ConversationID FROM ChatConversations WHERE ConversationType='CUSTOMER_SUPPORT' ORDER BY ConversationID DESC),
+ (SELECT UserID FROM Users WHERE Username='staff01'), N'Lê Hoa Trường Vũ', 1,
+ N'Chào chị Lan, đơn hàng đang được đóng gói và sẽ giao trong hôm nay ạ.', DATEADD(MINUTE, -20, GETDATE()), 0);
+GO
+
+DECLARE @ChatA INT = (SELECT UserID FROM Users WHERE Username='staff01');
+DECLARE @ChatB INT = (SELECT UserID FROM Users WHERE Username='staff02');
+INSERT INTO ChatConversations (ConversationType, StaffUserIdA, StaffUserIdB, CreatedAt, LastMessageAt, IsClosed)
+VALUES ('STAFF_DM', CASE WHEN @ChatA < @ChatB THEN @ChatA ELSE @ChatB END,
+                     CASE WHEN @ChatA < @ChatB THEN @ChatB ELSE @ChatA END,
+        DATEADD(HOUR, -5, GETDATE()), DATEADD(HOUR, -1, GETDATE()), 0);
+GO
+
+INSERT INTO ChatMessages (ConversationID, SenderUserID, SenderName, FromStaff, BodyText, CreatedAt, IsReadByPeer) VALUES
+((SELECT TOP 1 ConversationID FROM ChatConversations WHERE ConversationType='STAFF_DM' ORDER BY ConversationID DESC),
+ (SELECT UserID FROM Users WHERE Username='staff02'), N'Hoàng Văn Sơn', 0,
+ N'Ca chiều nay bên quầy 2 hết nước suối rồi, có ai nhập thêm chưa nhỉ?', DATEADD(HOUR, -1, GETDATE()), 1);
+GO
+
+/* ============================================================
+   Tài khoản khách hàng mẫu bổ sung (Username: customer1 / Password: 123456)
+   ============================================================ */
 IF NOT EXISTS (SELECT 1 FROM Roles WHERE RoleCode = 'CUSTOMER')
 BEGIN
     INSERT INTO Roles (RoleCode, RoleName, Description)
@@ -648,7 +1078,6 @@ BEGIN
 END
 GO
 
--- 2) Tạo user (bỏ qua nếu đã tồn tại)
 IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'customer1')
 BEGIN
     INSERT INTO Users (
@@ -662,14 +1091,11 @@ BEGIN
         'customer1@sims.local',
         '0901234567',
         (SELECT RoleID FROM Roles WHERE RoleCode = 'CUSTOMER'),
-        0,
-        0,
-        'ACTIVE'
+        0, 0, 'ACTIVE'
     );
 END
 ELSE
 BEGIN
-    -- Nếu đã có user: reset mật khẩu + mở khóa
     UPDATE Users
     SET PasswordHash     = '$2a$12$bu9a8NWQ5nLvEzmP9KmDbOmZxADF8e83Lrf/w60dhBTXaUyxRl4zi',
         IsLocked         = 0,
@@ -680,20 +1106,20 @@ BEGIN
 END
 GO
 
--- 3) Tạo hồ sơ Customers (CustomerID = UserID)
 IF NOT EXISTS (
-    SELECT 1
-    FROM Customers c
-    JOIN Users u ON u.UserID = c.CustomerID
-    WHERE u.Username = 'customer1'
+    SELECT 1 FROM Customers c JOIN Users u ON u.UserID = c.CustomerID WHERE u.Username = 'customer1'
 )
 BEGIN
     INSERT INTO Customers (CustomerID, CustomerCode, MemberPoint)
-    SELECT
-        u.UserID,
-        'CUS_' + RIGHT('0000' + CAST(u.UserID AS VARCHAR(10)), 4),
-        0
-    FROM Users u
-    WHERE u.Username = 'customer1';
+    SELECT u.UserID, 'CUS_' + RIGHT('0000' + CAST(u.UserID AS VARCHAR(10)), 4), 0
+    FROM Users u WHERE u.Username = 'customer1';
 END
+GO
+
+/* ============================================================
+   KIEM TRA NHANH SAU KHI CHAY (khong bat buoc, chi de doi chieu)
+   ============================================================ */
+SELECT CAST(CreatedAt AS DATE) AS Ngay, COUNT(*) AS SoHoaDon, SUM(TotalAmount) AS DoanhThu
+FROM Invoices WHERE Status = 'ACTIVE'
+GROUP BY CAST(CreatedAt AS DATE) ORDER BY Ngay;
 GO

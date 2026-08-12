@@ -8,7 +8,15 @@ import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.text.AbstractDocument;
+import javax.swing.text.AttributeSet;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DocumentFilter;
 import java.awt.*;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.KeyEvent;
 
 public final class BaseDialog {
@@ -84,6 +92,157 @@ public final class BaseDialog {
         dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
         dialog.getRootPane().setDefaultButton(confirmButton);
         SwingUtilities.invokeLater(field::requestFocusInWindow);
+        showCentered(dialog);
+        return resultHolder[0];
+    }
+
+    // ---------------------------------------------------------------------
+    // NHAP LIEU DANG NHIEU DONG (JTextArea, danh cho noi dung dai - vd bao cao, mo ta)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Vi du: BaseDialog.inputTextArea(this, "Gửi báo cáo ngoại lệ", "Nội dung báo cáo",
+     *   "VD: khách cần mua SP chưa có trong hệ thống, khách yêu cầu SP đặc biệt...",
+     *   "", "Gửi báo cáo", 500).
+     * Tra ve null neu bam Hủy. Truyen hint = null neu khong can dong goi y duoi nhan.
+     * Truyen maxLength <= 0 neu khong gioi han so ky tu.
+     */
+    public static String inputTextArea(Component parent, String title, String label, String hint,
+                                        String initialValue, String confirmText, int maxLength) {
+        String[] resultHolder = {null};
+        JDialog dialog = buildBaseDialog(parent, title);
+
+        JPanel body = new JPanel();
+        body.setBackground(AppColor.WHITE);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(new EmptyBorder(24, 24, 8, 24));
+
+        JPanel headerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        headerRow.setOpaque(false);
+        headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        FontIcon headerIcon = FontIcon.of(FontAwesomeSolid.EDIT, 26);
+        headerIcon.setIconColor(AppColor.ACCENT);
+        headerRow.add(new JLabel(headerIcon));
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(AppFont.DIALOG_TITLE);
+        titleLabel.setForeground(AppColor.TEXT_PRIMARY);
+        headerRow.add(titleLabel);
+        body.add(headerRow);
+        body.add(Box.createVerticalStrut(18));
+
+        JLabel fieldLabel = new JLabel(label);
+        fieldLabel.setFont(AppFont.BODY_BOLD);
+        fieldLabel.setForeground(AppColor.TEXT_PRIMARY);
+        fieldLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(fieldLabel);
+
+        if (hint != null && !hint.isBlank()) {
+            body.add(Box.createVerticalStrut(3));
+            JLabel hintLabel = new JLabel("<html><div style='width:360px'>" + hint + "</div></html>");
+            hintLabel.setFont(AppFont.SMALL);
+            hintLabel.setForeground(AppColor.TEXT_MUTED);
+            hintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            body.add(hintLabel);
+        }
+        body.add(Box.createVerticalStrut(10));
+
+        JTextArea textArea = new JTextArea(initialValue == null ? "" : initialValue, 6, 32);
+        textArea.setFont(AppFont.FIELD);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setForeground(AppColor.TEXT_PRIMARY);
+        textArea.setBackground(AppColor.WHITE);
+        textArea.setCaretColor(AppColor.ACCENT);
+        textArea.setBorder(new EmptyBorder(10, 12, 10, 12));
+        if (maxLength > 0) {
+            ((AbstractDocument) textArea.getDocument()).setDocumentFilter(new DocumentFilter() {
+                @Override
+                public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+                    if (string == null) return;
+                    if (fb.getDocument().getLength() + string.length() <= maxLength) {
+                        super.insertString(fb, offset, string, attr);
+                    }
+                }
+
+                @Override
+                public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+                    String safeText = text == null ? "" : text;
+                    if (fb.getDocument().getLength() - length + safeText.length() <= maxLength) {
+                        super.replace(fb, offset, length, safeText, attrs);
+                    }
+                }
+            });
+        }
+
+        JScrollPane scrollPane = new JScrollPane(textArea, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true));
+        scrollPane.setViewportBorder(BorderFactory.createEmptyBorder());
+        scrollPane.getViewport().setBackground(AppColor.WHITE);
+        scrollPane.setPreferredSize(new Dimension(400, 130));
+        scrollPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, 130));
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        body.add(scrollPane);
+
+        // Vien doi mau khi focus de nguoi dung de nhan biet dang nhap o dau (than thien hon)
+        textArea.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.ACCENT, 2, true));
+            }
+
+            @Override
+            public void focusLost(FocusEvent e) {
+                scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true));
+            }
+        });
+
+        // Bo dem so ky tu, dat ngay duoi khung nhap, canh phai
+        JLabel counterLabel = new JLabel();
+        counterLabel.setFont(AppFont.SMALL);
+        counterLabel.setForeground(AppColor.TEXT_MUTED);
+        JPanel counterRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 4));
+        counterRow.setOpaque(false);
+        counterRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        counterRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+        counterRow.add(counterLabel);
+        body.add(counterRow);
+
+        JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
+        JButton confirmButton = createModernButton(confirmText, AppColor.ACCENT, AppColor.ACCENT_HOVER, Color.WHITE);
+
+        Runnable updateState = () -> {
+            int len = textArea.getDocument().getLength();
+            if (maxLength > 0) {
+                counterLabel.setText(len + "/" + maxLength);
+                counterLabel.setForeground(len >= maxLength ? AppColor.ERROR
+                        : len >= (int) (maxLength * 0.9) ? AppColor.WARNING : AppColor.TEXT_MUTED);
+            } else {
+                counterLabel.setText(len + " ký tự");
+            }
+            confirmButton.setEnabled(!textArea.getText().trim().isEmpty());
+        };
+        updateState.run();
+
+        textArea.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { updateState.run(); }
+            @Override public void removeUpdate(DocumentEvent e) { updateState.run(); }
+            @Override public void changedUpdate(DocumentEvent e) { updateState.run(); }
+        });
+
+        cancelButton.addActionListener(e -> dialog.dispose());
+        confirmButton.addActionListener(e -> {
+            String value = textArea.getText().trim();
+            if (!value.isEmpty()) {
+                resultHolder[0] = value;
+                dialog.dispose();
+            }
+        });
+
+        dialog.add(body, BorderLayout.CENTER);
+        dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(confirmButton);
+        SwingUtilities.invokeLater(textArea::requestFocusInWindow);
         showCentered(dialog);
         return resultHolder[0];
     }

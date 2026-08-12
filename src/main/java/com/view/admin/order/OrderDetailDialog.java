@@ -1,7 +1,10 @@
 package com.view.admin.order;
 
 import com.components.BaseDialog;
+import com.dao.InvoiceDAO;
 import com.dao.OrderDAO;
+import com.model.Invoice;
+import com.model.InvoiceDetail;
 import com.model.Order;
 import com.model.OrderDetail;
 import com.model.permission.AppPermission;
@@ -12,6 +15,7 @@ import com.components.table.RowColorProvider;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.NumberUtil;
+import com.utils.pdf.InvoicePdfExporter;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -23,6 +27,7 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
@@ -35,6 +40,7 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Desktop;
 import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -45,7 +51,9 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
+import java.io.File;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 public class OrderDetailDialog extends JDialog {
@@ -54,6 +62,7 @@ public class OrderDetailDialog extends JDialog {
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final OrderDAO orderDAO;
+    private final InvoiceDAO invoiceDAO = new InvoiceDAO();
     private Order order;
 
     public OrderDetailDialog(Frame owner, Order order, OrderDAO orderDAO) {
@@ -393,6 +402,25 @@ public class OrderDetailDialog extends JDialog {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
                 new EmptyBorder(12, 24, 12, 24)));
 
+        // Cho xuat PDF khi da co HĐ, hoặc đơn đã hoàn thành / PayPal đã thanh toán
+        // (có thể lập bù HĐ hoặc xuất từ dữ liệu đơn để tra cứu lịch sử).
+        boolean canExportPdf = order.getInvoiceId() != null
+                || "COMPLETED".equalsIgnoreCase(order.getOrderStatus())
+                || ("PAYPAL".equalsIgnoreCase(order.getPaymentMethod())
+                    && "PAID".equalsIgnoreCase(order.getPaymentStatus()));
+        if (canExportPdf) {
+            JButton exportPdfButton = new JButton("Xuất hóa đơn PDF");
+            exportPdfButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            exportPdfButton.setFocusPainted(false);
+            exportPdfButton.setBackground(AppColor.ACCENT_BG_SOFT);
+            exportPdfButton.setForeground(AppColor.ACCENT);
+            exportPdfButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+            exportPdfButton.setIcon(FontIcon.of(FontAwesomeSolid.FILE_PDF, 14, AppColor.ACCENT));
+            exportPdfButton.setIconTextGap(8);
+            exportPdfButton.addActionListener(e -> exportAndOpenPdf());
+            footer.add(exportPdfButton);
+        }
+
         boolean canManage = PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
         boolean isNew = "NEW".equalsIgnoreCase(order.getOrderStatus());
         boolean isConfirmed = order.isConfirmed();
@@ -454,6 +482,105 @@ public class OrderDetailDialog extends JDialog {
 
         getRootPane().setDefaultButton(closeButton);
         return footer;
+    }
+
+    // ---------------------------------------------------------------
+    // Xuat hoa don PDF cua don hang (dung lai hoa don da lap khi hoan
+    // thanh don, dung chung InvoicePdfExporter voi trang POS / Hoa don).
+    // ---------------------------------------------------------------
+
+    private void exportAndOpenPdf() {
+        try {
+            Integer invoiceId = order.getInvoiceId();
+
+            if (invoiceId == null) {
+                boolean eligible = "COMPLETED".equalsIgnoreCase(order.getOrderStatus())
+                        || ("PAYPAL".equalsIgnoreCase(order.getPaymentMethod())
+                            && "PAID".equalsIgnoreCase(order.getPaymentStatus()));
+                if (eligible) {
+                    int actorId = AuthService.getInstance().getCurrentUser().getUserId();
+                    invoiceId = orderDAO.ensureInvoiceForOrder(order.getOrderId(), actorId);
+                    if (invoiceId != null) {
+                        order.setInvoiceId(invoiceId);
+                    }
+                }
+            }
+
+            Invoice invoice = null;
+            List<InvoiceDetail> details = null;
+
+            if (invoiceId != null) {
+                List<Invoice> found = invoiceDAO.getByCondition("inv.InvoiceID = " + invoiceId);
+                if (!found.isEmpty()) {
+                    invoice = found.get(0);
+                    details = invoiceDAO.getDetails(invoice.getInvoiceId());
+                }
+            }
+
+            if (invoice == null) {
+                // Fallback: dựng từ dữ liệu đơn hàng để vẫn in được khi tra cứu lịch sử
+                invoice = new Invoice();
+                invoice.setInvoiceCode(order.getOrderCode() != null
+                        ? "HD-" + order.getOrderCode() : "HD-ONLINE");
+                invoice.setCustomerId(order.getCustomerId());
+                invoice.setCustomerName(order.getCustomerName());
+                invoice.setCreatedAt(order.getCompletedAt() != null
+                        ? order.getCompletedAt() : order.getCreatedAt());
+                invoice.setCreatedByName("Online");
+                invoice.setSubTotal(order.getSubTotal());
+                invoice.setDiscountAmount(order.getDiscountAmount());
+                invoice.setPromotionCode(order.getPromotionCode());
+                invoice.setTotalAmount(order.getTotalAmount());
+                String pm = order.getPaymentMethod();
+                if ("PAYPAL".equalsIgnoreCase(pm)) invoice.setPaymentMethod("PAYPAL");
+                else if ("COD".equalsIgnoreCase(pm)) invoice.setPaymentMethod("CASH");
+                else invoice.setPaymentMethod(pm);
+                invoice.setStatus("ACTIVE");
+
+                details = new ArrayList<>();
+                for (OrderDetail line : orderDAO.getDetailsByOrderId(order.getOrderId())) {
+                    InvoiceDetail d = new InvoiceDetail();
+                    d.setProductId(line.getProductId());
+                    d.setProductName(line.getProductName());
+                    d.setQuantity(line.getQuantity());
+                    d.setUnitPrice(line.getUnitPrice());
+                    if (line.getLineTotal() != null) {
+                        d.setLineTotal(line.getLineTotal());
+                    } else if (line.getUnitPrice() != null) {
+                        d.setLineTotal(line.getUnitPrice().multiply(
+                                java.math.BigDecimal.valueOf(line.getQuantity())));
+                    }
+                    details.add(d);
+                }
+                if (details.isEmpty()) {
+                    JOptionPane.showMessageDialog(this,
+                            "Đơn hàng không có sản phẩm để xuất hóa đơn.",
+                            "Lỗi", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
+
+            String code = invoice.getInvoiceCode() != null
+                    ? invoice.getInvoiceCode() : order.getOrderCode();
+            String fileName = "HoaDon_" + code.replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
+            File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
+            if (!tempDir.exists()) tempDir.mkdirs();
+            File pdfFile = new File(tempDir, fileName);
+
+            InvoicePdfExporter.exportInvoice(invoice, details, pdfFile);
+
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(pdfFile);
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Đã tạo file PDF tại:\n" + pdfFile.getAbsolutePath(),
+                        "Xuất PDF", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Lỗi tạo file PDF: " + ex.getMessage(),
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void handleConfirm() {

@@ -6,9 +6,11 @@ import com.event.AppEventBus;
 import com.event.OrderStatusChangedEvent;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
+import com.dao.StockAlertDAO;
 import com.model.NotificationItem;
 import com.model.Order;
 import com.model.Role;
+import com.model.StockAlert;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
 import com.service.AuthService;
@@ -62,6 +64,8 @@ public class AdminMainFrame extends JFrame {
     /** Thông báo chuyển trạng thái đơn — tách khỏi orderNotifications (đơn MỚI). */
     private final List<NotificationItem> orderStatusNotifications = new ArrayList<>();
     private final List<NotificationItem> returnNotifications = new ArrayList<>();
+    /** Cảnh báo tồn kho chưa xem (tự động + NV bán hàng báo thủ công). */
+    private final List<NotificationItem> stockAlertNotifications = new ArrayList<>();
 
     private ChatPanel chatPanelRef;
     private String currentPageKey = "dashboard";
@@ -105,7 +109,13 @@ public class AdminMainFrame extends JFrame {
         });
         orderNotifyPoller.start();
 
-        stockAlertNotifyPoller.onUnseenChanged((count, preview) -> layout.setBadge("stockAlerts", count));
+        stockAlertNotifyPoller.onUnseenChanged((count, preview) -> {
+            layout.setBadge("stockAlerts", count);
+            stockAlertNotifications.clear();
+            stockAlertNotifications.addAll(toStockNotificationItems(
+                    new StockAlertDAO().getUnseenForInventoryManager()));
+            refreshHeaderNotifications();
+        });
         stockAlertNotifyPoller.start();
         returnExchangeNotifyPoller.start();
 
@@ -277,13 +287,21 @@ public class AdminMainFrame extends JFrame {
                 com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.ORDER_STATUS_UPDATE_FAIL,
                         "AdminMainFrame.onClearAllNotifications - markAllSeen that bai", e);
             }
+            try {
+                new StockAlertDAO().markAllSeen();
+            } catch (Exception e) {
+                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.DB_UPDATE_FAIL,
+                        "AdminMainFrame.onClearAllNotifications - stockAlert markAllSeen that bai", e);
+            }
             orderNotifications.clear();
             orderStatusNotifications.clear();
             chatNotifications.clear();
             returnNotifications.clear();
+            stockAlertNotifications.clear();
             layout.setBadge("orders", 0);
             layout.setBadge("chat", 0);
             layout.setBadge("returnExchange", 0);
+            layout.setBadge("stockAlerts", 0);
             refreshHeaderNotifications();
         });
 
@@ -380,8 +398,33 @@ public class AdminMainFrame extends JFrame {
         merged.addAll(orderNotifications);
         merged.addAll(orderStatusNotifications);
         merged.addAll(returnNotifications);
+        merged.addAll(stockAlertNotifications);
         layout.setBadge("returnExchange", returnNotifications.size());
         layout.getHeader().setNotifications(merged);
+    }
+
+    /** Map StockAlert chưa xem → NotificationItem cho chuông header. */
+    private static List<NotificationItem> toStockNotificationItems(List<StockAlert> alerts) {
+        List<NotificationItem> items = new ArrayList<>();
+        if (alerts == null) return items;
+        for (StockAlert a : alerts) {
+            String kind = a.isOutOfStock() ? "Hết hàng" : "Sắp hết hàng";
+            String who = a.isAutoReported()
+                    ? "Hệ thống (tự động)"
+                    : (a.getReportedByName() != null ? a.getReportedByName() : "NV bán hàng");
+            String title = kind + " · " + a.getProductName();
+            String message = a.getProductCode() + " · còn " + a.getStockAtReport()
+                    + " · báo bởi " + who;
+            items.add(new NotificationItem(
+                    "stock-" + a.getAlertId(),
+                    NotificationItem.Type.STOCK,
+                    title,
+                    message,
+                    a.getCreatedAt(),
+                    a.getAlertId()
+            ));
+        }
+        return items;
     }
 
     private void dismissNotificationSource(NotificationItem item) {
@@ -394,6 +437,16 @@ public class AdminMainFrame extends JFrame {
         } else if (item.getType() == NotificationItem.Type.RETURN) {
             returnNotifications.removeIf(n -> item.getId().equals(n.getId()));
             layout.setBadge("returnExchange", returnNotifications.size());
+        } else if (item.getType() == NotificationItem.Type.STOCK) {
+            // Đánh dấu đã xem toàn bộ (cùng hành vi mở trang Cảnh báo tồn kho)
+            try {
+                new StockAlertDAO().markAllSeen();
+            } catch (Exception e) {
+                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.DB_UPDATE_FAIL,
+                        "AdminMainFrame - stockAlert markAllSeen that bai", e);
+            }
+            stockAlertNotifications.clear();
+            layout.setBadge("stockAlerts", 0);
         } else if (item.getType() == NotificationItem.Type.ORDER) {
             Integer orderId = item.getRefId();
             boolean isNewOrderNotification = item.getId() != null && item.getId().startsWith("order-");

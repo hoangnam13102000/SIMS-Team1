@@ -66,6 +66,9 @@ public class BaseTable extends JPanel {
     /** True khi enableHorizontalScroll() da duoc goi cho bang nay - xem javadoc cua ham do. */
     private boolean horizontalScrollEnabled = false;
 
+    /** Cac chi so cot (model) duoc phep sua truc tiep tren bang. Mac dinh rong = khong sua. */
+    private final Set<Integer> editableColumns = new LinkedHashSet<>();
+
     public BaseTable(String[] columns) {
         setLayout(new BorderLayout());
         setBackground(AppColor.WHITE);
@@ -80,7 +83,7 @@ public class BaseTable extends JPanel {
         model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false;
+                return editableColumns.contains(column);
             }
         };
 
@@ -732,6 +735,20 @@ public class BaseTable extends JPanel {
     // ===== PUBLIC METHODS =====
     public JTable getTable() { return table; }
     public DefaultTableModel getModel() { return model; }
+
+    /**
+     * Cho phep sua truc tiep mot so cot tren bang (theo chi so model).
+     * Cot "Thao tac" (neu co) van khong sua duoc.
+     */
+    public BaseTable setEditableColumns(int... columns) {
+        editableColumns.clear();
+        if (columns != null) {
+            for (int c : columns) {
+                if (c >= 0) editableColumns.add(c);
+            }
+        }
+        return this;
+    }
 
     public void clear() {
         model.setRowCount(0);

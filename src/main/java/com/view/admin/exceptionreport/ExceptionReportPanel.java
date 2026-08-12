@@ -12,6 +12,7 @@ import com.theme.AppColor;
 import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
+import javax.swing.SwingUtilities;
 import java.awt.Color;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -37,8 +38,13 @@ public class ExceptionReportPanel extends BaseCrudPanel<ExceptionReport> {
     public ExceptionReportPanel() {
         super();
 
+        // Luu y: setActionColumn() thay the TOAN BO ActionColumn (khong cong don voi
+        // ActionColumn ma enableActions() da tao san trong BaseCrudPanel), nen nut "view"
+        // phai duoc khai bao thu cong ngay tai day thi moi hien ra cung nut "handle".
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
+                .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+                        this::viewRow)
                 .add("handle", FontAwesomeSolid.CHECK_CIRCLE, AppColor.SUCCESS, "Đánh dấu đã xử lý",
                         this::handleRow, this::canHandle));
 
@@ -114,15 +120,24 @@ public class ExceptionReportPanel extends BaseCrudPanel<ExceptionReport> {
     @Override
     protected boolean supportsDelete() { return false; }
     @Override
-    protected boolean supportsView() { return false; }
+    protected boolean supportsView() { return true; }
+
+    @Override
+    protected void viewRow(int modelRow) {
+        ExceptionReport item = rowToItem(modelRow);
+        if (item == null) return;
+        boolean justHandled = ExceptionReportDetailDialog.show(
+                SwingUtilities.getWindowAncestor(this), item);
+        if (justHandled) onDataChanged();
+    }
 
     @Override
     protected void openForm(ExceptionReport item) {
         // item luon la null tai day: supportsEdit() = false nen nut "Sua" khong bao gio goi ham nay,
         // chi nut "+ Gui bao cao" tren header goi openForm(null).
-        String content = BaseDialog.inputText(this, "Gửi báo cáo ngoại lệ",
-                "Nội dung báo cáo (VD: khách cần mua SP chưa có trong hệ thống, khách yêu cầu SP đặc biệt...):",
-                "", "Gửi báo cáo");
+        String content = BaseDialog.inputTextArea(this, "Gửi báo cáo ngoại lệ", "Nội dung báo cáo",
+                "VD: khách cần mua SP chưa có trong hệ thống, khách yêu cầu SP đặc biệt...",
+                "", "Gửi báo cáo", 500);
         if (content == null || content.isBlank()) return;
         int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
         if (exceptionReportDAO.create(content, currentUserId)) {
