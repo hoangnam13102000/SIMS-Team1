@@ -78,15 +78,6 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
         return receipt;
     }
 
-    /**
-     * Lập phiếu nhập kho nhiều dòng trong 1 transaction.
-     * Mỗi dòng chi tiết → trigger sinh 1 lô + cộng tồn + ghi sổ cái.
-     *
-     * @param supplierId      nhà cung cấp của cả phiếu
-     * @param createdByUserId UserID người lập
-     * @param details         danh sách dòng (≥ 1), mỗi dòng: productId, quantity &gt; 0, importPrice ≥ 0
-     * @return ReceiptID nếu thành công, -1 nếu thất bại
-     */
     public int createReceipt(int supplierId, int createdByUserId, List<PurchaseReceiptDetail> details) {
         if (details == null || details.isEmpty()) {
             AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
@@ -161,11 +152,26 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
 
                 // Liên kết giá nhập lô/phiếu → Products.ImportPrice (giá lần nhập gần nhất).
                 // Báo cáo lợi nhuận dùng Products.ImportPrice; không cập nhật sẽ lệch với giá thực tế trên lô.
-                String updateProductPriceSql = "UPDATE Products SET ImportPrice = ? WHERE ProductID = ?";
+                // PHẢI cập nhật ImportPrice + SellPrice CÙNG 1 câu UPDATE vì CHECK
+                // CK_Product_SellPrice (SellPrice >= ImportPrice) được kiểm tra ngay,
+                // trước khi trg_Products_SyncSellPrice kịp chạy.
+                // AutoPrice = 1: SellPrice = ImportPrice + Margin (hoặc default margin).
+                // AutoPrice = 0 + ImportPrice mới > SellPrice đang khóa: bỏ qua SP đó
+                // (giữ ImportPrice cũ) để không làm hỏng phiếu nhập — ADMIN chỉnh tay sau.
+                String updateProductPriceSql =
+                        "UPDATE Products SET "
+                        + "ImportPrice = ?, "
+                        + "SellPrice = CASE WHEN AutoPrice = 1 "
+                        + "THEN ? + ISNULL(Margin, dbo.fn_GetDefaultMargin()) "
+                        + "ELSE SellPrice END "
+                        + "WHERE ProductID = ? "
+                        + "AND (AutoPrice = 1 OR ? <= SellPrice)";
                 try (PreparedStatement ps = con.prepareStatement(updateProductPriceSql)) {
                     for (PurchaseReceiptDetail d : details) {
                         ps.setBigDecimal(1, d.getImportPrice());
-                        ps.setInt(2, d.getProductId());
+                        ps.setBigDecimal(2, d.getImportPrice());
+                        ps.setInt(3, d.getProductId());
+                        ps.setBigDecimal(4, d.getImportPrice());
                         ps.addBatch();
                     }
                     ps.executeBatch();
@@ -188,10 +194,6 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
     }
 
     public List<PurchaseReceiptDetail> getDetails(int receiptId) {
-        // LEFT JOIN InventoryBatch: moi dong phieu nhap sinh dung 1 lo (xem
-        // trigger trg_PurchaseReceiptDetails_Insert), lay ve BatchCode (LOT_xxxxxx)
-        // de doi chieu voi LotNumber (so lo tren bao bi NCC) - tranh tinh trang
-        // nhan vien phai hoi lai "lo he thong ung voi lo nao tren bao bi".
         String sql = "SELECT d.ReceiptDetailID, d.ReceiptID, d.ProductID, p.ProductName, p.ProductCode, "
                 + "d.Quantity, d.ImportPrice, d.LotNumber, d.ManufactureDate, d.ExpiryDate, b.BatchCode "
                 + "FROM PurchaseReceiptDetails d "

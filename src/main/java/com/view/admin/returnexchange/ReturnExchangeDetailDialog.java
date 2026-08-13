@@ -47,16 +47,6 @@ import java.awt.event.KeyEvent;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/**
- * Dialog xem chi tiet 1 yeu cau doi/tra hang - thiet ke dong bo voi
- * {@link com.view.admin.invoice.InvoiceDetailDialog}: header (icon + ma HD
- * + trang thai), card thong tin luoi 2 cot, bang cac dong san pham (IN =
- * hang khach tra, OUT = hang doi moi giao). Neu yeu cau con PENDING va
- * dang nhap co quyen RETURN_EXCHANGE_APPROVE thi hien 2 nut "Duyet"/"Tu
- * choi" - viec cong/tru kho that su do trigger
- * trg_ReturnExchange_ApprovedStock (sql/Trigger_SIMS.sql) dam nhiem ngay
- * khi trang thai chuyen sang APPROVED.
- */
 public class ReturnExchangeDetailDialog extends JDialog {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT =
@@ -178,6 +168,23 @@ public class ReturnExchangeDetailDialog extends JDialog {
         infoGrid.add(infoCellTotal(Lang.get("returnExchange.detail.info.value"),
                 NumberUtil.formatThousands(item.getTotalValue() != null ? item.getTotalValue().longValue() : 0) + " đ"));
         cardInner.add(infoGrid);
+
+        boolean hasDiscountShare = item.getDiscountShare() != null && item.getDiscountShare().signum() > 0;
+        boolean hasPointsShare = item.getPointsShare() != null && item.getPointsShare().signum() > 0;
+        if (hasDiscountShare || hasPointsShare) {
+            JPanel shareRow = new JPanel(new GridLayout(0, 2, 28, 14));
+            shareRow.setOpaque(false);
+            shareRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+            if (hasDiscountShare) {
+                shareRow.add(infoCell(Lang.get("returnExchange.detail.info.discountShare"),
+                        "-" + NumberUtil.formatThousands(item.getDiscountShare().longValue()) + " đ"));
+            }
+            if (hasPointsShare) {
+                shareRow.add(infoCell(Lang.get("returnExchange.detail.info.pointsShare"),
+                        "-" + NumberUtil.formatThousands(item.getPointsShare().longValue()) + " đ"));
+            }
+            cardInner.add(shareRow);
+        }
 
         JPanel reasonRow = new JPanel(new GridLayout(0, 1, 0, 4));
         reasonRow.setOpaque(false);

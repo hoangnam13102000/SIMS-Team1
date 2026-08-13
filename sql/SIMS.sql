@@ -1,6 +1,7 @@
 /* ============================================================
    SIMS - Sales and Inventory Management System (Connect Mart)
-   Schema hoan chinh, T-SQL (SQL Server)
+   Schema hoàn chỉnh, T-SQL (SQL Server)
+   Đã tích hợp migration: DiscountShare + PointsShare vào ReturnExchanges
    ============================================================ */
 USE master;
 GO
@@ -77,7 +78,8 @@ CREATE TABLE Suppliers (
     Email           VARCHAR(100) NULL,
     SuppliedItems   NVARCHAR(255) NULL,               -- mat hang cung cap (mo ta)
     IsDeleted       BIT NOT NULL DEFAULT 0,           -- xoa mem - khong DELETE that
-    DeletedAt       DATETIME NULL
+    DeletedAt       DATETIME NULL,
+    DebtBalance     DECIMAL(18,0) NOT NULL DEFAULT 0   -- công nợ NCC (đã tích hợp từ phần XII)
 );
 GO
 
@@ -172,7 +174,7 @@ CREATE TABLE Invoices (
                         CHECK (DiscountAmount >= 0),  -- so tien giam tu ma KM (0 neu khong ap dung)
     PromotionID     INT NULL,                         -- FK them sau khi co bang Promotions
     PromotionCode   VARCHAR(30) NULL,                 -- snapshot ma KM luc lap HD
-    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 8, -- lay tu StoreConfig VAT_RATE
+    VATRate         DECIMAL(5,2)  NOT NULL DEFAULT 0, -- lay tu StoreConfig VAT_RATE
     -- VAT tinh tren (SubTotal - DiscountAmount); TotalAmount = taxable + VAT (duy tri qua app)
     VATAmount       AS (
                         CASE WHEN (SubTotal - DiscountAmount) < 0 THEN 0
@@ -209,6 +211,7 @@ GO
 
 /* ============================================================
    V. DOI / TRA HANG
+   (Đã tích hợp migration: DiscountShare + PointsShare)
    ============================================================ */
 CREATE TABLE ReturnExchanges (
     ReturnID            INT IDENTITY(1,1) PRIMARY KEY,
@@ -217,6 +220,8 @@ CREATE TABLE ReturnExchanges (
     Reason              NVARCHAR(255) NOT NULL,       -- lý do khách
     RejectionReason     NVARCHAR(500) NULL,          -- lý do NV từ chối
     TotalValue          DECIMAL(18,0) NOT NULL DEFAULT 0,
+    DiscountShare       DECIMAL(18,0) NOT NULL DEFAULT 0,  -- phần giá trị KM phân bổ cho lần đổi/trả này
+    PointsShare         DECIMAL(18,0) NOT NULL DEFAULT 0,  -- phần giá trị điểm KH phân bổ cho lần đổi/trả này
     RequiresApproval    BIT NOT NULL DEFAULT 0,
     Status              VARCHAR(20) NOT NULL DEFAULT 'PENDING'
                             CHECK (Status IN ('PENDING', 'APPROVED', 'REJECTED')),
@@ -484,19 +489,12 @@ CREATE TABLE StoreConfig (
 );
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'OrderDetailBatches')
-BEGIN
-    CREATE TABLE OrderDetailBatches (
-        OrderDetailID   INT NOT NULL FOREIGN KEY REFERENCES OrderDetails(OrderDetailID),
-        BatchID         INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
-        Quantity        INT NOT NULL CHECK (Quantity > 0),
-        PRIMARY KEY (OrderDetailID, BatchID)
-    );
-END
-GO
-
-IF OBJECT_ID('StockDisposalDetails', 'U') IS NOT NULL DROP TABLE StockDisposalDetails;
-IF OBJECT_ID('StockDisposals', 'U') IS NOT NULL DROP TABLE StockDisposals;
+CREATE TABLE OrderDetailBatches (
+    OrderDetailID   INT NOT NULL FOREIGN KEY REFERENCES OrderDetails(OrderDetailID),
+    BatchID         INT NOT NULL FOREIGN KEY REFERENCES InventoryBatch(BatchID),
+    Quantity        INT NOT NULL CHECK (Quantity > 0),
+    PRIMARY KEY (OrderDetailID, BatchID)
+);
 GO
 
 CREATE TABLE StockDisposals (
@@ -536,16 +534,6 @@ GO
    Tru kho NGAY khi lap phieu (khong qua duyet), ghi nhan cong no
    NCC (DebtBalance) de theo doi hoan tien.
    ============================================================ */
-IF COL_LENGTH('Suppliers', 'DebtBalance') IS NULL
-BEGIN
-    ALTER TABLE Suppliers ADD DebtBalance DECIMAL(18,0) NOT NULL DEFAULT 0;
-END
-GO
-
-IF OBJECT_ID('SupplierReturnDetails', 'U') IS NOT NULL DROP TABLE SupplierReturnDetails;
-IF OBJECT_ID('SupplierReturns', 'U') IS NOT NULL DROP TABLE SupplierReturns;
-GO
-
 CREATE TABLE SupplierReturns (
     SupplierReturnID    INT IDENTITY(1,1) PRIMARY KEY,
     SupplierReturnCode  AS ('TRNC_' + RIGHT('000000' + CAST(SupplierReturnID AS VARCHAR(10)), 6)) PERSISTED UNIQUE,
@@ -584,10 +572,6 @@ GO
 /* ============================================================
    XIII. CHAT REAL-TIME
    ============================================================ */
-IF OBJECT_ID('dbo.ChatMessages', 'U') IS NOT NULL DROP TABLE dbo.ChatMessages;
-IF OBJECT_ID('dbo.ChatConversations', 'U') IS NOT NULL DROP TABLE dbo.ChatConversations;
-GO
-
 CREATE TABLE ChatConversations (
     ConversationID      INT IDENTITY(1,1) PRIMARY KEY,
     -- CUSTOMER_SUPPORT | STAFF_DM
@@ -638,14 +622,6 @@ CREATE TABLE ChatMessages (
     CreatedAt       DATETIME NOT NULL DEFAULT GETDATE(),
     IsReadByPeer    BIT NOT NULL DEFAULT 0
 );
-GO
-
--- An toàn nếu DB cũ đã có ChatMessages nhưng chưa có 2 cột file
-IF COL_LENGTH('dbo.ChatMessages', 'FilePath') IS NULL
-    ALTER TABLE dbo.ChatMessages ADD FilePath NVARCHAR(500) NULL;
-GO
-IF COL_LENGTH('dbo.ChatMessages', 'FileName') IS NULL
-    ALTER TABLE dbo.ChatMessages ADD FileName NVARCHAR(255) NULL;
 GO
 
 CREATE INDEX IX_ChatMessages_Conversation_Created

@@ -27,8 +27,9 @@ import java.util.List;
 
 /**
  * Biểu đồ "Thu / Chi / Lợi nhuận ròng" theo ngày cho tab Lợi nhuận:
- * - Cột nhóm: "Thu" (doanh thu) và "Chi" (giá vốn + thiệt hại - hoàn trả NCC)
+ * - Cột nhóm: "Thu" (doanh thu) và "Chi" (giá vốn + thiệt hại hủy)
  * - Đường "Lợi nhuận ròng" (Thu - Chi)
+ * - Hoàn trả NCC chỉ hiển thị tham khảo, không trừ vào Chi
  */
 public class FinanceChartPanel extends JComponent {
 
@@ -85,8 +86,8 @@ public class FinanceChartPanel extends JComponent {
                 + "<br>Thu (doanh thu): " + NumberUtil.formatThousands(p.revenue.longValue()) + " đ"
                 + "<br>Chi (giá vốn): " + NumberUtil.formatThousands(p.cost.longValue()) + " đ"
                 + "<br>Chi (thiệt hại): " + NumberUtil.formatThousands(p.disposalLoss.longValue()) + " đ"
-                + "<br>Hoàn trả NCC: " + NumberUtil.formatThousands(p.supplierRefund.longValue()) + " đ"
-                + "<br>Tổng chi (sau hoàn): " + NumberUtil.formatThousands(p.totalExpense().longValue()) + " đ"
+                + "<br>Hoàn trả NCC (tham khảo): " + NumberUtil.formatThousands(p.supplierRefund.longValue()) + " đ"
+                + "<br>Tổng chi: " + NumberUtil.formatThousands(p.totalExpense().longValue()) + " đ"
                 + "<br><b>Lợi nhuận ròng: <span style='color:" + (profitPositive ? "#16a34a" : "#dc2626") + "'>"
                 + NumberUtil.formatThousands(p.netProfit().longValue()) + " đ</span></b>"
                 + "<br>Hóa đơn: " + p.invoiceCount + "</html>";
@@ -189,7 +190,7 @@ public class FinanceChartPanel extends JComponent {
             g2.setColor(hovered ? revenueHover : revenueColor);
             drawBar(g2, groupX, top + height - revHeight, barWidth, revHeight);
 
-            // Chi sau khi trừ hoàn NCC (không vẽ âm)
+            // Chi = COGS + hủy (không vẽ âm)
             double expVal = Math.max(0, p.totalExpense().doubleValue());
             double expRatio = axisMax == 0 ? 0 : expVal / axisMax;
             int expHeight = (int) Math.round(expRatio * height);
@@ -275,7 +276,7 @@ public class FinanceChartPanel extends JComponent {
         x = drawLegendItem(g2, x, y, fm, AppColor.ACCENT, "Thu (doanh thu)");
         x = drawLegendItem(g2, x, y, fm,
                 AppColor.ERROR != null ? AppColor.ERROR : new Color(220, 38, 38),
-                "Chi (sau hoàn NCC)");
+                "Chi");
         drawLegendLineItem(g2, x, y, fm, "Lợi nhuận ròng");
     }
 

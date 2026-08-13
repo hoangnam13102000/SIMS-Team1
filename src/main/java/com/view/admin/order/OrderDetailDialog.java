@@ -69,6 +69,11 @@ public class OrderDetailDialog extends JDialog {
         super(owner, "Chi tiết đơn hàng", Dialog.ModalityType.APPLICATION_MODAL);
         this.order = order;
         this.orderDAO = orderDAO;
+
+        // Dam bao co tom tat doi/tra (giong InvoiceDetailDialog voi Invoice) -
+        // khong dung toi logic chuyen trang thai don hang.
+        orderDAO.attachReturnSummary(order);
+
         List<OrderDetail> details = orderDAO.getDetailsByOrderId(order.getOrderId());
 
         if (!order.isSeenByAdmin()) {
@@ -143,9 +148,47 @@ public class OrderDetailDialog extends JDialog {
         titleBox.add(Box.createVerticalStrut(4));
         titleBox.add(subtitleLabel);
 
+        // Ghi chu doi/tra (giong InvoiceDetailDialog.returnNoteLabel) - chi hien
+        // khi don co it nhat 1 phieu doi/tra da duyet.
+        if (order.hasReturns()) {
+            JLabel returnNoteLabel = new JLabel(order.getReturnNote());
+            returnNoteLabel.setFont(AppFont.SMALL);
+            returnNoteLabel.setForeground(AppColor.ACCENT);
+            returnNoteLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            titleBox.add(Box.createVerticalStrut(4));
+            titleBox.add(returnNoteLabel);
+        }
+
         header.add(iconBadge, BorderLayout.WEST);
         header.add(titleBox, BorderLayout.CENTER);
+
+        if (order.hasReturns()) {
+            JPanel badges = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            badges.setOpaque(false);
+            badges.add(returnStateBadge());
+            header.add(badges, BorderLayout.EAST);
+        }
+
         return header;
+    }
+
+    private JLabel returnStateBadge() {
+        String text = order.getReturnStateLabel();
+        Color color;
+        if ("FULL".equalsIgnoreCase(order.getReturnState())) {
+            color = AppColor.WARNING;
+        } else if ("PARTIAL".equalsIgnoreCase(order.getReturnState())) {
+            color = AppColor.ACCENT;
+        } else {
+            color = AppColor.TEXT_MUTED;
+        }
+        JLabel lb = new JLabel(text);
+        lb.setOpaque(true);
+        lb.setBackground(color);
+        lb.setForeground(Color.WHITE);
+        lb.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        lb.setBorder(new EmptyBorder(4, 10, 4, 10));
+        return lb;
     }
 
     // ---------------------------------------------------------------
@@ -201,6 +244,13 @@ public class OrderDetailDialog extends JDialog {
 
         infoGrid.add(infoCellTotal("Tổng tiền đơn hàng",
                 NumberUtil.formatThousands(order.getTotalAmount().longValue()) + " đ"));
+
+        // Da hoan (chi hien khi co phieu doi/tra da duyet) - ap dung cung cach
+        // tinh nhu Invoice.getRefundedAmount, khong dung toi trang thai don.
+        if (order.hasReturns()) {
+            infoGrid.add(infoCell("Đã hoàn",
+                    "−" + NumberUtil.formatThousands(order.getRefundedAmount().longValue()) + " đ"));
+        }
         cardInner.add(infoGrid);
 
         JPanel addressRow = new JPanel(new BorderLayout(8, 0));
@@ -291,7 +341,14 @@ public class OrderDetailDialog extends JDialog {
     }
 
     private JTable buildDetailTable(List<OrderDetail> details) {
-        String[] columns = {"Hình", "Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
+        // Chi hien 2 cot "Da tra"/"Con lai" khi co it nhat 1 dong da bi tra -
+        // giu bang gon cho don chua tra hang nao, ap dung cung cach hien thi
+        // nhu InvoiceDetailDialog.buildProductTable.
+        boolean hasAnyReturn = details.stream().anyMatch(d -> d.getReturnedQuantity() > 0);
+
+        String[] columns = hasAnyReturn
+                ? new String[]{"Hình", "Sản phẩm", "SL", "Đã trả", "Còn lại", "Đơn giá", "Thành tiền"}
+                : new String[]{"Hình", "Sản phẩm", "SL", "Đơn giá", "Thành tiền"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -305,13 +362,25 @@ public class OrderDetailDialog extends JDialog {
         };
 
         for (OrderDetail d : details) {
-            model.addRow(new Object[]{
-                    d.getProductImageUrl() != null ? d.getProductImageUrl() : "",
-                    d.getProductName(),
-                    d.getQuantity(),
-                    NumberUtil.formatThousands(d.getUnitPrice().longValue()),
-                    NumberUtil.formatThousands(d.getLineTotal().longValue())
-            });
+            if (hasAnyReturn) {
+                model.addRow(new Object[]{
+                        d.getProductImageUrl() != null ? d.getProductImageUrl() : "",
+                        d.getProductName(),
+                        d.getQuantity(),
+                        d.getReturnedQuantity(),
+                        d.getRemainingQuantity(),
+                        NumberUtil.formatThousands(d.getUnitPrice().longValue()),
+                        NumberUtil.formatThousands(d.getLineTotal().longValue())
+                });
+            } else {
+                model.addRow(new Object[]{
+                        d.getProductImageUrl() != null ? d.getProductImageUrl() : "",
+                        d.getProductName(),
+                        d.getQuantity(),
+                        NumberUtil.formatThousands(d.getUnitPrice().longValue()),
+                        NumberUtil.formatThousands(d.getLineTotal().longValue())
+                });
+            }
         }
 
         JTable table = new JTable(model);
@@ -333,17 +402,27 @@ public class OrderDetailDialog extends JDialog {
         table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         table.setIntercellSpacing(new Dimension(0, 0));
 
+        // Cot cuoi ("Thanh tien") thay doi vi tri tuy co hien cot Da tra/Con lai hay khong.
+        int lastCol = columns.length - 1;
+        int priceCol = hasAnyReturn ? 5 : 3;
+
         ImageColumn imageColumn = new ImageColumn(44, 10);
-        RowColorProvider colors = (row, selected) -> AppColor.WHITE;
+        RowColorProvider colors = (row, selected) -> rowBg(row, details);
         table.getColumnModel().getColumn(0).setCellRenderer(imageColumn.renderer(colors));
         table.getColumnModel().getColumn(0).setPreferredWidth(64);
         table.getColumnModel().getColumn(0).setMinWidth(60);
         table.getColumnModel().getColumn(0).setMaxWidth(72);
-        table.getColumnModel().getColumn(1).setPreferredWidth(260);
+        table.getColumnModel().getColumn(1).setPreferredWidth(hasAnyReturn ? 200 : 260);
         table.getColumnModel().getColumn(2).setPreferredWidth(56);
         table.getColumnModel().getColumn(2).setMaxWidth(72);
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);
-        table.getColumnModel().getColumn(4).setPreferredWidth(120);
+        if (hasAnyReturn) {
+            table.getColumnModel().getColumn(3).setPreferredWidth(64);
+            table.getColumnModel().getColumn(3).setMaxWidth(80);
+            table.getColumnModel().getColumn(4).setPreferredWidth(64);
+            table.getColumnModel().getColumn(4).setMaxWidth(80);
+        }
+        table.getColumnModel().getColumn(priceCol).setPreferredWidth(110);
+        table.getColumnModel().getColumn(lastCol).setPreferredWidth(120);
 
         DefaultTableCellRenderer nameRenderer = new DefaultTableCellRenderer() {
             @Override
@@ -352,7 +431,7 @@ public class OrderDetailDialog extends JDialog {
                 Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
                 setFont(AppFont.BODY_BOLD);
                 setForeground(AppColor.TEXT_PRIMARY);
-                setBackground(AppColor.WHITE);
+                setBackground(rowBg(row, details));
                 setBorder(new EmptyBorder(0, 8, 0, 4));
                 return c;
             }
@@ -365,12 +444,30 @@ public class OrderDetailDialog extends JDialog {
                                                           boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
                 setHorizontalAlignment(SwingConstants.CENTER);
-                setBackground(AppColor.WHITE);
+                setBackground(rowBg(row, details));
                 setForeground(AppColor.TEXT_PRIMARY);
                 return c;
             }
         };
         table.getColumnModel().getColumn(2).setCellRenderer(center);
+        if (hasAnyReturn) {
+            // "Da tra" nhan manh mau canh bao, "Con lai" mau binh thuong.
+            DefaultTableCellRenderer returnedCenter = new DefaultTableCellRenderer() {
+                @Override
+                public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                              boolean hasFocus, int row, int column) {
+                    Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                    setHorizontalAlignment(SwingConstants.CENTER);
+                    setBackground(rowBg(row, details));
+                    boolean returned = row < details.size() && details.get(row).getReturnedQuantity() > 0;
+                    setForeground(returned ? AppColor.WARNING : AppColor.TEXT_MUTED);
+                    setFont(returned ? AppFont.BODY_BOLD : AppFont.BODY);
+                    return c;
+                }
+            };
+            table.getColumnModel().getColumn(3).setCellRenderer(returnedCenter);
+            table.getColumnModel().getColumn(4).setCellRenderer(center);
+        }
 
         DefaultTableCellRenderer money = new DefaultTableCellRenderer() {
             @Override
@@ -378,17 +475,30 @@ public class OrderDetailDialog extends JDialog {
                                                           boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
                 setHorizontalAlignment(SwingConstants.RIGHT);
-                setBackground(AppColor.WHITE);
-                setForeground(column == 4 ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
-                setFont(column == 4 ? AppFont.BODY_BOLD : AppFont.BODY);
+                setBackground(rowBg(row, details));
+                setForeground(column == lastCol ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
+                setFont(column == lastCol ? AppFont.BODY_BOLD : AppFont.BODY);
                 setBorder(new EmptyBorder(0, 4, 0, 12));
                 return c;
             }
         };
-        table.getColumnModel().getColumn(3).setCellRenderer(money);
-        table.getColumnModel().getColumn(4).setCellRenderer(money);
+        table.getColumnModel().getColumn(priceCol).setCellRenderer(money);
+        table.getColumnModel().getColumn(lastCol).setCellRenderer(money);
 
         return table;
+    }
+
+    /**
+     * Mau nen dong theo trang thai da tra - ap dung cung bang mau nhu
+     * InvoiceDetailDialog.applyRowStyle (vang nhat = da tra het, xanh nhat =
+     * tra mot phan), giu nguyen mau trang cho dong chua tra.
+     */
+    private Color rowBg(int row, List<OrderDetail> details) {
+        if (row >= details.size()) return AppColor.WHITE;
+        OrderDetail d = details.get(row);
+        if (d.isFullyReturned()) return new Color(0xFEF3C7);
+        if (d.isPartiallyReturned()) return new Color(0xEFF6FF);
+        return AppColor.WHITE;
     }
 
     // ---------------------------------------------------------------

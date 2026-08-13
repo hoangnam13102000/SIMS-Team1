@@ -36,6 +36,16 @@ public class Order {
     private String latestReturnReason;
     private LocalDateTime latestReturnCreatedAt;
 
+    // ---- Tom tat doi/tra tong hop (khong luu DB, gan tu OrderDAO.attachReturnSummary) ----
+    // Ap dung cung cach tinh nhu Invoice: tong hop TAT CA phieu APPROVED (khac voi
+    // latestReturn* o tren chi lay 1 phieu gan nhat, dung cho OrderHistoryPanel/khach hang).
+    /** Tong tien da hoan thuc te (Sigma ReturnExchanges.TotalValue APPROVED, qua InvoiceID). */
+    private BigDecimal refundedAmount = BigDecimal.ZERO;
+    /** So phieu doi/tra da duyet. */
+    private int approvedReturnCount;
+    /** NONE | PARTIAL | FULL — suy tu hang da tra vs hang da ban. */
+    private String returnState = "NONE";
+
     public int getOrderId() { return orderId; }
     public void setOrderId(int orderId) { this.orderId = orderId; }
 
@@ -143,5 +153,42 @@ public class Order {
     public boolean canRequestReturn() {
         return isCompleted() && invoiceId != null && !returnRequested && completedAt != null
                 && completedAt.plusDays(1).isAfter(LocalDateTime.now());
+    }
+
+    public BigDecimal getRefundedAmount() {
+        return refundedAmount != null ? refundedAmount : BigDecimal.ZERO;
+    }
+    public void setRefundedAmount(BigDecimal refundedAmount) {
+        this.refundedAmount = refundedAmount != null ? refundedAmount : BigDecimal.ZERO;
+    }
+
+    public int getApprovedReturnCount() { return approvedReturnCount; }
+    public void setApprovedReturnCount(int approvedReturnCount) {
+        this.approvedReturnCount = Math.max(0, approvedReturnCount);
+    }
+
+    public String getReturnState() { return returnState != null ? returnState : "NONE"; }
+    public void setReturnState(String returnState) {
+        this.returnState = returnState != null ? returnState : "NONE";
+    }
+
+    public boolean hasReturns() {
+        return approvedReturnCount > 0 || getRefundedAmount().signum() > 0;
+    }
+
+    /** Nhan hien thi trang thai doi/tra (giong Invoice.getReturnStateLabel). */
+    public String getReturnStateLabel() {
+        return switch (getReturnState()) {
+            case "FULL" -> "Đã trả hết";
+            case "PARTIAL" -> "Trả một phần";
+            default -> "—";
+        };
+    }
+
+    /** Ghi chu ngan cho chi tiet don / tooltip, vd "Đã hoàn 15.000đ · 1 phiếu trả". */
+    public String getReturnNote() {
+        if (!hasReturns()) return "";
+        String money = String.format("%,.0fđ", getRefundedAmount());
+        return "Đã hoàn " + money + " · " + approvedReturnCount + " phiếu trả";
     }
 }

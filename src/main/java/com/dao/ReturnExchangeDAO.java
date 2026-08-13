@@ -52,6 +52,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
     @Override
     protected String getColumns() {
         return "r.ReturnID, r.InvoiceID, inv.InvoiceCode, r.Type, r.Reason, r.RejectionReason, r.TotalValue, "
+                + "r.DiscountShare, r.PointsShare, "
                 + "r.RequiresApproval, r.Status, r.ApprovedBy, au.FullName AS ApprovedByName, r.ApprovedAt, "
                 + "r.CreatedBy, u.FullName AS CreatedByName, r.CreatedAt";
     }
@@ -74,6 +75,8 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         re.setReason(rs.getString("Reason"));
         re.setRejectionReason(rs.getString("RejectionReason"));
         re.setTotalValue(rs.getBigDecimal("TotalValue"));
+        re.setDiscountShare(nvl(rs.getBigDecimal("DiscountShare")));
+        re.setPointsShare(nvl(rs.getBigDecimal("PointsShare")));
         re.setRequiresApproval(rs.getBoolean("RequiresApproval"));
         re.setStatus(rs.getString("Status"));
         int approvedBy = rs.getInt("ApprovedBy");
@@ -161,8 +164,8 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         }
 
         String insertHeaderSql = "INSERT INTO ReturnExchanges "
-                + "(InvoiceID, Type, Reason, TotalValue, RequiresApproval, Status, CreatedBy) "
-                + "VALUES (?, ?, ?, ?, ?, 'PENDING', ?)";
+                + "(InvoiceID, Type, Reason, TotalValue, DiscountShare, PointsShare, RequiresApproval, Status, CreatedBy) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)";
         String insertDetailSql = "INSERT INTO ReturnExchangeDetails "
                 + "(ReturnID, ProductID, Quantity, Direction, UnitPrice) VALUES (?, ?, ?, ?, ?)";
         String approveSql = "UPDATE ReturnExchanges SET Status = 'APPROVED', ApprovedBy = ?, ApprovedAt = GETDATE() "
@@ -232,7 +235,8 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                 }
 
                 // Phân bổ KM + điểm → tiền hoàn thực tế
-                BigDecimal totalValue = computeRefundAmount(con, header.getInvoiceId(), returnedGross);
+                RefundBreakdown breakdown = computeRefundAmount(con, header.getInvoiceId(), returnedGross);
+                BigDecimal totalValue = breakdown.refund;
                 boolean requiresApproval = totalValue.compareTo(APPROVAL_THRESHOLD) > 0;
 
                 int returnId;
@@ -241,8 +245,10 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     ps.setString(2, header.getType());
                     ps.setString(3, header.getReason().trim());
                     ps.setBigDecimal(4, totalValue);
-                    ps.setBoolean(5, requiresApproval);
-                    ps.setInt(6, header.getCreatedBy());
+                    ps.setBigDecimal(5, breakdown.discountShare);
+                    ps.setBigDecimal(6, breakdown.pointsShare);
+                    ps.setBoolean(7, requiresApproval);
+                    ps.setInt(8, header.getCreatedBy());
                     ps.executeUpdate();
                     try (ResultSet keys = ps.getGeneratedKeys()) {
                         if (!keys.next()) throw new SQLException("Không lấy được ReturnID vừa tạo.");
@@ -275,6 +281,8 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                 con.commit();
                 header.setReturnId(returnId);
                 header.setTotalValue(totalValue);
+                header.setDiscountShare(breakdown.discountShare);
+                header.setPointsShare(breakdown.pointsShare);
                 header.setRequiresApproval(requiresApproval);
                 header.setStatus(requiresApproval ? ReturnExchange.STATUS_PENDING : ReturnExchange.STATUS_APPROVED);
 
@@ -399,23 +407,49 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
     //  Phân bổ KM + điểm → tiền hoàn
     // ------------------------------------------------------------------
 
+    /** Kết quả phân bổ tiền hoàn: tổng tiền hoàn + phần KM/điểm tương ứng (chỉ để hiển thị). */
+    private static final class RefundBreakdown {
+        final BigDecimal refund;
+        final BigDecimal discountShare;
+        final BigDecimal pointsShare;
+
+        RefundBreakdown(BigDecimal refund, BigDecimal discountShare, BigDecimal pointsShare) {
+            this.refund = refund;
+            this.discountShare = discountShare;
+            this.pointsShare = pointsShare;
+        }
+    }
+
     /**
      * Tiền hoàn thực tế cho phần hàng trả (returnedGross = Σ UnitPrice×Qty IN).
-     * Công thức khớp thứ tự tính lúc lập HĐ:
-     *   discountShare → taxable → +VAT → −pointsShare
+     * <p>
+     * Phân bổ theo đúng tỷ lệ (gross hàng trả / SubTotal hóa đơn), áp trực
+     * tiếp lên TotalAmount - tức số tiền KHÁCH THỰC SỰ ĐÃ TRẢ - thay vì dựng
+     * lại công thức "taxable + VAT - điểm" từ đầu như trước.
+     * <p>
+     * BUG cũ: với đơn đặt online, Orders.TotalAmount = SubTotal -
+     * DiscountAmount (KHÔNG cộng VAT - xem comment cột TotalAmount trong
+     * bảng Orders), nhưng Invoices.VATRate vẫn được copy nguyên từ đơn hàng
+     * khi lập hóa đơn (OrderDAO.createInvoiceForOrder) dù VAT đó chưa từng
+     * được cộng vào số tiền khách trả. Công thức cũ cứ thấy VATRate > 0 là
+     * cộng thêm VAT vào tiền hoàn, khiến "Giá trị hàng trả" hiển thị CAO
+     * HƠN cả "Tổng tiền đơn hàng" đã thanh toán (ví dụ hoàn 176.256đ cho
+     * đơn chỉ thu 163.200đ). Tính theo tỷ lệ trực tiếp trên TotalAmount đã
+     * lưu đảm bảo tiền hoàn không bao giờ vượt quá số tiền đã thu, bất kể
+     * hóa đơn có cộng VAT hay không.
      */
-    private BigDecimal computeRefundAmount(Connection con, int invoiceId, BigDecimal returnedGross)
+    private RefundBreakdown computeRefundAmount(Connection con, int invoiceId, BigDecimal returnedGross)
             throws SQLException {
         if (returnedGross == null || returnedGross.signum() <= 0) {
-            return BigDecimal.ZERO;
+            return new RefundBreakdown(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         }
         BigDecimal subTotal = BigDecimal.ZERO;
         BigDecimal discount = BigDecimal.ZERO;
         BigDecimal pointsDisc = BigDecimal.ZERO;
-        BigDecimal vatRate = BigDecimal.ZERO;
+        BigDecimal totalAmount = BigDecimal.ZERO;
 
         try (PreparedStatement ps = con.prepareStatement(
-                "SELECT SubTotal, DiscountAmount, PointsDiscountAmount, VATRate "
+                "SELECT SubTotal, DiscountAmount, PointsDiscountAmount, TotalAmount "
                         + "FROM Invoices WHERE InvoiceID = ?")) {
             ps.setInt(1, invoiceId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -423,29 +457,30 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                     subTotal = nvl(rs.getBigDecimal("SubTotal"));
                     discount = nvl(rs.getBigDecimal("DiscountAmount"));
                     pointsDisc = nvl(rs.getBigDecimal("PointsDiscountAmount"));
-                    vatRate = nvl(rs.getBigDecimal("VATRate"));
+                    totalAmount = nvl(rs.getBigDecimal("TotalAmount"));
                 }
             }
         }
         if (subTotal.signum() <= 0) {
-            return returnedGross; // fallback
+            return new RefundBreakdown(returnedGross, BigDecimal.ZERO, BigDecimal.ZERO); // fallback
         }
 
-        // SubTotal/DiscountAmount da duoc trigger dieu chinh sau cac lan
-        // doi/tra APPROVED truoc. Vi vay chi can gioi han theo phan gia tri
-        // con lai hien tai; khong tru them alreadyReturned de tranh tru 2 lan.
+        // SubTotal/DiscountAmount/TotalAmount da duoc trigger dieu chinh sau
+        // cac lan doi/tra APPROVED truoc. Vi vay chi can gioi han theo phan
+        // gia tri con lai hien tai; khong tru them alreadyReturned de tranh
+        // tru 2 lan.
         BigDecimal gross = returnedGross.min(subTotal);
-
         BigDecimal ratio = gross.divide(subTotal, 8, RoundingMode.HALF_UP);
+
         BigDecimal discShare = discount.multiply(ratio).setScale(0, RoundingMode.HALF_UP);
-        BigDecimal taxable = gross.subtract(discShare);
-        if (taxable.signum() < 0) taxable = BigDecimal.ZERO;
-        BigDecimal vatShare = taxable.multiply(vatRate)
-                .divide(new BigDecimal("100"), 0, RoundingMode.HALF_UP);
-        BigDecimal beforePts = taxable.add(vatShare);
         BigDecimal ptsShare = pointsDisc.multiply(ratio).setScale(0, RoundingMode.HALF_UP);
-        BigDecimal refund = beforePts.subtract(ptsShare);
-        return refund.signum() < 0 ? BigDecimal.ZERO : refund;
+
+        BigDecimal refund = totalAmount.multiply(ratio).setScale(0, RoundingMode.HALF_UP);
+        if (refund.signum() < 0) refund = BigDecimal.ZERO;
+        // Chan cung: tien hoan khong bao gio duoc vuot qua so tien hoa don con lai.
+        if (refund.compareTo(totalAmount) > 0) refund = totalAmount;
+
+        return new RefundBreakdown(refund, discShare, ptsShare);
     }
 
     private BigDecimal sumApprovedReturnedGross(Connection con, int invoiceId) throws SQLException {

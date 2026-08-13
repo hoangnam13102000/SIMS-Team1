@@ -77,6 +77,27 @@ public final class FileUtil {
         }
     }
 
+    /**
+     * Tra ve 1 File trong {temp}/{subDir}/, ten dang "{baseName}_{timestamp}.{ext}"
+     * (timestamp toi milli-giay) - luon la ten MOI, khong bao gio trung voi lan
+     * goi truoc do (ke ca goi 2 lan lien tiep trong cung 1 giay).
+     * <p>
+     * Dung khi xuat file (PDF, Excel...) ra thu muc tam roi mo bang trinh doc
+     * mac dinh cua he dieu hanh (Desktop.open): neu dung 1 ten CO DINH cho moi
+     * lan xuat, va nguoi dung van con dang mo file cu do trong trinh xem ben
+     * ngoai, Windows se khoa file lai -> lan ghi tiep theo bao loi "The process
+     * cannot access the file because it is being used by another process".
+     */
+    public static File uniqueTempFile(String subDir, String baseName, String ext) {
+        File dir = new File(System.getProperty("java.io.tmpdir"), subDir);
+        ensureDirectory(dir.getAbsolutePath());
+        String safeBase = (baseName == null || baseName.isBlank())
+                ? "file" : baseName.replaceAll("[^a-zA-Z0-9]", "_");
+        String timestamp = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmssSSS"));
+        return new File(dir, safeBase + "_" + timestamp + "." + ext);
+    }
+
     // ---------- Kich thuoc / dinh dang ----------
 
     /** Vi du: 2500000 byte -> "2.4 MB". Dung o cho hien thi gioi han dung luong upload. */

@@ -9,6 +9,7 @@ import com.model.OrderDetail;
 import com.utils.DBConnection;
 import com.utils.PaginationHelper;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -980,11 +981,24 @@ public class OrderDAO extends BaseDAO<Order> {
         }
     }
 
+    /**
+     * Danh sach dong SP cua don + so luong da tra (APPROVED) cho tung dong -
+     * ap dung cung cach tinh nhu {@link InvoiceDAO#getDetails(int)}, chi khac
+     * la doi/tra cua don hang duoc quy chieu qua Orders.InvoiceID (hoa don
+     * lap khi don hoan thanh) thay vi InvoiceDetails.InvoiceID truc tiep.
+     */
     public List<OrderDetail> getDetailsByOrderId(int orderId) {
         // LEFT JOIN Products de lay anh SP (ImageUrl); van hien ten snapshot o OrderDetails
         // neu san pham da bi xoa.
         String sql = "SELECT od.OrderDetailID, od.OrderID, od.ProductID, od.ProductName, "
-                + "od.Quantity, od.UnitPrice, od.LineTotal, p.ImageUrl AS ProductImageUrl "
+                + "od.Quantity, od.UnitPrice, od.LineTotal, p.ImageUrl AS ProductImageUrl, "
+                + "ISNULL(( "
+                + "  SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
+                + "  JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
+                + "  JOIN Orders o2 ON o2.InvoiceID = r.InvoiceID "
+                + "  WHERE o2.OrderID = od.OrderID AND r.Status = 'APPROVED' "
+                + "    AND rd.Direction = 'IN' AND rd.ProductID = od.ProductID "
+                + "), 0) AS ReturnedQty "
                 + "FROM OrderDetails od "
                 + "LEFT JOIN Products p ON p.ProductID = od.ProductID "
                 + "WHERE od.OrderID = ? ORDER BY od.OrderDetailID";
@@ -1003,6 +1017,11 @@ public class OrderDAO extends BaseDAO<Order> {
                     d.setUnitPrice(rs.getBigDecimal("UnitPrice"));
                     d.setLineTotal(rs.getBigDecimal("LineTotal"));
                     d.setProductImageUrl(rs.getString("ProductImageUrl"));
+                    try {
+                        d.setReturnedQuantity(rs.getInt("ReturnedQty"));
+                    } catch (SQLException ignore) {
+                        d.setReturnedQuantity(0);
+                    }
                     list.add(d);
                 }
             }
@@ -1010,6 +1029,74 @@ public class OrderDAO extends BaseDAO<Order> {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "OrderDAO.getDetailsByOrderId", e);
         }
         return list;
+    }
+
+    // ---------------------------------------------------------------
+    // Tom tat doi/tra cua don hang (khong luu DB - tinh tu ReturnExchanges
+    // qua Orders.InvoiceID) - ap dung cung cach tinh nhu
+    // InvoiceDAO.attachReturnSummary/fillReturnSummary.
+    // ---------------------------------------------------------------
+
+    public void attachReturnSummary(Order order) {
+        if (order == null) return;
+        List<Order> one = new ArrayList<>();
+        one.add(order);
+        attachReturnSummary(one);
+    }
+
+    public void attachReturnSummary(List<Order> orders) {
+        if (orders == null || orders.isEmpty()) return;
+        for (Order o : orders) {
+            fillReturnSummary(o);
+        }
+    }
+
+    private void fillReturnSummary(Order order) {
+        if (order == null || order.getInvoiceId() == null) return;
+
+        String sqlRefund = "SELECT "
+                + "ISNULL(SUM(CASE WHEN Status = 'APPROVED' THEN TotalValue ELSE 0 END), 0) AS Refunded, "
+                + "SUM(CASE WHEN Status = 'APPROVED' THEN 1 ELSE 0 END) AS Cnt "
+                + "FROM ReturnExchanges WHERE InvoiceID = ?";
+
+        String sqlQty = "SELECT "
+                + "ISNULL((SELECT SUM(d.Quantity) FROM OrderDetails d WHERE d.OrderID = ?), 0) AS SoldQty, "
+                + "ISNULL((SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
+                + "         JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
+                + "         WHERE r.InvoiceID = ? AND r.Status = 'APPROVED' AND rd.Direction = 'IN'), 0) AS ReturnedQty";
+
+        try (Connection con = DBConnection.getConnection()) {
+            try (PreparedStatement ps = con.prepareStatement(sqlRefund)) {
+                ps.setInt(1, order.getInvoiceId());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        BigDecimal refunded = rs.getBigDecimal("Refunded");
+                        order.setRefundedAmount(refunded != null ? refunded : BigDecimal.ZERO);
+                        order.setApprovedReturnCount(rs.getInt("Cnt"));
+                    }
+                }
+            }
+            try (PreparedStatement ps = con.prepareStatement(sqlQty)) {
+                ps.setInt(1, order.getOrderId());
+                ps.setInt(2, order.getInvoiceId());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        int sold = rs.getInt("SoldQty");
+                        int returned = rs.getInt("ReturnedQty");
+                        if (returned <= 0) {
+                            order.setReturnState("NONE");
+                        } else if (sold > 0 && returned >= sold) {
+                            order.setReturnState("FULL");
+                        } else {
+                            order.setReturnState("PARTIAL");
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "OrderDAO.fillReturnSummary - orderId=" + order.getOrderId(), e);
+        }
     }
 
     private boolean executeUpdate(String sql, Object... params) {

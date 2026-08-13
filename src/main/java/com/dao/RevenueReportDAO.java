@@ -22,15 +22,19 @@ import java.util.Map;
  * DAO riêng cho trang "Báo cáo doanh thu".
  * <p>
  * <b>Doanh thu thuần (một nguồn sự thật)</b> =
- * {@code SUM(Invoices.TotalAmount)} của HĐ {@code ACTIVE} trong kỳ
- * − giá trị trả hàng đã duyệt (ReturnExchange APPROVED, Direction = IN)
- * gắn với các HĐ đó (theo ngày tạo HĐ).
+ * {@code SUM(Invoices.TotalAmount)} của HĐ {@code ACTIVE} trong kỳ.
+ * <p>
+ * Trigger {@code trg_ReturnExchange_ApprovedStock} đã điều chỉnh
+ * {@code SubTotal}/{@code TotalAmount} của hóa đơn gốc khi duyệt trả hàng
+ * (Direction = IN). Vì vậy KHÔNG trừ thêm giá trị trả ở tầng báo cáo —
+ * tránh bị trừ đôi.
  * <p>
  * Dùng chung cho StatCard, biểu đồ Thu/Chi, pie PTTT, summary lợi nhuận
  * để các số khớp nhau. Top SP / danh mục vẫn dùng LineTotal − trả
  * (phân tích theo sản phẩm; tổng có thể khác doanh thu thuần vì giảm giá/điểm/VAT cấp HĐ).
  * <p>
- * Chi / lãi ròng: giá vốn sau trả + thiệt hại hủy − hoàn trả NCC.
+ * Chi / lãi ròng: giá vốn sau trả + thiệt hại hủy.
+ * Hoàn trả NCC không trừ vào Chi (nhập hàng cũng không ghi Chi) — theo dõi riêng.
  */
 public class RevenueReportDAO {
 
@@ -81,14 +85,14 @@ public class RevenueReportDAO {
 
     /**
      * Thu / Chi / Lợi nhuận ròng theo ngày.
-     * Chi = giá vốn + thiệt hại hủy - hoàn trả NCC.
+     * Chi = giá vốn + thiệt hại hủy (không trừ hoàn trả NCC).
      */
     public static class DailyFinancePoint {
         public final LocalDate date;
         public final BigDecimal revenue;
         public final BigDecimal cost;
         public final BigDecimal disposalLoss;
-        /** Tiền hoàn từ phiếu trả NCC (COMPLETED) trong ngày. */
+        /** Tiền hoàn từ phiếu trả NCC (COMPLETED) trong ngày — chỉ tham khảo, không trừ vào Chi. */
         public final BigDecimal supplierRefund;
         public final int invoiceCount;
 
@@ -102,9 +106,9 @@ public class RevenueReportDAO {
             this.invoiceCount = invoiceCount;
         }
 
-        /** Chi = giá vốn + thiệt hại - hoàn trả NCC */
+        /** Chi = giá vốn + thiệt hại hủy (không trừ hoàn NCC). */
         public BigDecimal totalExpense() {
-            return cost.add(disposalLoss).subtract(supplierRefund);
+            return cost.add(disposalLoss);
         }
 
         public BigDecimal netProfit() {
@@ -140,7 +144,7 @@ public class RevenueReportDAO {
         public final BigDecimal totalRevenue;
         public final BigDecimal totalCost;
         public final BigDecimal totalLoss;
-        /** Tổng tiền hoàn trả NCC trong kỳ. */
+        /** Tổng tiền hoàn trả NCC trong kỳ — chỉ tham khảo, không cộng vào lãi ròng. */
         public final BigDecimal totalSupplierRefund;
         public final BigDecimal totalProfit;
         public final BigDecimal netProfit;
@@ -161,7 +165,8 @@ public class RevenueReportDAO {
             this.totalSupplierRefund = totalSupplierRefund != null ? totalSupplierRefund : BigDecimal.ZERO;
             this.totalProfit = this.totalRevenue.subtract(this.totalCost);
             // Lãi ròng = DT - giá vốn - hủy + hoàn trả NCC
-            this.netProfit = this.totalProfit.subtract(this.totalLoss).add(this.totalSupplierRefund);
+            // Hoàn NCC không cộng vào lãi ròng (nhánh A: đối xứng với việc không ghi Chi lúc nhập)
+            this.netProfit = this.totalProfit.subtract(this.totalLoss);
         }
 
         public Double netMarginPercent() {
@@ -265,34 +270,22 @@ public class RevenueReportDAO {
             + ") ret ON ret.InvoiceID = d.InvoiceID AND ret.ProductID = d.ProductID ";
 
     /**
-     * Theo hóa đơn (dùng cho doanh thu thuần = TotalAmount − trả).
+     * Doanh thu thuần 1 HĐ = TotalAmount hiện tại.
+     * TotalAmount đã được trigger trg_ReturnExchange_ApprovedStock điều chỉnh
+     * khi duyệt trả hàng → không trừ ReturnedValue thêm lần nữa.
      * Alias bảng hóa đơn: inv
      */
-    private static final String RETURN_BY_INVOICE =
-            "LEFT JOIN ( "
-            + "    SELECT r.InvoiceID, "
-            + "           SUM(rd.Quantity * rd.UnitPrice) AS ReturnedValue "
-            + "    FROM ReturnExchangeDetails rd "
-            + "    JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
-            + "    WHERE r.Status = 'APPROVED' AND rd.Direction = 'IN' "
-            + "    GROUP BY r.InvoiceID "
-            + ") retInv ON retInv.InvoiceID = inv.InvoiceID ";
-
-    /** Doanh thu thuần 1 HĐ: TotalAmount − giá trị trả (không âm). */
-    private static final String NET_INVOICE_REVENUE =
-            "CASE WHEN inv.TotalAmount - ISNULL(retInv.ReturnedValue, 0) < 0 "
-            + "THEN 0 ELSE inv.TotalAmount - ISNULL(retInv.ReturnedValue, 0) END";
+    private static final String NET_INVOICE_REVENUE = "inv.TotalAmount";
 
     // ---------------------------------------------------------------
     // Truy vấn
     // ---------------------------------------------------------------
 
     public Summary getSummary(LocalDate from, LocalDate to) {
-        // Doanh thu thuần = TotalAmount HĐ ACTIVE − trả hàng đã duyệt (theo HĐ)
+        // Doanh thu thuần = TotalAmount HĐ ACTIVE (đã được trigger điều chỉnh khi trả hàng)
         String invoiceSql = "SELECT ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
-                + RETURN_BY_INVOICE
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
 
         String itemsSql = "SELECT ISNULL(SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)), 0) "
@@ -335,7 +328,6 @@ public class RevenueReportDAO {
                 + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
-                + RETURN_BY_INVOICE
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY CAST(inv.CreatedAt AS DATE) ORDER BY Day ASC";
 
@@ -367,7 +359,6 @@ public class RevenueReportDAO {
                 + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
-                + RETURN_BY_INVOICE
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY inv.PaymentMethod ORDER BY Revenue DESC";
 
@@ -426,10 +417,9 @@ public class RevenueReportDAO {
     // ---------------------------------------------------------------
 
     public ProfitSummary getProfitSummary(LocalDate from, LocalDate to) {
-        // Doanh thu thuần: cùng công thức với getSummary (TotalAmount − trả)
+        // Doanh thu thuần: cùng công thức với getSummary (TotalAmount đã điều chỉnh bởi trigger)
         String revenueSql = "SELECT ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue "
                 + "FROM Invoices inv "
-                + RETURN_BY_INVOICE
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
 
         // Giá vốn: theo số lượng còn lại sau trả × ImportPrice
@@ -489,12 +479,11 @@ public class RevenueReportDAO {
     }
 
     public List<DailyFinancePoint> getDailyFinance(LocalDate from, LocalDate to) {
-        // Thu = doanh thu thuần (TotalAmount − trả), cùng công thức getSummary
+        // Thu = doanh thu thuần (TotalAmount đã điều chỉnh bởi trigger), cùng công thức getSummary
         String revenueSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
                 + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
-                + RETURN_BY_INVOICE
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY CAST(inv.CreatedAt AS DATE)";
 
@@ -587,7 +576,7 @@ public class RevenueReportDAO {
     }
 
     public List<DailyPoint> getDailyProfit(LocalDate from, LocalDate to) {
-        // Tái sử dụng getDailyFinance để profit ngày = netProfit (Thu − Chi + hoàn NCC)
+        // Tái sử dụng getDailyFinance để profit ngày = netProfit (Thu − Chi; Chi = COGS + hủy)
         // đồng bộ với biểu đồ Thu/Chi và ProfitSummary.
         List<DailyFinancePoint> finance = getDailyFinance(from, to);
         List<DailyPoint> result = new ArrayList<>();

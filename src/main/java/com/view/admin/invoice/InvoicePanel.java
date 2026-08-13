@@ -8,6 +8,7 @@ import com.dao.InvoiceDAO;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
 import com.theme.AppColor;
+import com.utils.FileUtil;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 import com.utils.pdf.InvoicePdfExporter;
@@ -422,11 +423,7 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         try {
             invoiceDAO.attachReturnSummary(item);
             List<InvoiceDetail> details = invoiceDAO.getDetails(item.getInvoiceId());
-            String fileName = "HoaDon_" + item.getInvoiceCode()
-                    .replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
-            File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
-            if (!tempDir.exists()) tempDir.mkdirs();
-            File pdfFile = new File(tempDir, fileName);
+            File pdfFile = FileUtil.uniqueTempFile("sims_invoices", "HoaDon_" + item.getInvoiceCode(), "pdf");
             InvoicePdfExporter.exportInvoice(item, details, pdfFile);
             if (Desktop.isDesktopSupported()) {
                 Desktop.getDesktop().open(pdfFile);

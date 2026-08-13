@@ -906,7 +906,7 @@ GO
 -- 1 comment chen giua danh sach VALUES se tach roi tuple ra khoi cau lenh INSERT,
 -- gay loi cu phap T-SQL lam HONG CA BATCH nay.
 INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
-('VAT_RATE', '8'),
+('VAT_RATE', '0'),
 ('STORE_NAME', N'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
 ('DEFAULT_UNIT', N'cái'),

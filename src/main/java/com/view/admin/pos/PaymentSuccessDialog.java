@@ -3,6 +3,7 @@ package com.view.admin.pos;
 import com.model.Invoice;
 import com.theme.AppColor;
 import com.theme.AppFont;
+import com.utils.FileUtil;
 import com.utils.NumberUtil;
 import com.utils.pdf.InvoicePdfExporter;
 import com.dao.InvoiceDAO;
@@ -218,11 +219,7 @@ public class PaymentSuccessDialog extends JDialog {
 
             List<InvoiceDetail> details = invoiceDAO.getDetails(invoice.getInvoiceId());
 
-            String fileName = "HoaDon_" + invoice.getInvoiceCode()
-                    .replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
-            File tempDir = new File(System.getProperty("java.io.tmpdir"), "sims_invoices");
-            if (!tempDir.exists()) tempDir.mkdirs();
-            File pdfFile = new File(tempDir, fileName);
+            File pdfFile = FileUtil.uniqueTempFile("sims_invoices", "HoaDon_" + invoice.getInvoiceCode(), "pdf");
 
             InvoicePdfExporter.exportInvoice(invoice, details, pdfFile);
             lastGeneratedPdf = pdfFile;
