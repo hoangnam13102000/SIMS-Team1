@@ -690,3 +690,37 @@ CREATE INDEX IX_Invoices_PromotionID ON Invoices(PromotionID) WHERE PromotionID 
 GO
 CREATE INDEX IX_Orders_PromotionID ON Orders(PromotionID) WHERE PromotionID IS NOT NULL;
 GO
+
+
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UserTwoFactor')
+BEGIN
+    CREATE TABLE UserTwoFactor (
+        UserID          INT PRIMARY KEY FOREIGN KEY REFERENCES Users(UserID),
+        Method          VARCHAR(10)  NOT NULL DEFAULT 'NONE'
+                            CHECK (Method IN ('NONE', 'EMAIL', 'TOTP')),
+        TotpSecretEnc   VARCHAR(255) NULL,
+        Enabled         BIT NOT NULL DEFAULT 0,
+        EnrolledAt      DATETIME NULL,
+        UpdatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UserTwoFactorBackupCodes')
+BEGIN
+    CREATE TABLE UserTwoFactorBackupCodes (
+        BackupCodeID    INT IDENTITY(1,1) PRIMARY KEY,
+        UserID          INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        CodeHash        VARCHAR(255) NOT NULL,
+        UsedAt          DATETIME NULL,
+        CreatedAt       DATETIME NOT NULL DEFAULT GETDATE()
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UserTwoFactorBackupCodes_UserID')
+BEGIN
+    CREATE INDEX IX_UserTwoFactorBackupCodes_UserID ON UserTwoFactorBackupCodes(UserID);
+END
+GO

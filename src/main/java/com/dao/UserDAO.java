@@ -888,4 +888,40 @@ public class UserDAO extends BaseDAO<User> {
     private String generateEmployeeCode(int userId) {
         return "EMP_" + String.format("%04d", userId);
     }
+ // ==== Bổ sung cho 2FA (TwoFactorAuthService) ====
+
+    /** Lấy User theo ID - dùng để ghi audit log kèm username từ userId. */
+    public User findById(int userId) {
+        String sql = "SELECT u.UserID, u.Username, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
+                + "u.IsLocked, u.FailedLoginCount, u.Status, u.CreatedAt, r.RoleCode "
+                + "FROM Users u JOIN Roles r ON u.RoleID = r.RoleID WHERE u.UserID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? mapUser(rs) : null;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "UserDAO.findById - userId=" + userId, e);
+            return null;
+        }
+    }
+
+    /**
+     * Qua so lan nhap sai MA 2FA (khong phai sai mat khau) - dung LAI dung
+     * nguong MAX_FAILED_LOGIN (R5) de khoa tai khoan, tranh brute-force ma OTP/TOTP.
+     */
+    public void registerFailedTwoFactorAttempt(int userId) {
+        String sql = "UPDATE Users SET FailedLoginCount = FailedLoginCount + 1, "
+                + "IsLocked = CASE WHEN FailedLoginCount + 1 >= ? THEN 1 ELSE IsLocked END "
+                + "WHERE UserID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, MAX_FAILED_LOGIN);
+            ps.setInt(2, userId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "UserDAO.registerFailedTwoFactorAttempt - userId=" + userId, e);
+        }
+    }
 }

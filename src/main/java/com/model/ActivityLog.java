@@ -27,6 +27,11 @@ public class ActivityLog {
     public static final String ENTITY_INVOICE = "INVOICE";
     public static final String ENTITY_PURCHASE_RECEIPT = "PURCHASE_RECEIPT";
     public static final String ENTITY_STOCK_ALERT = "STOCK_ALERT";
+    public static final String ACTION_LOGIN_2FA_SUCCESS = "LOGIN_2FA_SUCCESS";
+    public static final String ACTION_LOGIN_2FA_FAILED = "LOGIN_2FA_FAILED";
+    public static final String ACTION_2FA_ENABLED = "2FA_ENABLED";
+    public static final String ACTION_2FA_DISABLED = "2FA_DISABLED";
+    public static final String ACTION_2FA_BACKUP_CODE_USED = "2FA_BACKUP_CODE_USED";
 
     private int logId;
     private String username;

@@ -1,3 +1,4 @@
+// src/main/java/com/view/LoginFrame.java  (FULL FILE — thay thế toàn bộ file cũ)
 package com.view;
 
 import com.components.auth.AuthLeftPanel;
@@ -7,8 +8,11 @@ import com.components.common.RoundedPasswordField;
 import com.components.common.SquareCheckIcon;
 import com.dao.UserDAO;
 import com.model.Role;
+import com.model.TwoFactorMethod;
 import com.model.User;
+import com.model.UserTwoFactor;
 import com.service.AuthService;
+import com.service.TwoFactorAuthService;
 import com.theme.AppColor;
 import com.theme.AppConstant;
 import com.theme.AppFont;
@@ -16,6 +20,8 @@ import com.utils.AppIcon;
 import com.utils.RememberMeUtil;
 import com.view.admin.AdminMainFrame;
 import com.view.client.ClientMainFrame;
+import com.view.login2fa.LoginTwoFactorEnrollDialog;
+import com.view.login2fa.LoginTwoFactorVerifyDialog;
 import org.kordamp.ikonli.Ikon;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -337,6 +343,16 @@ public class LoginFrame extends JFrame {
                                 ActivityLog.ENTITY_USER, "Đăng nhập thất bại với tên đăng nhập \"" + username + "\"");
                         return;
                     }
+
+                    // ==== 2FA: chi ap dung cho Role.ADMIN, chen truoc khi mo AdminMainFrame ====
+                    if (user.getRole() == Role.ADMIN) {
+                        if (!passTwoFactorGate(user)) {
+                            // Nguoi dung huy o buoc 2FA (dang nhap that bai, KHONG dispose LoginFrame)
+                            errorLabel.setText(Lang.get("twofa.login.cancelled"));
+                            return;
+                        }
+                    }
+
                     AuthService.getInstance().setCurrentUser(user);
                     AppLogger.getInstance().log(user.getUsername(), ActivityLog.ACTION_LOGIN,
                             ActivityLog.ENTITY_USER, user.getFullName() + " đã đăng nhập");
@@ -372,6 +388,26 @@ public class LoginFrame extends JFrame {
             }
         };
         worker.execute();
+    }
+
+    /**
+     * Cong 2FA cho Role.ADMIN. Neu chua bat 2FA -> EP thiet lap ngay (khong
+     * cho bo qua, chi co the huy = quay lai man hinh dang nhap). Neu da bat
+     * -> yeu cau nhap ma xac thuc. Tra ve true neu duoc phep tiep tuc dang nhap.
+     */
+    private boolean passTwoFactorGate(User user) {
+        UserTwoFactor status = TwoFactorAuthService.getInstance().getStatus(user.getUserId());
+
+        if (status.needsEnrollment()) {
+            LoginTwoFactorEnrollDialog enrollDialog = new LoginTwoFactorEnrollDialog(this, user);
+            enrollDialog.setVisible(true);
+            return enrollDialog.getOutcome() == LoginTwoFactorEnrollDialog.Outcome.SUCCESS;
+        }
+
+        TwoFactorMethod method = status.getMethod();
+        LoginTwoFactorVerifyDialog verifyDialog = new LoginTwoFactorVerifyDialog(this, user, method);
+        verifyDialog.setVisible(true);
+        return verifyDialog.getOutcome() == LoginTwoFactorVerifyDialog.Outcome.SUCCESS;
     }
 
     void prepareAfterPasswordReset(String username) {
