@@ -112,7 +112,7 @@ public class ClientHeader extends JPanel {
         JLabel logoLabel = new JLabel(loadLogoIcon(38));
         logoLabel.setPreferredSize(new Dimension(38, 38));
 
-        JLabel brand = new JLabel("SIMS");
+        JLabel brand = new JLabel("CONNECT MART");
         brand.setForeground(AppColor.TEXT_PRIMARY);
         brand.setFont(new Font("Segoe UI", Font.BOLD, 18));
 
@@ -123,7 +123,7 @@ public class ClientHeader extends JPanel {
 
     /** Load logo.png tu resources, scale ve size x size. Fallback icon neu thieu file. */
     private static ImageIcon loadLogoIcon(int size) {
-        java.net.URL url = ClientHeader.class.getResource("/logo/logo.png");
+        java.net.URL url = ClientHeader.class.getResource("/logo/logo_icon.png");
         if (url != null) {
             ImageIcon raw = new ImageIcon(url);
             Image scaled = raw.getImage().getScaledInstance(size, size, Image.SCALE_SMOOTH);

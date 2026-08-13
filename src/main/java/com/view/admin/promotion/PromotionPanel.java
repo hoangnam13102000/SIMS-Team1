@@ -1,6 +1,7 @@
 package com.view.admin.promotion;
 
 import com.components.AppAlert;
+import com.components.DatePickerField;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.crud.TrashConfig;
@@ -22,6 +23,7 @@ import java.awt.Frame;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -38,6 +40,11 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final PromotionDAO promotionDAO = new PromotionDAO();
+
+    /** Lọc theo khoảng ngày giao với thời gian hiệu lực (StartDate–EndDate). */
+    private DatePickerField fromDateFilter;
+    private DatePickerField toDateFilter;
+    private JLabel clearDateFilterLink;
 
     public PromotionPanel() {
         super();
@@ -91,15 +98,109 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
             }
         });
 
+        buildDateFilterBar();
         initialLoad();
     }
+
+    // ---------------------------------------------------------------
+    // Bộ lọc: khoảng thời gian hiệu lực khuyến mãi
+    // ---------------------------------------------------------------
+
+    private void buildDateFilterBar() {
+        fromDateFilter = new DatePickerField(null, true);
+        toDateFilter = new DatePickerField(null, true);
+
+        JLabel fromLabel = new JLabel("Hiệu lực từ");
+        fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fromLabel.setForeground(AppColor.TEXT_MUTED);
+
+        JLabel toLabel = new JLabel("đến");
+        toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toLabel.setForeground(AppColor.TEXT_MUTED);
+
+        JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        dateRow.setOpaque(false);
+        dateRow.add(fromLabel);
+        dateRow.add(fromDateFilter);
+        dateRow.add(toLabel);
+        dateRow.add(toDateFilter);
+
+        fromDateFilter.onChange(d -> onDateFilterChanged());
+        toDateFilter.onChange(d -> onDateFilterChanged());
+        addToolbarFilter(dateRow);
+
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 14);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearDateFilterLink = new JLabel(clearIcon);
+        clearDateFilterLink.setToolTipText("Xóa lọc ngày");  // hiện khi hover
+        clearDateFilterLink.setIconTextGap(6);
+        clearDateFilterLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        clearDateFilterLink.setForeground(AppColor.TEXT_MUTED);
+        clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearDateFilterLink.setVisible(false);
+        clearDateFilterLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                fromDateFilter.setValue(null);
+                toDateFilter.setValue(null);
+                onDateFilterChanged();
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearDateFilterLink.setForeground(AppColor.ERROR);
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearDateFilterLink.setForeground(AppColor.TEXT_MUTED);
+            }
+        });
+        addToolbarFilter(clearDateFilterLink);
+    }
+
+    /** Tránh hiện cảnh báo lặp khi tự xóa ngày không hợp lệ. */
+    private boolean adjustingDateFilter;
+
+    private void onDateFilterChanged() {
+        if (adjustingDateFilter) return;
+
+        LocalDate from = selectedFromDate();
+        LocalDate to = selectedToDate();
+        if (from != null && to != null && to.isBefore(from)) {
+            AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+                    "Ngày \"đến\" phải lớn hơn hoặc bằng ngày \"từ\".");
+            adjustingDateFilter = true;
+            try {
+                // Giữ ngày "từ", xóa ngày "đến" để người dùng chọn lại
+                toDateFilter.setValue(null);
+            } finally {
+                adjustingDateFilter = false;
+            }
+        }
+
+        if (clearDateFilterLink != null) {
+            clearDateFilterLink.setVisible(
+                    fromDateFilter.getValue() != null || toDateFilter.getValue() != null);
+        }
+        applyFilters();
+    }
+
+    private LocalDate selectedFromDate() {
+        return fromDateFilter == null ? null : fromDateFilter.getValue();
+    }
+
+    private LocalDate selectedToDate() {
+        return toDateFilter == null ? null : toDateFilter.getValue();
+    }
+
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.PERCENT; }
     @Override
     protected String getPageTitle() { return "Quản lý khuyến mãi"; }
     @Override
-    protected String getPageSubtitle() { return "Tạo và quản lý mã giảm giá áp dụng khi bán hàng"; }
+    protected String getPageSubtitle() { return "Tạo và quản lý mã giảm giá — lọc theo khoảng thời gian hiệu lực"; }
     @Override
     protected String getAddButtonLabel() { return "Thêm khuyến mãi"; }
 
@@ -138,12 +239,12 @@ public class PromotionPanel extends BaseCrudPanel<Promotion> {
 
     @Override
     protected PaginationHelper.PaginationResult<Promotion> fetchPage(int page, int pageSize) {
-        return promotionDAO.getPaged(page, pageSize);
+        return promotionDAO.getPagedFiltered(page, pageSize, null, selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<Promotion> searchPage(String keyword, int page, int pageSize) {
-        return promotionDAO.search(keyword, page, pageSize);
+        return promotionDAO.getPagedFiltered(page, pageSize, keyword, selectedFromDate(), selectedToDate());
     }
 
     @Override

@@ -8,6 +8,7 @@ import com.model.InventoryBatch;
 import com.model.StockDisposal;
 import com.model.StockDisposalDetail;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -345,5 +346,45 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
     public BigDecimal sumLossThisMonth() {
         LocalDate now = LocalDate.now();
         return sumLossBetween(now.withDayOfMonth(1), now);
+    }
+
+    /**
+     * Phan trang + tim kiem + loc theo khoang ngay lap phieu (CreatedAt).
+     * Loc theo [fromDate 00:00:00, toDate+1 00:00:00) de bao gom tron ca ngay toDate.
+     */
+    public PaginationHelper.PaginationResult<StockDisposal> getPagedFiltered(
+            int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            String[] columns = getSearchableColumns();
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            StringBuilder keywordCondition = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) keywordCondition.append(" OR ");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(likeParam);
+            }
+            keywordCondition.append(")");
+            conditions.add(keywordCondition.toString());
+        }
+        if (fromDate != null) {
+            conditions.add("d.CreatedAt >= ?");
+            params.add(Timestamp.valueOf(fromDate.atStartOfDay()));
+        }
+        if (toDate != null) {
+            conditions.add("d.CreatedAt < ?");
+            params.add(Timestamp.valueOf(toDate.plusDays(1).atStartOfDay()));
+        }
+        String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
+        return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
+    private String escapeLike(String raw) {
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace("[", "\\[");
     }
 }

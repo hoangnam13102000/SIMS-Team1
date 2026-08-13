@@ -1,8 +1,12 @@
 package com.view.admin.inventory;
 
 import com.components.AppAlert;
+import com.components.DatePickerField;
+import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
+import com.dao.SupplierDAO;
 import com.dao.SupplierReturnDAO;
+import com.model.Supplier;
 import com.model.SupplierReturn;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
@@ -18,35 +22,38 @@ import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
-/**
- * Quan ly phieu tra hang lo ve nha cung cap (hang loi/hong/sai quy cach).
- * Tru kho ngay khi lap phieu, cong don cong no NCC (Suppliers.DebtBalance).
- */
 public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
-
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-
     private final SupplierReturnDAO returnDAO = new SupplierReturnDAO();
+
+    // ====== FILTER CHUẨN ======
+    private final SupplierDAO supplierDAO = new SupplierDAO();
+    private FilterDropdown<SupplierOption> supplierFilter;
+    private DatePickerField fromDateFilter;
+    private DatePickerField toDateFilter;
+    private JLabel clearFiltersLink;
+    // =========================
 
     public SupplierReturnPanel() {
         super();
-
-        // Mã phiếu | NCC | Lý do | Số dòng | Hoàn tiền | Người lập | Ngày lập | Trạng thái
         table.setColumnWidths(110, 160, 110, 80, 120, 130, 130, 100);
         table.setColumnMinWidths(90, 120, 90, 60, 100, 100, 110, 80);
         table.setBadgeColumn(7, this::statusLabel, this::statusColor);
 
-        // Cột "Mã phiếu" (index 0): thêm icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -72,14 +79,13 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
                 return c;
             }
         });
-        
-        // Xử lý click vào icon copy mã phiếu trả NCC
+
         table.getTable().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int viewCol = table.getTable().columnAtPoint(e.getPoint());
                 int viewRow = table.getTable().rowAtPoint(e.getPoint());
-                if (viewCol == 0 && viewRow >= 0) { // Cột Mã phiếu
+                if (viewCol == 0 && viewRow >= 0) {
                     int modelRow = table.getTable().convertRowIndexToModel(viewRow);
                     Object value = table.getTable().getModel().getValueAt(modelRow, 0);
                     String text = value != null ? value.toString() : "";
@@ -91,17 +97,125 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
             }
         });
 
+        buildFilterBar();
         initialLoad();
     }
 
+    // ================================================================
+    // ====== FILTER CHUẨN: GIỐNG ProductPanel ======
+    // ================================================================
+    private static final class SupplierOption {
+        final Integer supplierId;
+        final String label;
+        SupplierOption(Integer supplierId, String label) {
+            this.supplierId = supplierId;
+            this.label = label;
+        }
+        @Override
+        public String toString() { return label; }
+    }
+
+    private void buildFilterBar() {
+        // 1) FilterDropdown NCC (icon TRUCK = xe tải / nhà cung cấp)
+        List<Supplier> suppliers = supplierDAO.findAllOrderByName();
+        SupplierOption[] supplierOptions = new SupplierOption[suppliers.size() + 1];
+        supplierOptions[0] = new SupplierOption(null, "Tất cả NCC");
+        for (int i = 0; i < suppliers.size(); i++) {
+            Supplier s = suppliers.get(i);
+            supplierOptions[i + 1] = new SupplierOption(s.getSupplierId(), s.getSupplierName());
+        }
+        supplierFilter = new FilterDropdown<>(FontAwesomeSolid.TRUCK, supplierOptions);
+        supplierFilter.onChange(opt -> onFilterChanged());
+        addToolbarFilter(supplierFilter);
+
+        // 2) Từ ngày + Đến ngày
+        fromDateFilter = new DatePickerField(null, true);
+        toDateFilter = new DatePickerField(null, true);
+        JLabel fromLabel = new JLabel("Từ");
+        fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fromLabel.setForeground(AppColor.TEXT_MUTED);
+        JLabel toLabel = new JLabel("Đến");
+        toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toLabel.setForeground(AppColor.TEXT_MUTED);
+        JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        dateRow.setOpaque(false);
+        dateRow.add(fromLabel);
+        dateRow.add(fromDateFilter);
+        dateRow.add(toLabel);
+        dateRow.add(toDateFilter);
+        fromDateFilter.onChange(d -> onFilterChanged());
+        toDateFilter.onChange(d -> onFilterChanged());
+        addToolbarFilter(dateRow);
+
+        // 3) Nút "Xóa lọc" CHUẨN
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
+        clearFiltersLink.setIconTextGap(6);
+        clearFiltersLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+        clearFiltersLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearFiltersLink.setVisible(false);
+        clearFiltersLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                supplierFilter.resetToAll();
+                fromDateFilter.setValue(null);
+                toDateFilter.setValue(null);
+                onFilterChanged();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.ERROR);
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+            }
+        });
+        addToolbarFilter(clearFiltersLink);
+    }
+
+    private void onFilterChanged() {
+        LocalDate from = fromDateFilter.getValue();
+        LocalDate to = toDateFilter.getValue();
+        if (from != null && to != null && from.isAfter(to)) {
+            AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+                    "\"Từ ngày\" (" + from + ") không được sau \"Đến ngày\" (" + to + ").");
+            return;
+        }
+        boolean anyActive = supplierFilter.isFilterActive()
+                || fromDateFilter.getValue() != null
+                || toDateFilter.getValue() != null;
+        if (clearFiltersLink != null) clearFiltersLink.setVisible(anyActive);
+        applyFilters();
+    }
+
+    private Integer selectedSupplierId() {
+        SupplierOption opt = supplierFilter == null ? null : supplierFilter.getSelected();
+        return opt == null ? null : opt.supplierId;
+    }
+    private LocalDate selectedFromDate() {
+        return fromDateFilter == null ? null : fromDateFilter.getValue();
+    }
+    private LocalDate selectedToDate() {
+        return toDateFilter == null ? null : toDateFilter.getValue();
+    }
+    // ================================================================
+    // ====================== HẾT FILTER CHUẨN =======================
+    // ================================================================
+
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.UNDO; }
+
     @Override
     protected String getPageTitle() { return "Trả hàng nhà cung cấp"; }
+
     @Override
     protected String getPageSubtitle() {
         return "Lập phiếu trả hàng lô lỗi/hỏng về NCC, tự động trừ kho và ghi nhận công nợ hoàn tiền";
     }
+
     @Override
     protected String getAddButtonLabel() {
         return AuthService.getInstance().can(AppPermission.SUPPLIER_RETURN_CREATE) ? "Lập phiếu trả NCC" : null;
@@ -142,20 +256,25 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
         table.getTable().repaint();
     }
 
+    // ====== 3 OVERRIDE ======
     @Override
     protected PaginationHelper.PaginationResult<SupplierReturn> fetchPage(int page, int pageSize) {
-        return returnDAO.getPaged(page, pageSize);
+        return returnDAO.getPagedFiltered(page, pageSize,
+                selectedSupplierId(), selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<SupplierReturn> searchPage(String keyword, int page, int pageSize) {
-        return returnDAO.search(keyword, page, pageSize);
+        return returnDAO.searchFiltered(keyword, page, pageSize,
+                selectedSupplierId(), selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected List<SupplierReturn> fetchAllForExport() {
-        return returnDAO.getAll();
+        return returnDAO.getAllFiltered(
+                selectedSupplierId(), selectedFromDate(), selectedToDate());
     }
+    // ========================
 
     @Override
     protected String getSearchPlaceholder() {
@@ -176,8 +295,10 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
 
     @Override
     protected boolean supportsEdit() { return false; }
+
     @Override
     protected boolean supportsDelete() { return false; }
+
     @Override
     protected boolean supportsView() { return true; }
 
@@ -217,18 +338,11 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
         return "Đã hủy".equals(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
     }
 
-    // ---------------------------------------------------------------
-    // Helper: copy mã phiếu trả NCC vào clipboard
-    // ---------------------------------------------------------------
-
-    /** Copy chuỗi vào clipboard hệ thống. */
     private void copyToClipboard(String text) {
         try {
             StringSelection selection = new StringSelection(text);
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
             clipboard.setContents(selection, null);
-        } catch (Exception ignored) {
-            // Bỏ qua nếu không copy được
-        }
+        } catch (Exception ignored) { }
     }
 }

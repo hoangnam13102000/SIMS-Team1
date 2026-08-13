@@ -6,12 +6,21 @@ import com.theme.AppFont;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
 
 public class RegisterLeftPanel extends JPanel {
-    
+
+    // Anh nen va logo dung chung voi trang dang nhap (resources/logo), nap 1
+    // lan (static) va dung lai cho moi instance cua man hinh dang ky.
+    private static final BufferedImage BACKGROUND_IMAGE = loadImage("/logo/background.png");
+    private static final BufferedImage LOGO_ICON_IMAGE = loadImage("/logo/logo_icon.png");
+
     private final PasswordStrengthMeter strengthMeter;
     
     public RegisterLeftPanel() {
@@ -138,6 +147,18 @@ public class RegisterLeftPanel extends JPanel {
     }
     
     private JComponent buildLogoBadge() {
+        if (LOGO_ICON_IMAGE != null) {
+            int size = 54;
+            Image scaled = LOGO_ICON_IMAGE.getScaledInstance(size, size, Image.SCALE_SMOOTH);
+            JLabel logoLabel = new JLabel(new ImageIcon(scaled));
+            logoLabel.setOpaque(false);
+            Dimension dim = new Dimension(size, size);
+            logoLabel.setPreferredSize(dim);
+            logoLabel.setMinimumSize(dim);
+            logoLabel.setMaximumSize(dim);
+            return logoLabel;
+        }
+
         JComponent badge = new JComponent() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -160,17 +181,56 @@ public class RegisterLeftPanel extends JPanel {
         badge.setOpaque(false);
         return badge;
     }
+
+    private static BufferedImage loadImage(String classpathLocation) {
+        try (InputStream in = RegisterLeftPanel.class.getResourceAsStream(classpathLocation)) {
+            if (in == null) return null;
+            return ImageIO.read(in);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Ve anh phu kin toan bo vung dich theo kieu "cover" (giu nguyen ti le,
+     * scale sao cho canh nho nhat khop voi vung dich, phan du duoc can giua
+     * va cat bot).
+     */
+    private static void drawCoverImage(Graphics2D g2, BufferedImage img, int targetW, int targetH) {
+        if (targetW <= 0 || targetH <= 0) return;
+        double scale = Math.max((double) targetW / img.getWidth(), (double) targetH / img.getHeight());
+        int scaledW = (int) Math.ceil(img.getWidth() * scale);
+        int scaledH = (int) Math.ceil(img.getHeight() * scale);
+        int x = (targetW - scaledW) / 2;
+        int y = (targetH - scaledH) / 2;
+        g2.drawImage(img, x, y, scaledW, scaledH, null);
+    }
     
     @Override
     protected void paintComponent(Graphics g) {
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        GradientPaint gp = new GradientPaint(0, 0, AppColor.DARK_TOP, getWidth(), getHeight(), AppColor.DARK_BOTTOM);
-        g2.setPaint(gp);
-        g2.fillRect(0, 0, getWidth(), getHeight());
-        g2.setColor(new Color(255, 255, 255, 30));
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+        if (BACKGROUND_IMAGE != null) {
+            drawCoverImage(g2, BACKGROUND_IMAGE, getWidth(), getHeight());
+            // Phu 1 lop toi nhe de dam bao chu trang/nhan luon du tuong phan
+            // tren moi vung cua anh nen (trang dang ky co nhieu chu hon trang
+            // dang nhap nen can do tuong phan on dinh tren toan bo chieu cao).
+            GradientPaint scrim = new GradientPaint(
+                    0, 0, new Color(4, 16, 34, 150),
+                    getWidth() * 0.4f, getHeight(), new Color(4, 16, 34, 90));
+            g2.setPaint(scrim);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        } else {
+            GradientPaint gp = new GradientPaint(0, 0, AppColor.DARK_TOP, getWidth(), getHeight(), AppColor.DARK_BOTTOM);
+            g2.setPaint(gp);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+
+        g2.setColor(new Color(255, 255, 255, 22));
         g2.fillOval(getWidth() - 260, -140, 420, 420);
-        g2.setColor(new Color(255, 255, 255, 16));
+        g2.setColor(new Color(255, 255, 255, 14));
         g2.fillOval(-180, getHeight() - 220, 380, 380);
         g2.dispose();
     }

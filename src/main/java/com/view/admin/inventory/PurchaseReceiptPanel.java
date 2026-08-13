@@ -1,6 +1,7 @@
 package com.view.admin.inventory;
 
 import com.components.AppAlert;
+import com.components.DatePickerField;
 import com.components.crud.BaseCrudPanel;
 import com.dao.PurchaseReceiptDAO;
 import com.model.permission.AppPermission;
@@ -19,6 +20,7 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -30,6 +32,11 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final PurchaseReceiptDAO receiptDAO = new PurchaseReceiptDAO();
+
+    private DatePickerField fromDateFilter;
+    private DatePickerField toDateFilter;
+    private JLabel clearDateFilterLink;
+    private boolean adjustingDateFilter;
 
     public PurchaseReceiptPanel() {
         super();
@@ -86,8 +93,93 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
             }
         });
 
+        buildDateFilterBar();
         initialLoad();
     }
+
+    private void buildDateFilterBar() {
+        fromDateFilter = new DatePickerField(null, true);
+        toDateFilter = new DatePickerField(null, true);
+
+        JLabel fromLabel = new JLabel("Từ ngày");
+        fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fromLabel.setForeground(AppColor.TEXT_MUTED);
+
+        JLabel toLabel = new JLabel("đến");
+        toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toLabel.setForeground(AppColor.TEXT_MUTED);
+
+        JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        dateRow.setOpaque(false);
+        dateRow.add(fromLabel);
+        dateRow.add(fromDateFilter);
+        dateRow.add(toLabel);
+        dateRow.add(toDateFilter);
+
+        fromDateFilter.onChange(d -> onDateFilterChanged());
+        toDateFilter.onChange(d -> onDateFilterChanged());
+        addToolbarFilter(dateRow);
+
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 14);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearDateFilterLink = new JLabel(clearIcon);
+        clearDateFilterLink.setToolTipText("Xóa lọc ngày");
+        clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearDateFilterLink.setVisible(false);
+        clearDateFilterLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                fromDateFilter.setValue(null);
+                toDateFilter.setValue(null);
+                onDateFilterChanged();
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearIcon.setIconColor(AppColor.ERROR);
+                clearDateFilterLink.repaint();
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearIcon.setIconColor(AppColor.TEXT_MUTED);
+                clearDateFilterLink.repaint();
+            }
+        });
+        addToolbarFilter(clearDateFilterLink);
+    }
+
+    private void onDateFilterChanged() {
+        if (adjustingDateFilter) return;
+
+        LocalDate from = selectedFromDate();
+        LocalDate to = selectedToDate();
+        if (from != null && to != null && to.isBefore(from)) {
+            AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+                    "Ngày \"đến\" phải lớn hơn hoặc bằng ngày \"từ\".");
+            adjustingDateFilter = true;
+            try {
+                toDateFilter.setValue(null);
+            } finally {
+                adjustingDateFilter = false;
+            }
+        }
+
+        if (clearDateFilterLink != null) {
+            clearDateFilterLink.setVisible(
+                    fromDateFilter.getValue() != null || toDateFilter.getValue() != null);
+        }
+        applyFilters();
+    }
+
+    private LocalDate selectedFromDate() {
+        return fromDateFilter == null ? null : fromDateFilter.getValue();
+    }
+
+    private LocalDate selectedToDate() {
+        return toDateFilter == null ? null : toDateFilter.getValue();
+    }
+
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.FILE_INVOICE; }
@@ -139,12 +231,12 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
 
     @Override
     protected PaginationHelper.PaginationResult<PurchaseReceipt> fetchPage(int page, int pageSize) {
-        return receiptDAO.getPaged(page, pageSize);
+        return receiptDAO.getPagedFiltered(page, pageSize, null, selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<PurchaseReceipt> searchPage(String keyword, int page, int pageSize) {
-        return receiptDAO.search(keyword, page, pageSize);
+        return receiptDAO.getPagedFiltered(page, pageSize, keyword, selectedFromDate(), selectedToDate());
     }
 
     @Override

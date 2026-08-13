@@ -1,6 +1,7 @@
 package com.view.admin.pos;
 
 import com.components.EmptyState;
+import com.components.FilterDropdown;
 import com.components.LoadingOverlay;
 import com.components.SectionHeader;
 import com.components.AppAlert;
@@ -37,6 +38,7 @@ import org.kordamp.ikonli.Ikon;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeBrands;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
@@ -48,22 +50,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 
-/**
- * Trang "Bán hàng tại quầy" (POS) - dành cho nhân viên bán hàng (quyền
- * {@link com.model.permission.AppPermission#INVOICE_CREATE}). Đây là nơi
- * DUY NHẤT trong app thực sự ghi hóa đơn xuống DB (xem
- * {@link InvoiceDAO#createInvoice}); trang "Quản lý hóa đơn" (InvoicePanel)
- * chỉ tra cứu lại lịch sử.
- * <p>
- * Layout: trái là lưới sản phẩm (tìm kiếm + lọc danh mục, bấm "Thêm vào giỏ"
- * để thêm), phải là giỏ hàng của phiên bán hàng hiện tại + chọn khách hàng
- * (tùy chọn, mặc định "Khách lẻ") + phương thức thanh toán + nút thanh toán.
- * <p>
- * Giỏ hàng dùng {@link PosCartService} (singleton, KHÁC với CartService phía
- * client) để không bị mất khi panel bị xây lại (đổi theme/ngôn ngữ).
- */
 public class PosPanel extends JPanel {
-
     private final ProductDAO productDAO = new ProductDAO();
     private final CategoryDAO categoryDAO = new CategoryDAO();
     private final CustomerDAO customerDAO = new CustomerDAO();
@@ -72,18 +59,19 @@ public class PosPanel extends JPanel {
     private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
     private final PosCartService cart = PosCartService.getInstance();
 
-    /**
-     * Ti le VAT (%) hien hanh, doc tu StoreConfig (KEY_VAT_RATE) - nap lai
-     * moi khi co DataChangedEvent.CONFIG (vd nguoi dung vua sua o trang Cai
-     * dat) qua AutoRefresher, KHONG con hardcode 8% nhu truoc.
-     */
     private BigDecimal vatRate = BigDecimal.ZERO;
-
     private final ProductGrid productGrid = new ProductGrid();
     private final CardLayout productAreaLayout = new CardLayout();
     private final JPanel productAreaWrapper = new JPanel(productAreaLayout);
     private final JPanel emptyStateHolder = new JPanel(new BorderLayout());
-    private final JComboBox<Category> categoryCombo = new JComboBox<>();
+
+    // ================================================================
+    // ====== ĐỔI: JComboBox<Category> → FilterDropdown<CategoryOption> ======
+    // ================================================================
+    // private final JComboBox<Category> categoryCombo = new JComboBox<>();  // ← CŨ, ĐÃ XÓA
+    private FilterDropdown<CategoryOption> categoryFilter;   // ← MỚI: FilterDropdown chuẩn
+    // ================================================================
+
     private final JPanel cartListPanel = new JPanel();
     private final JLabel customerStatusLabel = new JLabel();
     private final JButton clearCustomerButton = new JButton();
@@ -108,37 +96,53 @@ public class PosPanel extends JPanel {
     private final java.util.Map<String, JToggleButton> paymentButtons = new java.util.LinkedHashMap<>();
     private final Runnable cartListener = this::refreshCartSummary;
 
+    // ================================================================
+    // ====== THÊM: CategoryOption class (chuẩn FilterDropdown) ======
+    // ================================================================
+    private static final class CategoryOption {
+        final Integer categoryId;
+        final String label;
+        CategoryOption(Integer categoryId, String label) {
+            this.categoryId = categoryId;
+            this.label = label;
+        }
+        @Override
+        public String toString() { return label; }
+    }
+    // ================================================================
+
     public PosPanel() {
         setLayout(new BorderLayout());
         setBackground(AppColor.PAGE_BG);
         setBorder(new EmptyBorder(AppSpacing.LG, AppSpacing.LG, AppSpacing.LG, AppSpacing.LG));
-
         User user = AuthService.getInstance().getCurrentUser();
         SectionHeader header = new SectionHeader(FontAwesomeSolid.SHOPPING_CART, AppColor.ACCENT,
                 "Bán hàng tại quầy",
                 "Nhân viên: " + (user != null ? user.getFullName() : "-"));
         add(header, BorderLayout.NORTH);
 
-        JPanel body = new JPanel(new BorderLayout(AppSpacing.LG, 0));
-        body.setOpaque(false);
-        body.setBorder(new EmptyBorder(AppSpacing.LG, 0, 0, 0));
-        body.add(buildLeftPanel(), BorderLayout.CENTER);
-
-        JPanel right = buildRightPanel();
-        right.setPreferredSize(new Dimension(420, 10));
-        right.setMinimumSize(new Dimension(360, 10));
-        body.add(right, BorderLayout.EAST);
-
-        add(LoadingOverlay.attach(body, loadingOverlay), BorderLayout.CENTER);
-
         vatRate = storeConfigDAO.getVatRate();
         cart.setPointRedeemRate(storeConfigDAO.getPointRedeemRate());
         cart.addListener(cartListener);
 
+        // ================================================================
+        // ====== SỬA LỖI: loadCategories TRƯỚC buildLeftPanel ======
+        // ====== (buildLeftPanel cần categoryFilter đã được tạo) ======
         loadCategories();
+        // ================================================================
+
+        JPanel body = new JPanel(new BorderLayout(AppSpacing.LG, 0));
+        body.setOpaque(false);
+        body.setBorder(new EmptyBorder(AppSpacing.LG, 0, 0, 0));
+        body.add(buildLeftPanel(), BorderLayout.CENTER);    // ← BÂY GIỜ categoryFilter ĐÃ TỒN TẠI
+        JPanel right = buildRightPanel();
+        right.setPreferredSize(new Dimension(420, 10));
+        right.setMinimumSize(new Dimension(360, 10));
+        body.add(right, BorderLayout.EAST);
+        add(LoadingOverlay.attach(body, loadingOverlay), BorderLayout.CENTER);
+
         loadProducts(null, null);
         refreshCartSummary();
-
         AutoRefresher.bind(this, DataChangedEvent.class, 300, this::reloadVatRate);
     }
 
@@ -156,11 +160,9 @@ public class PosPanel extends JPanel {
     // =================================================================
     // Vung trai: tim kiem + luoi san pham
     // =================================================================
-
     private JPanel buildLeftPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, AppSpacing.MD));
         panel.setOpaque(false);
-
         JPanel filterRow = new JPanel(new BorderLayout(AppSpacing.MD, 0));
         filterRow.setOpaque(false);
 
@@ -168,55 +170,44 @@ public class PosPanel extends JPanel {
         search.onSearch(keyword -> loadProducts(keyword, selectedCategoryId()));
         filterRow.add(search, BorderLayout.CENTER);
 
-        categoryCombo.setPreferredSize(new Dimension(200, 40));
-        categoryCombo.setRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                            boolean isSelected, boolean cellHasFocus) {
-                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof Category) {
-                    setText(((Category) value).getCategoryName());
-                } else {
-                    setText("Tất cả danh mục");
-                }
-                return this;
-            }
-        });
-        categoryCombo.addActionListener(e -> loadProducts(search.getText(), selectedCategoryId()));
+        // ================================================================
+        // ====== MỚI: Dùng categoryFilter (FilterDropdown) thay vì JComboBox cũ ======
+        // ================================================================
+        // Giữ nguyên 200×40 để khớp với BaseSearch + nút quét mã 40×40 của POS
+        categoryFilter.setPreferredSize(new Dimension(200, 40));
+        categoryFilter.setMaximumSize(new Dimension(220, 40));
+
+        // onChange = thay danh mục → reload sản phẩm (giữ nguyên keyword trong ô tìm kiếm)
+        categoryFilter.onChange(opt -> loadProducts(search.getText(), selectedCategoryId()));
 
         JPanel rightFilter = new JPanel(new BorderLayout(AppSpacing.SM, 0));
         rightFilter.setOpaque(false);
-        rightFilter.add(categoryCombo, BorderLayout.CENTER);
+        rightFilter.add(categoryFilter, BorderLayout.CENTER);   // ← FilterDropdown thay JComboBox cũ
         rightFilter.add(buildScanButton(), BorderLayout.EAST);
-        filterRow.add(rightFilter, BorderLayout.EAST);
+        // ================================================================
 
+        filterRow.add(rightFilter, BorderLayout.EAST);
         panel.add(filterRow, BorderLayout.NORTH);
 
         JPanel gridWrapper = new JPanel(new BorderLayout());
         gridWrapper.setOpaque(false);
         gridWrapper.add(productGrid, BorderLayout.NORTH);
-
         JScrollPane scroll = new JScrollPane(gridWrapper);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
-
         emptyStateHolder.setOpaque(false);
         productAreaWrapper.setOpaque(false);
         productAreaWrapper.add(scroll, "grid");
         productAreaWrapper.add(emptyStateHolder, "empty");
-
         panel.add(productAreaWrapper, BorderLayout.CENTER);
 
         productGrid.onAddToCart(product -> {
             cart.addToCart(product, 1);
             AppAlert.success(this, "Đã thêm \"" + product.getProductName() + "\" vào giỏ hàng.");
         });
-
-        // NV / QL bán hàng báo hết hàng hoặc sắp hết hàng thủ công tới kho
         productGrid.onReportStock(this::openReportStockAlert);
-
         return panel;
     }
 
@@ -227,7 +218,6 @@ public class PosPanel extends JPanel {
             AppAlert.error(this, "Chưa đăng nhập", "Vui lòng đăng nhập lại để gửi báo cáo tồn kho.");
             return;
         }
-        // Chặn sớm nếu đã có cảnh báo đang xử lý
         StockAlertDAO alertDAO = new StockAlertDAO();
         if (alertDAO.hasActiveAlert(product.getProductId())) {
             AppAlert.warning(this, "Đã có cảnh báo đang xử lý",
@@ -266,23 +256,35 @@ public class PosPanel extends JPanel {
         AppAlert.success(this, "Đã thêm \"" + product.getProductName() + "\" vào giỏ hàng.");
     }
 
+    // ================================================================
+    // ====== ĐỔI: selectedCategoryId đọc từ FilterDropdown ======
+    // ================================================================
     private Integer selectedCategoryId() {
-        Object selected = categoryCombo.getSelectedItem();
-        return (selected instanceof Category) ? ((Category) selected).getCategoryId() : null;
+        CategoryOption opt = categoryFilter == null ? null : categoryFilter.getSelected();
+        return opt == null ? null : opt.categoryId;   // null = Tất cả danh mục
     }
 
+    // ================================================================
+    // ====== ĐỔI: loadCategories tạo CategoryOption[] + FilterDropdown ======
+    // ================================================================
     private void loadCategories() {
-        categoryCombo.removeAllItems();
-        categoryCombo.addItem(null);
-        for (Category category : categoryDAO.findAllActive()) {
-            categoryCombo.addItem(category);
+        List<Category> categories = categoryDAO.findAllActive();
+        CategoryOption[] options = new CategoryOption[categories.size() + 1];
+        options[0] = new CategoryOption(null, "Tất cả danh mục");   // index 0 = Tất cả (null id)
+        for (int i = 0; i < categories.size(); i++) {
+            Category c = categories.get(i);
+            options[i + 1] = new CategoryOption(c.getCategoryId(), c.getCategoryName());
         }
+        // Icon LAYER_GROUP (📚) giống hệt ProductPanel
+        categoryFilter = new FilterDropdown<>(FontAwesomeSolid.LAYER_GROUP, options);
     }
+    // ================================================================
+    // ====================== HẾT PHẦN THAY ĐỔI ======================
+    // ================================================================
 
     private void loadProducts(String keyword, Integer categoryId) {
         List<Product> products = productDAO.findActive(keyword, categoryId);
         productGrid.setProducts(products);
-
         if (products.isEmpty()) {
             emptyStateHolder.removeAll();
             boolean hasKeyword = keyword != null && !keyword.isBlank();
@@ -298,7 +300,6 @@ public class PosPanel extends JPanel {
     // =================================================================
     // Vung phai: khach hang + gio hang + thanh toan
     // =================================================================
-
     private JPanel buildRightPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 4));
         panel.setOpaque(true);
@@ -307,7 +308,6 @@ public class PosPanel extends JPanel {
                 new LineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(10, 12, 10, 12)));
 
-        // ----- NORTH: khách hàng -----
         JPanel top = new JPanel() {
             @Override
             public Dimension getMaximumSize() {
@@ -323,15 +323,12 @@ public class PosPanel extends JPanel {
         top.add(fixedHeight(buildCustomerStatusRow(), 20));
         panel.add(top, BorderLayout.NORTH);
 
-        // ----- CENTER: giỏ hàng -----
         JPanel cartSection = new JPanel(new BorderLayout(0, 2));
         cartSection.setOpaque(false);
         cartSection.add(sectionLabel("Giỏ hàng"), BorderLayout.NORTH);
-
         cartListPanel.setLayout(new BoxLayout(cartListPanel, BoxLayout.Y_AXIS));
         cartListPanel.setOpaque(false);
         cartListPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         JScrollPane cartScroll = new JScrollPane(cartListPanel);
         cartScroll.setBorder(null);
         cartScroll.setOpaque(false);
@@ -341,7 +338,6 @@ public class PosPanel extends JPanel {
         cartSection.add(cartScroll, BorderLayout.CENTER);
         panel.add(cartSection, BorderLayout.CENTER);
 
-        // ----- SOUTH: KM/tổng/TT -----
         JPanel bottom = new JPanel() {
             @Override
             public Dimension getMaximumSize() {
@@ -350,31 +346,26 @@ public class PosPanel extends JPanel {
         };
         bottom.setLayout(new BoxLayout(bottom, BoxLayout.Y_AXIS));
         bottom.setOpaque(false);
-
         JSeparator sep = new JSeparator();
         sep.setForeground(AppColor.BORDER);
         sep.setAlignmentX(Component.LEFT_ALIGNMENT);
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
-
         bottom.add(Box.createVerticalStrut(4));
         bottom.add(sep);
         bottom.add(Box.createVerticalStrut(6));
         bottom.add(fixedHeight(buildPromoRowCompact(), 30));
-
         promoStatusLabel.setFont(AppFont.SMALL);
         promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
         promoStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         promoStatusLabel.setText(" ");
         bottom.add(promoStatusLabel);
         bottom.add(Box.createVerticalStrut(4));
-
         bottom.add(fixedHeight(buildPointsRow(), 28));
         pointsHintLabel.setFont(AppFont.SMALL);
         pointsHintLabel.setForeground(AppColor.TEXT_MUTED);
         pointsHintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         bottom.add(pointsHintLabel);
         bottom.add(Box.createVerticalStrut(4));
-
         bottom.add(fixedHeight(summaryRow(new JLabel("Tạm tính"), subtotalValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 18));
         bottom.add(fixedHeight(summaryRow(new JLabel("Giảm giá"), discountValue, AppFont.BODY, AppColor.SUCCESS), 18));
         bottom.add(fixedHeight(summaryRow(vatLabel, vatValue, AppFont.BODY, AppColor.TEXT_SECONDARY), 18));
@@ -385,21 +376,28 @@ public class PosPanel extends JPanel {
         bottom.add(fixedHeight(buildPaymentMethodRow(), 32));
         bottom.add(Box.createVerticalStrut(6));
         bottom.add(fixedHeight(buildCheckoutButton(), 42));
-
         panel.add(bottom, BorderLayout.SOUTH);
         return panel;
     }
 
     private JPanel buildPromoRowCompact() {
-        JPanel row = new JPanel(new BorderLayout(6, 0));
+        JPanel row = new JPanel(new BorderLayout(8, 0));
         row.setOpaque(false);
 
         JLabel label = new JLabel("Mã KM");
         label.setFont(AppFont.SMALL_BOLD);
         label.setForeground(AppColor.TEXT_TITLE);
+        label.setBorder(new EmptyBorder(0, 0, 0, 4));
         row.add(label, BorderLayout.WEST);
 
+        // Ô nhập mã — GIẢM chiều cao 34px, giảm padding trên/dưới cho cân đối
         promoCodeField.setFont(AppFont.BODY);
+        promoCodeField.setPreferredSize(new Dimension(140, 34));
+        promoCodeField.setMaximumSize(new Dimension(180, 34));
+        promoCodeField.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(AppColor.BORDER, 1),
+                new EmptyBorder(5, 10, 5, 10)  // ← Giảm 6→5px trên/dưới
+        ));
         promoCodeField.setToolTipText("Nhập mã khuyến mãi rồi bấm Áp dụng");
         for (var al : promoCodeField.getActionListeners()) {
             promoCodeField.removeActionListener(al);
@@ -407,23 +405,37 @@ public class PosPanel extends JPanel {
         promoCodeField.addActionListener(e -> applyPromoFromField());
         row.add(promoCodeField, BorderLayout.CENTER);
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        buttons.setOpaque(false);
+        JPanel buttonGroup = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        buttonGroup.setOpaque(false);
 
+        // Nút Áp dụng — CÙNG 34px, đủ chỗ hiển thị viền
         applyPromoButton.setText("Áp dụng");
-        applyPromoButton.setFont(AppFont.SMALL);
+        applyPromoButton.setFont(AppFont.SMALL_BOLD);
+        applyPromoButton.setPreferredSize(new Dimension(90, 34));  // ← 36→34
+        applyPromoButton.setOpaque(true);
+        applyPromoButton.setContentAreaFilled(true);
+        applyPromoButton.setBorderPainted(false);
         applyPromoButton.setFocusPainted(false);
         applyPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        applyPromoButton.setBackground(AppColor.ACCENT);
+        applyPromoButton.setForeground(Color.WHITE);
         for (var al : applyPromoButton.getActionListeners()) {
             applyPromoButton.removeActionListener(al);
         }
         applyPromoButton.addActionListener(e -> applyPromoFromField());
-        buttons.add(applyPromoButton);
+        buttonGroup.add(applyPromoButton);
 
+        // Nút Bỏ — CÙNG 34px
         clearPromoButton.setText("Bỏ");
-        clearPromoButton.setFont(AppFont.SMALL);
+        clearPromoButton.setFont(AppFont.SMALL_BOLD);
+        clearPromoButton.setPreferredSize(new Dimension(60, 34));  // ← 36→34
+        clearPromoButton.setOpaque(false);
+        clearPromoButton.setContentAreaFilled(false);
+        clearPromoButton.setBorderPainted(true);
         clearPromoButton.setFocusPainted(false);
         clearPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearPromoButton.setForeground(AppColor.ACCENT_HOVER);
+        clearPromoButton.setBorder(new LineBorder(AppColor.BORDER, 1));
         clearPromoButton.setVisible(false);
         for (var al : clearPromoButton.getActionListeners()) {
             clearPromoButton.removeActionListener(al);
@@ -435,9 +447,9 @@ public class PosPanel extends JPanel {
             promoStatusLabel.setText(" ");
             promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
         });
-        buttons.add(clearPromoButton);
+        buttonGroup.add(clearPromoButton);
 
-        row.add(buttons, BorderLayout.EAST);
+        row.add(buttonGroup, BorderLayout.EAST);
         return row;
     }
 
@@ -448,7 +460,6 @@ public class PosPanel extends JPanel {
         promoCodeField.setToolTipText("Nhập mã khuyến mãi rồi bấm Áp dụng");
         promoCodeField.addActionListener(e -> applyPromoFromField());
         row.add(promoCodeField, BorderLayout.CENTER);
-
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         buttons.setOpaque(false);
         applyPromoButton.setFont(AppFont.SMALL);
@@ -456,7 +467,6 @@ public class PosPanel extends JPanel {
         applyPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         applyPromoButton.addActionListener(e -> applyPromoFromField());
         buttons.add(applyPromoButton);
-
         clearPromoButton.setFont(AppFont.SMALL);
         clearPromoButton.setFocusPainted(false);
         clearPromoButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -469,7 +479,6 @@ public class PosPanel extends JPanel {
             promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
         });
         buttons.add(clearPromoButton);
-
         row.add(buttons, BorderLayout.EAST);
         return row;
     }
@@ -515,28 +524,22 @@ public class PosPanel extends JPanel {
     }
 
     // ---------------- Khach hang ----------------
-
     private JPanel buildCustomerSearchRow() {
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
         row.setOpaque(false);
-
         customerSearchField.setFont(AppFont.BODY);
         customerSearchField.setToolTipText("Nhập số điện thoại hoặc tên khách hàng - bỏ trống nếu là khách lẻ");
         customerSearchField.addActionListener(e -> searchCustomer());
         row.add(customerSearchField, BorderLayout.CENTER);
-
         JPanel searchButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         searchButtons.setOpaque(false);
-
         JButton scanCustomerBtn = iconButton(FontAwesomeSolid.ID_CARD, AppColor.ACCENT);
         scanCustomerBtn.setToolTipText("Quét mã/thẻ khách hàng bằng webcam");
         scanCustomerBtn.addActionListener(e -> openCustomerBarcodeScanner());
         searchButtons.add(scanCustomerBtn);
-
         JButton searchBtn = iconButton(FontAwesomeSolid.SEARCH, AppColor.ACCENT_HOVER);
         searchBtn.addActionListener(e -> searchCustomer());
         searchButtons.add(searchBtn);
-
         row.add(searchButtons, BorderLayout.EAST);
         return row;
     }
@@ -562,11 +565,9 @@ public class PosPanel extends JPanel {
     private JPanel buildCustomerStatusRow() {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
-
         customerStatusLabel.setFont(AppFont.SMALL);
         customerStatusLabel.setForeground(AppColor.TEXT_MUTED);
         row.add(customerStatusLabel, BorderLayout.CENTER);
-
         clearCustomerButton.setText("Bỏ chọn");
         clearCustomerButton.setFont(AppFont.SMALL);
         clearCustomerButton.setForeground(AppColor.ACCENT_HOVER);
@@ -576,7 +577,6 @@ public class PosPanel extends JPanel {
         clearCustomerButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         clearCustomerButton.addActionListener(e -> cart.clearCustomer());
         row.add(clearCustomerButton, BorderLayout.EAST);
-
         return row;
     }
 
@@ -621,7 +621,6 @@ public class PosPanel extends JPanel {
 
     private JPanel buildPointsRow() {
         pointsRowPanel.setOpaque(false);
-
         usePointsCheck.setFont(AppFont.SMALL_BOLD);
         usePointsCheck.setOpaque(false);
         usePointsCheck.setFocusPainted(false);
@@ -641,7 +640,6 @@ public class PosPanel extends JPanel {
             }
         });
         pointsRowPanel.add(usePointsCheck, BorderLayout.WEST);
-
         pointsSpinner.setFont(AppFont.BODY);
         pointsSpinner.setEnabled(false);
         JComponent editor = pointsSpinner.getEditor();
@@ -654,20 +652,16 @@ public class PosPanel extends JPanel {
             cart.setPointsToUse(v);
         });
         pointsRowPanel.add(pointsSpinner, BorderLayout.CENTER);
-
         return pointsRowPanel;
     }
 
     // ---------------- Phuong thuc thanh toan ----------------
-
     private JPanel buildPaymentMethodRow() {
         JPanel row = new JPanel(new GridLayout(1, 4, 6, 0));
         row.setOpaque(false);
-
         String[] methods = {"CASH", "BANK_TRANSFER", "PAYPAL", "CARD"};
         String[] labels = {"Tiền mặt", "Chuyển khoản", "PayPal (Sandbox)", "Thẻ"};
         ButtonGroup group = new ButtonGroup();
-
         for (int i = 0; i < methods.length; i++) {
             String method = methods[i];
             JToggleButton btn = new JToggleButton(labels[i]);
@@ -676,12 +670,10 @@ public class PosPanel extends JPanel {
             btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
             btn.setSelected(method.equals(selectedPaymentMethod));
             styleToggle(btn);
-
             btn.addActionListener(e -> {
                 selectedPaymentMethod = method;
                 for (JToggleButton other : paymentButtons.values()) styleToggle(other);
             });
-
             group.add(btn);
             paymentButtons.put(method, btn);
             row.add(btn);
@@ -698,15 +690,12 @@ public class PosPanel extends JPanel {
     }
 
     // ---------------- Gio hang ----------------
-
     private void refreshCartSummary() {
         rebuildCartRows();
-
         customerStatusLabel.setText(cart.getCustomerId() == null
                 ? "Khách lẻ (không lưu thông tin)"
                 : cart.getCustomerLabel());
         clearCustomerButton.setVisible(cart.getCustomerId() != null);
-
         long subTotal = cart.getSubTotal();
         long discount = cart.getDiscountAmountLong();
         long taxable = Math.max(0, subTotal - discount);
@@ -715,44 +704,35 @@ public class PosPanel extends JPanel {
         long pointsDisc = cart.getPointsDiscountAmount().longValue();
         if (pointsDisc > totalBeforePoints) pointsDisc = totalBeforePoints;
         long total = Math.max(0, totalBeforePoints - pointsDisc);
-
         vatLabel.setText("VAT (" + vatRate.stripTrailingZeros().toPlainString() + "%)");
         subtotalValue.setText(NumberUtil.formatThousands(subTotal) + " đ");
         discountValue.setText((discount > 0 ? "−" : "") + NumberUtil.formatThousands(discount) + " đ");
         vatValue.setText(NumberUtil.formatThousands(vat) + " đ");
         pointsDiscountValue.setText((pointsDisc > 0 ? "−" : "") + NumberUtil.formatThousands(pointsDisc) + " đ");
         totalValue.setText(NumberUtil.formatThousands(total) + " đ");
-
         boolean hasPromo = cart.getAppliedPromotion() != null;
         clearPromoButton.setVisible(hasPromo);
         promoCodeField.setEditable(!hasPromo);
         if (hasPromo) {
             promoCodeField.setText(cart.getAppliedPromotion().getCode());
         }
-
         boolean hasCustomer = cart.getCustomerId() != null;
         int memberPts = cart.getCustomerMemberPoint();
         long redeem = cart.getPointRedeemRate().longValue();
-
         pointsRowPanel.setVisible(hasCustomer && memberPts > 0);
         pointsHintLabel.setVisible(hasCustomer && memberPts > 0);
-
         if (hasCustomer && memberPts > 0) {
             int maxByMoney = redeem > 0 ? (int) Math.min(memberPts, totalBeforePoints / redeem) : 0;
             SpinnerNumberModel model = (SpinnerNumberModel) pointsSpinner.getModel();
             model.setMinimum(0);
             model.setMaximum(Math.max(0, maxByMoney));
-
             int cur = cart.getPointsToUse();
             if (cur > maxByMoney) cur = maxByMoney;
-
             if (((Number) pointsSpinner.getValue()).intValue() != cur) {
                 pointsSpinner.setValue(cur);
             }
-
             usePointsCheck.setSelected(cur > 0);
             pointsSpinner.setEnabled(cur > 0 || usePointsCheck.isSelected());
-
             pointsHintLabel.setText("Còn " + memberPts + " điểm · 1 điểm = "
                     + NumberUtil.formatThousands(redeem) + " đ · tối đa dùng " + maxByMoney);
         } else {
@@ -760,7 +740,6 @@ public class PosPanel extends JPanel {
             pointsSpinner.setEnabled(false);
             pointsHintLabel.setText(" ");
         }
-
         checkoutButton.setEnabled(!cart.isEmpty());
     }
 
@@ -773,7 +752,6 @@ public class PosPanel extends JPanel {
     private void rebuildCartRows() {
         cartListPanel.removeAll();
         List<CartItem> items = cart.getItems();
-
         if (items.isEmpty()) {
             JLabel empty = new JLabel("Giỏ hàng đang trống - bấm \"Thêm vào giỏ\" trên sản phẩm để bắt đầu.");
             empty.setFont(AppFont.SMALL);
@@ -786,14 +764,12 @@ public class PosPanel extends JPanel {
                 cartListPanel.add(Box.createVerticalStrut(AppSpacing.SM));
             }
         }
-
         cartListPanel.revalidate();
         cartListPanel.repaint();
     }
 
     private JPanel buildCartRow(CartItem item) {
         Product product = item.getProduct();
-
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 2));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -801,31 +777,25 @@ public class PosPanel extends JPanel {
         row.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(6, 8, 6, 8)));
-
         JLabel nameLabel = new JLabel("<html>" + escapeHtml(product.getProductName()) + "</html>");
         nameLabel.setFont(AppFont.SMALL_BOLD);
         nameLabel.setForeground(AppColor.TEXT_PRIMARY);
-
         JLabel priceLabel = new JLabel(NumberUtil.formatThousands(
                 product.getSellPrice() == null ? 0 : product.getSellPrice().longValue()) + " đ / " +
                 (product.getUnit() != null ? product.getUnit() : "sp"));
         priceLabel.setFont(AppFont.SMALL);
         priceLabel.setForeground(AppColor.TEXT_MUTED);
-
         JPanel left = new JPanel();
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
         left.add(nameLabel);
         left.add(priceLabel);
         row.add(left, BorderLayout.CENTER);
-
         JPanel right = new JPanel();
         right.setOpaque(false);
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-
         JPanel qtyRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
         qtyRow.setOpaque(false);
-
         JButton minus = smallStepButton(FontAwesomeSolid.MINUS);
         JLabel qtyLabel = new JLabel(String.valueOf(item.getQuantity()));
         qtyLabel.setFont(AppFont.SMALL_BOLD);
@@ -833,33 +803,25 @@ public class PosPanel extends JPanel {
         qtyLabel.setHorizontalAlignment(SwingConstants.CENTER);
         qtyLabel.setPreferredSize(new Dimension(24, 22));
         JButton plus = smallStepButton(FontAwesomeSolid.PLUS);
-
         minus.addActionListener(e -> cart.updateQuantity(product.getProductId(), item.getQuantity() - 1));
         plus.addActionListener(e -> cart.updateQuantity(product.getProductId(), item.getQuantity() + 1));
-
         qtyRow.add(minus);
         qtyRow.add(qtyLabel);
         qtyRow.add(plus);
-
         JButton removeBtn = smallStepButton(FontAwesomeSolid.TRASH);
         ((FontIcon) removeBtn.getIcon()).setIconColor(AppColor.ERROR);
         removeBtn.addActionListener(e -> cart.removeItem(product.getProductId()));
-
         JPanel removeRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         removeRow.setOpaque(false);
-
         JLabel lineTotal = new JLabel(NumberUtil.formatThousands(item.getSubtotal()) + " đ");
         lineTotal.setFont(AppFont.SMALL_BOLD);
         lineTotal.setForeground(AppColor.TEXT_TITLE);
-
         removeRow.add(lineTotal);
         removeRow.add(Box.createHorizontalStrut(6));
         removeRow.add(removeBtn);
-
         right.add(qtyRow);
         right.add(removeRow);
         row.add(right, BorderLayout.EAST);
-
         return row;
     }
 
@@ -905,21 +867,17 @@ public class PosPanel extends JPanel {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         labelComp.setFont(labelFont);
         labelComp.setForeground(labelColor);
         row.add(labelComp, BorderLayout.WEST);
-
         valueLabel.setFont(labelFont == AppFont.HEADING_MD ? AppFont.HEADING_MD : AppFont.BODY_BOLD);
         valueLabel.setForeground(labelFont == AppFont.HEADING_MD ? AppColor.ACCENT_HOVER : AppColor.TEXT_PRIMARY);
         valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
         row.add(valueLabel, BorderLayout.EAST);
-
         return row;
     }
 
     // ---------------- Nut thanh toan + logic tao hoa don ----------------
-
     private JPanel buildCheckoutButton() {
         checkoutButton.setText("Thanh toán");
         checkoutButton.setIcon(iconOf(FontAwesomeSolid.CHECK_CIRCLE, Color.WHITE));
@@ -933,7 +891,6 @@ public class PosPanel extends JPanel {
         checkoutButton.setBorderPainted(false);
         checkoutButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         checkoutButton.addActionListener(e -> handleCheckout());
-
         JPanel wrap = new JPanel(new BorderLayout());
         wrap.setOpaque(false);
         wrap.add(checkoutButton, BorderLayout.CENTER);
@@ -951,15 +908,12 @@ public class PosPanel extends JPanel {
             AppAlert.warning(this, "Giỏ hàng đang trống.");
             return;
         }
-
         User currentUser = AuthService.getInstance().getCurrentUser();
         if (currentUser == null) return;
-
         boolean confirmed = BaseDialog.confirm(this, "Xác nhận thanh toán",
                 "Lập hóa đơn cho " + cart.getItems().size() + " mặt hàng, tổng cộng "
                         + totalValue.getText() + "?");
         if (!confirmed) return;
-
         List<CartItem> snapshot = new ArrayList<>(cart.getItems());
         Integer customerId = cart.getCustomerId();
         long expectedSubTotal = cart.getSubTotal();
@@ -970,7 +924,6 @@ public class PosPanel extends JPanel {
         long pointsDisc = cart.getPointsDiscountAmount().longValue();
         if (pointsDisc > totalBeforePoints) pointsDisc = totalBeforePoints;
         long expectedTotal = Math.max(0, totalBeforePoints - pointsDisc);
-
         BigDecimal discountBd = cart.getDiscountAmount();
         Integer promotionId = cart.getAppliedPromotion() != null
                 ? cart.getAppliedPromotion().getPromotionId() : null;
@@ -978,7 +931,6 @@ public class PosPanel extends JPanel {
                 ? cart.getAppliedPromotion().getCode() : null;
         int pointsToUse = cart.getPointsToUse();
         BigDecimal pointsDiscountBd = cart.getPointsDiscountAmount();
-
         if ("PAYPAL".equals(selectedPaymentMethod)) {
             payWithPayPalThenCreateInvoice(currentUser, snapshot, customerId,
                     expectedSubTotal, expectedTotal, discountBd, promotionId, promotionCode,
@@ -990,28 +942,19 @@ public class PosPanel extends JPanel {
         }
     }
 
-    /**
-     * Lap hoa don xuong DB (dung chung cho ca thanh toan thuong lan sau khi
-     * PayPal da capture thanh cong). Sau khi thanh cong, hien thi dialog
-     * "PaymentSuccessDialog" voi nut "In hoa don PDF".
-     */
     private void createInvoiceAndFinish(User currentUser, List<CartItem> snapshot, Integer customerId,
                                          long expectedSubTotal, String paymentMethod,
                                          String payPalOrderId, String payPalCaptureId,
                                          BigDecimal discountAmount, Integer promotionId, String promotionCode,
                                          int pointsUsed, BigDecimal pointsDiscountAmount) {
-
         checkoutButton.setEnabled(false);
         loadingOverlay.start("Đang lập hóa đơn...");
-
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
             private Invoice invoice;
-
             @Override
             protected Boolean doInBackground() {
                 int shiftId = shiftDAO.getOrOpenShiftId(currentUser.getUserId());
                 if (shiftId <= 0) return false;
-
                 invoice = new Invoice();
                 invoice.setShiftId(shiftId);
                 invoice.setCreatedBy(currentUser.getUserId());
@@ -1025,7 +968,6 @@ public class PosPanel extends JPanel {
                 invoice.setPromotionCode(promotionCode);
                 invoice.setPointsUsed(pointsUsed);
                 invoice.setPointsDiscountAmount(pointsDiscountAmount != null ? pointsDiscountAmount : BigDecimal.ZERO);
-
                 List<InvoiceDetail> details = new ArrayList<>();
                 for (CartItem item : snapshot) {
                     InvoiceDetail detail = new InvoiceDetail();
@@ -1034,22 +976,18 @@ public class PosPanel extends JPanel {
                     detail.setUnitPrice(item.getProduct().getSellPrice());
                     details.add(detail);
                 }
-
                 return invoiceDAO.createInvoice(invoice, details);
             }
-
             @Override
             protected void done() {
                 loadingOverlay.stop();
                 checkoutButton.setEnabled(!cart.isEmpty());
-
                 boolean ok;
                 try {
                     ok = Boolean.TRUE.equals(get());
                 } catch (Exception ex) {
                     ok = false;
                 }
-
                 if (ok) {
                     cart.clear();
                     promoCodeField.setText("");
@@ -1057,13 +995,10 @@ public class PosPanel extends JPanel {
                     promoStatusLabel.setText(" ");
                     promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
                     loadProducts(null, null);
-
-                    // === HIEN THI DIALOG THANH CONG VOI NUT IN HOA DON PDF ===
                     Window owner = SwingUtilities.getWindowAncestor(PosPanel.this);
                     PaymentSuccessDialog successDialog = new PaymentSuccessDialog(
                             owner instanceof Frame ? (Frame) owner : null, invoice, invoiceDAO);
                     successDialog.setVisible(true);
-
                 } else {
                     AppAlert.error(PosPanel.this, "Không thể lập hóa đơn",
                             "Có thể do sản phẩm trong giỏ đã hết hàng hoặc có lỗi hệ thống. "
@@ -1076,34 +1011,27 @@ public class PosPanel extends JPanel {
     }
 
     // ---------------- Thanh toan PayPal (sandbox) tai quay ----------------
-
     private void payWithPayPalThenCreateInvoice(User currentUser, List<CartItem> snapshot, Integer customerId,
                                                  long expectedSubTotal, long totalVnd,
                                                  BigDecimal discountAmount, Integer promotionId, String promotionCode,
                                                  int pointsUsed, BigDecimal pointsDiscountAmount) {
-
         PayPalService payPalService = new PayPalService();
-
         JLabel qrLabel = new JLabel("Đang khởi tạo đơn PayPal...");
         qrLabel.setFont(AppFont.SMALL);
         qrLabel.setForeground(AppColor.TEXT_MUTED);
         qrLabel.setHorizontalAlignment(SwingConstants.CENTER);
         qrLabel.setPreferredSize(new Dimension(260, 260));
-
         JButton openHereBtn = new JButton("Mở trên máy này");
         openHereBtn.setEnabled(false);
         openHereBtn.setFont(AppFont.SMALL_BOLD);
         openHereBtn.setFocusPainted(false);
         openHereBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
         @SuppressWarnings("unchecked")
         SwingWorker<PayPalPosResult, String>[] workerRef = new SwingWorker[1];
         String[] approveUrlHolder = new String[1];
-
         JDialog waitingDialog = buildPayPalWaitingDialog(qrLabel, openHereBtn, () -> {
             if (workerRef[0] != null) workerRef[0].cancel(true);
         });
-
         openHereBtn.addActionListener(e -> {
             if (approveUrlHolder[0] == null) return;
             try {
@@ -1112,7 +1040,6 @@ public class PosPanel extends JPanel {
                 AppAlert.error(this, "Không thể mở trình duyệt: " + ex.getMessage());
             }
         });
-
         SwingWorker<PayPalPosResult, String> worker = new SwingWorker<>() {
             @Override
             protected PayPalPosResult doInBackground() throws Exception {
@@ -1123,12 +1050,10 @@ public class PosPanel extends JPanel {
                             server.returnUrl(), server.cancelUrl());
                     approveUrlHolder[0] = created.approveUrl();
                     publish(created.approveUrl());
-
                     PayPalService.ApprovalResult approval = server.await(Duration.ofMinutes(5));
                     if (!approval.approved()) {
                         return new PayPalPosResult(false, "CANCELLED", null, null);
                     }
-
                     PayPalService.CaptureResult result = payPalService.captureOrder(created.payPalOrderId());
                     if (result.success()) {
                         return new PayPalPosResult(true, "COMPLETED", created.payPalOrderId(), result.captureId());
@@ -1138,7 +1063,6 @@ public class PosPanel extends JPanel {
                     server.stop();
                 }
             }
-
             @Override
             protected void process(List<String> chunks) {
                 if (chunks.isEmpty()) return;
@@ -1153,12 +1077,10 @@ public class PosPanel extends JPanel {
                     openHereBtn.setEnabled(true);
                 }
             }
-
             @Override
             protected void done() {
                 waitingDialog.dispose();
                 if (isCancelled()) return;
-
                 try {
                     PayPalPosResult result = get();
                     if (result.success()) {
@@ -1180,7 +1102,6 @@ public class PosPanel extends JPanel {
                 }
             }
         };
-
         workerRef[0] = worker;
         worker.execute();
         waitingDialog.setVisible(true);
@@ -1190,30 +1111,24 @@ public class PosPanel extends JPanel {
         JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this),
                 "Thanh toán PayPal (Sandbox)", Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setResizable(false);
-
         JPanel body = new JPanel();
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBackground(AppColor.WHITE);
         body.setBorder(new EmptyBorder(28, 32, 20, 32));
-
         JLabel icon = new JLabel(iconOf(FontAwesomeBrands.PAYPAL, new Color(37, 99, 235)));
         icon.setAlignmentX(Component.CENTER_ALIGNMENT);
-
         JLabel title = new JLabel("Quét mã để thanh toán");
         title.setFont(AppFont.HEADING_MD);
         title.setForeground(AppColor.TEXT_TITLE);
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
-
         JLabel message = new JLabel("<html><div style='text-align:center;width:280px'>"
                 + "Đưa mã QR này cho khách quét bằng camera điện thoại để mở trang "
                 + "PayPal Sandbox và duyệt thanh toán.</div></html>");
         message.setFont(AppFont.BODY);
         message.setForeground(AppColor.TEXT_SECONDARY);
         message.setAlignmentX(Component.CENTER_ALIGNMENT);
-
         qrLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         openHereBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-
         JButton cancel = new JButton("Hủy");
         cancel.setAlignmentX(Component.CENTER_ALIGNMENT);
         cancel.setFocusPainted(false);
@@ -1222,7 +1137,6 @@ public class PosPanel extends JPanel {
             if (onCancel != null) onCancel.run();
             dialog.dispose();
         });
-
         body.add(icon);
         body.add(Box.createVerticalStrut(12));
         body.add(title);
@@ -1234,7 +1148,6 @@ public class PosPanel extends JPanel {
         body.add(openHereBtn);
         body.add(Box.createVerticalStrut(16));
         body.add(cancel);
-
         dialog.getContentPane().add(body);
         dialog.pack();
         dialog.setLocationRelativeTo(this);

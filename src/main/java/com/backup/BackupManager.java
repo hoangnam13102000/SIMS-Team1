@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class BackupManager {
-
     private final BackupStorage storage;
     private final List<BackupStrategy> strategiesInOrder;
     private final List<BackupListener> listeners = new CopyOnWriteArrayList<>();
@@ -24,14 +23,79 @@ public class BackupManager {
     public void addListener(BackupListener listener) { listeners.add(listener); }
     public BackupStorage getStorage() { return storage; }
 
+    // ================================================================
+    // 1) NGƯỜI DÙNG BẤM NÚT "SAO LƯU NGAY"
+    //    → Dùng newTimestampedBackupFile → MỖI LẦN = 1 FILE RIÊNG
+    // ================================================================
     public BackupResult backupNow() throws BackupException {
+        return doBackupInternal(BackupMode.MANUAL);
+    }
+
+    // ================================================================
+    // 2) SCHEDULER TỰ ĐỘNG (mỗi 24h)
+    //    → Dùng newDailyBackupFile → 1 NGÀY 1 FILE DUY NHẤT
+    //    → Check hasDailyBackupToday() → hôm nay có rồi thì BỎ QUA
+    // ================================================================
+    public BackupResult backupIfNotDoneToday() throws BackupException {
+        if (storage.hasDailyBackupToday()) {
+            return null; // hôm nay đã có file daily → bỏ qua
+        }
+        return doBackupInternal(BackupMode.SCHEDULED);
+    }
+
+    // ================================================================
+    // 3) EMERGENCY (DB yếu → cần lưu trạng thái cuối)
+    //    → Dùng newTimestampedBackupFile → 1 file riêng mỗi lần khẩn cấp
+    // ================================================================
+    public BackupResult backupEmergency() throws BackupException {
+        return doBackupInternal(BackupMode.EMERGENCY);
+    }
+
+    /** Giữ tương thích ngược với code cũ gọi backupNow(true). */
+    public BackupResult backupNow(boolean forceIfExists) throws BackupException {
+        return doBackupInternal(forceIfExists ? BackupMode.MANUAL : BackupMode.SCHEDULED);
+    }
+
+    // ================================================================
+    // HÀM NỘI BỘ: logic backup thực sự, phân biệt theo Mode
+    // ================================================================
+    private enum BackupMode {
+        /** Thủ công: timestamp, mỗi lần 1 file. */
+        MANUAL,
+        /** Tự động: chỉ ngày, 1 ngày 1 file. */
+        SCHEDULED,
+        /** Khẩn cấp: timestamp, mỗi lần 1 file. */
+        EMERGENCY
+    }
+
+    private BackupResult doBackupInternal(BackupMode mode) throws BackupException {
         Exception lastError = null;
         for (BackupStrategy strategy : strategiesInOrder) {
-            File destination = storage.newBackupFile(strategy.getName(), strategy.getFileExtension());
-            notifyStarted(strategy.getName());
+
+            // ====== CHỌN CÁCH ĐẶT TÊN FILE THEO MODE ======
+            File destination;
+            if (mode == BackupMode.SCHEDULED) {
+                // Tự động → tên chỉ có ngày → ghi đè nếu cùng ngày
+                destination = storage.newDailyBackupFile(strategy.getName(), strategy.getFileExtension());
+                // Nếu file đã tồn tại từ sáng nay → xóa đi để ghi lại bản mới
+                if (destination.exists()) {
+                    try { destination.delete(); } catch (Exception ignored) { }
+                }
+            } else {
+                // MANUAL / EMERGENCY → tên có giờ → mỗi lần 1 file riêng, không ghi đè ai
+                destination = storage.newTimestampedBackupFile(strategy.getName(), strategy.getFileExtension());
+            }
+
+            notifyStarted(strategy.getName() + (mode == BackupMode.MANUAL ? " (thủ công)"
+                    : mode == BackupMode.EMERGENCY ? " (khẩn cấp)" : ""));
             Instant start = Instant.now();
             try {
                 strategy.backupTo(destination);
+                if (!destination.exists() || destination.length() == 0) {
+                    if (destination.exists()) destination.delete();
+                    throw new BackupException("Strategy " + strategy.getName()
+                            + " ghi ra file rong (0 byte).");
+                }
                 BackupResult result = new BackupResult(destination, strategy.getName(), start, Instant.now());
                 notifySucceeded(result);
                 return result;
@@ -49,6 +113,9 @@ public class BackupManager {
         String fileName = backupFile.getName();
         for (BackupStrategy strategy : strategiesInOrder) {
             if (!(strategy instanceof RestoreStrategy)) continue;
+            // Khớp với cả 2 định dạng:
+            //   - daily:    backup_20260813_<strategy>.ext
+            //   - timestamp: backup_20260813-091522_<strategy>.ext
             if (fileName.contains("_" + strategy.getName() + ".")) {
                 RestoreStrategy restoreStrategy = (RestoreStrategy) strategy;
                 notifyRestoreStarted(strategy.getName(), backupFile);
@@ -63,8 +130,7 @@ public class BackupManager {
                 return;
             }
         }
-        throw new BackupException("Khong xac dinh duoc strategy phu hop de restore file: " + fileName
-                + " (ten file khong khop quy uoc backup_<thoigian>_<strategy>.<phanmorong>)");
+        throw new BackupException("Khong xac dinh duoc strategy phu hop de restore file: " + fileName);
     }
 
     public void restoreLatest() throws BackupException {
@@ -75,9 +141,16 @@ public class BackupManager {
         restore(latest);
     }
 
+    // ================================================================
+    // Scheduler gọi backupIfNotDoneToday()
+    // ================================================================
     public void startScheduled(long initialDelayMinutes, long intervalMinutes) {
         scheduler.start(() -> {
-            try { backupNow(); } catch (BackupException e) { /* da bao qua listener */ }
+            try {
+                backupIfNotDoneToday();
+            } catch (BackupException e) {
+                /* đã báo qua listener */
+            }
         }, initialDelayMinutes, intervalMinutes);
     }
 

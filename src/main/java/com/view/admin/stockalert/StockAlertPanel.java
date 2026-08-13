@@ -2,9 +2,13 @@ package com.view.admin.stockalert;
 
 import com.components.AppAlert;
 import com.components.BaseDialog;
+import com.components.DatePickerField;
+import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
 import com.components.table.ActionColumn;
+import com.dao.CategoryDAO;
 import com.dao.StockAlertDAO;
+import com.model.Category;
 import com.model.StockAlert;
 import com.service.AuthService;
 import com.theme.AppColor;
@@ -18,21 +22,30 @@ import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
-
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
 
     private final StockAlertDAO stockAlertDAO = new StockAlertDAO();
 
+    // ====== FILTER CHUẨN: FilterDropdown + DatePickerField ======
+    private final CategoryDAO categoryDAO = new CategoryDAO();
+    private FilterDropdown<CategoryOption> categoryFilter;
+    private DatePickerField fromDateFilter;
+    private DatePickerField toDateFilter;
+    private JLabel clearFiltersLink;
+    // ============================================================
+
     public StockAlertPanel() {
         super();
-
         table.setActionColumn(new ActionColumn()
                 .header("Thao tác")
                 .add("plan", FontAwesomeSolid.CALENDAR_PLUS, AppColor.ACCENT, "Đã lên kế hoạch nhập bổ sung",
@@ -40,12 +53,9 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 .add("resolve", FontAwesomeSolid.CHECK_CIRCLE, AppColor.SUCCESS, "Đánh dấu đã xử lý xong",
                         this::resolveRow, this::canResolve));
 
-        // Không STT / Tồn khi báo / Tồn tối thiểu
-        // Mã SP | Tên SP | Loại cảnh báo | Người báo cáo | Thời gian | Trạng thái
         table.setBadgeColumn(2, this::alertTypeLabel, this::alertTypeColor);
         table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
-        // Cột "Mã SP" (index 0): thêm icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -71,14 +81,13 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 return c;
             }
         });
-        
-        // Xử lý click vào icon copy mã SP
+
         table.getTable().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int viewCol = table.getTable().columnAtPoint(e.getPoint());
                 int viewRow = table.getTable().rowAtPoint(e.getPoint());
-                if (viewCol == 0 && viewRow >= 0) { // Cột Mã SP
+                if (viewCol == 0 && viewRow >= 0) {
                     int modelRow = table.getTable().convertRowIndexToModel(viewRow);
                     Object value = table.getTable().getModel().getValueAt(modelRow, 0);
                     String text = value != null ? value.toString() : "";
@@ -90,13 +99,119 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
             }
         });
 
+        // ====== DÙNG buildFilterBar CHUẨN ======
+        buildFilterBar();
         initialLoad();
         applyColumnWidths();
-
-        // Quan ly kho vao trang nay -> coi nhu da xem het cac bao cao hien
-        // co, badge tren sidebar se ve 0 trong lan poll ke tiep (toi da 5s).
         stockAlertDAO.markAllSeen();
     }
+
+    // ================================================================
+    // ====== FILTER CHUẨN: GIỐNG HỆT ProductPanel / InventoryBatchPanel ======
+    // ================================================================
+    private static final class CategoryOption {
+        final Integer categoryId;
+        final String label;
+        CategoryOption(Integer categoryId, String label) {
+            this.categoryId = categoryId;
+            this.label = label;
+        }
+        @Override
+        public String toString() { return label; }
+    }
+
+    private void buildFilterBar() {
+        // 1) FilterDropdown Loại SP (icon LAYER_GROUP giống ProductPanel)
+        List<Category> categories = categoryDAO.findAll();
+        CategoryOption[] categoryOptions = new CategoryOption[categories.size() + 1];
+        categoryOptions[0] = new CategoryOption(null, "Tất cả loại SP");
+        for (int i = 0; i < categories.size(); i++) {
+            Category c = categories.get(i);
+            categoryOptions[i + 1] = new CategoryOption(c.getCategoryId(), c.getCategoryName());
+        }
+        categoryFilter = new FilterDropdown<>(FontAwesomeSolid.LAYER_GROUP, categoryOptions);
+        categoryFilter.onChange(opt -> onFilterChanged());
+        addToolbarFilter(categoryFilter);
+
+        // 2) Từ ngày + Đến ngày (giống Invoice/Order/ReturnExchange)
+        fromDateFilter = new DatePickerField(null, true);
+        toDateFilter = new DatePickerField(null, true);
+        JLabel fromLabel = new JLabel("Từ");
+        fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fromLabel.setForeground(AppColor.TEXT_MUTED);
+        JLabel toLabel = new JLabel("Đến");
+        toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toLabel.setForeground(AppColor.TEXT_MUTED);
+        JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        dateRow.setOpaque(false);
+        dateRow.add(fromLabel);
+        dateRow.add(fromDateFilter);
+        dateRow.add(toLabel);
+        dateRow.add(toDateFilter);
+        fromDateFilter.onChange(d -> onFilterChanged());
+        toDateFilter.onChange(d -> onFilterChanged());
+        addToolbarFilter(dateRow);
+
+        // 3) Nút "Xóa lọc" CHUẨN (chữ + icon, giống ProductPanel)
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
+        clearFiltersLink.setIconTextGap(6);
+        clearFiltersLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+        clearFiltersLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearFiltersLink.setVisible(false);
+        clearFiltersLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                categoryFilter.resetToAll();
+                fromDateFilter.setValue(null);
+                toDateFilter.setValue(null);
+                onFilterChanged();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.ERROR);
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+            }
+        });
+        addToolbarFilter(clearFiltersLink);
+    }
+
+    private void onFilterChanged() {
+        // Validate Từ > Đến
+        LocalDate from = fromDateFilter.getValue();
+        LocalDate to = toDateFilter.getValue();
+        if (from != null && to != null && from.isAfter(to)) {
+            AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+                    "\"Từ ngày\" (" + from + ") không được sau \"Đến ngày\" (" + to + ").");
+            return;
+        }
+        // Nút Xóa lọc chỉ hiện khi CÓ bộ lọc nào đang bật
+        boolean anyActive = categoryFilter.isFilterActive()
+                || fromDateFilter.getValue() != null
+                || toDateFilter.getValue() != null;
+        if (clearFiltersLink != null) clearFiltersLink.setVisible(anyActive);
+        applyFilters();
+    }
+
+    // Helper đọc giá trị filter (null = không lọc)
+    private Integer selectedCategoryId() {
+        CategoryOption opt = categoryFilter == null ? null : categoryFilter.getSelected();
+        return opt == null ? null : opt.categoryId;
+    }
+    private LocalDate selectedFromDate() {
+        return fromDateFilter == null ? null : fromDateFilter.getValue();
+    }
+    private LocalDate selectedToDate() {
+        return toDateFilter == null ? null : toDateFilter.getValue();
+    }
+    // ================================================================
+    // ====================== HẾT FILTER CHUẨN =======================
+    // ================================================================
 
     private void applyColumnWidths() {
         table.setColumnWidths(100, 200, 120, 150, 130, 130);
@@ -105,12 +220,15 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.EXCLAMATION_TRIANGLE; }
+
     @Override
     protected String getPageTitle() { return "Cảnh báo tồn kho"; }
+
     @Override
     protected String getPageSubtitle() {
         return "Các báo cáo hết/sắp hết hàng từ nhân viên bán hàng - lên kế hoạch nhập hàng bổ sung";
     }
+
     @Override
     protected String getAddButtonLabel() { return null; }
 
@@ -143,34 +261,40 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
     @Override
     protected String getItemDisplayName(StockAlert item) { return item.getProductName(); }
 
+    // ====== 3 OVERRIDE GỌI DAO FILTER ======
     @Override
     protected PaginationHelper.PaginationResult<StockAlert> fetchPage(int page, int pageSize) {
-        return stockAlertDAO.getPaged(page, pageSize);
+        return stockAlertDAO.getPagedFiltered(page, pageSize,
+                selectedCategoryId(), selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<StockAlert> searchPage(String keyword, int page, int pageSize) {
-        return stockAlertDAO.search(keyword, page, pageSize);
+        return stockAlertDAO.searchFiltered(keyword, page, pageSize,
+                selectedCategoryId(), selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected List<StockAlert> fetchAllForExport() {
-        return stockAlertDAO.getAll();
+        return stockAlertDAO.getAllFiltered(
+                selectedCategoryId(), selectedFromDate(), selectedToDate());
     }
+    // ========================================
 
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo tên sản phẩm, mã SP..."; }
+
     @Override
     protected boolean supportsEdit() { return false; }
+
     @Override
     protected boolean supportsDelete() { return false; }
+
     @Override
     protected boolean supportsView() { return false; }
 
     @Override
-    protected void openForm(StockAlert item) {
-        // Khong bao gio duoc goi: getAddButtonLabel() = null va supportsEdit() = false.
-    }
+    protected void openForm(StockAlert item) { }
 
     @Override
     protected boolean deleteItem(StockAlert item) { return false; }
@@ -244,21 +368,14 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
         String v = String.valueOf(value);
         if ("RESOLVED".equals(v)) return AppColor.SUCCESS;
         if ("PLANNED".equals(v)) return AppColor.INFO;
-        return AppColor.WARNING; // NEW
+        return AppColor.WARNING;
     }
 
-    // ---------------------------------------------------------------
-    // Helper: copy mã sản phẩm vào clipboard
-    // ---------------------------------------------------------------
-
-    /** Copy chuỗi vào clipboard hệ thống. */
     private void copyToClipboard(String text) {
         try {
             StringSelection selection = new StringSelection(text);
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
             clipboard.setContents(selection, null);
-        } catch (Exception ignored) {
-            // Bỏ qua nếu không copy được
-        }
+        } catch (Exception ignored) { }
     }
 }

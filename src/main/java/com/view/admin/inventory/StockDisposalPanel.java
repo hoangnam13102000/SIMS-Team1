@@ -1,6 +1,7 @@
 package com.view.admin.inventory;
 
 import com.components.AppAlert;
+import com.components.DatePickerField;
 import com.components.crud.BaseCrudPanel;
 import com.dao.StockDisposalDAO;
 import com.model.StockDisposal;
@@ -22,6 +23,7 @@ import java.awt.Frame;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -36,6 +38,9 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final StockDisposalDAO disposalDAO = new StockDisposalDAO();
+    private DatePickerField fromDateFilter;
+    private DatePickerField toDateFilter;
+    private JLabel clearDateFilterLink;
 
     public StockDisposalPanel() {
         super();
@@ -90,7 +95,79 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
             }
         });
 
+        buildDateFilterBar();
         initialLoad();
+    }
+
+    private void buildDateFilterBar() {
+        fromDateFilter = new DatePickerField(null, true);
+        toDateFilter = new DatePickerField(null, true);
+        JLabel fromLabel = new JLabel("Từ ngày");
+        fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fromLabel.setForeground(AppColor.TEXT_MUTED);
+        JLabel toLabel = new JLabel("Đến ngày");
+        toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toLabel.setForeground(AppColor.TEXT_MUTED);
+        JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        dateRow.setOpaque(false);
+        dateRow.add(fromLabel);
+        dateRow.add(fromDateFilter);
+        dateRow.add(toLabel);
+        dateRow.add(toDateFilter);
+        fromDateFilter.onChange(d -> onDateFilterChanged());
+        toDateFilter.onChange(d -> onDateFilterChanged());
+        addToolbarFilter(dateRow);
+
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 14);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearDateFilterLink = new JLabel(clearIcon);
+        clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearDateFilterLink.setToolTipText("Xóa lọc ngày");
+        clearDateFilterLink.setVisible(false);
+        clearDateFilterLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                fromDateFilter.setValue(null);
+                toDateFilter.setValue(null);
+                onDateFilterChanged();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                FontIcon hover = FontIcon.of(FontAwesomeSolid.TIMES, 14);
+                hover.setIconColor(AppColor.ERROR);
+                clearDateFilterLink.setIcon(hover);
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                FontIcon normal = FontIcon.of(FontAwesomeSolid.TIMES, 14);
+                normal.setIconColor(AppColor.TEXT_MUTED);
+                clearDateFilterLink.setIcon(normal);
+            }
+        });
+        addToolbarFilter(clearDateFilterLink);
+    }
+
+    private void onDateFilterChanged() {
+        LocalDate from = fromDateFilter.getValue();
+        LocalDate to = toDateFilter.getValue();
+        if (from != null && to != null && from.isAfter(to)) {
+            AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+                    "\"Từ ngày\" (" + from + ") không được sau \"Đến ngày\" (" + to + ").");
+            return;
+        }
+
+        if (clearDateFilterLink != null) {
+            clearDateFilterLink.setVisible(fromDateFilter.getValue() != null || toDateFilter.getValue() != null);
+        }
+        applyFilters();
+    }
+
+    private LocalDate selectedFromDate() {
+        return fromDateFilter == null ? null : fromDateFilter.getValue();
+    }
+
+    private LocalDate selectedToDate() {
+        return toDateFilter == null ? null : toDateFilter.getValue();
     }
 
     @Override
@@ -142,12 +219,12 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
 
     @Override
     protected PaginationHelper.PaginationResult<StockDisposal> fetchPage(int page, int pageSize) {
-        return disposalDAO.getPaged(page, pageSize);
+        return disposalDAO.getPagedFiltered(page, pageSize, null, selectedFromDate(), selectedToDate());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<StockDisposal> searchPage(String keyword, int page, int pageSize) {
-        return disposalDAO.search(keyword, page, pageSize);
+        return disposalDAO.getPagedFiltered(page, pageSize, keyword, selectedFromDate(), selectedToDate());
     }
 
     @Override

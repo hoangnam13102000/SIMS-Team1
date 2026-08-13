@@ -8,6 +8,7 @@ import com.model.Product;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
+import com.utils.AppIcon;
 import com.view.LoginFrame;
 import com.view.layouts.Footer;
 import com.ws.ChatClient;
@@ -33,6 +34,7 @@ public class ClientMainFrame extends JFrame {
         setSize(1280, 760);
         setMinimumSize(new Dimension(1024, 600));
         setLocationRelativeTo(null);
+        AppIcon.apply(this);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.PAGE_BG);

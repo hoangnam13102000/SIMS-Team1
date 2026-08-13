@@ -1,12 +1,12 @@
 package com.service;
 
-import com.dao.ReturnExchangeDAO;
 import com.event.AppEventBus;
 import com.event.DataChangedEvent;
 import com.model.ReturnExchange;
 import com.model.NotificationItem;
 import com.settings.NotificationSettings;
 import com.utils.NotificationSound;
+import com.utils.DBConnection;
 
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
@@ -17,12 +17,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import com.utils.DBConnection;
 
 /**
- * Theo doi yeu cau tra hang ONLINE moi cua khach hang.
- * Chi thong bao yeu cau PENDING do User co ho so Customers tao ra;
- * yeu cau tao tu giao dien nhan vien khong tao chuong.
+ * Theo dõi yêu cầu đổi/trả hàng mới cần duyệt (Status = PENDING).
+ * <p>
+ * Báo chuông cho <b>mọi</b> phiếu PENDING mới — cả khách online và nhân viên
+ * tạo tại quầy/admin — để quản trị không bỏ sót yêu cầu chờ duyệt.
+ * <p>
+ * Không phát chuông cho các phiếu đã tồn tại trước khi màn hình admin mở
+ * (chỉ lấy mốc {@code MAX(ReturnID)} lúc {@code start()}).
  */
 public final class ReturnExchangeNotifyPoller {
     private static final int POLL_INTERVAL_MS = 5000;
@@ -37,8 +40,7 @@ public final class ReturnExchangeNotifyPoller {
     }
 
     public void start() {
-        // Lay moc hien tai ma khong phat chuong cho cac yeu cau da ton tai
-        // truoc khi man hinh quan tri duoc mo.
+        // Lấy mốc hiện tại, không phát chuông cho yêu cầu đã có trước khi mở màn admin.
         if (lastKnownReturnId < 0) {
             lastKnownReturnId = getMaxReturnId();
         }
@@ -60,18 +62,33 @@ public final class ReturnExchangeNotifyPoller {
         }
     }
 
+    /** Kết quả 1 dòng poll kèm cờ khách online. */
+    private static final class PendingRow {
+        final ReturnExchange exchange;
+        final boolean isCustomer;
+
+        PendingRow(ReturnExchange exchange, boolean isCustomer) {
+            this.exchange = exchange;
+            this.isCustomer = isCustomer;
+        }
+    }
+
     private void poll() {
-        SwingWorker<List<ReturnExchange>, Void> worker = new SwingWorker<>() {
+        SwingWorker<List<PendingRow>, Void> worker = new SwingWorker<>() {
             @Override
-            protected List<ReturnExchange> doInBackground() {
-                List<ReturnExchange> result = new ArrayList<>();
+            protected List<PendingRow> doInBackground() {
+                List<PendingRow> result = new ArrayList<>();
+                // LEFT JOIN Customers: vẫn nhận diện khách online để đổi title,
+                // nhưng không loại phiếu do nhân viên tạo.
                 String sql =
                     "SELECT r.ReturnID, r.InvoiceID, inv.InvoiceCode, r.Type, r.Reason, "
-                  + "r.TotalValue, r.RequiresApproval, r.Status, r.CreatedBy, u.FullName AS CreatedByName, r.CreatedAt "
+                  + "r.TotalValue, r.RequiresApproval, r.Status, r.CreatedBy, "
+                  + "u.FullName AS CreatedByName, r.CreatedAt, "
+                  + "CASE WHEN c.CustomerID IS NOT NULL THEN 1 ELSE 0 END AS IsCustomer "
                   + "FROM ReturnExchanges r "
                   + "JOIN Invoices inv ON inv.InvoiceID = r.InvoiceID "
                   + "JOIN Users u ON u.UserID = r.CreatedBy "
-                  + "JOIN Customers c ON c.CustomerID = r.CreatedBy "
+                  + "LEFT JOIN Customers c ON c.CustomerID = r.CreatedBy "
                   + "WHERE r.ReturnID > ? AND r.Status = 'PENDING' "
                   + "ORDER BY r.ReturnID ASC";
                 try (Connection con = DBConnection.getConnection();
@@ -92,7 +109,7 @@ public final class ReturnExchangeNotifyPoller {
                             r.setCreatedByName(rs.getString("CreatedByName"));
                             var ts = rs.getTimestamp("CreatedAt");
                             r.setCreatedAt(ts == null ? null : ts.toLocalDateTime());
-                            result.add(r);
+                            result.add(new PendingRow(r, rs.getInt("IsCustomer") == 1));
                         }
                     }
                 } catch (Exception ignored) {
@@ -103,19 +120,25 @@ public final class ReturnExchangeNotifyPoller {
             @Override
             protected void done() {
                 try {
-                    List<ReturnExchange> rows = get();
+                    List<PendingRow> rows = get();
                     if (rows.isEmpty()) return;
 
                     int maxId = lastKnownReturnId;
                     List<NotificationItem> items = new ArrayList<>();
-                    for (ReturnExchange r : rows) {
+                    for (PendingRow row : rows) {
+                        ReturnExchange r = row.exchange;
                         maxId = Math.max(maxId, r.getReturnId());
-                        String customer = r.getCreatedByName() == null ? "Khách hàng" : r.getCreatedByName();
-                        String title = "Khách gửi yêu cầu trả hàng";
-                        String message = customer + " - " + (r.getInvoiceCode() == null ? "Hóa đơn" : r.getInvoiceCode());
+                        String who = r.getCreatedByName() == null
+                                ? (row.isCustomer ? "Khách hàng" : "Nhân viên")
+                                : r.getCreatedByName();
+                        String title = row.isCustomer
+                                ? "Khách gửi yêu cầu trả hàng"
+                                : "Yêu cầu đổi/trả chờ duyệt";
+                        String message = who + " - "
+                                + (r.getInvoiceCode() == null ? "Hóa đơn" : r.getInvoiceCode());
                         items.add(new NotificationItem(
                             "return-" + r.getReturnId(),
-                            NotificationItem.Type.RETURN,   // <-- cần thêm Type.RETURN vào NotificationItem
+                            NotificationItem.Type.RETURN,
                             title,
                             message,
                             r.getCreatedAt() == null ? LocalDateTime.now() : r.getCreatedAt(),

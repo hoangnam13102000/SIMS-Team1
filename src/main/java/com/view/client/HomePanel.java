@@ -31,8 +31,8 @@ import java.util.List;
 public class HomePanel extends JPanel {
 
     // ===================== MAU RIENG CHO HERO BANNER (co dinh, khong doi theo Light/Dark) =====================
-    private static final Color HERO_TOP = new Color(11, 78, 47);
-    private static final Color HERO_BOTTOM = new Color(23, 117, 66);
+    private static final Color HERO_TOP = new Color(3, 45, 95);
+    private static final Color HERO_BOTTOM = new Color(24, 120, 180);
     private static final Color HERO_YELLOW = new Color(250, 204, 21);
     private static final Color HERO_YELLOW_HOVER = new Color(234, 179, 8);
     private static final Color HERO_GREEN_TEXT = new Color(11, 61, 37);

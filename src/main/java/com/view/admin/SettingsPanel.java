@@ -8,8 +8,10 @@ import com.event.AppEventBus;
 import com.event.DataChangedEvent;
 import com.theme.AppColor;
 import com.theme.AppFont;
+import com.theme.AppRadius;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
@@ -48,6 +50,7 @@ public class SettingsPanel extends JPanel {
         JScrollPane scroll = new JScrollPane(form);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
 
@@ -58,91 +61,310 @@ public class SettingsPanel extends JPanel {
     }
 
     private JPanel buildForm() {
-        JPanel wrapper = new JPanel();
+        // ScrollableFormPanel: ép panel này luôn bằng đúng chiều rộng viewport
+        // (không bao giờ rộng hơn) => nội dung tự co giãn theo cửa sổ,
+        // không bao giờ phát sinh thanh cuộn ngang.
+        JPanel wrapper = new ScrollableFormPanel();
         wrapper.setOpaque(false);
         wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
-        wrapper.setBorder(new EmptyBorder(16, 0, 0, 0));
+        wrapper.setBorder(new EmptyBorder(12, 0, 12, 0));
 
-        JPanel card = new JPanel();
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBackground(AppColor.WHITE);
-        card.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.setMaximumSize(new Dimension(560, Integer.MAX_VALUE));
-        card.setBorder(new CompoundBorder(
-                new LineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(20, 20, 20, 20)));
+        // ====== Card 1: Thông tin cửa hàng (full width, gọn nhẹ) ======
+        wrapper.add(buildSettingsCard(
+                FontAwesomeSolid.STORE,
+                AppColor.ACCENT,
+                "Thông tin cửa hàng",
+                "Thông tin cơ bản hiển thị trên hoá đơn, báo cáo và giao diện",
+                new Component[][]{
+                        {fieldGroup("Tên cửa hàng",
+                                "Tên hiển thị trên hoá đơn, màn hình POS và các báo cáo.",
+                                storeNameField = textField(), true)},
+                        {fieldGroup("Đơn vị tính mặc định",
+                                "Dùng khi thêm SP mới (vd: cái, hộp, chai...).",
+                                defaultUnitField = textField(), true)}
+                },
+                true  // compact mode
+        ));
 
-        JLabel cardTitle = new JLabel("Thuế & chính sách bán hàng");
-        cardTitle.setFont(AppFont.HEADING_MD);
-        cardTitle.setForeground(AppColor.TEXT_TITLE);
-        cardTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
-        cardTitle.setBorder(new EmptyBorder(0, 0, 14, 0));
-        card.add(cardTitle);
+        wrapper.add(Box.createVerticalStrut(10));
 
-        vatRateField = numberField();
-        card.add(fieldGroup("Thuế GTGT - VAT (%)",
-                "Áp dụng cho hoá đơn tại quầy (POS) và đơn hàng đặt online. Ví dụ: 8 nghĩa là 8%.",
-                vatRateField));
-        card.add(Box.createVerticalStrut(16));
+        // ====== Hàng chứa 2 card nhỏ bên cạnh nhau ======
+        // Dùng GridLayout(1,2) khi đủ rộng, tự chuyển GridLayout(2,1) (xếp chồng)
+        // khi panel bị thu hẹp dưới ngưỡng TWO_COL_MIN_WIDTH => luôn vừa khung,
+        // không tràn ngang.
+        final int rowGap = 12;
+        JPanel twoColRow = new JPanel(new GridLayout(1, 2, rowGap, rowGap));
+        twoColRow.setOpaque(false);
+        twoColRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        twoColRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        twoColRow.addComponentListener(new java.awt.event.ComponentAdapter() {
+            private static final int TWO_COL_MIN_WIDTH = 620;
+            private Boolean stacked = null;
 
-        defaultMarginField = numberField();
-        card.add(fieldGroup("Chênh lệch giá bán mặc định (VNĐ)",
-                "Áp dụng cho SP không đặt chênh lệch riêng: Giá bán = Giá nhập + số này, tự động cập nhật mỗi khi nhập hàng làm đổi Giá nhập.",
-                defaultMarginField));
-        card.add(Box.createVerticalStrut(16));
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                boolean shouldStack = twoColRow.getWidth() < TWO_COL_MIN_WIDTH;
+                if (stacked == null || stacked != shouldStack) {
+                    stacked = shouldStack;
+                    GridLayout gl = (GridLayout) twoColRow.getLayout();
+                    gl.setRows(shouldStack ? 2 : 1);
+                    gl.setColumns(shouldStack ? 1 : 2);
+                    twoColRow.revalidate();
+                }
+            }
+        });
 
-        returnPolicyDaysField = numberField();
-        card.add(fieldGroup("Số ngày được đổi/trả hàng",
-                "Số ngày kể từ ngày mua khách được phép đổi/trả sản phẩm.",
-                returnPolicyDaysField));
-        card.add(Box.createVerticalStrut(16));
+        // Card 2: Thuế & chính sách giá
+        twoColRow.add(buildSettingsCard(
+                FontAwesomeSolid.PERCENTAGE,
+                AppColor.SUCCESS,
+                "Thuế & chính sách giá",
+                "Cấu hình thuế và quy tắc tính giá bán",
+                new Component[][]{
+                        {fieldGroup("Thuế GTGT - VAT (%)",
+                                "Áp dụng cho hoá đơn POS và đơn hàng online.",
+                                vatRateField = numberField(), false)},
+                        {fieldGroup("Chênh lệch giá bán (VNĐ)",
+                                "Giá bán = Giá nhập + số này.",
+                                defaultMarginField = numberField(), false)}
+                },
+                true  // compact mode
+        ));
 
-        approvalThresholdField = numberField();
-        card.add(fieldGroup("Ngưỡng giá trị cần duyệt đổi/trả (VNĐ)",
-                "Phiếu đổi/trả có tổng giá trị hàng khách trả lớn hơn số này sẽ ở trạng thái \"Chờ duyệt\", "
-                        + "cần Quản lý bán hàng duyệt trước khi kho/hoá đơn gốc được điều chỉnh. Để 0 nghĩa là mọi phiếu đều cần duyệt.",
-                approvalThresholdField));
-        card.add(Box.createVerticalStrut(16));
+        // Card 3: Chính sách đổi trả
+        twoColRow.add(buildSettingsCard(
+                FontAwesomeSolid.EXCHANGE_ALT,
+                AppColor.WARNING,
+                "Chính sách đổi trả",
+                "Quy định thời gian và quy trình duyệt phiếu",
+                new Component[][]{
+                        {fieldGroup("Số ngày đổi/trả",
+                                "Số ngày kể từ ngày mua.",
+                                returnPolicyDaysField = numberField(), false)},
+                        {fieldGroup("Ngưỡng cần duyệt (VNĐ)",
+                                "Lớn hơn số này ở trạng thái Chờ duyệt.",
+                                approvalThresholdField = numberField(), false)}
+                },
+                true  // compact mode
+        ));
 
-        storeNameField = textField();
-        card.add(fieldGroup("Tên cửa hàng", null, storeNameField));
-        card.add(Box.createVerticalStrut(16));
+        wrapper.add(twoColRow);
 
-        defaultUnitField = textField();
-        card.add(fieldGroup("Đơn vị tính mặc định",
-                "Dùng khi thêm sản phẩm mới mà chưa chọn đơn vị cụ thể (vd: cái, hộp, chai...).",
-                defaultUnitField));
-
-        wrapper.add(card);
         return wrapper;
     }
 
+    /**
+     * Tạo một card cài đặt với icon, tiêu đề, mô tả và các trường form.
+     * fields: mảng 2 chiều [cột][dòng], mỗi phần tử là JPanel fieldGroup đã được tạo.
+     * compact: true => giảm padding/khoảng trắng để tiết kiệm không gian.
+     */
+    private JPanel buildSettingsCard(FontAwesomeSolid iconType, Color iconColor,
+                                      String title, String description, Component[][] fields,
+                                      boolean compact) {
+        JPanel card = new JPanel();
+        card.setLayout(new BorderLayout());
+        card.setBackground(AppColor.WHITE);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Không giới hạn chiều rộng tối đa: card luôn giãn hết chiều rộng
+        // khả dụng của khung chứa (BoxLayout Y_AXIS sẽ tự co giãn theo cha).
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        int cardPadding = compact ? 12 : 20;
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(cardPadding, cardPadding, cardPadding, cardPadding)));
+
+        // ====== Header card: Icon + Tiêu đề + Mô tả ======
+        JPanel header = new JPanel(new BorderLayout(compact ? 10 : 12, 0));
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(0, 0, (compact ? 10 : 16), 0));
+
+        // Icon box tròn màu
+        FontIcon icon = FontIcon.of(iconType, 18);
+        icon.setIconColor(Color.WHITE);
+        JLabel iconBox = new JLabel(icon) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int size = compact ? 32 : 40;
+                int x = (getWidth() - size) / 2;
+                int y = (getHeight() - size) / 2;
+                g2.setColor(iconColor);
+                g2.fillOval(x, y, size, size);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        iconBox.setHorizontalAlignment(SwingConstants.CENTER);
+        iconBox.setVerticalAlignment(SwingConstants.CENTER);
+        int iconBoxSize = compact ? 36 : 44;
+        Dimension iconDim = new Dimension(iconBoxSize, iconBoxSize);
+        iconBox.setPreferredSize(iconDim);
+        iconBox.setMinimumSize(iconDim);
+        iconBox.setMaximumSize(iconDim);
+        iconBox.setOpaque(false);
+
+        JPanel titleCol = new JPanel();
+        titleCol.setOpaque(false);
+        titleCol.setLayout(new BoxLayout(titleCol, BoxLayout.Y_AXIS));
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(AppFont.HEADING_MD);
+        titleLabel.setForeground(AppColor.TEXT_TITLE);
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JTextArea descLabel = wrapText(description, AppFont.SMALL, AppColor.TEXT_MUTED);
+        descLabel.setBorder(new EmptyBorder(2, 0, 0, 0));
+
+        titleCol.add(titleLabel);
+        titleCol.add(descLabel);
+
+        header.add(iconBox, BorderLayout.WEST);
+        header.add(titleCol, BorderLayout.CENTER);
+
+        // ====== Nội dung form: Bố cục 2 cột ======
+        JPanel contentPanel = new JPanel(new GridBagLayout());
+        contentPanel.setOpaque(false);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        // Chia đều trọng số theo đúng số cột thực tế => các cột luôn bằng
+        // nhau về chiều rộng dù card có 1 hay nhiều cột (căn đều nội dung).
+        gbc.weightx = 1.0 / fields.length;
+        gbc.insets = new Insets(0, 0, 16, 16);
+
+        int maxRows = 0;
+        for (Component[] col : fields) {
+            maxRows = Math.max(maxRows, col.length);
+        }
+
+        for (int col = 0; col < fields.length; col++) {
+            gbc.gridx = col;
+            for (int row = 0; row < fields[col].length; row++) {
+                gbc.gridy = row;
+                int fieldGap = compact ? 10 : 16;
+                int colGap = compact ? 10 : 16;
+                gbc.insets = new Insets(0, (col > 0 ? colGap : 0), fieldGap, (col < fields.length - 1 ? colGap : 0));
+                // Dòng cuối cùng không có khoảng cách dưới
+                if (row == fields[col].length - 1) {
+                    gbc.insets = new Insets(0, (col > 0 ? colGap : 0), 0, (col < fields.length - 1 ? colGap : 0));
+                }
+                contentPanel.add(fields[col][row], gbc);
+            }
+        }
+
+        // ====== Gộp header + content ======
+        card.add(header, BorderLayout.NORTH);
+        card.add(contentPanel, BorderLayout.CENTER);
+
+        return card;
+    }
+
+    /** Overload: fullWidth mặc định = false. */
     private JPanel fieldGroup(String label, String hint, JComponent field) {
+        return fieldGroup(label, hint, field, false);
+    }
+
+    /** Overload: không có hint, fullWidth mặc định = false. */
+    private JPanel fieldGroup(String label, JComponent field) {
+        return fieldGroup(label, null, field, false);
+    }
+
+    /** Overload: buildSettingsCard không có compact (mặc định compact = false). */
+    private JPanel buildSettingsCard(FontAwesomeSolid iconType, Color iconColor,
+                                      String title, String description, Component[][] fields) {
+        return buildSettingsCard(iconType, iconColor, title, description, fields, false);
+    }
+
+    /**
+     * Tạo một nhóm trường form: Label + Input + Hint.
+     * fullWidth: true => trường chiếm toàn bộ chiều rộng card (dành cho trường quan trọng/đầu tiên).
+     */
+    private JPanel fieldGroup(String label, String hint, JComponent field, boolean fullWidth) {
         JPanel group = new JPanel();
         group.setOpaque(false);
         group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
         group.setAlignmentX(Component.LEFT_ALIGNMENT);
 
+        // Label
         JLabel labelComp = new JLabel(label);
         labelComp.setFont(AppFont.BODY_BOLD);
         labelComp.setForeground(AppColor.TEXT_PRIMARY);
         labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        labelComp.setBorder(new EmptyBorder(0, 0, 4, 0));
         group.add(labelComp);
-        group.add(Box.createVerticalStrut(6));
 
+        // Input field: không giới hạn chiều rộng tối đa => field luôn giãn
+        // khớp với chiều rộng cột mà GridBagLayout (bên ngoài) cấp cho nó,
+        // nên các field trên cùng 1 hàng luôn bằng nhau, căn đều.
         field.setAlignmentX(Component.LEFT_ALIGNMENT);
-        field.setMaximumSize(new Dimension(240, 36));
+        if (field instanceof JTextField) {
+            field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+            field.setPreferredSize(new Dimension(fullWidth ? 280 : 160, 32));
+        }
         group.add(field);
 
+        // Hint text
         if (hint != null) {
-            group.add(Box.createVerticalStrut(4));
-            JLabel hintComp = new JLabel("<html><body style='width: 460px'>" + hint + "</body></html>");
-            hintComp.setFont(AppFont.SMALL);
-            hintComp.setForeground(AppColor.TEXT_MUTED);
-            hintComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+            JTextArea hintComp = wrapText(hint, AppFont.SMALL, AppColor.TEXT_MUTED);
+            hintComp.setBorder(new EmptyBorder(4, 0, 0, 0));
             group.add(hintComp);
         }
+
         return group;
+    }
+
+    /**
+     * Nhãn mô tả/hint tự xuống dòng theo đúng chiều rộng thực tế của cột
+     * chứa nó (thay cho JLabel HTML với width cố định theo px, vốn gây
+     * tràn ngang khi cửa sổ bị thu nhỏ).
+     */
+    private JTextArea wrapText(String text, Font font, Color color) {
+        JTextArea area = new JTextArea(text);
+        area.setFont(font);
+        area.setForeground(color);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setEditable(false);
+        area.setFocusable(false);
+        area.setOpaque(false);
+        area.setBorder(null);
+        area.setAlignmentX(Component.LEFT_ALIGNMENT);
+        area.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        return area;
+    }
+
+    /**
+     * Panel dùng cho nội dung bên trong JScrollPane: luôn ép chiều rộng
+     * bằng đúng viewport (không bao giờ rộng hơn hay hẹp hơn) => nội dung
+     * tự động reflow theo kích thước cửa sổ và không bao giờ phát sinh
+     * thanh cuộn ngang. Vẫn cho phép cuộn dọc bình thường.
+     */
+    private static class ScrollableFormPanel extends JPanel implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 100;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
     }
 
     private JTextField textField() {
@@ -163,9 +385,26 @@ public class SettingsPanel extends JPanel {
 
     private void styleField(JTextField field) {
         field.setFont(AppFont.FIELD);
-        field.setBorder(new CompoundBorder(
-                new LineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(6, 10, 6, 10)));
+        field.setForeground(AppColor.TEXT_PRIMARY);
+        field.setCaretColor(AppColor.TEXT_PRIMARY);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(5, 10, 5, 10)));
+        // Hiệu ứng khi focus: đổi màu viền
+        field.addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override
+            public void focusGained(java.awt.event.FocusEvent e) {
+                field.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(AppColor.ACCENT, 2, true),
+                        new EmptyBorder(4, 9, 4, 9)));
+            }
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) {
+                field.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                        new EmptyBorder(5, 10, 5, 10)));
+            }
+        });
     }
 
     // ---------------- Tai / luu du lieu ----------------

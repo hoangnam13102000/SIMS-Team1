@@ -26,7 +26,7 @@ public class Header extends JPanel {
     // ===== MAU SAC (dong bo phong cach dark voi Sidebar) =====
     private static final Color BG_COLOR = new Color(15, 23, 42);      // slate-900
     private static final Color BORDER_BOTTOM = new Color(30, 41, 59); // slate-800
-    private static final Color ACCENT_COLOR = new Color(5, 150, 105);
+    private static final Color ACCENT_COLOR = new Color(30, 100, 200);
     private static final Color SUBTITLE_COLOR = new Color(148, 163, 184);
 
     private static final Color DROPDOWN_BG = new Color(24, 31, 46);       // the tron toi
@@ -98,7 +98,7 @@ public class Header extends JPanel {
         textPanel.setOpaque(false);
         textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
 
-        JLabel title = new JLabel("SIMS");
+        JLabel title = new JLabel("CONNECT MART");
         title.setForeground(Color.WHITE);
         title.setFont(new Font("Segoe UI", Font.BOLD, 19));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -119,7 +119,7 @@ public class Header extends JPanel {
 
     /** Load logo.png từ resources, scale về size x size. Fallback icon nếu thiếu file. */
     private static ImageIcon loadLogoIcon(int size) {
-        java.net.URL url = Header.class.getResource("/logo/logo.png");
+        java.net.URL url = Header.class.getResource("/logo/logo_icon.png");
         if (url != null) {
             ImageIcon raw = new ImageIcon(url);
             Image scaled = raw.getImage().getScaledInstance(size, size, Image.SCALE_SMOOTH);
@@ -231,7 +231,7 @@ public class Header extends JPanel {
             case ORDER: return new Color(37, 99, 235);      // blue-600
             case INVOICE: return new Color(217, 119, 6);    // amber-600
             case STOCK: return new Color(220, 38, 38);       // red-600
-            case MESSAGE: return new Color(5, 150, 105);     // emerald-600 (ACCENT_COLOR)
+            case MESSAGE: return new Color(30, 100, 200);     // emerald-600 (ACCENT_COLOR)
             default: return new Color(100, 116, 139);        // slate-500
         }
     }

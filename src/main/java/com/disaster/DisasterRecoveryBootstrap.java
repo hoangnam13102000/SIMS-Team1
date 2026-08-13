@@ -185,7 +185,7 @@ public final class DisasterRecoveryBootstrap {
                 || Instant.ofEpochMilli(latest.lastModified()).isBefore(Instant.now().minus(staleHours, ChronoUnit.HOURS));
         if (!stale) return;
         try {
-            backupManager.backupNow();
+            backupManager.backupNow(true);
         } catch (BackupException e) {
             IncidentLogger.getInstance().critical(IncidentType.BACKUP_FAILED, "DisasterRecoveryBootstrap",
                     "Backup khan cap cung that bai: " + e.getMessage(), e);

@@ -14,6 +14,7 @@ import com.service.OtpService;
 import com.theme.AppColor;
 import com.theme.AppConstant;
 import com.theme.AppFont;
+import com.utils.AppIcon;
 import org.kordamp.ikonli.Ikon;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
@@ -46,6 +47,7 @@ public class RegisterFrame extends JFrame {
         setSize(1000, 620);
         setMinimumSize(new Dimension(860, 560));
         setLocationRelativeTo(null);
+        AppIcon.apply(this);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new GridBagLayout());
 

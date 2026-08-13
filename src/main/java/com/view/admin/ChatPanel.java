@@ -24,21 +24,20 @@ import com.ws.VoiceNoteSender;
 import com.components.common.SoundWaveIcon;
 import com.components.common.VoiceMessageBubble;
 import com.service.ai.voice.TextToSpeechService;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -47,23 +46,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
-/**
- * Man hinh Chat admin:
- * - Tab "Khách hàng": chat ho tro customer real-time.
- * - Tab "Nội bộ": chat giua cac tai khoan nhan vien.
- */
 public class ChatPanel extends JPanel {
-
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm");
     private static final int IMAGE_MAX_W = 240;
 
     private final Map<Integer, String> onlineCustomers = new LinkedHashMap<>();
-    /** Tên khách hàng đã biết (kể cả khi khách đang offline), lấy từ lịch sử DB. */
     private final Map<Integer, String> customerDisplayNames = new LinkedHashMap<>();
-    /** Tất cả customerId từng có hội thoại (online hoặc đã lưu DB) để hiển thị trong danh sách bên trái. */
     private final Set<Integer> knownCustomerIds = new LinkedHashSet<>();
-    /** Tránh gọi DB lại nhiều lần khi bấm chọn lại cùng 1 khách/đồng nghiệp. */
     private final Set<Integer> customerHistoryLoaded = new HashSet<>();
     private final Set<Integer> staffHistoryLoaded = new HashSet<>();
     private final Map<Integer, List<ChatMessage>> customerConversations = new LinkedHashMap<>();
@@ -74,6 +65,15 @@ public class ChatPanel extends JPanel {
     private final JList<Integer> customerList = new JList<>(customerListModel);
     private Integer selectedCustomerId;
 
+    // ================================================================
+    // ====== SEARCH + AUTOCOMPLETE: KHÁCH HÀNG ======
+    // ================================================================
+    private final JTextField customerSearchField = new JTextField();
+    private final JWindow customerSuggestPopup = new JWindow();
+    private final JList<String> customerSuggestList = new JList<>(new DefaultListModel<>());
+    /** Bộ lọc đang áp dụng cho danh sách khách (null/empty = không lọc). */
+    private String customerFilterText = "";
+
     private final Map<Integer, User> staffDirectory = new LinkedHashMap<>();
     private final Set<Integer> onlineStaffIds = new HashSet<>();
     private final Map<Integer, List<ChatMessage>> staffConversations = new LinkedHashMap<>();
@@ -83,6 +83,14 @@ public class ChatPanel extends JPanel {
     private final DefaultListModel<Integer> staffListModel = new DefaultListModel<>();
     private final JList<Integer> staffList = new JList<>(staffListModel);
     private Integer selectedStaffId;
+
+    // ================================================================
+    // ====== SEARCH + AUTOCOMPLETE: NHÂN VIÊN ======
+    // ================================================================
+    private final JTextField staffSearchField = new JTextField();
+    private final JWindow staffSuggestPopup = new JWindow();
+    private final JList<String> staffSuggestList = new JList<>(new DefaultListModel<>());
+    private String staffFilterText = "";
 
     private final JPanel messagesContainer;
     private final JScrollPane scrollPane;
@@ -100,14 +108,13 @@ public class ChatPanel extends JPanel {
     private final TextToSpeechService ttsService = new TextToSpeechService();
     private boolean ttsEnabled;
     private String lastIncomingText;
+
     private final JLabel conversationTitle;
     private final JLabel conversationStatus;
     private final JTabbedPane sideTabs;
-
     private final UserDAO userDAO = new UserDAO();
     private final int myUserId;
     private final String myName;
-
     private final Consumer<ChatMessage> serverListener = this::onServerEvent;
     private final Consumer<ChatMessage> staffClientListener = this::onStaffClientEvent;
     private Consumer<Integer> onUnreadCountChanged;
@@ -124,12 +131,21 @@ public class ChatPanel extends JPanel {
         setBackground(AppColor.PAGE_BG);
         setBorder(new EmptyBorder(20, 24, 20, 24));
 
-        sideTabs = new JTabbedPane();
-        sideTabs.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        sideTabs = new JTabbedPane(JTabbedPane.TOP);
+        sideTabs.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        sideTabs.setBackground(AppColor.PAGE_BG);
+        sideTabs.setForeground(AppColor.TEXT_MUTED);
+        sideTabs.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER));
+        // Tùy chỉnh màu tab cho dark theme
+        UIManager.put("TabbedPane.selected", AppColor.BG_LIGHT);
+        UIManager.put("TabbedPane.selectHighlight", AppColor.ACCENT);
+        UIManager.put("TabbedPane.contentAreaColor", AppColor.BG_LIGHT);
+        UIManager.put("TabbedPane.tabAreaBackground", AppColor.PAGE_BG);
         sideTabs.addTab("  Khách hàng  ", buildCustomerListCard());
         sideTabs.addTab("  Nội bộ  ", buildStaffListCard());
         sideTabs.addChangeListener(e -> {
             staffTabActive = sideTabs.getSelectedIndex() == 1;
+            hideAllSuggestPopups(); // ẩn gợi ý khi đổi tab
             if (staffTabActive) {
                 if (selectedStaffId != null) selectStaff(selectedStaffId);
                 else clearConversation("Chọn một đồng nghiệp để chat nội bộ");
@@ -187,7 +203,6 @@ public class ChatPanel extends JPanel {
         messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
         messagesContainer.setBackground(AppColor.WHITE);
         messagesContainer.setBorder(new EmptyBorder(16, 16, 16, 16));
-
         scrollPane = new JScrollPane(messagesContainer);
         scrollPane.setBorder(null);
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -199,7 +214,6 @@ public class ChatPanel extends JPanel {
         inputBar.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
                 new EmptyBorder(12, 16, 12, 16)));
-
         inputField = new JTextField();
         inputField.putClientProperty("JTextField.placeholderText", "Nhập tin nhắn...");
         inputField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
@@ -210,15 +224,12 @@ public class ChatPanel extends JPanel {
                 if (e.getKeyCode() == KeyEvent.VK_ENTER) sendCurrent();
             }
         });
-
         imageButton = buildIconButton(FontAwesomeSolid.PAPERCLIP, "Gửi ảnh / file");
         imageButton.setEnabled(false);
         imageButton.addActionListener(e -> pickAndSendAttachment());
-
         voiceMicButton = buildIconButton(FontAwesomeSolid.MICROPHONE, "Tin nhắn thoại");
         voiceMicButton.setEnabled(false);
         voiceMicButton.addActionListener(e -> toggleVoiceNote());
-
         ttsEnabled = false;
         lastIncomingText = null;
         ttsButton = buildIconButton(FontAwesomeSolid.VOLUME_UP, "Bật đọc to tin nhắn đến");
@@ -268,7 +279,7 @@ public class ChatPanel extends JPanel {
         JPanel southWrap = new JPanel(new BorderLayout());
         southWrap.setOpaque(false);
         southWrap.add(voiceLoadingPanel, BorderLayout.NORTH);
-        southWrap.add(inputBar, BorderLayout.CENTER);
+        southWrap.add(inputBar, BorderLayout.SOUTH);
 
         conversationCard.add(header, BorderLayout.NORTH);
         conversationCard.add(scrollPane, BorderLayout.CENTER);
@@ -280,113 +291,318 @@ public class ChatPanel extends JPanel {
         refreshCustomerListVisual();
         refreshStaffListVisual();
 
+        // ====== Khởi tạo autocomplete cho 2 ô tìm kiếm ======
+        installCustomerSearchAutocomplete();
+        installStaffSearchAutocomplete();
+
         ChatServer.getInstance().addListener(serverListener);
         ChatClient.getInstance().addMessageListener(staffClientListener);
     }
 
-    public void setOnUnreadCountChanged(Consumer<Integer> callback) {
-        this.onUnreadCountChanged = callback;
-        notifyUnreadCountChanged();
-    }
-    
-    public void setOnUnreadNotifications(Consumer<List<com.model.NotificationItem>> callback) {
-        this.onUnreadNotifications = callback;
-        notifyUnreadCountChanged();
-    }
+    // ================================================================
+    // ========== 1) TÌM KIẾM + AUTOCOMPLETE: KHÁCH HÀNG ==========
+    // ================================================================
+    private void installCustomerSearchAutocomplete() {
+        customerSearchField.putClientProperty("JTextField.placeholderText", "Tìm tên khách hàng…");
+        customerSearchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        customerSuggestList.setFocusable(false);
+        customerSuggestList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        customerSuggestList.setVisibleRowCount(6);
+        customerSuggestList.setFixedCellHeight(24);
+        customerSuggestList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        customerSuggestList.setBackground(AppColor.WHITE);
+        customerSuggestList.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1));
+        JScrollPane sp = new JScrollPane(customerSuggestList);
+        sp.setBorder(null);
+        sp.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        customerSuggestPopup.getContentPane().removeAll();
+        customerSuggestPopup.getContentPane().add(sp);
+        customerSuggestPopup.setFocusableWindowState(false);
 
-    /** id: "chat-c-{userId}" (khách) hoặc "chat-s-{userId}" (nội bộ). */
-    public void markNotificationRead(String notificationId) {
-        if (notificationId == null) return;
-        if (notificationId.startsWith("chat-c-")) {
-            try {
-                clearCustomerUnread(Integer.parseInt(notificationId.substring("chat-c-".length())));
-            } catch (NumberFormatException e) {
-                // notificationId khong dung dinh dang "chat-c-{userId}" nhu ky vong - co the do noi
-                // sinh notification khac dang sinh sai id. Ghi log de phat hien loi o noi sinh ra id.
-                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.UI_ACTION_FAIL,
-                        "ChatPanel.markNotificationRead - id khach hang khong hop le: " + notificationId, e);
+        // Gõ → cập nhật gợi ý + lọc danh sách
+        customerSearchField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { onCustomerSearch(); }
+            @Override public void removeUpdate(DocumentEvent e) { onCustomerSearch(); }
+            @Override public void changedUpdate(DocumentEvent e) { onCustomerSearch(); }
+        });
+
+        // Chọn 1 gợi ý → điền vào ô tìm kiếm, ẩn popup, lọc danh sách
+        customerSuggestList.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                String sel = customerSuggestList.getSelectedValue();
+                if (sel != null) {
+                    customerSearchField.setText(sel);
+                    hideCustomerSuggest();
+                    customerSearchField.requestFocus();
+                }
             }
-        } else if (notificationId.startsWith("chat-s-")) {
-            try {
-                clearStaffUnread(Integer.parseInt(notificationId.substring("chat-s-".length())));
-            } catch (NumberFormatException e) {
-                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.UI_ACTION_FAIL,
-                        "ChatPanel.markNotificationRead - id nhan vien khong hop le: " + notificationId, e);
+        });
+
+        // Phím: ↑ ↓ chọn gợi ý, Enter chấp nhận, Esc ẩn popup
+        customerSearchField.addKeyListener(new KeyAdapter() {
+            @Override public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_DOWN) {
+                    if (customerSuggestPopup.isVisible() && customerSuggestList.getModel().getSize() > 0) {
+                        int i = customerSuggestList.getSelectedIndex();
+                        customerSuggestList.setSelectedIndex(Math.min(i + 1, customerSuggestList.getModel().getSize() - 1));
+                        customerSuggestList.ensureIndexIsVisible(customerSuggestList.getSelectedIndex());
+                        e.consume();
+                    }
+                } else if (e.getKeyCode() == KeyEvent.VK_UP) {
+                    if (customerSuggestPopup.isVisible() && customerSuggestList.getModel().getSize() > 0) {
+                        int i = customerSuggestList.getSelectedIndex();
+                        customerSuggestList.setSelectedIndex(Math.max(i - 1, 0));
+                        customerSuggestList.ensureIndexIsVisible(customerSuggestList.getSelectedIndex());
+                        e.consume();
+                    }
+                } else if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    if (customerSuggestPopup.isVisible()) {
+                        String sel = customerSuggestList.getSelectedValue();
+                        if (sel != null) {
+                            customerSearchField.setText(sel);
+                            e.consume();
+                        }
+                    }
+                    hideCustomerSuggest();
+                } else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                    hideCustomerSuggest();
+                }
             }
-        }
+        });
+
+        // Click ra ngoài → ẩn popup
+        customerSearchField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) {
+                SwingUtilities.invokeLater(this::hideIfNotInsideSuggest);
+            }
+            private void hideIfNotInsideSuggest() {
+                if (!customerSuggestList.hasFocus()) hideCustomerSuggest();
+            }
+        });
     }
 
-    public void clearCustomerUnread(int userId) {
-        customerUnread.put(userId, false);
-        customerList.repaint();
-        notifyUnreadCountChanged();
+    private void onCustomerSearch() {
+        String q = customerSearchField.getText() == null ? "" : customerSearchField.getText().trim().toLowerCase();
+        customerFilterText = q;
+        // Lọc danh sách hiển thị theo từ khóa
+        refreshCustomerListVisual();
+        // Hiện gợi ý autocomplete
+        if (q.isEmpty()) {
+            hideCustomerSuggest();
+            return;
+        }
+        List<String> allNames = collectAllCustomerNames();
+        List<String> matched = allNames.stream()
+                .filter(n -> n.toLowerCase().contains(q))
+                .distinct()
+                .sorted(Comparator.comparingInt(String::length)) // tên ngắn lên trước
+                .limit(8)
+                .collect(Collectors.toList());
+        if (matched.isEmpty()) {
+            hideCustomerSuggest();
+            return;
+        }
+        DefaultListModel<String> m = (DefaultListModel<String>) customerSuggestList.getModel();
+        m.clear();
+        matched.forEach(m::addElement);
+        customerSuggestList.setSelectedIndex(0);
+        showCustomerSuggestPopup();
     }
 
-    public void clearStaffUnread(int userId) {
-        staffUnread.put(userId, false);
-        staffList.repaint();
-        notifyUnreadCountChanged();
+    /** Tất cả tên khách đã biết (online + lịch sử DB) → làm nguồn autocomplete. */
+    private List<String> collectAllCustomerNames() {
+        List<String> names = new ArrayList<>();
+        for (Integer id : knownCustomerIds) {
+            String n = customerDisplayName(id);
+            if (n != null && !n.isBlank() && !n.startsWith("Khách hàng #")) names.add(n);
+        }
+        for (String n : onlineCustomers.values()) {
+            if (n != null && !n.isBlank()) names.add(n);
+        }
+        for (String n : customerDisplayNames.values()) {
+            if (n != null && !n.isBlank()) names.add(n);
+        }
+        return names;
     }
 
-    public void clearAllUnread() {
-        for (Integer id : new ArrayList<>(customerUnread.keySet())) {
-            customerUnread.put(id, false);
-        }
-        for (Integer id : new ArrayList<>(staffUnread.keySet())) {
-            staffUnread.put(id, false);
-        }
-        customerList.repaint();
-        staffList.repaint();
-        notifyUnreadCountChanged();
+    private void showCustomerSuggestPopup() {
+        try {
+            Point loc = customerSearchField.getLocationOnScreen();
+            customerSuggestPopup.setLocation(loc.x, loc.y + customerSearchField.getHeight());
+            customerSuggestPopup.setSize(customerSearchField.getWidth(), Math.min(200, customerSuggestList.getFixedCellHeight() * 6 + 6));
+            customerSuggestPopup.setVisible(true);
+        } catch (Exception ignored) { }
     }
 
-    public List<com.model.NotificationItem> getUnreadNotifications() {
-        List<com.model.NotificationItem> items = new ArrayList<>();
-        for (Map.Entry<Integer, Boolean> e : customerUnread.entrySet()) {
-            if (!Boolean.TRUE.equals(e.getValue())) continue;
-            int uid = e.getKey();
-            String name = customerDisplayName(uid);
-            String preview = customerLastPreview.getOrDefault(uid, "Tin nhắn mới");
-            long ts = customerLastTime.getOrDefault(uid, System.currentTimeMillis());
-            items.add(new com.model.NotificationItem(
-                    "chat-c-" + uid,
-                    com.model.NotificationItem.Type.MESSAGE,
-                    "Tin nhắn từ " + name,
-                    preview,
-                    java.time.LocalDateTime.ofInstant(
-                            java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.systemDefault()),
-                    uid));
-        }
-        for (Map.Entry<Integer, Boolean> e : staffUnread.entrySet()) {
-            if (!Boolean.TRUE.equals(e.getValue())) continue;
-            int uid = e.getKey();
-            User u = staffDirectory.get(uid);
-            String name = u != null ? displayName(u) : ("Nhân viên #" + uid);
-            String preview = staffLastPreview.getOrDefault(uid, "Tin nhắn nội bộ");
-            long ts = staffLastTime.getOrDefault(uid, System.currentTimeMillis());
-            items.add(new com.model.NotificationItem(
-                    "chat-s-" + uid,
-                    com.model.NotificationItem.Type.MESSAGE,
-                    "Nội bộ: " + name,
-                    preview,
-                    java.time.LocalDateTime.ofInstant(
-                            java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.systemDefault()),
-                    uid));
-        }
-        return items;
+    private void hideCustomerSuggest() {
+        if (customerSuggestPopup != null) customerSuggestPopup.setVisible(false);
     }
 
+    // ================================================================
+    // ========== 2) TÌM KIẾM + AUTOCOMPLETE: NHÂN VIÊN ==========
+    // ================================================================
+    private void installStaffSearchAutocomplete() {
+        staffSearchField.putClientProperty("JTextField.placeholderText", "Tìm tên nhân viên…");
+        staffSearchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        staffSuggestList.setFocusable(false);
+        staffSuggestList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        staffSuggestList.setVisibleRowCount(6);
+        staffSuggestList.setFixedCellHeight(24);
+        staffSuggestList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        staffSuggestList.setBackground(AppColor.WHITE);
+        staffSuggestList.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1));
+        JScrollPane sp = new JScrollPane(staffSuggestList);
+        sp.setBorder(null);
+        sp.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        staffSuggestPopup.getContentPane().removeAll();
+        staffSuggestPopup.getContentPane().add(sp);
+        staffSuggestPopup.setFocusableWindowState(false);
+
+        staffSearchField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { onStaffSearch(); }
+            @Override public void removeUpdate(DocumentEvent e) { onStaffSearch(); }
+            @Override public void changedUpdate(DocumentEvent e) { onStaffSearch(); }
+        });
+
+        staffSuggestList.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                String sel = staffSuggestList.getSelectedValue();
+                if (sel != null) {
+                    staffSearchField.setText(sel);
+                    hideStaffSuggest();
+                    staffSearchField.requestFocus();
+                }
+            }
+        });
+
+        staffSearchField.addKeyListener(new KeyAdapter() {
+            @Override public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_DOWN) {
+                    if (staffSuggestPopup.isVisible() && staffSuggestList.getModel().getSize() > 0) {
+                        int i = staffSuggestList.getSelectedIndex();
+                        staffSuggestList.setSelectedIndex(Math.min(i + 1, staffSuggestList.getModel().getSize() - 1));
+                        staffSuggestList.ensureIndexIsVisible(staffSuggestList.getSelectedIndex());
+                        e.consume();
+                    }
+                } else if (e.getKeyCode() == KeyEvent.VK_UP) {
+                    if (staffSuggestPopup.isVisible() && staffSuggestList.getModel().getSize() > 0) {
+                        int i = staffSuggestList.getSelectedIndex();
+                        staffSuggestList.setSelectedIndex(Math.max(i - 1, 0));
+                        staffSuggestList.ensureIndexIsVisible(staffSuggestList.getSelectedIndex());
+                        e.consume();
+                    }
+                } else if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    if (staffSuggestPopup.isVisible()) {
+                        String sel = staffSuggestList.getSelectedValue();
+                        if (sel != null) {
+                            staffSearchField.setText(sel);
+                            e.consume();
+                        }
+                    }
+                    hideStaffSuggest();
+                } else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                    hideStaffSuggest();
+                }
+            }
+        });
+
+        staffSearchField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) {
+                SwingUtilities.invokeLater(() -> {
+                    if (!staffSuggestList.hasFocus()) hideStaffSuggest();
+                });
+            }
+        });
+    }
+
+    private void onStaffSearch() {
+        String q = staffSearchField.getText() == null ? "" : staffSearchField.getText().trim().toLowerCase();
+        staffFilterText = q;
+        refreshStaffListVisual();
+        if (q.isEmpty()) {
+            hideStaffSuggest();
+            return;
+        }
+        List<String> matched = staffDirectory.values().stream()
+                .map(ChatPanel::displayName)
+                .filter(n -> n.toLowerCase().contains(q))
+                .distinct()
+                .sorted(Comparator.comparingInt(String::length))
+                .limit(8)
+                .collect(Collectors.toList());
+        if (matched.isEmpty()) {
+            hideStaffSuggest();
+            return;
+        }
+        DefaultListModel<String> m = (DefaultListModel<String>) staffSuggestList.getModel();
+        m.clear();
+        matched.forEach(m::addElement);
+        staffSuggestList.setSelectedIndex(0);
+        try {
+            Point loc = staffSearchField.getLocationOnScreen();
+            staffSuggestPopup.setLocation(loc.x, loc.y + staffSearchField.getHeight());
+            staffSuggestPopup.setSize(staffSearchField.getWidth(), Math.min(200, staffSuggestList.getFixedCellHeight() * 6 + 6));
+            staffSuggestPopup.setVisible(true);
+        } catch (Exception ignored) { }
+    }
+
+    private void hideStaffSuggest() {
+        if (staffSuggestPopup != null) staffSuggestPopup.setVisible(false);
+    }
+
+    private void hideAllSuggestPopups() {
+        hideCustomerSuggest();
+        hideStaffSuggest();
+    }
+
+    // ================================================================
+    // ========== 3) GIAO DIỆN 2 TAB: THÊM Ô TÌM KIẾM PHÍA TRÊN ==========
+    // ================================================================
     private JPanel buildCustomerListCard() {
         JPanel card = new JPanel(new BorderLayout());
-        card.setBackground(AppColor.WHITE);
+        card.setBackground(AppColor.PAGE_BG);
+
+        // ====== Tiêu đề ======
         JLabel title = new JLabel("Khách đang chat");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        title.setFont(new Font("Segoe UI", Font.BOLD, 14));
         title.setForeground(AppColor.TEXT_PRIMARY);
-        title.setBorder(new EmptyBorder(12, 14, 8, 14));
+        title.setBorder(new EmptyBorder(14, 16, 10, 16));
+
+        // ====== Ô tìm kiếm khách hàng ======
+        JPanel searchWrap = new JPanel(new BorderLayout());
+        searchWrap.setOpaque(false);
+        searchWrap.setBorder(new EmptyBorder(0, 12, 10, 12));
+
+        JPanel searchBox = new JPanel(new BorderLayout());
+        searchBox.setBackground(new Color(0, 0, 0, 0));
+        searchBox.setOpaque(false);
+        searchBox.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(6, 10, 6, 10)));
+
+        customerSearchField.setBorder(BorderFactory.createEmptyBorder());
+        customerSearchField.setOpaque(false);
+        customerSearchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        customerSearchField.setForeground(AppColor.TEXT_PRIMARY);
+        customerSearchField.setCaretColor(AppColor.TEXT_PRIMARY);
+
+        FontIcon sIcon = FontIcon.of(FontAwesomeSolid.SEARCH, 12);
+        sIcon.setIconColor(AppColor.TEXT_MUTED);
+        JLabel searchIconLbl = new JLabel(sIcon);
+        searchIconLbl.setBorder(new EmptyBorder(0, 2, 0, 8));
+
+        searchBox.add(searchIconLbl, BorderLayout.WEST);
+        searchBox.add(customerSearchField, BorderLayout.CENTER);
+        searchWrap.add(searchBox, BorderLayout.CENTER);
+
+        // ====== Danh sách khách hàng ======
         customerList.setCellRenderer(new CustomerCellRenderer());
-        customerList.setBackground(AppColor.WHITE);
-        customerList.setBorder(new EmptyBorder(0, 6, 6, 6));
-        customerList.setFixedCellHeight(52);
+        customerList.setBackground(AppColor.PAGE_BG);
+        customerList.setBorder(new EmptyBorder(2, 4, 4, 4));
+        customerList.setFixedCellHeight(68);
+        customerList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        customerList.setSelectionBackground(AppColor.ACCENT_SELECTION_BG);
+        customerList.setSelectionForeground(AppColor.TEXT_PRIMARY);
         customerList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -394,24 +610,66 @@ public class ChatPanel extends JPanel {
                 if (userId != null) selectCustomer(userId);
             }
         });
+
         JScrollPane listScroll = new JScrollPane(customerList);
         listScroll.setBorder(null);
-        card.add(title, BorderLayout.NORTH);
+        listScroll.getViewport().setBackground(AppColor.PAGE_BG);
+
+        JPanel north = new JPanel(new BorderLayout());
+        north.setOpaque(false);
+        north.add(title, BorderLayout.NORTH);
+        north.add(searchWrap, BorderLayout.CENTER);
+
+        card.add(north, BorderLayout.NORTH);
         card.add(listScroll, BorderLayout.CENTER);
         return card;
     }
 
     private JPanel buildStaffListCard() {
         JPanel card = new JPanel(new BorderLayout());
-        card.setBackground(AppColor.WHITE);
+        card.setBackground(AppColor.PAGE_BG);
+
+        // ====== Tiêu đề ======
         JLabel title = new JLabel("Đồng nghiệp");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        title.setFont(new Font("Segoe UI", Font.BOLD, 14));
         title.setForeground(AppColor.TEXT_PRIMARY);
-        title.setBorder(new EmptyBorder(12, 14, 8, 14));
+        title.setBorder(new EmptyBorder(14, 16, 10, 16));
+
+        // ====== Ô tìm kiếm nhân viên ======
+        JPanel searchWrap = new JPanel(new BorderLayout());
+        searchWrap.setOpaque(false);
+        searchWrap.setBorder(new EmptyBorder(0, 12, 10, 12));
+
+        JPanel searchBox = new JPanel(new BorderLayout());
+        searchBox.setBackground(new Color(0, 0, 0, 0));
+        searchBox.setOpaque(false);
+        searchBox.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(6, 10, 6, 10)));
+
+        staffSearchField.setBorder(BorderFactory.createEmptyBorder());
+        staffSearchField.setOpaque(false);
+        staffSearchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        staffSearchField.setForeground(AppColor.TEXT_PRIMARY);
+        staffSearchField.setCaretColor(AppColor.TEXT_PRIMARY);
+
+        FontIcon sIcon = FontIcon.of(FontAwesomeSolid.SEARCH, 12);
+        sIcon.setIconColor(AppColor.TEXT_MUTED);
+        JLabel searchIconLbl = new JLabel(sIcon);
+        searchIconLbl.setBorder(new EmptyBorder(0, 2, 0, 8));
+
+        searchBox.add(searchIconLbl, BorderLayout.WEST);
+        searchBox.add(staffSearchField, BorderLayout.CENTER);
+        searchWrap.add(searchBox, BorderLayout.CENTER);
+
+        // ====== Danh sách nhân viên ======
         staffList.setCellRenderer(new StaffCellRenderer());
-        staffList.setBackground(AppColor.WHITE);
-        staffList.setBorder(new EmptyBorder(0, 6, 6, 6));
-        staffList.setFixedCellHeight(56);
+        staffList.setBackground(AppColor.PAGE_BG);
+        staffList.setBorder(new EmptyBorder(2, 4, 4, 4));
+        staffList.setFixedCellHeight(68);
+        staffList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        staffList.setSelectionBackground(AppColor.ACCENT_SELECTION_BG);
+        staffList.setSelectionForeground(AppColor.TEXT_PRIMARY);
         staffList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -419,13 +677,24 @@ public class ChatPanel extends JPanel {
                 if (userId != null) selectStaff(userId);
             }
         });
+
         JScrollPane listScroll = new JScrollPane(staffList);
         listScroll.setBorder(null);
-        card.add(title, BorderLayout.NORTH);
+        listScroll.getViewport().setBackground(AppColor.PAGE_BG);
+
+        JPanel north = new JPanel(new BorderLayout());
+        north.setOpaque(false);
+        north.add(title, BorderLayout.NORTH);
+        north.add(searchWrap, BorderLayout.CENTER);
+
+        card.add(north, BorderLayout.NORTH);
         card.add(listScroll, BorderLayout.CENTER);
         return card;
     }
 
+    // ================================================================
+    // ========== 4) LỌC DANH SÁCH THEO TỪ KHÓA (GỌI TRONG refreshXxxListVisual) ==========
+    // ================================================================
     private void loadStaffDirectory() {
         staffDirectory.clear();
         for (User u : userDAO.findActiveStaff()) {
@@ -437,10 +706,6 @@ public class ChatPanel extends JPanel {
         }
     }
 
-    /**
-     * Nạp danh sách khách hàng đã từng có hội thoại hỗ trợ (kể cả khách hiện không online),
-     * để nhân viên vẫn thấy và chọn được họ trong danh sách bên trái.
-     */
     private void loadKnownCustomerThreads() {
         for (ChatConversation c : ChatHistoryService.getInstance().listRecentCustomerThreads(100)) {
             Integer customerId = c.getCustomerUserId();
@@ -459,14 +724,11 @@ public class ChatPanel extends JPanel {
         boolean online = onlineCustomers.containsKey(userId);
         conversationStatus.setText(online ? "Đang trực tuyến" : "Đã ngắt kết nối");
         conversationStatus.setForeground(online ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
-        // Vẫn cho nhập/gửi khi khách offline: tin nhắn sẽ được lưu lại và khách thấy
-        // ngay khi họ mở lại chat, thay vì chặn nhân viên nhắn tin lúc khách không hoạt động.
         setInputEnabled(true);
         ensureCustomerHistoryLoaded(userId);
         renderConversation(customerConversations.getOrDefault(userId, new ArrayList<>()), true);
     }
 
-    /** Tên hiển thị của khách: ưu tiên tên online hiện tại, sau đó tên đã biết từ lịch sử, cuối cùng là mã số. */
     private String customerDisplayName(int userId) {
         String online = onlineCustomers.get(userId);
         if (online != null && !online.isBlank()) return online;
@@ -493,20 +755,13 @@ public class ChatPanel extends JPanel {
         renderConversation(staffConversations.getOrDefault(userId, new ArrayList<>()), false);
     }
 
-    /**
-     * Nạp lịch sử chat khách–NV từ DB (bảng ChatMessages qua ChatHistoryService) vào bộ nhớ,
-     * để nhân viên đọc được tin nhắn cũ kể cả khi khách hiện đang không hoạt động (offline).
-     * Chỉ nạp 1 lần cho mỗi khách trong phiên làm việc này.
-     */
     private void ensureCustomerHistoryLoaded(int userId) {
         if (!customerHistoryLoaded.add(userId)) return;
         List<ChatHistoryMessage> history = ChatHistoryService.getInstance().loadCustomerHistory(userId, 200);
         if (history.isEmpty()) return;
-
         knownCustomerIds.add(userId);
         List<ChatMessage> existing = customerConversations.computeIfAbsent(userId, k -> new ArrayList<>());
         long earliestExisting = existing.isEmpty() ? Long.MAX_VALUE : existing.get(0).timestamp;
-
         List<ChatMessage> older = new ArrayList<>();
         String lastCustomerName = null;
         for (ChatHistoryMessage h : history) {
@@ -522,18 +777,12 @@ public class ChatPanel extends JPanel {
         }
     }
 
-    /**
-     * Nạp lịch sử chat nội bộ (DM giữa 2 nhân viên) từ DB, để đọc được tin nhắn cũ
-     * kể cả khi đồng nghiệp hiện đang ngoại tuyến.
-     */
     private void ensureStaffHistoryLoaded(int userId) {
         if (!staffHistoryLoaded.add(userId)) return;
         List<ChatHistoryMessage> history = ChatHistoryService.getInstance().loadStaffDmHistory(myUserId, userId, 200);
         if (history.isEmpty()) return;
-
         List<ChatMessage> existing = staffConversations.computeIfAbsent(userId, k -> new ArrayList<>());
         long earliestExisting = existing.isEmpty() ? Long.MAX_VALUE : existing.get(0).timestamp;
-
         List<ChatMessage> older = new ArrayList<>();
         for (ChatHistoryMessage h : history) {
             ChatMessage cm = toStaffChatMessage(h, userId);
@@ -569,7 +818,6 @@ public class ChatPanel extends JPanel {
         return cm;
     }
 
-    /** Xóa toàn bộ tin của cuộc trò chuyện đang mở (khách hoặc nội bộ). */
     private void clearCurrentConversationMessages() {
         if (staffTabActive) {
             if (selectedStaffId == null) {
@@ -585,7 +833,6 @@ public class ChatPanel extends JPanel {
                 protected Integer doInBackground() {
                     return ChatHistoryService.getInstance().clearStaffDmHistory(myUserId, peerId);
                 }
-
                 @Override
                 protected void done() {
                     staffConversations.put(peerId, new ArrayList<>());
@@ -608,7 +855,6 @@ public class ChatPanel extends JPanel {
                 protected Integer doInBackground() {
                     return ChatHistoryService.getInstance().clearCustomerHistory(customerId);
                 }
-
                 @Override
                 protected void done() {
                     customerConversations.put(customerId, new ArrayList<>());
@@ -645,7 +891,6 @@ public class ChatPanel extends JPanel {
                 protected Boolean doInBackground() {
                     return ChatHistoryService.getInstance().deleteMessage(messageId);
                 }
-
                 @Override
                 protected void done() {
                     removeUi.run();
@@ -661,7 +906,6 @@ public class ChatPanel extends JPanel {
         return dt.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
-    /** Đọc ảnh đã lưu trên đĩa (ImagePath) và mã hoá lại base64 chỉ để hiển thị lịch sử. */
     private void attachHistoryImage(ChatMessage cm, ChatHistoryMessage h) {
         if (!h.hasImage()) return;
         try {
@@ -672,9 +916,7 @@ public class ChatPanel extends JPanel {
                 cm.imageBase64 = encoded.base64;
                 cm.imageMime = encoded.mime;
             }
-        } catch (Exception ignored) {
-            // Không có ảnh cũng không sao — vẫn hiển thị được phần text của tin nhắn.
-        }
+        } catch (Exception ignored) { }
     }
 
     private void clearConversation(String title) {
@@ -693,7 +935,6 @@ public class ChatPanel extends JPanel {
         voiceMicButton.setEnabled(enabled);
         ttsButton.setEnabled(true);
     }
-
 
     private void toggleChatTts() {
         ttsEnabled = !ttsEnabled;
@@ -717,8 +958,6 @@ public class ChatPanel extends JPanel {
         if (ttsEnabled) ttsService.speakAsync(lastIncomingText);
     }
 
-
-    /** Khung phát tin thoại kiểu hiện đại: nút play tròn + waveform + thời lượng. */
     private JComponent buildVoicePlayControl(String voiceBase64, boolean isMine) {
         return new VoiceMessageBubble(voiceBase64, isMine, this);
     }
@@ -756,7 +995,6 @@ public class ChatPanel extends JPanel {
         if (!on) {
             stopVoiceLevelMonitor();
         } else {
-            // đang processing: dừng animate theo mic
             stopVoiceLevelMonitor();
         }
         if (voiceLoadingPanel != null) {
@@ -834,9 +1072,6 @@ public class ChatPanel extends JPanel {
         mic.setIconColor(AppColor.TEXT_MUTED);
         voiceMicButton.setIcon(mic);
         voiceMicButton.setToolTipText("Tin nhắn thoại");
-        if (voiceLoadingPanel != null && (voiceSender == null || !voiceSender.isBusy())) {
-            // không tắt nếu đang processing — setVoiceProcessing lo
-        }
     }
 
     private void sendCurrent() {
@@ -848,8 +1083,6 @@ public class ChatPanel extends JPanel {
         if (selectedCustomerId == null) return;
         String text = inputField.getText() == null ? "" : inputField.getText().trim();
         if (text.isEmpty()) return;
-        // Không cần quan tâm khách có đang online hay không: sendToCustomer() luôn lưu lịch sử,
-        // khách offline vẫn sẽ thấy tin nhắn này khi họ mở lại chat, nên không cần popup báo.
         ChatServer.getInstance().sendToCustomer(selectedCustomerId, myName, text, myUserId);
         ChatMessage record = ChatMessage.chatFromAdmin(selectedCustomerId, myName, text);
         customerConversations.computeIfAbsent(selectedCustomerId, k -> new ArrayList<>()).add(record);
@@ -887,25 +1120,20 @@ public class ChatPanel extends JPanel {
                     "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
             return;
         }
-
         final boolean forStaff = staffTabActive;
         final Integer targetId = forStaff ? selectedStaffId : selectedCustomerId;
         if (targetId == null) return;
-
         final boolean asImage = ChatFileUtil.isImageExtension(file.getName())
                 && ChatImageUtil.isSupportedImage(file);
-
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         imageButton.setEnabled(false);
         sendButton.setEnabled(false);
-
         new SwingWorker<Object, Void>() {
             @Override
             protected Object doInBackground() {
                 if (asImage) return ChatImageUtil.encodeForChat(file);
                 return ChatFileUtil.encodeForChat(file);
             }
-
             @Override
             protected void done() {
                 setCursor(Cursor.getDefaultCursor());
@@ -927,7 +1155,6 @@ public class ChatPanel extends JPanel {
                 boolean sent;
                 ChatMessage record;
                 BufferedImage preview = null;
-
                 if (asImage) {
                     ChatImageUtil.EncodedImage img = (ChatImageUtil.EncodedImage) encoded;
                     if (forStaff) {
@@ -971,14 +1198,12 @@ public class ChatPanel extends JPanel {
                                 TIME_FORMAT.format(new Date(record.timestamp)));
                     }
                 }
-
                 inputField.setText("");
                 if (forStaff && !sent) {
                     JOptionPane.showMessageDialog(ChatPanel.this,
                             "Không gửi được (đồng nghiệp có thể đang offline).",
                             "Gửi thất bại", JOptionPane.WARNING_MESSAGE);
                 }
-                // Khách offline: server vẫn lưu history
             }
         }.execute();
     }
@@ -1051,7 +1276,7 @@ public class ChatPanel extends JPanel {
             return;
         }
         if (!message.isStaffChat()) return;
-        if (message.userId == myUserId) return; // ignore echo of own message
+        if (message.userId == myUserId) return;
         int peerId = message.userId;
         staffConversations.computeIfAbsent(peerId, k -> new ArrayList<>()).add(message);
         ensureStaffInDirectory(message);
@@ -1087,21 +1312,33 @@ public class ChatPanel extends JPanel {
         staffDirectory.put(message.userId, stub);
     }
 
+    // ================================================================
+    // ====== refreshCustomerListVisual: ĐÃ THÊM BỘ LỌC THEO TÊN ======
+    // ================================================================
     private void refreshCustomerListVisual() {
         Integer prev = selectedCustomerId;
         List<Integer> ordered = new ArrayList<>();
-        // Khách đang online hiển thị trước, sau đó tới khách đã từng chat nhưng hiện offline
-        // (trước đây danh sách chỉ lấy từ onlineCustomers nên khách vừa ngắt kết nối sẽ biến mất
-        // khỏi danh sách và nhân viên không thể bấm vào để xem lại tin nhắn cũ của họ).
         for (Integer id : onlineCustomers.keySet()) ordered.add(id);
         for (Integer id : knownCustomerIds) {
             if (!onlineCustomers.containsKey(id)) ordered.add(id);
         }
+
+        // ====== LỌC: chỉ giữ những người có tên chứa từ khóa ======
+        String q = customerFilterText == null ? "" : customerFilterText.trim().toLowerCase();
+        if (!q.isEmpty()) {
+            ordered = ordered.stream()
+                    .filter(id -> customerDisplayName(id).toLowerCase().contains(q))
+                    .collect(Collectors.toList());
+        }
+
         customerListModel.clear();
         for (Integer id : ordered) customerListModel.addElement(id);
         if (prev != null && ordered.contains(prev)) customerList.setSelectedValue(prev, false);
     }
 
+    // ================================================================
+    // ====== refreshStaffListVisual: ĐÃ THÊM BỘ LỌC THEO TÊN ======
+    // ================================================================
     private void refreshStaffListVisual() {
         Integer prev = selectedStaffId;
         List<Integer> ordered = new ArrayList<>();
@@ -1110,6 +1347,19 @@ public class ChatPanel extends JPanel {
         for (Integer id : onlineStaffIds) {
             if (!staffDirectory.containsKey(id) && id != myUserId) ordered.add(id);
         }
+
+        // ====== LỌC: chỉ giữ những nhân viên có tên chứa từ khóa ======
+        String q = staffFilterText == null ? "" : staffFilterText.trim().toLowerCase();
+        if (!q.isEmpty()) {
+            ordered = ordered.stream()
+                    .filter(id -> {
+                        User u = staffDirectory.get(id);
+                        String name = u != null ? displayName(u) : ("Nhân viên #" + id);
+                        return name.toLowerCase().contains(q);
+                    })
+                    .collect(Collectors.toList());
+        }
+
         staffListModel.clear();
         for (Integer id : ordered) staffListModel.addElement(id);
         if (prev != null && ordered.contains(prev)) staffList.setSelectedValue(prev, false);
@@ -1124,6 +1374,91 @@ public class ChatPanel extends JPanel {
         if (onUnreadNotifications != null) {
             onUnreadNotifications.accept(getUnreadNotifications());
         }
+    }
+
+    public void setOnUnreadCountChanged(Consumer<Integer> callback) {
+        this.onUnreadCountChanged = callback;
+        notifyUnreadCountChanged();
+    }
+
+    public void setOnUnreadNotifications(Consumer<List<com.model.NotificationItem>> callback) {
+        this.onUnreadNotifications = callback;
+        notifyUnreadCountChanged();
+    }
+
+    public void markNotificationRead(String notificationId) {
+        if (notificationId == null) return;
+        if (notificationId.startsWith("chat-c-")) {
+            try {
+                clearCustomerUnread(Integer.parseInt(notificationId.substring("chat-c-".length())));
+            } catch (NumberFormatException e) {
+                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.UI_ACTION_FAIL,
+                        "ChatPanel.markNotificationRead - id khach hang khong hop le: " + notificationId, e);
+            }
+        } else if (notificationId.startsWith("chat-s-")) {
+            try {
+                clearStaffUnread(Integer.parseInt(notificationId.substring("chat-s-".length())));
+            } catch (NumberFormatException e) {
+                com.core.log.AppLogger.getInstance().error(com.core.log.ErrorCode.UI_ACTION_FAIL,
+                        "ChatPanel.markNotificationRead - id nhan vien khong hop le: " + notificationId, e);
+            }
+        }
+    }
+
+    public void clearCustomerUnread(int userId) {
+        customerUnread.put(userId, false);
+        customerList.repaint();
+        notifyUnreadCountChanged();
+    }
+
+    public void clearStaffUnread(int userId) {
+        staffUnread.put(userId, false);
+        staffList.repaint();
+        notifyUnreadCountChanged();
+    }
+
+    public void clearAllUnread() {
+        for (Integer id : new ArrayList<>(customerUnread.keySet())) customerUnread.put(id, false);
+        for (Integer id : new ArrayList<>(staffUnread.keySet())) staffUnread.put(id, false);
+        customerList.repaint();
+        staffList.repaint();
+        notifyUnreadCountChanged();
+    }
+
+    public List<com.model.NotificationItem> getUnreadNotifications() {
+        List<com.model.NotificationItem> items = new ArrayList<>();
+        for (Map.Entry<Integer, Boolean> e : customerUnread.entrySet()) {
+            if (!Boolean.TRUE.equals(e.getValue())) continue;
+            int uid = e.getKey();
+            String name = customerDisplayName(uid);
+            String preview = customerLastPreview.getOrDefault(uid, "Tin nhắn mới");
+            long ts = customerLastTime.getOrDefault(uid, System.currentTimeMillis());
+            items.add(new com.model.NotificationItem(
+                    "chat-c-" + uid,
+                    com.model.NotificationItem.Type.MESSAGE,
+                    "Tin nhắn từ " + name,
+                    preview,
+                    java.time.LocalDateTime.ofInstant(
+                            java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.systemDefault()),
+                    uid));
+        }
+        for (Map.Entry<Integer, Boolean> e : staffUnread.entrySet()) {
+            if (!Boolean.TRUE.equals(e.getValue())) continue;
+            int uid = e.getKey();
+            User u = staffDirectory.get(uid);
+            String name = u != null ? displayName(u) : ("Nhân viên #" + uid);
+            String preview = staffLastPreview.getOrDefault(uid, "Tin nhắn nội bộ");
+            long ts = staffLastTime.getOrDefault(uid, System.currentTimeMillis());
+            items.add(new com.model.NotificationItem(
+                    "chat-s-" + uid,
+                    com.model.NotificationItem.Type.MESSAGE,
+                    "Nội bộ: " + name,
+                    preview,
+                    java.time.LocalDateTime.ofInstant(
+                            java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.systemDefault()),
+                    uid));
+        }
+        return items;
     }
 
     private static String previewOf(ChatMessage message) {
@@ -1196,12 +1531,10 @@ public class ChatPanel extends JPanel {
         if (viewportW <= 0) viewportW = 480;
         int maxBubbleW = Math.max(200, Math.min(360, viewportW - 48));
         int htmlW = Math.max(140, maxBubbleW - 40);
-
         JPanel row = new JPanel(new FlowLayout(isMine ? FlowLayout.RIGHT : FlowLayout.LEFT, 0, 6));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.putClientProperty("messageId", messageId);
-
         JPanel bubble = new JPanel(new BorderLayout()) {
             @Override
             protected void paintComponent(Graphics g) {
@@ -1216,11 +1549,9 @@ public class ChatPanel extends JPanel {
         bubble.setOpaque(false);
         bubble.setBorder(new EmptyBorder(10, 14, 10, 14));
         bubble.setMaximumSize(new Dimension(maxBubbleW, Integer.MAX_VALUE));
-
         JPanel contentWrap = new JPanel();
         contentWrap.setOpaque(false);
         contentWrap.setLayout(new BoxLayout(contentWrap, BoxLayout.Y_AXIS));
-
         if (image != null) {
             JLabel imageLabel = buildImageLabel(image, maxBubbleW - 28);
             imageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1253,7 +1584,6 @@ public class ChatPanel extends JPanel {
         timeLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
         timeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         contentWrap.add(timeLabel);
-
         FontIcon delIcon = FontIcon.of(FontAwesomeSolid.TIMES, 11);
         delIcon.setIconColor(isMine ? new Color(255, 255, 255, 180) : AppColor.TEXT_MUTED);
         JLabel delBtn = new JLabel(delIcon);
@@ -1268,7 +1598,6 @@ public class ChatPanel extends JPanel {
                 deleteOneMessage(row, mid, linked);
             }
         });
-
         bubble.add(contentWrap, BorderLayout.CENTER);
         row.add(bubble);
         row.add(delBtn);
@@ -1276,7 +1605,6 @@ public class ChatPanel extends JPanel {
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
         messagesContainer.add(row);
     }
-
 
     private JLabel buildFileAttachmentLabel(String fileName, String fileBase64, boolean isMine) {
         JLabel label = new JLabel("📎 " + fileName);
@@ -1375,7 +1703,6 @@ public class ChatPanel extends JPanel {
                     btn.repaint();
                 }
             }
-
             @Override
             public void mouseExited(MouseEvent e) {
                 icon.setIconColor(AppColor.TEXT_MUTED);
@@ -1385,74 +1712,368 @@ public class ChatPanel extends JPanel {
         return btn;
     }
 
+
+    // ================================================================
+    // ========== HELPER: Avatar + màu sắc cho danh sách chat ==========
+    // ================================================================
+    private static final Color[] AVATAR_COLORS = {
+            new Color(0x2E7D32), new Color(0x1565C0), new Color(0x6A1B9A),
+            new Color(0xC62828), new Color(0xE65100), new Color(0x00838F),
+            new Color(0x4E342E), new Color(0x37474F)
+    };
+
+    private static Color avatarColorFor(int userId) {
+        return AVATAR_COLORS[Math.abs(userId) % AVATAR_COLORS.length];
+    }
+
+    private static String initialOf(String name) {
+        if (name == null || name.isBlank()) return "?";
+        String trimmed = name.trim();
+        String[] parts = trimmed.split("\s+");
+        String lastName = parts[parts.length - 1];
+        return lastName.substring(0, 1).toUpperCase();
+    }
+
+    private String formatChatTime(long timestamp) {
+        if (timestamp <= 0) return "";
+        Date date = new Date(timestamp);
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        java.util.Calendar msgTime = java.util.Calendar.getInstance();
+        msgTime.setTime(date);
+
+        boolean sameDay = now.get(java.util.Calendar.YEAR) == msgTime.get(java.util.Calendar.YEAR)
+                && now.get(java.util.Calendar.DAY_OF_YEAR) == msgTime.get(java.util.Calendar.DAY_OF_YEAR);
+
+        if (sameDay) {
+            return new SimpleDateFormat("HH:mm").format(date);
+        }
+
+        long diffDays = (now.getTimeInMillis() - msgTime.getTimeInMillis()) / (1000L * 60 * 60 * 24);
+        if (diffDays == 1) return "Hôm qua";
+        if (diffDays < 7) {
+            String[] weekdays = {"CN", "T2", "T3", "T4", "T5", "T6", "T7"};
+            return weekdays[msgTime.get(java.util.Calendar.DAY_OF_WEEK) - 1];
+        }
+        return new SimpleDateFormat("dd/MM").format(date);
+    }
+
+    private static String truncatePreview(String text, int maxLen) {
+        if (text == null || text.isBlank()) return "Chưa có tin nhắn";
+        String clean = text.replaceAll("\s+", " ").trim();
+        if (clean.length() <= maxLen) return clean;
+        return clean.substring(0, maxLen - 3) + "...";
+    }
+
+    /**
+     * Avatar label tùy chỉnh: hình tròn với chữ cái đầu tên và nền màu theo user ID.
+     */
+    private class AvatarLabel extends JLabel {
+        private int userId = 0;
+        private final int size;
+
+        AvatarLabel(int size) {
+            this.size = size;
+            setFont(new Font("Segoe UI", Font.BOLD, size >= 40 ? 16 : 14));
+            setForeground(Color.WHITE);
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setVerticalAlignment(SwingConstants.CENTER);
+            setOpaque(false);
+            Dimension dim = new Dimension(size, size);
+            setPreferredSize(dim);
+            setMinimumSize(dim);
+            setMaximumSize(dim);
+        }
+
+        void updateFor(String name, int userId) {
+            this.userId = userId;
+            setText(initialOf(name));
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int diameter = Math.min(getWidth(), getHeight());
+            int x = (getWidth() - diameter) / 2;
+            int y = (getHeight() - diameter) / 2;
+
+            g2.setColor(avatarColorFor(userId));
+            g2.fillOval(x, y, diameter, diameter);
+
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /** Badge hình tròn hiển thị số tin chưa đọc */
+    private class UnreadBadge extends JLabel {
+        UnreadBadge(int count) {
+            super(String.valueOf(count));
+            setFont(new Font("Segoe UI", Font.BOLD, 11));
+            setForeground(Color.WHITE);
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setVerticalAlignment(SwingConstants.CENTER);
+            setOpaque(false);
+            int size = count >= 10 ? 20 : 18;
+            Dimension dim = new Dimension(size, size);
+            setPreferredSize(dim);
+            setMinimumSize(dim);
+            setMaximumSize(dim);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            int diameter = Math.min(w, h);
+            int x = (w - diameter) / 2;
+            int y = (h - diameter) / 2;
+
+            g2.setColor(AppColor.ERROR);
+            g2.fillOval(x, y, diameter, diameter);
+
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
     private class CustomerCellRenderer extends JPanel implements ListCellRenderer<Integer> {
-        private final JLabel dot = new JLabel("●");
-        private final JLabel nameLabel = new JLabel();
-        private final JLabel unreadDot = new JLabel("●");
+        private final AvatarLabel avatarLabel;
+        private final JLabel onlineDot;
+        private final JLabel nameLabel;
+        private final JLabel previewLabel;
+        private final JLabel timeLabel;
+        private final JPanel badgePanel;
 
         CustomerCellRenderer() {
-            setLayout(new BorderLayout(8, 0));
+            setLayout(new BorderLayout(10, 0));
             setBorder(new EmptyBorder(8, 8, 8, 8));
-            JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-            left.setOpaque(false);
-            left.add(dot);
-            left.add(nameLabel);
+
+            // ====== Cột trái: Avatar + chấm trạng thái ======
+            JPanel avatarWrap = new JPanel(null) {
+                @Override public Dimension getPreferredSize() { return new Dimension(44, 44); }
+                @Override public Dimension getMinimumSize() { return new Dimension(44, 44); }
+                @Override public Dimension getMaximumSize() { return new Dimension(44, 44); }
+            };
+            avatarWrap.setOpaque(false);
+
+            avatarLabel = new AvatarLabel(44);
+            avatarLabel.setBounds(0, 0, 44, 44);
+
+            onlineDot = new JLabel("●");
+            onlineDot.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            onlineDot.setBounds(32, 30, 14, 14);
+
+            avatarWrap.add(avatarLabel);
+            avatarWrap.add(onlineDot);
+
+            // ====== Cột giữa: Tên + Preview tin nhắn ======
+            JPanel centerCol = new JPanel();
+            centerCol.setOpaque(false);
+            centerCol.setLayout(new BoxLayout(centerCol, BoxLayout.Y_AXIS));
+
+            JPanel nameRow = new JPanel(new BorderLayout(4, 0));
+            nameRow.setOpaque(false);
+
+            nameLabel = new JLabel();
             nameLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-            unreadDot.setForeground(AppColor.RED_ALT);
-            add(left, BorderLayout.WEST);
-            add(unreadDot, BorderLayout.EAST);
+
+            timeLabel = new JLabel();
+            timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            timeLabel.setForeground(AppColor.TEXT_MUTED);
+
+            nameRow.add(nameLabel, BorderLayout.WEST);
+            nameRow.add(timeLabel, BorderLayout.EAST);
+
+            previewLabel = new JLabel();
+            previewLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            previewLabel.setForeground(AppColor.TEXT_MUTED);
+
+            centerCol.add(Box.createVerticalStrut(2));
+            centerCol.add(nameRow);
+            centerCol.add(Box.createVerticalStrut(3));
+            centerCol.add(previewLabel);
+            centerCol.add(Box.createVerticalGlue());
+
+            // ====== Cột phải: Badge chưa đọc ======
+            badgePanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+            badgePanel.setOpaque(false);
+
+            // ====== Layout chính ======
+            add(avatarWrap, BorderLayout.WEST);
+            add(centerCol, BorderLayout.CENTER);
+            add(badgePanel, BorderLayout.EAST);
         }
 
         @Override
         public Component getListCellRendererComponent(JList<? extends Integer> list, Integer userId,
                                                       int index, boolean isSelected, boolean cellHasFocus) {
-            nameLabel.setText(customerDisplayName(userId));
+            String name = customerDisplayName(userId);
+            boolean online = onlineCustomers.containsKey(userId);
+            boolean unread = Boolean.TRUE.equals(customerUnread.get(userId));
+            String preview = customerLastPreview.get(userId);
+            Long lastTime = customerLastTime.get(userId);
+
+            // Cập nhật avatar
+            avatarLabel.updateFor(name, userId);
+
+            // Trạng thái online
+            onlineDot.setForeground(online ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
+
+            // Tên người dùng (in đậm nếu có tin chưa đọc)
+            nameLabel.setText(name);
             nameLabel.setForeground(AppColor.TEXT_PRIMARY);
-            dot.setForeground(onlineCustomers.containsKey(userId) ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
-            unreadDot.setVisible(Boolean.TRUE.equals(customerUnread.get(userId)));
-            setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : AppColor.WHITE);
+            nameLabel.setFont(unread
+                    ? new Font("Segoe UI", Font.BOLD, 13)
+                    : new Font("Segoe UI", Font.PLAIN, 13));
+
+            // Preview tin nhắn cuối
+            previewLabel.setText(truncatePreview(preview, 32));
+            previewLabel.setForeground(unread ? AppColor.TEXT_SECONDARY : AppColor.TEXT_MUTED);
+
+            // Thời gian tin nhắn cuối
+            timeLabel.setText(lastTime != null ? formatChatTime(lastTime) : "");
+
+            // Badge chưa đọc
+            badgePanel.removeAll();
+            if (unread) {
+                badgePanel.add(new UnreadBadge(1));
+            }
+            badgePanel.revalidate();
+
+            // Nền: được chọn / dùng màu nền của JList (đồng bộ theme)
+            setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : list.getBackground());
             setOpaque(true);
+
             return this;
         }
     }
 
     private class StaffCellRenderer extends JPanel implements ListCellRenderer<Integer> {
-        private final JLabel dot = new JLabel("●");
-        private final JLabel nameLabel = new JLabel();
-        private final JLabel roleLbl = new JLabel();
-        private final JLabel unreadDot = new JLabel("●");
+        private final AvatarLabel avatarLabel;
+        private final JLabel onlineDot;
+        private final JLabel nameLabel;
+        private final JLabel roleLabel;
+        private final JLabel previewLabel;
+        private final JLabel timeLabel;
+        private final JPanel badgePanel;
 
         StaffCellRenderer() {
-            setLayout(new BorderLayout(8, 0));
-            setBorder(new EmptyBorder(6, 8, 6, 8));
-            JPanel text = new JPanel();
-            text.setOpaque(false);
-            text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+            setLayout(new BorderLayout(10, 0));
+            setBorder(new EmptyBorder(8, 8, 8, 8));
+
+            // ====== Cột trái: Avatar + chấm trạng thái ======
+            JPanel avatarWrap = new JPanel(null) {
+                @Override public Dimension getPreferredSize() { return new Dimension(44, 44); }
+                @Override public Dimension getMinimumSize() { return new Dimension(44, 44); }
+                @Override public Dimension getMaximumSize() { return new Dimension(44, 44); }
+            };
+            avatarWrap.setOpaque(false);
+
+            avatarLabel = new AvatarLabel(44);
+            avatarLabel.setBounds(0, 0, 44, 44);
+
+            onlineDot = new JLabel("●");
+            onlineDot.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            onlineDot.setBounds(32, 30, 14, 14);
+
+            avatarWrap.add(avatarLabel);
+            avatarWrap.add(onlineDot);
+
+            // ====== Cột giữa: Tên + Chức vụ + Preview ======
+            JPanel centerCol = new JPanel();
+            centerCol.setOpaque(false);
+            centerCol.setLayout(new BoxLayout(centerCol, BoxLayout.Y_AXIS));
+
+            JPanel nameRow = new JPanel(new BorderLayout(4, 0));
+            nameRow.setOpaque(false);
+
+            nameLabel = new JLabel();
             nameLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-            roleLbl.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-            roleLbl.setForeground(AppColor.TEXT_MUTED);
-            text.add(nameLabel);
-            text.add(roleLbl);
-            JPanel left = new JPanel(new BorderLayout(6, 0));
-            left.setOpaque(false);
-            left.add(dot, BorderLayout.WEST);
-            left.add(text, BorderLayout.CENTER);
-            unreadDot.setForeground(AppColor.RED_ALT);
-            add(left, BorderLayout.CENTER);
-            add(unreadDot, BorderLayout.EAST);
+
+            timeLabel = new JLabel();
+            timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            timeLabel.setForeground(AppColor.TEXT_MUTED);
+
+            nameRow.add(nameLabel, BorderLayout.WEST);
+            nameRow.add(timeLabel, BorderLayout.EAST);
+
+            roleLabel = new JLabel();
+            roleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            roleLabel.setForeground(AppColor.TEXT_MUTED);
+
+            previewLabel = new JLabel();
+            previewLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            previewLabel.setForeground(AppColor.TEXT_MUTED);
+
+            centerCol.add(Box.createVerticalStrut(1));
+            centerCol.add(nameRow);
+            centerCol.add(Box.createVerticalStrut(1));
+            centerCol.add(roleLabel);
+            centerCol.add(Box.createVerticalStrut(2));
+            centerCol.add(previewLabel);
+            centerCol.add(Box.createVerticalGlue());
+
+            // ====== Cột phải: Badge chưa đọc ======
+            badgePanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+            badgePanel.setOpaque(false);
+
+            // ====== Layout chính ======
+            add(avatarWrap, BorderLayout.WEST);
+            add(centerCol, BorderLayout.CENTER);
+            add(badgePanel, BorderLayout.EAST);
         }
 
         @Override
         public Component getListCellRendererComponent(JList<? extends Integer> list, Integer userId,
                                                       int index, boolean isSelected, boolean cellHasFocus) {
             User u = staffDirectory.get(userId);
-            nameLabel.setText(u != null ? displayName(u) : ("Nhân viên #" + userId));
+            String name = u != null ? displayName(u) : ("Nhân viên #" + userId);
+            String role = u != null && u.getRole() != null ? roleLabel(u.getRole()) : "";
+            boolean online = onlineStaffIds.contains(userId);
+            boolean unread = Boolean.TRUE.equals(staffUnread.get(userId));
+            String preview = staffLastPreview.get(userId);
+            Long lastTime = staffLastTime.get(userId);
+
+            // Cập nhật avatar
+            avatarLabel.updateFor(name, userId);
+
+            // Trạng thái online
+            onlineDot.setForeground(online ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
+
+            // Tên người dùng (in đậm nếu có tin chưa đọc)
+            nameLabel.setText(name);
             nameLabel.setForeground(AppColor.TEXT_PRIMARY);
-            roleLbl.setText(u != null && u.getRole() != null ? roleLabel(u.getRole()) : "");
-            dot.setForeground(onlineStaffIds.contains(userId) ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
-            unreadDot.setVisible(Boolean.TRUE.equals(staffUnread.get(userId)));
-            setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : AppColor.WHITE);
+            nameLabel.setFont(unread
+                    ? new Font("Segoe UI", Font.BOLD, 13)
+                    : new Font("Segoe UI", Font.PLAIN, 13));
+
+            // Chức vụ
+            roleLabel.setText(role);
+
+            // Preview tin nhắn cuối
+            previewLabel.setText(truncatePreview(preview, 32));
+            previewLabel.setForeground(unread ? AppColor.TEXT_SECONDARY : AppColor.TEXT_MUTED);
+
+            // Thời gian
+            timeLabel.setText(lastTime != null ? formatChatTime(lastTime) : "");
+
+            // Badge chưa đọc
+            badgePanel.removeAll();
+            if (unread) {
+                badgePanel.add(new UnreadBadge(1));
+            }
+            badgePanel.revalidate();
+
+            // Nền: được chọn / dùng màu nền của JList (đồng bộ theme)
+            setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : list.getBackground());
             setOpaque(true);
+
             return this;
         }
     }

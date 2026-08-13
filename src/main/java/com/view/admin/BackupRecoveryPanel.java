@@ -2,7 +2,10 @@ package com.view.admin;
 
 import com.backup.BackupResult;
 import com.backup.BackupSchemaGuard;
+import com.components.AppAlert;
+import com.components.BaseSearch;
 import com.components.BaseTable;
+import com.components.DatePickerField;
 import com.components.LoadingOverlay;
 import com.components.SectionHeader;
 import com.disaster.DisasterRecoveryBootstrap;
@@ -11,26 +14,39 @@ import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.DBConnection;
 import com.components.BaseDialog;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.sql.Connection;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 public class BackupRecoveryPanel extends JPanel {
 
     private final BaseTable backupTable;
-    private final BaseTable incidentTable;
     private final JLabel statusLabel;
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Dang xu ly...");
     private final JButton restoreButton;
     private final JButton backupNowButton;
+
+    /** Lọc danh sách file backup theo ngày (lastModified). */
+    private DatePickerField fromDateFilter;
+    private DatePickerField toDateFilter;
+    private JLabel clearDateFilterLink;
+    private boolean adjustingDateFilter;
+    /** Lọc danh sách file backup theo tên file. */
+    private BaseSearch fileNameSearchBar;
+    private String fileNameFilterText = "";
 
     public BackupRecoveryPanel() {
         setLayout(new BorderLayout());
@@ -39,14 +55,13 @@ public class BackupRecoveryPanel extends JPanel {
 
         SectionHeader header = new SectionHeader(FontAwesomeSolid.SHIELD_ALT, AppColor.ACCENT,
                 "Sao lưu & Khôi phục", "Bảo vệ dữ liệu khi hệ thống gặp sự cố hoặc bị tấn công");
+
         restoreButton = header.addButton("Khôi phục từ file...", FontAwesomeSolid.UPLOAD,
                 SectionHeader.ButtonStyle.OUTLINE, AppColor.WARNING, this::onRestoreClicked);
         backupNowButton = header.addButton("Sao lưu ngay", FontAwesomeSolid.DOWNLOAD,
                 SectionHeader.ButtonStyle.PRIMARY, this::onBackupNowClicked);
 
         backupTable = new BaseTable(new String[]{"Tên file", "Chiến lược", "Thời gian", "Dung lượng"});
-        incidentTable = new BaseTable(new String[]{"Thời gian", "Mức độ", "Loại", "Nguồn", "Mô tả"});
-        incidentTable.setBadgeColumn(1, o -> String.valueOf(o), this::severityColor);
 
         statusLabel = new JLabel(" ");
         statusLabel.setFont(AppFont.SMALL);
@@ -56,9 +71,7 @@ public class BackupRecoveryPanel extends JPanel {
         center.setOpaque(false);
         center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
         center.add(Box.createVerticalStrut(16));
-        center.add(sectionCard("Các bản sao lưu hiện có", backupTable));
-        center.add(Box.createVerticalStrut(16));
-        center.add(sectionCard("Nhật ký sự cố gần đây", incidentTable));
+        center.add(backupSectionCard());
 
         JScrollPane scroll = new JScrollPane(center);
         scroll.setBorder(null);
@@ -82,14 +95,6 @@ public class BackupRecoveryPanel extends JPanel {
         }
     }
 
-    /**
-     * DisasterRecoveryBootstrap.init() co the that bai luc app khoi dong (vd
-     * thieu BACKUP_ENCRYPTION_PASSPHRASE, mat ket noi DB...) - Main.java chi
-     * log loi ra console va van cho app chay tiep (khong ep dong toan bo app
-     * chi vi subsystem backup loi). Panel nay vi vay PHAI tu kiem tra truoc
-     * khi goi getBackupManager(), thay vi de exception lam sap ca man hinh
-     * Admin (truoc day AdminMainFrame se crash ngay luc mo).
-     */
     private void showSubsystemUnavailable() {
         String reason = DisasterRecoveryBootstrap.getLastInitFailureMessage();
         statusLabel.setForeground(AppColor.ERROR);
@@ -107,30 +112,193 @@ public class BackupRecoveryPanel extends JPanel {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
-    private JPanel sectionCard(String title, BaseTable table) {
+    private JPanel backupSectionCard() {
         JPanel card = new JPanel(new BorderLayout());
         card.setBackground(AppColor.WHITE);
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(16, 16, 16, 16)));
 
-        JLabel titleLabel = new JLabel(title);
+        JLabel titleLabel = new JLabel("Các bản sao lưu hiện có");
         titleLabel.setFont(AppFont.HEADING_MD);
         titleLabel.setForeground(AppColor.TEXT_TITLE);
-        titleLabel.setBorder(new EmptyBorder(0, 0, 10, 0));
 
-        card.add(titleLabel, BorderLayout.NORTH);
-        card.add(table, BorderLayout.CENTER);
+        JPanel north = new JPanel();
+        north.setOpaque(false);
+        north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        north.add(titleLabel);
+        north.add(Box.createVerticalStrut(8));
+
+        JPanel filterRow = buildBackupDateFilterBar();
+        filterRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        north.add(filterRow);
+        north.add(Box.createVerticalStrut(10));
+
+        card.add(north, BorderLayout.NORTH);
+        card.add(backupTable, BorderLayout.CENTER);
         return card;
     }
 
-    private Color severityColor(Object severity) {
-        switch (String.valueOf(severity)) {
-            case "CRITICAL": return AppColor.ERROR;
-            case "HIGH": return AppColor.WARNING;
-            case "MEDIUM": return AppColor.INFO;
-            default: return AppColor.TEXT_MUTED;
+    private JPanel buildBackupDateFilterBar() {
+        fromDateFilter = new DatePickerField(null, true);
+        toDateFilter = new DatePickerField(null, true);
+
+        JLabel fromLabel = new JLabel("Từ ngày");
+        fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fromLabel.setForeground(AppColor.TEXT_MUTED);
+
+        JLabel toLabel = new JLabel("đến");
+        toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toLabel.setForeground(AppColor.TEXT_MUTED);
+
+        // ====== Cùng một hàng: tìm kiếm tên file + lọc ngày ======
+        JPanel filterRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        filterRow.setOpaque(false);
+
+        // ====== Thanh tìm kiếm tên file dùng BaseSearch (chung) - đặt trước ======
+        fileNameSearchBar = new BaseSearch("Tìm theo tên file backup...");
+        fileNameSearchBar.setPreferredSize(new Dimension(240, fileNameSearchBar.getPreferredSize().height));
+        fileNameSearchBar.onSearch(keyword -> {
+            fileNameFilterText = keyword != null ? keyword.trim().toLowerCase() : "";
+            refreshBackupTable();
+        });
+
+        // Cập nhật gợi ý autocomplete từ danh sách file backup
+        refreshSearchAutocomplete();
+
+        filterRow.add(fileNameSearchBar);
+
+        // ====== Bộ lọc theo ngày - đặt sau ======
+        filterRow.add(fromLabel);
+        filterRow.add(fromDateFilter);
+        filterRow.add(toLabel);
+        filterRow.add(toDateFilter);
+
+        fromDateFilter.onChange(d -> onBackupDateFilterChanged());
+        toDateFilter.onChange(d -> onBackupDateFilterChanged());
+
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 14);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearDateFilterLink = new JLabel(clearIcon);
+        clearDateFilterLink.setToolTipText("Xóa lọc ngày");
+        clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearDateFilterLink.setVisible(false);
+        clearDateFilterLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                fromDateFilter.setValue(null);
+                toDateFilter.setValue(null);
+                onBackupDateFilterChanged();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearIcon.setIconColor(AppColor.ERROR);
+                clearDateFilterLink.repaint();
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearIcon.setIconColor(AppColor.TEXT_MUTED);
+                clearDateFilterLink.repaint();
+            }
+        });
+        filterRow.add(clearDateFilterLink);
+
+        return filterRow;
+    }
+
+    /** Cập nhật danh sách gợi ý autocomplete cho thanh tìm kiếm từ tên các file backup. */
+    private void refreshSearchAutocomplete() {
+        if (fileNameSearchBar == null || !DisasterRecoveryBootstrap.isInitialized()) return;
+        SwingWorker<List<String>, Void> worker = new SwingWorker<>() {
+            @Override
+            protected List<String> doInBackground() {
+                List<File> backups = DisasterRecoveryBootstrap.getBackupManager().getStorage().listBackups();
+                List<String> suggestions = new java.util.ArrayList<>();
+                for (File f : backups) {
+                    String name = f.getName();
+                    suggestions.add(name);
+                    // Thêm cả tên strategy để người dùng có thể tìm theo strategy
+                    String strategy = extractStrategyName(name);
+                    if (!"?".equals(strategy) && !suggestions.contains(strategy)) {
+                        suggestions.add(strategy);
+                    }
+                }
+                return suggestions;
+            }
+            @Override
+            protected void done() {
+                try {
+                    List<String> suggestions = get();
+                    if (suggestions != null && !suggestions.isEmpty()) {
+                        fileNameSearchBar.setSuggestions(suggestions);
+                    }
+                } catch (Exception ignored) {}
+            }
+        };
+        worker.execute();
+    }
+
+    private void onBackupDateFilterChanged() {
+        if (adjustingDateFilter) return;
+        LocalDate from = fromDateFilter != null ? fromDateFilter.getValue() : null;
+        LocalDate to = toDateFilter != null ? toDateFilter.getValue() : null;
+
+        if (from != null && to != null && to.isBefore(from)) {
+            AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+                    "Ngày \"đến\" phải lớn hơn hoặc bằng ngày \"từ\".");
+            adjustingDateFilter = true;
+            try {
+                toDateFilter.setValue(null);
+            } finally {
+                adjustingDateFilter = false;
+            }
         }
+
+        if (clearDateFilterLink != null) {
+            clearDateFilterLink.setVisible(
+                    (fromDateFilter != null && fromDateFilter.getValue() != null)
+                            || (toDateFilter != null && toDateFilter.getValue() != null));
+        }
+
+        refreshBackupTable();
+    }
+
+    private void onFileNameSearchChanged() {
+        // BaseSearch xử lý trực tiếp qua onSearch lambda, không cần method này nữa
+        // Giữ lại để tương thích nếu có nơi khác gọi
+        if (fileNameSearchBar != null) {
+            String text = fileNameSearchBar.getText();
+            fileNameFilterText = text != null ? text.trim().toLowerCase() : "";
+        }
+        refreshBackupTable();
+    }
+
+    private boolean matchesFileNameFilter(File f) {
+        if (fileNameFilterText == null || fileNameFilterText.isEmpty()) return true;
+        String fileName = f.getName().toLowerCase();
+        // Tìm kiếm theo nhiều từ khóa (phân cách bằng khoảng trắng)
+        String[] keywords = fileNameFilterText.split("\s+");
+        for (String kw : keywords) {
+            if (!kw.isEmpty() && !fileName.contains(kw)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean matchesDateFilter(File f) {
+        LocalDate from = fromDateFilter != null ? fromDateFilter.getValue() : null;
+        LocalDate to = toDateFilter != null ? toDateFilter.getValue() : null;
+        if (from == null && to == null) return true;
+
+        LocalDate fileDate = Instant.ofEpochMilli(f.lastModified())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
+
+        if (from != null && fileDate.isBefore(from)) return false;
+        if (to != null && fileDate.isAfter(to)) return false;
+        return true;
     }
 
     private void onBackupNowClicked() {
@@ -164,8 +332,8 @@ public class BackupRecoveryPanel extends JPanel {
         JFileChooser chooser = new JFileChooser(backupDir);
         chooser.setDialogTitle("Chọn file backup để khôi phục");
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
-        File selected = chooser.getSelectedFile();
 
+        File selected = chooser.getSelectedFile();
         loadingOverlay.start("Đang kiểm tra bản backup...");
         new SwingWorker<List<BackupSchemaGuard.TableWarning>, Void>() {
             @Override protected List<BackupSchemaGuard.TableWarning> doInBackground() {
@@ -200,9 +368,9 @@ public class BackupRecoveryPanel extends JPanel {
             }
             message.append("\nChỉ tiếp tục nếu bạn CHẮC CHẮN chấp nhận mất các cột trên.\n");
         }
+
         message.append("\nBạn có chắc chắn muốn tiếp tục?");
 
-        // BaseDialog.confirm — có schema lệch dùng màu ERROR (nguy hiểm), còn lại WARNING
         boolean ok;
         if (schemaWarnings.isEmpty()) {
             ok = BaseDialog.confirm(
@@ -211,7 +379,7 @@ public class BackupRecoveryPanel extends JPanel {
                     message.toString(),
                     "Khôi phục",
                     AppColor.WARNING,
-                    AppColor.WARNING, // hover — nếu theme có WARNING_HOVER thì dùng cái đó
+                    AppColor.WARNING,
                     FontAwesomeSolid.EXCLAMATION_TRIANGLE
             );
         } else {
@@ -225,6 +393,7 @@ public class BackupRecoveryPanel extends JPanel {
                     FontAwesomeSolid.EXCLAMATION_TRIANGLE
             );
         }
+
         if (!ok) return;
 
         loadingOverlay.start("Đang khôi phục dữ liệu...");
@@ -244,8 +413,6 @@ public class BackupRecoveryPanel extends JPanel {
                 } else {
                     statusLabel.setForeground(AppColor.SUCCESS);
                     statusLabel.setText("Khôi phục thành công từ " + selected.getName());
-                    // Đồng bộ UI: DisasterRecoveryBootstrap.onRestoreSucceeded đã
-                    // clear CartService + DataChangedEvent.publishFullRefresh()
                     BaseDialog.success(BackupRecoveryPanel.this, "Hoàn tất",
                             "Đã khôi phục dữ liệu thành công.\n"
                                     + "Các màn hình đang mở sẽ tự tải lại dữ liệu mới.\n"
@@ -256,36 +423,30 @@ public class BackupRecoveryPanel extends JPanel {
         }.execute();
     }
 
-    private void refreshAll() { refreshBackupTable(); refreshIncidentTable(); }
+    private void refreshAll() { refreshBackupTable(); }
 
     private void refreshBackupTable() {
         backupTable.clear();
+        if (!DisasterRecoveryBootstrap.isInitialized()) return;
+
         List<File> backups = DisasterRecoveryBootstrap.getBackupManager().getStorage().listBackups();
         SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss dd/MM/yyyy");
+
         for (File f : backups) {
+            if (!matchesDateFilter(f)) continue;
+            if (!matchesFileNameFilter(f)) continue;
             backupTable.addRow(new Object[]{
                     f.getName(), extractStrategyName(f.getName()),
                     fmt.format(new java.util.Date(f.lastModified())), formatSize(f.length())
             });
         }
-    }
 
-    private void refreshIncidentTable() {
-        incidentTable.clear();
-        List<String> lines = DisasterRecoveryBootstrap.getIncidentSink().readRawLines(LocalDate.now());
-        for (String line : lines) {
-            incidentTable.addRow(new Object[]{
-                    extractJsonField(line, "timestamp"), extractJsonField(line, "severity"),
-                    extractJsonField(line, "type"), extractJsonField(line, "source"), extractJsonField(line, "message")
-            });
-        }
+        // Cập nhật lại gợi ý autocomplete (có thể có file backup mới)
+        refreshSearchAutocomplete();
     }
 
     private static String extractStrategyName(String fileName) {
         int lastUnderscore = fileName.lastIndexOf('_');
-        // Dung dau '.' DAU TIEN sau underscore, khong phai dau '.' cuoi cung:
-        // file da ma hoa co duoi kep (vd "jdbc-sql-dump.sql.enc"), lastIndexOf('.')
-        // se cat nham vao giua ten strategy va phan mo rong goc.
         int firstDotAfterUnderscore = lastUnderscore >= 0 ? fileName.indexOf('.', lastUnderscore) : -1;
         return (lastUnderscore >= 0 && firstDotAfterUnderscore > lastUnderscore)
                 ? fileName.substring(lastUnderscore + 1, firstDotAfterUnderscore) : "?";
@@ -295,20 +456,5 @@ public class BackupRecoveryPanel extends JPanel {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
         return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
-    }
-
-    private static String extractJsonField(String jsonLine, String field) {
-        String key = "\"" + field + "\":\"";
-        int start = jsonLine.indexOf(key);
-        if (start < 0) return "";
-        start += key.length();
-        StringBuilder sb = new StringBuilder();
-        for (int i = start; i < jsonLine.length(); i++) {
-            char c = jsonLine.charAt(i);
-            if (c == '\\' && i + 1 < jsonLine.length()) { sb.append(jsonLine.charAt(i + 1)); i++; }
-            else if (c == '"') break;
-            else sb.append(c);
-        }
-        return sb.toString();
     }
 }

@@ -20,6 +20,7 @@ import com.service.ReturnExchangeNotifyPoller;
 import com.settings.NotificationSettings;
 import com.theme.AppColor;
 import com.theme.ThemeManager;
+import com.utils.AppIcon;
 import com.view.LoginFrame;
 import com.view.admin.account.UserAccountPanel;
 import com.view.admin.auditlog.AuditLogPanel;
@@ -85,6 +86,7 @@ public class AdminMainFrame extends JFrame {
         setSize(1280, 760);
         setMinimumSize(new Dimension(1024, 680));
         setLocationRelativeTo(null);
+        AppIcon.apply(this);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.PAGE_BG);

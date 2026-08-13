@@ -9,6 +9,10 @@
    nen script luon "con han"/"gan day" bat ke chay vao ngay nao -
    dung lai duoc (re-run) tren 1 CSDL SIMS_DB moi tao.
    ============================================================ */
+/* Dong bo voi SIMS.sql hien tai:
+   - ReturnExchanges: DiscountShare, PointsShare
+   - Promotions: ShowOnBanner, BannerSortOrder (seed demo banner)
+*/
 USE SIMS_DB;
 GO
 
@@ -90,7 +94,7 @@ GO
 -- Mat khau tat ca tai khoan mau (tru 'khach_le' - vo hieu hoa) la: 123456
 -- (BCrypt cost 12, xem UPDATE Users o cuoi file - dat sau khi bang Users co du dong).
 INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, RoleID) VALUES
-('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Hoàng Trung Nam',  'nam@connectmart.vn',   '0900000001', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
+('admin',    '$2a$10$examplehash.admin.0000000000000000000000000000',    N'Hoàng Trung Nam',  'hoangnam131020@gmail.com',   '0969036498', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='ADMIN')),
 ('salesmgr', '$2a$10$examplehash.salesmgr.000000000000000000000000000', N'Hà Minh Tuấn',     'tuan.sm@connectmart.vn', '0900000002', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_MANAGER')),
 ('invmgr',   '$2a$10$examplehash.invmgr.0000000000000000000000000000',  N'Trần Tài Phương',        'phuongkho.im@connectmart.vn',  '0900000003', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='INVENTORY_MANAGER')),
 ('staff01',  '$2a$10$examplehash.staff01.000000000000000000000000000', N'Lê Hoa Trường Vũ',     'vu.staff@connectmart.vn', '0900000004', NULL, (SELECT RoleID FROM Roles WHERE RoleCode='SALES_STAFF')),
@@ -715,9 +719,9 @@ GO
 
 
 -- ---- 13. Doi/tra hang mau (co Approval that su, dung thu tu PENDING -> APPROVED) ----
-INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, RequiresApproval, Status, CreatedBy) VALUES
+INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, DiscountShare, PointsShare, RequiresApproval, Status, CreatedBy) VALUES
 ((SELECT InvoiceID FROM Invoices WHERE InvoiceCode = 'HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-2,GETDATE()), 112) + '-C'),
- 'RETURN', N'Khách phản ánh chuối bị dập, xin trả lại 1 nải', 20000, 0, 'PENDING',
+ 'RETURN', N'Khách phản ánh chuối bị dập, xin trả lại 1 nải', 20000, 0, 0, 0, 'PENDING',
  (SELECT UserID FROM Users WHERE Username='staff01'));
 GO
 
@@ -737,9 +741,9 @@ WHERE ReturnID = (SELECT TOP 1 ReturnID FROM ReturnExchanges ORDER BY ReturnID D
 GO
 
 -- ---- 14. Doi/tra gia tri lon, can duyet (van PENDING de demo man hinh cho duyet) ----
-INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, RequiresApproval, Status, CreatedBy) VALUES
+INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, DiscountShare, PointsShare, RequiresApproval, Status, CreatedBy) VALUES
 ((SELECT InvoiceID FROM Invoices WHERE InvoiceCode = 'HD-' + CONVERT(VARCHAR(8), DATEADD(DAY,-4,GETDATE()), 112) + '-B'),
- 'EXCHANGE', N'Khách đổi cà phê bột lấy sữa tươi do đặt nhầm', 89000, 1, 'PENDING',
+ 'EXCHANGE', N'Khách đổi cà phê bột lấy sữa tươi do đặt nhầm', 89000, 0, 0, 1, 'PENDING',
  (SELECT UserID FROM Users WHERE Username='staff02'));
 GO
 
@@ -957,22 +961,22 @@ INSERT INTO Promotions (
     Code, Name, DiscountType, DiscountValue,
     MaxDiscountAmount, MinOrderAmount,
     StartDate, EndDate, UsageLimit, UsedCount,
-    IsActive, IsDeleted, CreatedBy, CreatedAt
+    IsActive, ShowOnBanner, BannerSortOrder, IsDeleted, CreatedBy, CreatedAt
 ) VALUES
 ('SUMMER10', N'Khuyến mãi hè - Giảm 10%', 'PERCENT', 10, 30000, 100000,
- CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 1000, 0, 1, 0,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 1000, 0, 1, 1, 10, 0,
  (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
 ('GIAM50K', N'Giảm ngay 50.000đ', 'AMOUNT', 50000, NULL, 300000,
- CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 500, 0, 1, 0,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 500, 0, 1, 1, 20, 0,
  (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
 ('WELCOME15', N'Chào thành viên mới - Giảm 15%', 'PERCENT', 15, 40000, 150000,
- CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), NULL, 0, 1, 0,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), NULL, 0, 1, 0, NULL, 0,
  (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
 ('FLASH20', N'Flash sale - Giảm 20%', 'PERCENT', 20, 100000, 200000,
- CAST(GETDATE() AS DATE), DATEADD(DAY, 30, CAST(GETDATE() AS DATE)), 200, 0, 1, 0,
+ CAST(GETDATE() AS DATE), DATEADD(DAY, 30, CAST(GETDATE() AS DATE)), 200, 0, 1, 1, 5, 0,
  (SELECT UserID FROM Users WHERE Username='admin'), GETDATE()),
 ('FREESHIP', N'Ưu đãi 20.000đ', 'AMOUNT', 20000, NULL, 99000,
- CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 9999, 0, 1, 0,
+ CAST(DATEADD(DAY,-30,GETDATE()) AS DATE), CAST(DATEADD(DAY,180,GETDATE()) AS DATE), 9999, 0, 1, 0, NULL, 0,
  (SELECT UserID FROM Users WHERE Username='admin'), GETDATE());
 GO
 

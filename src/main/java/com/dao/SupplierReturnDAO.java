@@ -7,6 +7,7 @@ import com.event.DataChangedEvent;
 import com.model.SupplierReturn;
 import com.model.SupplierReturnDetail;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -18,21 +19,14 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * DAO phieu tra hang lo ve NCC (hang loi/hong/sai quy cach).
- * createSupplierReturn: 1 transaction - insert phieu + dong, tru lo, tru
- * Products.Stock, ghi InventoryTransactions (SUPPLIER_RETURN), cong don
- * Suppliers.DebtBalance (NCC dang no lai so tien hoan).
- * Tru kho NGAY khi luu (khong co buoc duyet), giong phong cach
- * {@link StockDisposalDAO}.
- */
 public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
-
     private static final String BASE_TABLE =
             "SupplierReturns r "
                     + "JOIN Suppliers s ON r.SupplierID = s.SupplierID "
@@ -90,27 +84,17 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
         return r;
     }
 
-    /**
-     * Lap phieu tra hang NCC nhieu dong trong 1 transaction. Tat ca cac lo
-     * trong 1 phieu phai cung 1 NCC (khop voi supplierId truyen vao) - kiem
-     * tra lai ngay trong transaction de tranh gian doan giua luc UI load
-     * combo va luc luu.
-     *
-     * @return SupplierReturnID neu OK, -1 neu that bai
-     */
     public int createSupplierReturn(int supplierId, String reason, String note, int createdByUserId,
                                      List<SupplierReturnDetail> details) {
         if (details == null || details.isEmpty()) return -1;
         if (reason == null || reason.isBlank()) return -1;
         if (supplierId <= 0) return -1;
-
         BigDecimal totalRefund = BigDecimal.ZERO;
         for (SupplierReturnDetail det : details) {
             if (det.getQuantity() <= 0 || det.getBatchId() <= 0) return -1;
             if (det.getUnitRefundPrice() == null || det.getUnitRefundPrice().signum() < 0) return -1;
             totalRefund = totalRefund.add(det.getUnitRefundPrice().multiply(BigDecimal.valueOf(det.getQuantity())));
         }
-
         String insertHeader = "INSERT INTO SupplierReturns (SupplierID, Reason, Status, TotalRefundAmount, Note, CreatedBy) "
                 + "VALUES (?, ?, 'COMPLETED', ?, ?, ?)";
         String insertDetail = "INSERT INTO SupplierReturnDetails "
@@ -126,7 +110,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                 + "(ProductID, TransactionType, Direction, Quantity, StockBefore, StockAfter, "
                 + "RefTable, RefID, CreatedBy, Note) VALUES (?, 'SUPPLIER_RETURN', 'OUT', ?, ?, ?, 'SupplierReturns', ?, ?, ?)";
         String updateSupplierDebt = "UPDATE Suppliers SET DebtBalance = DebtBalance + ? WHERE SupplierID = ?";
-
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
@@ -147,7 +130,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                         returnId = keys.getInt(1);
                     }
                 }
-
                 for (SupplierReturnDetail det : details) {
                     int productId;
                     int batchSupplierId;
@@ -174,7 +156,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                         det.setUnitRefundPrice(importPrice);
                     }
                     det.setProductId(productId);
-
                     try (PreparedStatement ps = con.prepareStatement(insertDetail)) {
                         ps.setInt(1, returnId);
                         ps.setInt(2, productId);
@@ -183,7 +164,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                         ps.setBigDecimal(5, det.getUnitRefundPrice());
                         ps.executeUpdate();
                     }
-
                     try (PreparedStatement ps = con.prepareStatement(updateBatch)) {
                         ps.setInt(1, det.getQuantity());
                         ps.setInt(2, det.getQuantity());
@@ -194,7 +174,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                             throw new SQLException("Không trừ được lô BatchID=" + det.getBatchId());
                         }
                     }
-
                     int stockBefore;
                     try (PreparedStatement ps = con.prepareStatement(selectStock)) {
                         ps.setInt(1, productId);
@@ -212,7 +191,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                         ps.setInt(3, det.getQuantity());
                         ps.executeUpdate();
                     }
-
                     String txNote = "Trả NCC " + reason + " TRNC_" + String.format("%06d", returnId);
                     try (PreparedStatement ps = con.prepareStatement(insertTx)) {
                         ps.setInt(1, productId);
@@ -225,13 +203,11 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                         ps.executeUpdate();
                     }
                 }
-
                 try (PreparedStatement ps = con.prepareStatement(updateSupplierDebt)) {
                     ps.setBigDecimal(1, totalRefund);
                     ps.setInt(2, supplierId);
                     ps.executeUpdate();
                 }
-
                 con.commit();
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.SUPPLIER_RETURN));
                 return returnId;
@@ -289,11 +265,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
         return list;
     }
 
-    /**
-     * Lo con hang de chon khi lap phieu trả NCC — nếu supplierId != null thì
-     * chỉ lấy lô của đúng NCC đó (thường dùng sau khi người dùng đã chọn NCC
-     * ở bước 1). Kèm ReceiptCode để có thể tìm/lọc theo phiếu nhập gốc.
-     */
     public List<ReturnableBatch> listReturnableBatches(Integer supplierId) {
         StringBuilder sql = new StringBuilder(
                 "SELECT b.BatchID, b.BatchCode, b.LotNumber, b.ProductID, p.ProductName, p.ProductCode, "
@@ -307,7 +278,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                         + "WHERE b.RemainingQty > 0 ");
         if (supplierId != null) sql.append("AND b.SupplierID = ? ");
         sql.append("ORDER BY CASE WHEN b.ExpiryDate IS NULL THEN 1 ELSE 0 END, b.ExpiryDate ASC, b.BatchID ASC");
-
         List<ReturnableBatch> list = new ArrayList<>();
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql.toString())) {
@@ -360,7 +330,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
         return sumRefundBetween(now.withDayOfMonth(1), now);
     }
 
-    /** Map ly do -> tong gia tri tra trong ky (dung cho thong ke nhanh). */
     public Map<String, BigDecimal> sumRefundByReason(LocalDate from, LocalDate to) {
         String sql = "SELECT Reason, ISNULL(SUM(TotalRefundAmount), 0) AS Refund "
                 + "FROM SupplierReturns WHERE Status = 'COMPLETED' "
@@ -396,7 +365,6 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
         }
     }
 
-    /** Lo hang co the tra NCC, kem ma phieu nhap goc de nguoi dung tim theo phieu nhap neu muon. */
     public static final class ReturnableBatch {
         public int batchId;
         public String batchCode;
@@ -411,5 +379,121 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
         public BigDecimal importPrice;
         public int quantity;
         public int remainingQty;
+    }
+
+    // ================================================================
+    // ====== THÊM MỚI: 3 METHOD LỌC THEO NCC + NGÀY (KHÔNG ĐỤNG CŨ) ======
+    // ================================================================
+
+    /**
+     * Lấy phân trang có lọc theo NCC + khoảng ngày.
+     * supplierId = null → không lọc NCC (tất cả).
+     * from/to = null → không lọc ngày tương ứng.
+     */
+    public PaginationHelper.PaginationResult<SupplierReturn> getPagedFiltered(
+            int page, int pageSize, Integer supplierId, LocalDate from, LocalDate to) {
+        FilterContext ctx = buildWhereAndParams(null, supplierId, from, to);
+        return getPaged(page, pageSize, ctx.where, ctx.params);
+    }
+
+    /**
+     * Tìm kiếm text + đồng thời lọc theo NCC + khoảng ngày.
+     * (Từ khóa OR trên các cột searchable) AND (điều kiện lọc NCC) AND (điều kiện lọc ngày).
+     */
+    public PaginationHelper.PaginationResult<SupplierReturn> searchFiltered(
+            String keyword, int page, int pageSize, Integer supplierId, LocalDate from, LocalDate to) {
+        String[] columns = getSearchableColumns();
+        if (keyword == null || keyword.trim().isEmpty() || columns.length == 0) {
+            return getPagedFiltered(page, pageSize, supplierId, from, to);
+        }
+        FilterContext ctx = buildWhereAndParams(keyword, supplierId, from, to);
+        return getPaged(page, pageSize, ctx.where, ctx.params);
+    }
+
+    /**
+     * Lấy tất cả (không phân trang) có lọc NCC + ngày — dùng cho xuất CSV/Excel.
+     */
+    public List<SupplierReturn> getAllFiltered(Integer supplierId, LocalDate from, LocalDate to) {
+        FilterContext ctx = buildWhereAndParams(null, supplierId, from, to);
+        if (ctx.where == null || ctx.where.isEmpty()) {
+            return getAll();
+        }
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ").append(getColumns()).append(" FROM ").append(getTableName());
+        String jc = getJoinClause();
+        if (jc != null && !jc.isEmpty()) sql.append(" ").append(jc);
+        sql.append(" WHERE ").append(ctx.where).append(" ORDER BY ").append(getOrderBy());
+        List<SupplierReturn> list = new ArrayList<>();
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            int i = 1;
+            for (Object p : ctx.params) ps.setObject(i++, p);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(mapResultSet(rs));
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "SupplierReturnDAO.getAllFiltered", e);
+        }
+        return list;
+    }
+
+    /**
+     * Build whereClause + mảng params cho BaseDAO.getPaged(page, size, where, Object...).
+     * Kết hợp: (search OR..) AND (supplierId=?) AND (CreatedAt >= ?) AND (CreatedAt <= ?)
+     * — dùng PreparedStatement params → an toàn SQL injection.
+     */
+    private FilterContext buildWhereAndParams(String keyword, Integer supplierId, LocalDate from, LocalDate to) {
+        List<Object> params = new ArrayList<>();
+        List<String> conds = new ArrayList<>();
+
+        // 1) Từ khóa tìm kiếm (OR trên các cột searchable)
+        String[] columns = getSearchableColumns();
+        if (keyword != null && !keyword.trim().isEmpty() && columns.length > 0) {
+            String escaped = keyword.trim()
+                    .replace("[", "[[]").replace("%", "[%]").replace("_", "[_]");
+            String likeValue = "%" + escaped + "%";
+            StringBuilder or = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) or.append(" OR ");
+                or.append(columns[i]).append(" LIKE ?");
+                params.add(likeValue);
+            }
+            or.append(")");
+            conds.add(or.toString());
+        }
+
+        // 2) Lọc theo NCC
+        if (supplierId != null) {
+            conds.add("r.SupplierID = ?");
+            params.add(supplierId);
+        }
+
+        // 3) Lọc theo Từ ngày (CreatedAt >= from 00:00:00)
+        if (from != null) {
+            conds.add("r.CreatedAt >= ?");
+            params.add(Timestamp.valueOf(LocalDateTime.of(from, LocalTime.MIN)));
+        }
+
+        // 4) Lọc theo Đến ngày (CreatedAt <= to 23:59:59.999)
+        if (to != null) {
+            conds.add("r.CreatedAt <= ?");
+            params.add(Timestamp.valueOf(LocalDateTime.of(to, LocalTime.MAX)));
+        }
+
+        FilterContext ctx = new FilterContext();
+        if (conds.isEmpty()) {
+            ctx.where = null;
+            ctx.params = new Object[0];
+        } else {
+            ctx.where = String.join(" AND ", conds);
+            ctx.params = params.toArray();
+        }
+        return ctx;
+    }
+
+    private static final class FilterContext {
+        String where;
+        Object[] params;
     }
 }

@@ -6,6 +6,7 @@ import com.incident.IncidentLogger;
 import com.incident.IncidentType;
 import com.security.AppConfig;
 import com.theme.ThemeManager;
+import com.utils.AppIcon;
 import com.view.LoginFrame;
 
 import javax.swing.JOptionPane;
@@ -25,6 +26,11 @@ public class Main {
         // Ap dung theme Light/Dark da luu tu lan truoc (mac dinh Light neu
         // chua tung doi).
         ThemeManager.getInstance().applyStartupLookAndFeel();
+
+        // Icon ung dung tren Dock (macOS) / mot so taskbar Linux. Tren
+        // Windows, AppIcon.apply(frame) trong tung JFrame (Login/Admin/
+        // Client/Register) la du de doi icon taskbar + title bar.
+        AppIcon.applyToTaskbar();
 
         try {
             AppConfig.getInstance();

@@ -6,6 +6,7 @@ import com.event.AppEventBus;
 import com.event.DataChangedEvent;
 import com.model.StockAlert;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -13,21 +14,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
-/**
- * DAO cho canh bao het/sap het hang gui Quan ly kho (xem sql/SIMS.sql +
- * sql/Trigger_SIMS.sql). Cac dong StockAlerts gio day duoc trigger
- * trg_Products_AutoStockAlert TU DONG sinh ra khi Products.Stock giam
- * xuong <= MinStock (khong con NV ban hang bam chuong bao thu cong nua) -
- * {@link #create(StockAlert)} van duoc giu lai o day cho truong hop can
- * tao thu cong/goi lai tu code, nhung UI khong con goi den. Poll "chua
- * xem" duoc {@code com.service.StockAlertNotifyPoller} dam nhiem (giong
- * OrderNotifyPoller voi Orders.SeenByAdmin), StockAlertPanel dung
- * getPaged/search de hien thi danh sach cho Quan ly kho xu ly.
- */
 public class StockAlertDAO extends BaseDAO<StockAlert> {
-
     private static final String BASE_TABLE = "StockAlerts sa";
 
     @Override
@@ -87,7 +80,6 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         return alert;
     }
 
-    /** Con canh bao nao dang NEW/PLANNED (chua RESOLVED) cho san pham nay khong - dung de chan bao cao trung lap. */
     public boolean hasActiveAlert(int productId) {
         String sql = "SELECT COUNT(*) FROM StockAlerts WHERE ProductID = ? AND Status <> 'RESOLVED'";
         try (Connection con = DBConnection.getConnection();
@@ -102,12 +94,6 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         }
     }
 
-    /**
-     * Tao 1 bao cao het/sap het hang moi. Tu choi (tra ve false, KHONG dung
-     * den DB) neu san pham nay dang co canh bao NEW/PLANNED chua xu ly -
-     * tranh Quan ly kho nhan trung lap 1 SP nhieu lan tu nhieu NV ban hang
-     * hoac nhieu lan bam trong cung 1 ca.
-     */
     public boolean create(StockAlert alert) {
         if (hasActiveAlert(alert.getProductId())) {
             return false;
@@ -129,10 +115,8 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
             } else {
                 ps.setInt(5, alert.getReportedBy());
             }
-
             int rows = ps.executeUpdate();
             if (rows == 0) return false;
-
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (keys.next()) alert.setAlertId(keys.getInt(1));
             }
@@ -148,7 +132,6 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         return getByCondition("sa.SeenByInventoryManager = 0");
     }
 
-    /** Đếm cảnh báo còn đang xử lý (NEW/PLANNED), không tính RESOLVED. */
     public int countActive() {
         String sql = "SELECT COUNT(*) FROM StockAlerts WHERE Status <> 'RESOLVED'";
         try (Connection con = DBConnection.getConnection();
@@ -173,7 +156,6 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         }
     }
 
-    /** Danh dau TAT CA canh bao hien tai la da xem (khi Quan ly kho mo trang "Canh bao ton kho"). */
     public boolean markAllSeen() {
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(
@@ -186,12 +168,10 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         }
     }
 
-    /** Quan ly kho danh dau "Da len ke hoach nhap bo sung" (NEW/PLANNED -> PLANNED). */
     public boolean markPlanned(int alertId) {
         return updateStatus(alertId, "PLANNED", null);
     }
 
-    /** Quan ly kho danh dau da xu ly xong (nhap hang ve / het van de) - ghi nhan nguoi xu ly + thoi gian. */
     public boolean resolve(int alertId, int resolvedByUserId) {
         return updateStatus(alertId, "RESOLVED", resolvedByUserId);
     }
@@ -210,8 +190,6 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
                 ps.setString(1, newStatus);
                 ps.setInt(2, alertId);
             }
-            // QUAN TRONG: SQL Server KHONG nem loi khi WHERE khong khop dong nao -
-            // phai tu kiem tra so dong bi anh huong (xem ghi chu tuong tu o OrderDAO).
             boolean updated = ps.executeUpdate() > 0;
             if (updated) {
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.STOCK_ALERT));
@@ -221,5 +199,118 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
             AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "StockAlertDAO.updateStatus", e);
             return false;
         }
+    }
+
+    // ================================================================
+    // ====== THÊM MỚI: LỌC THEO LOẠI SP + KHOẢNG NGÀY ======
+    // ================================================================
+
+    /**
+     * Phân trang có lọc: loại SP (categoryId null = tất cả) + khoảng ngày.
+     */
+    public PaginationHelper.PaginationResult<StockAlert> getPagedFiltered(
+            int page, int pageSize, Integer categoryId, LocalDate from, LocalDate to) {
+        FilterContext ctx = buildWhereAndParams(null, categoryId, from, to);
+        return getPaged(page, pageSize, ctx.where, ctx.params);
+    }
+
+    /**
+     * Tìm kiếm text + lọc loại SP + lọc ngày (AND với nhau).
+     */
+    public PaginationHelper.PaginationResult<StockAlert> searchFiltered(
+            String keyword, int page, int pageSize, Integer categoryId, LocalDate from, LocalDate to) {
+        String[] columns = getSearchableColumns();
+        if (keyword == null || keyword.trim().isEmpty() || columns.length == 0) {
+            return getPagedFiltered(page, pageSize, categoryId, from, to);
+        }
+        FilterContext ctx = buildWhereAndParams(keyword, categoryId, from, to);
+        return getPaged(page, pageSize, ctx.where, ctx.params);
+    }
+
+    /**
+     * Lấy tất cả (không phân trang) có lọc — dùng cho xuất CSV/Excel.
+     */
+    public List<StockAlert> getAllFiltered(Integer categoryId, LocalDate from, LocalDate to) {
+        FilterContext ctx = buildWhereAndParams(null, categoryId, from, to);
+        if (ctx.where == null || ctx.where.isEmpty()) return getAll();
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ").append(getColumns()).append(" FROM ").append(getTableName());
+        String jc = getJoinClause();
+        if (jc != null && !jc.isEmpty()) sql.append(" ").append(jc);
+        sql.append(" WHERE ").append(ctx.where).append(" ORDER BY ").append(getOrderBy());
+        List<StockAlert> list = new ArrayList<>();
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            int i = 1;
+            for (Object p : ctx.params) ps.setObject(i++, p);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(mapResultSet(rs));
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StockAlertDAO.getAllFiltered", e);
+        }
+        return list;
+    }
+
+    /**
+     * Build where + params cho BaseDAO varargs.
+     * Kết hợp: (từ khóa OR trên ProductName/ProductCode)
+     *        AND (p.CategoryID = ? nếu có)
+     *        AND (sa.CreatedAt >= ? nếu có from)
+     *        AND (sa.CreatedAt <= ? nếu có to)
+     */
+    private FilterContext buildWhereAndParams(String keyword, Integer categoryId, LocalDate from, LocalDate to) {
+        List<Object> params = new ArrayList<>();
+        List<String> conds = new ArrayList<>();
+
+        // 1) Từ khóa tìm kiếm
+        String[] columns = getSearchableColumns();
+        if (keyword != null && !keyword.trim().isEmpty() && columns.length > 0) {
+            String escaped = keyword.trim()
+                    .replace("[", "[[]").replace("%", "[%]").replace("_", "[_]");
+            String likeValue = "%" + escaped + "%";
+            StringBuilder or = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) or.append(" OR ");
+                or.append(columns[i]).append(" LIKE ?");
+                params.add(likeValue);
+            }
+            or.append(")");
+            conds.add(or.toString());
+        }
+
+        // 2) Lọc theo Loại sản phẩm (dùng Products.CategoryID, không cần JOIN Categories)
+        if (categoryId != null) {
+            conds.add("p.CategoryID = ?");
+            params.add(categoryId);
+        }
+
+        // 3) Lọc theo Từ ngày (CreatedAt >= from 00:00:00)
+        if (from != null) {
+            conds.add("sa.CreatedAt >= ?");
+            params.add(Timestamp.valueOf(LocalDateTime.of(from, LocalTime.MIN)));
+        }
+
+        // 4) Lọc theo Đến ngày (CreatedAt <= to 23:59:59.999)
+        if (to != null) {
+            conds.add("sa.CreatedAt <= ?");
+            params.add(Timestamp.valueOf(LocalDateTime.of(to, LocalTime.MAX)));
+        }
+
+        FilterContext ctx = new FilterContext();
+        if (conds.isEmpty()) {
+            ctx.where = null;
+            ctx.params = new Object[0];
+        } else {
+            ctx.where = String.join(" AND ", conds);
+            ctx.params = params.toArray();
+        }
+        return ctx;
+    }
+
+    private static final class FilterContext {
+        String where;
+        Object[] params;
     }
 }

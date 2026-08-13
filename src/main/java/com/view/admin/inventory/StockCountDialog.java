@@ -234,7 +234,7 @@ public class StockCountDialog extends JDialog {
         statsRow.setOpaque(false);
 
         statTotalCard = new StatCard("Tổng sản phẩm", "0", FontAwesomeSolid.BOXES,
-                AppColor.ACCENT != null ? AppColor.ACCENT : new Color(5, 150, 105), true);
+        		AppColor.ACCENT != null ? AppColor.ACCENT : new Color(30, 100, 200), true);
         statDiffCard = new StatCard("Có chênh lệch", "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE,
                 AppColor.WARNING != null ? AppColor.WARNING : new Color(180, 83, 9), true);
         statNetCard = new StatCard("Chênh lệch ròng", "0", FontAwesomeSolid.BALANCE_SCALE,

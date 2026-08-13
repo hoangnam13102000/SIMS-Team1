@@ -30,25 +30,18 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 public class InvoicePanel extends BaseCrudPanel<Invoice> {
-
-    /** Chỉ ngày, không giờ. */
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-
     private final InvoiceDAO invoiceDAO = new InvoiceDAO();
 
-    /** Loc theo khoang ngay tao hoa don. allowEmpty = true: mac dinh KHONG loc (hien tat ca). */
     private DatePickerField fromDateFilter;
     private DatePickerField toDateFilter;
     private JLabel clearDateFilterLink;
 
     public InvoicePanel() {
         super();
-
-        // Cot trang thai HD (index 6) + cot doi/tra (index 8)
         table.setBadgeColumn(6, this::statusLabel, this::statusColor);
         table.setBadgeColumn(8, this::returnStateLabel, this::returnStateColor);
 
-        // Cột "Mã hóa đơn" (index 0): thêm icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -76,7 +69,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
             }
         });
 
-        // Xử lý click vào icon copy mã hóa đơn
         table.getTable().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -98,7 +90,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         buildDateFilterBar();
         initialLoad();
         applyColumnWidths();
-
         table.setActionColumn(new ActionColumn()
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
                         modelRow -> {
@@ -108,29 +99,21 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
                         this::exportRowPdf));
     }
 
-    // ---------------------------------------------------------------
-    // Bo loc: khoang ngay tao hoa don
-    // ---------------------------------------------------------------
-
     private void buildDateFilterBar() {
         fromDateFilter = new DatePickerField(null, true);
         toDateFilter = new DatePickerField(null, true);
-
         JLabel fromLabel = new JLabel("Từ ngày");
         fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         fromLabel.setForeground(AppColor.TEXT_MUTED);
-
         JLabel toLabel = new JLabel("Đến ngày");
         toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         toLabel.setForeground(AppColor.TEXT_MUTED);
-
         JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         dateRow.setOpaque(false);
         dateRow.add(fromLabel);
         dateRow.add(fromDateFilter);
         dateRow.add(toLabel);
         dateRow.add(toDateFilter);
-
         fromDateFilter.onChange(d -> onDateFilterChanged());
         toDateFilter.onChange(d -> onDateFilterChanged());
         addToolbarFilter(dateRow);
@@ -150,12 +133,10 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
                 toDateFilter.setValue(null);
                 onDateFilterChanged();
             }
-
             @Override
             public void mouseEntered(MouseEvent e) {
                 clearDateFilterLink.setForeground(AppColor.ERROR);
             }
-
             @Override
             public void mouseExited(MouseEvent e) {
                 clearDateFilterLink.setForeground(AppColor.TEXT_MUTED);
@@ -164,13 +145,27 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         addToolbarFilter(clearDateFilterLink);
     }
 
+    // ================================================================
+    // ====== CHỈ SỬA HÀM NÀY: Thêm validate Từ ngày > Đến ngày ======
+    // ================================================================
     private void onDateFilterChanged() {
+        LocalDate from = fromDateFilter.getValue();
+        LocalDate to = toDateFilter.getValue();
+        if (from != null && to != null && from.isAfter(to)) {
+            AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+                    "\"Từ ngày\" (" + from + ") không được sau \"Đến ngày\" (" + to + ").");
+            return;
+        }
+
         if (clearDateFilterLink != null) {
             clearDateFilterLink.setVisible(
                     fromDateFilter.getValue() != null || toDateFilter.getValue() != null);
         }
         applyFilters();
     }
+    // ================================================================
+    // ====================== HẾT PHẦN SỬA ===========================
+    // ================================================================
 
     private LocalDate selectedFromDate() {
         return fromDateFilter == null ? null : fromDateFilter.getValue();
@@ -181,7 +176,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
     }
 
     private void applyColumnWidths() {
-        // Mã HĐ | KH | Người tạo | Ngày | Tổng | PT TT | Trạng thái | Đã hoàn | Đổi/trả
         table.setColumnWidths(165, 140, 120, 100, 110, 110, 100, 110, 120);
         table.setColumnMinWidths(150, 100, 90, 90, 90, 90, 90, 90, 100);
         if (table.getTable().getColumnModel().getColumnCount() > 0) {
@@ -242,7 +236,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         };
     }
 
-    /** Tổng tiền (4) + Đã hoàn (7) — sort theo số. */
     @Override
     protected int[] numericColumns() {
         return new int[]{4, 7};
@@ -317,14 +310,12 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
     protected void viewRow(int modelRow) {
         Invoice item = rowToItem(modelRow);
         if (item == null) return;
-        // Dam bao co tom tat doi/tra khi mo chi tiet
         invoiceDAO.attachReturnSummary(item);
         openDetailDialog(item);
     }
 
     @Override
     protected void openForm(Invoice item) {
-        // Khong bao gio duoc goi
     }
 
     @Override
@@ -344,10 +335,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         reload();
     }
 
-    // ---------------------------------------------------------------
-    // Nhan/mau trang thai hoa don
-    // ---------------------------------------------------------------
-
     private String statusLabel(Invoice inv) {
         return inv.isCancelled() ? "Đã hủy" : "Hoàn tất";
     }
@@ -359,10 +346,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
     private Color statusColor(Object value) {
         return "Đã hủy".equals(String.valueOf(value)) ? AppColor.ERROR : AppColor.SUCCESS;
     }
-
-    // ---------------------------------------------------------------
-    // Doi/tra + da hoan
-    // ---------------------------------------------------------------
 
     private String refundedLabel(Invoice inv) {
         if (inv == null || inv.getRefundedAmount() == null
@@ -378,7 +361,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
         if (state == null || "NONE".equalsIgnoreCase(state)) return "—";
         if ("FULL".equalsIgnoreCase(state)) return "Đã trả hết";
         if ("PARTIAL".equalsIgnoreCase(state)) return "Trả một phần";
-        // fallback neu model co getReturnStateLabel()
         try {
             return inv.getReturnStateLabel();
         } catch (Exception ignore) {
@@ -412,10 +394,6 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
                 return method;
         }
     }
-
-    // ---------------------------------------------------------------
-    // Xuat PDF
-    // ---------------------------------------------------------------
 
     private void exportRowPdf(int modelRow) {
         Invoice item = rowToItem(modelRow);

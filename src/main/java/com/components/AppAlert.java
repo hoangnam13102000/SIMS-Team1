@@ -18,7 +18,10 @@ public final class AppAlert {
 
     public enum Type { SUCCESS, ERROR, WARNING, INFO }
 
-    private static final int WIDTH = 340;
+    private static final int WIDTH = 380;
+    // Khoang đem an toan (px) tru vao chieu rong text de tranh bi cat chu khi
+    // icon/font render rong hon uoc tinh (dau tieng Viet, dau nhay kep, v.v.)
+    private static final int TEXT_SAFETY_MARGIN = 12;
     private static final int MARGIN_TOP = 20;
     private static final int MARGIN_RIGHT = 20;
     private static final int SPACING = 10;
@@ -67,6 +70,22 @@ public final class AppAlert {
         lifeTimer.start();
     }
 
+    /**
+     * Tinh chieu rong con lai danh cho vung text, dua tren kich thuoc THAT cua
+     * iconLabel/closeLabel (thay vi mot con so hard-code gia dinh truoc), tru
+     * them insets cua card, hgap cua BorderLayout va mot khoang dem an toan.
+     * Nho vay du icon/padding co thay doi sau nay thi vung text van tu dieu
+     * chinh theo, khong bi cat chu nhu truoc.
+     */
+    private static int computeTextWidth(JLabel iconLabel, JLabel closeLabel) {
+        int cardHorizontalInsets = 2 * (1 + 16); // LineBorder(1) + EmptyBorder(...,16,...,16)
+        int hgap = 12 * 2; // BorderLayout(12, 0) giua WEST-CENTER va CENTER-EAST
+        int iconColumnWidth = iconLabel.getPreferredSize().width;
+        int closeColumnWidth = closeLabel.getPreferredSize().width;
+        int reserved = cardHorizontalInsets + hgap + iconColumnWidth + closeColumnWidth;
+        return WIDTH - reserved - TEXT_SAFETY_MARGIN;
+    }
+
     private static JWindow buildToastWindow(Window owner, Style style, String title, String message) {
         JWindow toast = new JWindow(owner);
         toast.setLayout(new BorderLayout());
@@ -83,6 +102,13 @@ public final class AppAlert {
         iconLabel.setVerticalAlignment(SwingConstants.TOP);
         iconLabel.setBorder(new EmptyBorder(2, 8, 0, 0));
 
+        FontIcon closeIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
+        closeIcon.setIconColor(AppColor.TEXT_SECONDARY);
+        JLabel closeLabel = new JLabel(closeIcon);
+        closeLabel.setVerticalAlignment(SwingConstants.TOP);
+        closeLabel.setBorder(new EmptyBorder(2, 8, 0, 0));
+        closeLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
         JPanel textPanel = new JPanel();
         textPanel.setOpaque(false);
         textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
@@ -94,20 +120,21 @@ public final class AppAlert {
         textPanel.add(titleLabel);
 
         if (message != null && !message.isBlank()) {
-            JLabel messageLabel = new JLabel("<html><div style='width:225px'>" + message.replace("\n", "<br>") + "</div></html>");
+            // Truoc day chieu rong noi dung bi hard-code "225px", chi vua khit voi
+            // chieu rong con lai thuc te (~234px o WIDTH=340) -> khong co le, chi
+            // can icon/font render rong hon uoc tinh mot chut (dau tieng Viet, dau
+            // nhay kep...) la chu bi CAT NGANG ben phai. Tinh dong tu kich thuoc
+            // that cua icon/close/padding + them bien an toan de khong con phu
+            // thuoc vao mot con so "vua khit" nhu vay.
+            int textWidth = computeTextWidth(iconLabel, closeLabel);
+            JLabel messageLabel = new JLabel("<html><div style='width:" + textWidth + "px'>"
+                    + message.replace("\n", "<br>") + "</div></html>");
             messageLabel.setFont(AppFont.SMALL);
             messageLabel.setForeground(AppColor.TEXT_SECONDARY);
             messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             messageLabel.setBorder(new EmptyBorder(3, 0, 0, 0));
             textPanel.add(messageLabel);
         }
-
-        FontIcon closeIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
-        closeIcon.setIconColor(AppColor.TEXT_SECONDARY);
-        JLabel closeLabel = new JLabel(closeIcon);
-        closeLabel.setVerticalAlignment(SwingConstants.TOP);
-        closeLabel.setBorder(new EmptyBorder(2, 8, 0, 0));
-        closeLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
         card.add(iconLabel, BorderLayout.WEST);
         card.add(textPanel, BorderLayout.CENTER);

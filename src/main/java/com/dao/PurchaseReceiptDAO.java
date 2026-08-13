@@ -7,6 +7,7 @@ import com.event.DataChangedEvent;
 import com.model.PurchaseReceipt;
 import com.model.PurchaseReceiptDetail;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -17,6 +18,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -76,6 +78,58 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
         receipt.setStatus(rs.getString("Status"));
         receipt.setItemCount(rs.getInt("ItemCount"));
         return receipt;
+    }
+
+    /**
+     * Lập phiếu nhập kho nhiều dòng trong 1 transaction.
+     * Mỗi dòng chi tiết → trigger sinh 1 lô + cộng tồn + ghi sổ cái.
+     *
+     * @param supplierId      nhà cung cấp của cả phiếu
+     * @param createdByUserId UserID người lập
+     * @param details         danh sách dòng (≥ 1), mỗi dòng: productId, quantity &gt; 0, importPrice ≥ 0
+     * @return ReceiptID nếu thành công, -1 nếu thất bại
+     */
+
+    /**
+     * Tìm kiếm + lọc phiếu nhập theo từ khóa và/hoặc khoảng ngày tạo (CreatedAt).
+     */
+    public PaginationHelper.PaginationResult<PurchaseReceipt> getPagedFiltered(
+            int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
+
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            String[] columns = getSearchableColumns();
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            StringBuilder keywordCondition = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) keywordCondition.append(" OR ");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(likeParam);
+            }
+            keywordCondition.append(")");
+            conditions.add(keywordCondition.toString());
+        }
+        if (fromDate != null) {
+            conditions.add("r.CreatedAt >= ?");
+            params.add(Timestamp.valueOf(fromDate.atStartOfDay()));
+        }
+        if (toDate != null) {
+            conditions.add("r.CreatedAt < ?");
+            params.add(Timestamp.valueOf(toDate.plusDays(1).atStartOfDay()));
+        }
+
+        String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
+        return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
+    private String escapeLike(String raw) {
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace("[", "\\[");
     }
 
     public int createReceipt(int supplierId, int createdByUserId, List<PurchaseReceiptDetail> details) {
@@ -194,6 +248,10 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
     }
 
     public List<PurchaseReceiptDetail> getDetails(int receiptId) {
+        // LEFT JOIN InventoryBatch: moi dong phieu nhap sinh dung 1 lo (xem
+        // trigger trg_PurchaseReceiptDetails_Insert), lay ve BatchCode (LOT_xxxxxx)
+        // de doi chieu voi LotNumber (so lo tren bao bi NCC) - tranh tinh trang
+        // nhan vien phai hoi lai "lo he thong ung voi lo nao tren bao bi".
         String sql = "SELECT d.ReceiptDetailID, d.ReceiptID, d.ProductID, p.ProductName, p.ProductCode, "
                 + "d.Quantity, d.ImportPrice, d.LotNumber, d.ManufactureDate, d.ExpiryDate, b.BatchCode "
                 + "FROM PurchaseReceiptDetails d "

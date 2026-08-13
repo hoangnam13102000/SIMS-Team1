@@ -4,6 +4,7 @@ import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.model.Promotion;
 import com.utils.DBConnection;
+import com.utils.PaginationHelper;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -12,6 +13,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -167,6 +169,53 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "PromotionDAO.codeExists - " + code, e);
             return false;
         }
+    }
+
+
+    /**
+     * Tìm kiếm + lọc khuyến mãi theo từ khóa (mã/tên) và/hoặc khoảng thời gian
+     * hiệu lực. Khoảng [fromDate, toDate] lấy các CTKM giao với khoảng đó:
+     * {@code StartDate <= toDate AND EndDate >= fromDate}.
+     * Cả hai đầu có thể null nếu không lọc ngày.
+     */
+    public PaginationHelper.PaginationResult<Promotion> getPagedFiltered(
+            int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
+
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+
+        String trimmedKeyword = keyword == null ? "" : keyword.trim();
+        if (!trimmedKeyword.isEmpty()) {
+            String[] columns = getSearchableColumns();
+            String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
+            StringBuilder keywordCondition = new StringBuilder("(");
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) keywordCondition.append(" OR ");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                params.add(likeParam);
+            }
+            keywordCondition.append(")");
+            conditions.add(keywordCondition.toString());
+        }
+        // Giao khoảng hiệu lực với [from, to]
+        if (fromDate != null) {
+            conditions.add("EndDate >= ?");
+            params.add(Date.valueOf(fromDate));
+        }
+        if (toDate != null) {
+            conditions.add("StartDate <= ?");
+            params.add(Date.valueOf(toDate));
+        }
+
+        String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
+        return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
+    private String escapeLike(String raw) {
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace("[", "\\[");
     }
 
     public Promotion findByCode(String code) {
