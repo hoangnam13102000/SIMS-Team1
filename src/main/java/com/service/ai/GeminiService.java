@@ -34,7 +34,7 @@ public final class GeminiService {
 
     public GeminiService() {
         AppConfig config = AppConfig.getInstance();
-        this.apiKey = config.get("GEMINI_API_KEY");
+        this.apiKey = config.get("GEMINI_API_KEY","");
         this.model = config.get("GEMINI_MODEL", DEFAULT_MODEL);
     }
 
