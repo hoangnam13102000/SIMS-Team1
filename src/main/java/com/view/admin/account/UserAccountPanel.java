@@ -1,6 +1,7 @@
 package com.view.admin.account;
 
 import com.components.BaseDialog;
+import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
@@ -11,22 +12,27 @@ import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Window;
-import java.awt.Dimension;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import javax.swing.JLabel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import javax.swing.JComboBox;
-import javax.swing.BorderFactory;
 
 public class UserAccountPanel extends BaseCrudPanel<User> {
 
     private final UserDAO userDAO = new UserDAO();
-    private JComboBox<String> roleFilter;
+    private FilterDropdown<RoleOption> roleFilter;
+    private JLabel clearFiltersLink;
     private Role selectedRole;
 
     public UserAccountPanel() {
@@ -136,6 +142,18 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo mã NV (tên đăng nhập), họ tên, email..."; }
 
+    /** Option cho FilterDropdown vai trò - value null = "Tất cả vai trò". */
+    private static final class RoleOption {
+        final Role role;
+        final String label;
+        RoleOption(Role role, String label) {
+            this.role = role;
+            this.label = label;
+        }
+        @Override
+        public String toString() { return label; }
+    }
+
     /**
      * Goi y autocomplete gom ho ten VA ten dang nhap cua toan bo tai khoan -
      * khop voi 2 tieu chi chinh trong placeholder tim kiem o tren. Duoc
@@ -143,30 +161,50 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
      * userDAO.getAll() (blocking) o day an toan, khong lam treo UI.
      */
     private void setupRoleFilter() {
-        roleFilter = new JComboBox<>(new String[]{"Tất cả vai trò", "Quản trị viên", "Quản lý bán hàng", "Quản lý kho", "Nhân viên bán hàng", "Khách hàng"});
-        roleFilter.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 13));
-        roleFilter.setBackground(AppColor.WHITE);
-        roleFilter.setForeground(AppColor.TEXT_PRIMARY);
-        roleFilter.setPreferredSize(new Dimension(190, 38));
-        roleFilter.setFocusable(false);
-        roleFilter.setToolTipText("Lọc danh sách theo vai trò");
-        roleFilter.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
-        roleFilter.addActionListener(e -> {
-            selectedRole = roleFromFilterIndex(roleFilter.getSelectedIndex());
-            applyFilters();
-        });
+        RoleOption[] roleOptions = new RoleOption[]{
+                new RoleOption(null, "Tất cả vai trò"),
+                new RoleOption(Role.ADMIN, roleLabel(Role.ADMIN)),
+                new RoleOption(Role.SALES_MANAGER, roleLabel(Role.SALES_MANAGER)),
+                new RoleOption(Role.INVENTORY_MANAGER, roleLabel(Role.INVENTORY_MANAGER)),
+                new RoleOption(Role.SALES_STAFF, roleLabel(Role.SALES_STAFF)),
+                new RoleOption(Role.CUSTOMER, roleLabel(Role.CUSTOMER))
+        };
+
+        roleFilter = new FilterDropdown<>(FontAwesomeSolid.USER_CIRCLE, roleOptions);
+        roleFilter.onChange(opt -> onFilterChanged());
         addToolbarFilter(roleFilter);
+
+        FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
+        clearIcon.setIconColor(AppColor.TEXT_MUTED);
+        clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
+        clearFiltersLink.setIconTextGap(6);
+        clearFiltersLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+        clearFiltersLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearFiltersLink.setVisible(false);
+        clearFiltersLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                roleFilter.resetToAll();
+                onFilterChanged();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.ERROR);
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
+            }
+        });
+        addToolbarFilter(clearFiltersLink);
     }
 
-    private Role roleFromFilterIndex(int index) {
-        switch (index) {
-            case 1: return Role.ADMIN;
-            case 2: return Role.SALES_MANAGER;
-            case 3: return Role.INVENTORY_MANAGER;
-            case 4: return Role.SALES_STAFF;
-            case 5: return Role.CUSTOMER;
-            default: return null;
-        }
+    private void onFilterChanged() {
+        RoleOption opt = roleFilter.getSelected();
+        selectedRole = opt == null ? null : opt.role;
+        if (clearFiltersLink != null) clearFiltersLink.setVisible(roleFilter.isFilterActive());
+        applyFilters();
     }
 
     @Override
