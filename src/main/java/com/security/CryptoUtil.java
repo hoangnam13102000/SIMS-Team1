@@ -123,7 +123,7 @@ public final class CryptoUtil {
     /**
      * Ma hoa 1 mang byte bat ky (KHONG qua String/UTF-8), tra ve mang byte tho
      * dang IV(12) + cipherText + authTag(16) - dung cho du lieu nhi phan nhu
-     * file backup (.sql text hoac .bak nhi phan cua SQL Server deu an toan,
+     * file backup (.sql text cua MySQL) deu an toan,
      * khac voi encrypt(String,...) o tren se lam hong byte nhi phan khong
      * phai UTF-8 hop le).
      */

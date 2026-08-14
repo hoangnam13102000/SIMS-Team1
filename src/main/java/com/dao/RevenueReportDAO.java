@@ -283,12 +283,12 @@ public class RevenueReportDAO {
 
     public Summary getSummary(LocalDate from, LocalDate to) {
         // Doanh thu thuần = TotalAmount HĐ ACTIVE (đã được trigger điều chỉnh khi trả hàng)
-        String invoiceSql = "SELECT ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+        String invoiceSql = "SELECT COALESCE(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
 
-        String itemsSql = "SELECT ISNULL(SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)), 0) "
+        String itemsSql = "SELECT COALESCE(SUM(d.Quantity - COALESCE(ret.ReturnedQty, 0)), 0) "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + RETURN_JOIN
@@ -325,7 +325,7 @@ public class RevenueReportDAO {
 
     public List<DailyPoint> getDailyRevenue(LocalDate from, LocalDate to) {
         String sql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
-                + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+                + "COALESCE(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -356,7 +356,7 @@ public class RevenueReportDAO {
 
     public List<PaymentSlice> getRevenueByPaymentMethod(LocalDate from, LocalDate to) {
         String sql = "SELECT inv.PaymentMethod, "
-                + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+                + "COALESCE(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -381,24 +381,24 @@ public class RevenueReportDAO {
     }
 
     public List<TopProduct> getTopProducts(LocalDate from, LocalDate to, int limit) {
-        String sql = "SELECT TOP (?) p.ProductName, "
-                + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
-                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue "
+        String sql = "SELECT p.ProductName, "
+                + "SUM(d.Quantity - COALESCE(ret.ReturnedQty, 0)) AS Qty, "
+                + "SUM(d.LineTotal - COALESCE(ret.ReturnedValue, 0)) AS Revenue "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
                 + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY p.ProductID, p.ProductName "
-                + "HAVING SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) > 0 "
-                + "ORDER BY Revenue DESC";
+                + "HAVING SUM(d.Quantity - COALESCE(ret.ReturnedQty, 0)) > 0 "
+                + "ORDER BY Revenue DESC LIMIT ?";
 
         List<TopProduct> list = new ArrayList<>();
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-            ps.setDate(2, Date.valueOf(from));
-            ps.setDate(3, Date.valueOf(to));
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            ps.setInt(3, limit);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     list.add(new TopProduct(rs.getString("ProductName"),
@@ -418,12 +418,12 @@ public class RevenueReportDAO {
 
     public ProfitSummary getProfitSummary(LocalDate from, LocalDate to) {
         // Doanh thu thuần: cùng công thức với getSummary (TotalAmount đã điều chỉnh bởi trigger)
-        String revenueSql = "SELECT ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue "
+        String revenueSql = "SELECT COALESCE(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue "
                 + "FROM Invoices inv "
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ?";
 
         // Giá vốn: theo số lượng còn lại sau trả × ImportPrice
-        String costSql = "SELECT ISNULL(SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ), 0) AS Cost "
+        String costSql = "SELECT COALESCE(SUM( (d.Quantity - COALESCE(ret.ReturnedQty, 0)) * p.ImportPrice ), 0) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
@@ -459,7 +459,7 @@ public class RevenueReportDAO {
 
     /** Tổng tiền hoàn trả NCC (phiếu COMPLETED) trong [from, to]. */
     public BigDecimal sumSupplierRefundBetween(LocalDate from, LocalDate to) {
-        String sql = "SELECT ISNULL(SUM(TotalRefundAmount), 0) FROM SupplierReturns "
+        String sql = "SELECT COALESCE(SUM(TotalRefundAmount), 0) FROM SupplierReturns "
                 + "WHERE Status = 'COMPLETED' AND CAST(CreatedAt AS DATE) BETWEEN ? AND ?";
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -481,7 +481,7 @@ public class RevenueReportDAO {
     public List<DailyFinancePoint> getDailyFinance(LocalDate from, LocalDate to) {
         // Thu = doanh thu thuần (TotalAmount đã điều chỉnh bởi trigger), cùng công thức getSummary
         String revenueSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
-                + "ISNULL(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
+                + "COALESCE(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
                 + "COUNT(*) AS Cnt "
                 + "FROM Invoices inv "
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -489,7 +489,7 @@ public class RevenueReportDAO {
 
         // Chi (giá vốn) vẫn theo số lượng còn lại sau trả
         String costSql = "SELECT CAST(inv.CreatedAt AS DATE) AS Day, "
-                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
+                + "SUM( (d.Quantity - COALESCE(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
@@ -503,7 +503,7 @@ public class RevenueReportDAO {
                 + "GROUP BY CAST(CreatedAt AS DATE)";
 
         String refundSql = "SELECT CAST(CreatedAt AS DATE) AS Day, "
-                + "ISNULL(SUM(TotalRefundAmount), 0) AS Refund "
+                + "COALESCE(SUM(TotalRefundAmount), 0) AS Refund "
                 + "FROM SupplierReturns "
                 + "WHERE Status = 'COMPLETED' "
                 + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
@@ -587,26 +587,26 @@ public class RevenueReportDAO {
     }
 
     public List<ProductProfit> getTopProductsByProfit(LocalDate from, LocalDate to, int limit) {
-        String sql = "SELECT TOP (?) p.ProductName, "
-                + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
-                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
-                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
+        String sql = "SELECT p.ProductName, "
+                + "SUM(d.Quantity - COALESCE(ret.ReturnedQty, 0)) AS Qty, "
+                + "SUM(d.LineTotal - COALESCE(ret.ReturnedValue, 0)) AS Revenue, "
+                + "SUM( (d.Quantity - COALESCE(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
                 + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY p.ProductID, p.ProductName "
-                + "HAVING SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) > 0 "
-                + "ORDER BY (SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) "
-                + "        - SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice )) DESC";
+                + "HAVING SUM(d.Quantity - COALESCE(ret.ReturnedQty, 0)) > 0 "
+                + "ORDER BY (SUM(d.LineTotal - COALESCE(ret.ReturnedValue, 0)) "
+                + "        - SUM( (d.Quantity - COALESCE(ret.ReturnedQty, 0)) * p.ImportPrice )) DESC LIMIT ?";
 
         List<ProductProfit> list = new ArrayList<>();
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-            ps.setDate(2, Date.valueOf(from));
-            ps.setDate(3, Date.valueOf(to));
+            ps.setDate(1, Date.valueOf(from));
+            ps.setDate(2, Date.valueOf(to));
+            ps.setInt(3, limit);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     list.add(new ProductProfit(rs.getString("ProductName"), rs.getLong("Qty"),
@@ -622,8 +622,8 @@ public class RevenueReportDAO {
 
     public List<CategoryProfit> getProfitByCategory(LocalDate from, LocalDate to) {
         String sql = "SELECT c.CategoryName, "
-                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue, "
-                + "SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
+                + "SUM(d.LineTotal - COALESCE(ret.ReturnedValue, 0)) AS Revenue, "
+                + "SUM( (d.Quantity - COALESCE(ret.ReturnedQty, 0)) * p.ImportPrice ) AS Cost "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "
@@ -631,8 +631,8 @@ public class RevenueReportDAO {
                 + RETURN_JOIN
                 + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY c.CategoryID, c.CategoryName "
-                + "ORDER BY (SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) "
-                + "        - SUM( (d.Quantity - ISNULL(ret.ReturnedQty, 0)) * p.ImportPrice )) DESC";
+                + "ORDER BY (SUM(d.LineTotal - COALESCE(ret.ReturnedValue, 0)) "
+                + "        - SUM( (d.Quantity - COALESCE(ret.ReturnedQty, 0)) * p.ImportPrice )) DESC";
 
         List<CategoryProfit> list = new ArrayList<>();
         try (Connection con = getConnection();
@@ -659,8 +659,8 @@ public class RevenueReportDAO {
     public List<MonthlyCategoryPoint> getMonthlySalesByCategory(LocalDate from, LocalDate to) {
         String sql = "SELECT YEAR(inv.CreatedAt) AS Yr, MONTH(inv.CreatedAt) AS Mo, "
                 + "c.CategoryName AS CategoryName, "
-                + "SUM(d.Quantity - ISNULL(ret.ReturnedQty, 0)) AS Qty, "
-                + "SUM(d.LineTotal - ISNULL(ret.ReturnedValue, 0)) AS Revenue "
+                + "SUM(d.Quantity - COALESCE(ret.ReturnedQty, 0)) AS Qty, "
+                + "SUM(d.LineTotal - COALESCE(ret.ReturnedValue, 0)) AS Revenue "
                 + "FROM InvoiceDetails d "
                 + "JOIN Invoices inv ON d.InvoiceID = inv.InvoiceID "
                 + "JOIN Products p ON p.ProductID = d.ProductID "

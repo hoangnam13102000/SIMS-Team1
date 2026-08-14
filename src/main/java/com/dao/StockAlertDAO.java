@@ -106,7 +106,7 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
             ps.setString(2, alert.getAlertType());
             ps.setInt(3, alert.getStockAtReport());
             if (alert.getNote() == null || alert.getNote().isBlank()) {
-                ps.setNull(4, java.sql.Types.NVARCHAR);
+                ps.setNull(4, java.sql.Types.VARCHAR);
             } else {
                 ps.setString(4, alert.getNote());
             }
@@ -178,7 +178,7 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
 
     private boolean updateStatus(int alertId, String newStatus, Integer resolvedByUserId) {
         String sql = "RESOLVED".equals(newStatus)
-                ? "UPDATE StockAlerts SET Status = ?, ResolvedBy = ?, ResolvedAt = GETDATE() WHERE AlertID = ?"
+                ? "UPDATE StockAlerts SET Status = ?, ResolvedBy = ?, ResolvedAt = CURRENT_TIMESTAMP WHERE AlertID = ?"
                 : "UPDATE StockAlerts SET Status = ? WHERE AlertID = ?";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -268,12 +268,12 @@ public class StockAlertDAO extends BaseDAO<StockAlert> {
         String[] columns = getSearchableColumns();
         if (keyword != null && !keyword.trim().isEmpty() && columns.length > 0) {
             String escaped = keyword.trim()
-                    .replace("[", "[[]").replace("%", "[%]").replace("_", "[_]");
+                    .replace("!", "!!").replace("%", "!%").replace("_", "!_");
             String likeValue = "%" + escaped + "%";
             StringBuilder or = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) or.append(" OR ");
-                or.append(columns[i]).append(" LIKE ?");
+                or.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeValue);
             }
             or.append(")");

@@ -21,8 +21,7 @@ public class DBConnection {
         String pass = config.get("DB_PASSWORD");
         try {
             // Gioi han thoi gian cho ket noi - tranh app "dung im" vo thoi han khi
-            // SQL Server khong chay / sai DB_URL / firewall chan (mac dinh driver
-            // co the cho rat lau moi bao loi).
+            // MySQL khong chay / sai DB_URL / firewall chan.
             DriverManager.setLoginTimeout(8);
             return DriverManager.getConnection(url, user, pass);
         } catch (SQLException e) {

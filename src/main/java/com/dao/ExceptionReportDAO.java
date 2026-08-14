@@ -100,7 +100,7 @@ public class ExceptionReportDAO extends BaseDAO<ExceptionReport> {
 
     /** Quan ly ban hang danh dau 1 bao cao dang PENDING la da xu ly xong. */
     public boolean handle(int reportId, int handledByUserId) {
-        String sql = "UPDATE ExceptionReports SET Status = 'HANDLED', HandledBy = ?, HandledAt = GETDATE() "
+        String sql = "UPDATE ExceptionReports SET Status = 'HANDLED', HandledBy = ?, HandledAt = CURRENT_TIMESTAMP "
                 + "WHERE ReportID = ? AND Status = 'PENDING'";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {

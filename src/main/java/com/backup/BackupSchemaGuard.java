@@ -32,14 +32,14 @@ import java.util.regex.Pattern;
  * ro rang truoc khi nguoi dung bam xac nhan restore.
  * <p>
  * Chi hoat dong voi backup dang jdbc-sql-dump (dang text SQL, tu doc duoc
- * cac dong CREATE TABLE). Backup dang native (SqlServerNativeBackupStrategy,
- * file .bak nhi phan) khong "peek" truoc duoc nen bo qua, tra ve danh sach
- * rong (khong chan, khong canh bao - giu hanh vi cu).
+ * cac dong CREATE TABLE).
  */
 public final class BackupSchemaGuard {
 
-    private static final Pattern CREATE_TABLE_LINE =
-            Pattern.compile("^CREATE TABLE \\[?(\\w+)]?\\s*\\((.*)\\);\\s*$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CREATE_TABLE_LINE = Pattern.compile(
+            "^CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?[`\\[\\\"]?(\\w+)[`\\]\\\"]?\\s*"
+                    + "\\((.*)\\)\\s*(?:ENGINE=.*)?;\\s*$",
+            Pattern.CASE_INSENSITIVE);
 
     private BackupSchemaGuard() {}
 
@@ -130,7 +130,11 @@ public final class BackupSchemaGuard {
             for (String part : splitTopLevel(m.group(2))) {
                 String trimmed = part.trim();
                 if (trimmed.toUpperCase().startsWith("PRIMARY KEY")) continue;
-                String colName = trimmed.split("\\s+")[0].replace("[", "").replace("]", "");
+                String upper = trimmed.toUpperCase();
+                if (upper.startsWith("CONSTRAINT ") || upper.startsWith("UNIQUE ")
+                        || upper.startsWith("KEY ") || upper.startsWith("INDEX ")) continue;
+                String colName = trimmed.split("\\s+")[0]
+                        .replace("[", "").replace("]", "").replace("`", "").replace("\"", "");
                 columns.add(colName.toUpperCase());
             }
             result.put(table, columns);

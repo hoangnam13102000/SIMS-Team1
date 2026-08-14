@@ -36,7 +36,7 @@ public class InvoiceDAO_createInvoice_DOCS {
                 + "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)";
         String insertDetailSql = "INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES (?, ?, ?, ?)";
-        String sumLineTotalSql = "SELECT ISNULL(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
+        String sumLineTotalSql = "SELECT COALESCE(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
         String updateTotalsSql = "UPDATE Invoices SET InvoiceCode = ?, SubTotal = ?, "
                 + "TotalAmount = ?, DiscountAmount = ? WHERE InvoiceID = ?";
 

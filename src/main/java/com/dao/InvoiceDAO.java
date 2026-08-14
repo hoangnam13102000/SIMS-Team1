@@ -131,7 +131,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -156,10 +156,9 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     }
 
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     /**
@@ -201,7 +200,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                 + "PointsUsed, PointsDiscountAmount) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 0, 0)";
         String insertDetailSql = "INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES (?, ?, ?, ?)";
-        String sumLineTotalSql = "SELECT ISNULL(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
+        String sumLineTotalSql = "SELECT COALESCE(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
         String updateTotalsSql = "UPDATE Invoices SET InvoiceCode = ?, SubTotal = ?, "
                 + "TotalAmount = ?, DiscountAmount = ?, PointsUsed = ?, PointsDiscountAmount = ? WHERE InvoiceID = ?";
 
@@ -301,7 +300,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                     BigDecimal redeemRate = storeConfigDAO.getPointRedeemRate();
                     int available = 0;
                     try (PreparedStatement ps = con.prepareStatement(
-                            "SELECT MemberPoint FROM Customers WITH (UPDLOCK, ROWLOCK) WHERE CustomerID = ?")) {
+                            "SELECT MemberPoint FROM Customers WHERE CustomerID = ? FOR UPDATE")) {
                         ps.setInt(1, invoice.getCustomerId());
                         try (ResultSet rs = ps.executeQuery()) {
                             if (rs.next()) available = Math.max(0, rs.getInt(1));
@@ -408,7 +407,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     public List<InvoiceDetail> getDetails(int invoiceId) {
         String sql = "SELECT d.InvoiceDetailID, d.InvoiceID, d.ProductID, p.ProductName, p.ProductCode, "
                 + "p.ImageUrl, d.Quantity, d.UnitPrice, d.LineTotal, "
-                + "ISNULL(( "
+                + "COALESCE(( "
                 + "  SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
                 + "  JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
                 + "  WHERE r.InvoiceID = d.InvoiceID AND r.Status = 'APPROVED' "
@@ -457,8 +456,8 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     public String cancelInvoice(int invoiceId, String reason) {
         String lockSql = "SELECT InvoiceID, Status, CustomerID, SubTotal, DiscountAmount, "
                 + "PromotionID, PointsUsed, PointsDiscountAmount, TotalAmount "
-                + "FROM Invoices WITH (UPDLOCK, ROWLOCK) WHERE InvoiceID = ?";
-        String cancelSql = "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, CancelledAt = GETDATE() "
+                + "FROM Invoices WHERE InvoiceID = ? FOR UPDATE";
+        String cancelSql = "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, CancelledAt = CURRENT_TIMESTAMP "
                 + "WHERE InvoiceID = ? AND Status = 'ACTIVE'";
 
         try (Connection con = DBConnection.getConnection()) {
@@ -497,7 +496,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 
                 try (PreparedStatement ps = con.prepareStatement(cancelSql)) {
                     if (reason == null || reason.isBlank()) {
-                        ps.setNull(1, Types.NVARCHAR);
+                        ps.setNull(1, Types.VARCHAR);
                     } else {
                         ps.setString(1, reason.trim());
                     }
@@ -594,16 +593,16 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 
     private void fillReturnSummary(Invoice inv) {
         String sqlRefund = "SELECT "
-                + "ISNULL(SUM(CASE WHEN Status = 'APPROVED' THEN TotalValue ELSE 0 END), 0) AS Refunded, "
+                + "COALESCE(SUM(CASE WHEN Status = 'APPROVED' THEN TotalValue ELSE 0 END), 0) AS Refunded, "
                 + "SUM(CASE WHEN Status = 'APPROVED' THEN 1 ELSE 0 END) AS Cnt "
                 + "FROM ReturnExchanges WHERE InvoiceID = ?";
 
-        String sqlOriginal = "SELECT ISNULL(SUM(Quantity * UnitPrice), 0) AS OriginalSub "
+        String sqlOriginal = "SELECT COALESCE(SUM(Quantity * UnitPrice), 0) AS OriginalSub "
                 + "FROM InvoiceDetails WHERE InvoiceID = ?";
 
         String sqlQty = "SELECT "
-                + "ISNULL((SELECT SUM(d.Quantity) FROM InvoiceDetails d WHERE d.InvoiceID = ?), 0) AS SoldQty, "
-                + "ISNULL((SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
+                + "COALESCE((SELECT SUM(d.Quantity) FROM InvoiceDetails d WHERE d.InvoiceID = ?), 0) AS SoldQty, "
+                + "COALESCE((SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
                 + "         JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
                 + "         WHERE r.InvoiceID = ? AND r.Status = 'APPROVED' AND rd.Direction = 'IN'), 0) AS ReturnedQty";
 
@@ -671,8 +670,8 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     }
 
     public BigDecimal sumTodayRevenue() {
-        String sql = "SELECT ISNULL(SUM(TotalAmount), 0) FROM Invoices "
-                + "WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) = CAST(GETDATE() AS DATE)";
+        String sql = "SELECT COALESCE(SUM(TotalAmount), 0) FROM Invoices "
+                + "WHERE Status = 'ACTIVE' AND CAST(CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

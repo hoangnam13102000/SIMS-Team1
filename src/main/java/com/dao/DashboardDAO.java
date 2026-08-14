@@ -74,10 +74,10 @@ public class DashboardDAO {
                 + "(SELECT COUNT(*) FROM Products WHERE Status = 'ACTIVE' AND Stock <= MinStock) AS LowStock, "
                 + "(SELECT COUNT(*) FROM Customers c JOIN Users u ON c.CustomerID = u.UserID WHERE u.IsDeleted = 0) AS TotalCustomers, "
                 + "(SELECT COUNT(*) FROM Employees e JOIN Users u ON e.UserID = u.UserID WHERE u.IsDeleted = 0) AS TotalEmployees, "
-                + "(SELECT COUNT(*) FROM Invoices WHERE Status = 'CANCELLED' AND CAST(CancelledAt AS DATE) = CAST(GETDATE() AS DATE)) AS CancelledInvoicesToday, "
-                + "(SELECT ISNULL(SUM(d.Quantity), 0) FROM ReturnExchangeDetails d "
+                + "(SELECT COUNT(*) FROM Invoices WHERE Status = 'CANCELLED' AND CAST(CancelledAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)) AS CancelledInvoicesToday, "
+                + "(SELECT COALESCE(SUM(d.Quantity), 0) FROM ReturnExchangeDetails d "
                 + "   JOIN ReturnExchanges r ON r.ReturnID = d.ReturnID "
-                + "   WHERE d.Direction = 'IN' AND r.Status = 'APPROVED' AND CAST(r.ApprovedAt AS DATE) = CAST(GETDATE() AS DATE)) AS ReturnedProductsToday";
+                + "   WHERE d.Direction = 'IN' AND r.Status = 'APPROVED' AND CAST(r.ApprovedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)) AS ReturnedProductsToday";
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -98,9 +98,9 @@ public class DashboardDAO {
 
     /** San pham dang ACTIVE va co Stock <= MinStock, het truoc/sap het sau, toi da {@code limit} dong. */
     public List<LowStockItem> getLowStockProducts(int limit) {
-        String sql = "SELECT TOP (?) ProductCode, ProductName, Stock, MinStock "
+        String sql = "SELECT ProductCode, ProductName, Stock, MinStock "
                 + "FROM Products WHERE Status = 'ACTIVE' AND Stock <= MinStock "
-                + "ORDER BY Stock ASC, ProductName ASC";
+                + "ORDER BY Stock ASC, ProductName ASC LIMIT ?";
         List<LowStockItem> list = new ArrayList<>();
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {

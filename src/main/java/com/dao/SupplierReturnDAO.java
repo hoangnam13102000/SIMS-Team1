@@ -121,7 +121,7 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                     if (note != null && !note.isBlank()) {
                         ps.setString(4, note.trim());
                     } else {
-                        ps.setNull(4, Types.NVARCHAR);
+                        ps.setNull(4, Types.VARCHAR);
                     }
                     ps.setInt(5, createdByUserId);
                     ps.executeUpdate();
@@ -129,6 +129,12 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
                         if (!keys.next()) throw new SQLException("No SupplierReturnID");
                         returnId = keys.getInt(1);
                     }
+                }
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE SupplierReturns SET SupplierReturnCode = ? WHERE SupplierReturnID = ?")) {
+                    ps.setString(1, "TRNC_" + String.format("%06d", returnId));
+                    ps.setInt(2, returnId);
+                    ps.executeUpdate();
                 }
                 for (SupplierReturnDetail det : details) {
                     int productId;
@@ -309,7 +315,7 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
     }
 
     public BigDecimal sumRefundBetween(LocalDate from, LocalDate to) {
-        String sql = "SELECT ISNULL(SUM(TotalRefundAmount), 0) FROM SupplierReturns "
+        String sql = "SELECT COALESCE(SUM(TotalRefundAmount), 0) FROM SupplierReturns "
                 + "WHERE Status = 'COMPLETED' "
                 + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ?";
         try (Connection con = DBConnection.getConnection();
@@ -331,7 +337,7 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
     }
 
     public Map<String, BigDecimal> sumRefundByReason(LocalDate from, LocalDate to) {
-        String sql = "SELECT Reason, ISNULL(SUM(TotalRefundAmount), 0) AS Refund "
+        String sql = "SELECT Reason, COALESCE(SUM(TotalRefundAmount), 0) AS Refund "
                 + "FROM SupplierReturns WHERE Status = 'COMPLETED' "
                 + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY Reason";
@@ -451,12 +457,12 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
         String[] columns = getSearchableColumns();
         if (keyword != null && !keyword.trim().isEmpty() && columns.length > 0) {
             String escaped = keyword.trim()
-                    .replace("[", "[[]").replace("%", "[%]").replace("_", "[_]");
+                    .replace("!", "!!").replace("%", "!%").replace("_", "!_");
             String likeValue = "%" + escaped + "%";
             StringBuilder or = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) or.append(" OR ");
-                or.append(columns[i]).append(" LIKE ?");
+                or.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeValue);
             }
             or.append(")");

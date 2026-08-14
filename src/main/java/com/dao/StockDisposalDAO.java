@@ -125,7 +125,7 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
                     if (note != null && !note.isBlank()) {
                         ps.setString(3, note.trim());
                     } else {
-                        ps.setNull(3, Types.NVARCHAR);
+                        ps.setNull(3, Types.VARCHAR);
                     }
                     ps.setInt(4, createdByUserId);
                     ps.executeUpdate();
@@ -133,6 +133,13 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
                         if (!keys.next()) throw new SQLException("No DisposalID");
                         disposalId = keys.getInt(1);
                     }
+                }
+
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE StockDisposals SET DisposalCode = ? WHERE DisposalID = ?")) {
+                    ps.setString(1, "TH_" + String.format("%06d", disposalId));
+                    ps.setInt(2, disposalId);
+                    ps.executeUpdate();
                 }
 
                 for (StockDisposalDetail det : details) {
@@ -305,7 +312,7 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
     }
 
     public BigDecimal sumLossBetween(LocalDate from, LocalDate to) {
-        String sql = "SELECT ISNULL(SUM(TotalLossAmount), 0) FROM StockDisposals "
+        String sql = "SELECT COALESCE(SUM(TotalLossAmount), 0) FROM StockDisposals "
                 + "WHERE Status = 'COMPLETED' "
                 + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ?";
         try (Connection con = DBConnection.getConnection();
@@ -323,7 +330,7 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
 
     /** Map reason -> tong ton that trong ky. */
     public Map<String, BigDecimal> sumLossByReason(LocalDate from, LocalDate to) {
-        String sql = "SELECT Reason, ISNULL(SUM(TotalLossAmount), 0) AS Loss "
+        String sql = "SELECT Reason, COALESCE(SUM(TotalLossAmount), 0) AS Loss "
                 + "FROM StockDisposals WHERE Status = 'COMPLETED' "
                 + "AND CAST(CreatedAt AS DATE) BETWEEN ? AND ? "
                 + "GROUP BY Reason";
@@ -363,7 +370,7 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -382,9 +389,8 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
     }
 
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 }

@@ -52,7 +52,7 @@ public final class ReturnExchangeNotifyPoller {
     }
 
     private int getMaxReturnId() {
-        String sql = "SELECT ISNULL(MAX(r.ReturnID), 0) FROM ReturnExchanges r";
+        String sql = "SELECT COALESCE(MAX(r.ReturnID), 0) FROM ReturnExchanges r";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

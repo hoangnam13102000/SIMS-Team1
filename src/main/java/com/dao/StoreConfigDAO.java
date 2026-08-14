@@ -157,11 +157,8 @@ public class StoreConfigDAO {
     }
 
     public boolean setValues(Map<String, String> values) {
-        String mergeSql = "MERGE StoreConfig AS target "
-                + "USING (SELECT ? AS ConfigKey, ? AS ConfigValue) AS src "
-                + "ON target.ConfigKey = src.ConfigKey "
-                + "WHEN MATCHED THEN UPDATE SET ConfigValue = src.ConfigValue "
-                + "WHEN NOT MATCHED THEN INSERT (ConfigKey, ConfigValue) VALUES (src.ConfigKey, src.ConfigValue);";
+        String mergeSql = "INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES (?, ?) "
+                + "ON DUPLICATE KEY UPDATE ConfigValue = VALUES(ConfigValue)";
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try (PreparedStatement ps = con.prepareStatement(mergeSql)) {

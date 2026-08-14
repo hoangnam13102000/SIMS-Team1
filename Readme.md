@@ -1,11 +1,11 @@
 # SIMS - Hệ Thống Quản Lý Bán Hàng & Kho
 
-Sales and Inventory Management System — Ứng dụng desktop quản lý bán hàng và tồn kho cho chuỗi cửa hàng **Connect Mart**, xây dựng bằng Java Swing với cơ sở dữ liệu tập trung SQL Server.
+Sales and Inventory Management System — Ứng dụng desktop quản lý bán hàng và tồn kho cho chuỗi cửa hàng **Connect Mart**, xây dựng bằng Java Swing với cơ sở dữ liệu tập trung MySQL.
 
 [![Java](https://img.shields.io/badge/Java-17-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.java.com/)
 [![Swing](https://img.shields.io/badge/Java_Swing-Desktop_UI-437291?style=for-the-badge&logo=java&logoColor=white)](https://docs.oracle.com/javase/tutorial/uiswing/)
 [![FlatLaf](https://img.shields.io/badge/FlatLaf-^3.7.1-2C2C2C?style=for-the-badge)](https://www.formdev.com/flatlaf/)
-[![SQL Server](https://img.shields.io/badge/SQL_Server-2019%2B-CC2927?style=for-the-badge&logo=microsoftsqlserver&logoColor=white)](https://www.microsoft.com/en-us/sql-server)
+[![MySQL](https://img.shields.io/badge/MySQL-8.0%2B-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Maven](https://img.shields.io/badge/Maven-Build_Tool-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
 
 [![Ikonli](https://img.shields.io/badge/Ikonli-^12.4.0-4A4A4A?style=for-the-badge)](https://kordamp.org/ikonli/)
@@ -30,7 +30,7 @@ Sau nhiều năm mở rộng chi nhánh, Connect Mart gặp khó khăn khi vẫn
 | Ngôn ngữ          | Java 17                                         |
 | Giao diện         | Java Swing + FlatLaf (theme Light/Dark)         |
 | Icon              | Ikonli (FontAwesome 5)                          |
-| Cơ sở dữ liệu     | Microsoft SQL Server (JDBC driver `mssql-jdbc`) |
+| Cơ sở dữ liệu     | MySQL 8.0+ (JDBC driver `mysql-connector-j`)    |
 | Build tool        | Apache Maven                                    |
 | Bảo mật mật khẩu  | JBCrypt (hash + salt)                           |
 | Gửi email OTP     | Jakarta Mail (Gmail SMTP)                       |
@@ -39,13 +39,13 @@ Sau nhiều năm mở rộng chi nhánh, Connect Mart gặp khó khăn khi vẫn
 **Công cụ phát triển:**
 
 [![Eclipse](https://img.shields.io/badge/Eclipse_IDE-Maven_Project-2C2255?style=for-the-badge&logo=eclipseide&logoColor=white)](https://www.eclipse.org/)
-[![SSMS](https://img.shields.io/badge/SSMS-2022-CC2927?style=for-the-badge&logo=microsoftsqlserver&logoColor=white)](https://learn.microsoft.com/en-us/sql/ssms/)
+[![phpMyAdmin](https://img.shields.io/badge/phpMyAdmin-Database_UI-6C78AF?style=for-the-badge&logo=phpmyadmin&logoColor=white)](https://www.phpmyadmin.net/)
 
 ## Yêu cầu hệ thống
 
 - JDK 17 trở lên
 - Eclipse IDE (có hỗ trợ Maven/m2e)
-- SQL Server 2019+ và SSMS 2022
+- MySQL 8.0+ và phpMyAdmin/MySQL Workbench
 - Maven (đi kèm Eclipse qua m2e)
 
 ## Cài đặt và chạy dự án
@@ -56,16 +56,18 @@ Sau nhiều năm mở rộng chi nhánh, Connect Mart gặp khó khăn khi vẫn
 git clone <repo-url>
 ```
 
-### Bước 2 — Thiết lập cơ sở dữ liệu (SSMS 2022)
+### Bước 2 — Thiết lập cơ sở dữ liệu MySQL
 
-Mở **SSMS 2022**, kết nối tới SQL Server instance, sau đó chạy lần lượt các script trong thư mục `sql/`:
+Mở phpMyAdmin tại `http://42.112.26.37:8080/phpmyadmin`, vào tab **Import** và chạy theo đúng thứ tự trong thư mục `sql/mysql/SIMS_MySQL_Import/`:
 
 ```
-sql/SIMS.sql              -- Tạo database SIMS_DB và toàn bộ schema (bảng, khóa)
-sql/Trigger_SIMS.sql       -- Tạo các trigger nghiệp vụ
-sql/Insert_SIMS.sql        -- Dữ liệu mẫu
-sql/SIMS_seed_admin.sql    -- Tạo tài khoản admin mặc định
+01_SIMS_Schema_MySQL.sql      -- Tạo database SIMS_DB và toàn bộ schema
+03_SIMS_SampleData_MySQL.sql  -- Dữ liệu mẫu (tùy chọn, xóa dữ liệu cũ)
+02_SIMS_Triggers_MySQL.sql    -- Hàm/trigger nghiệp vụ; luôn chạy sau dữ liệu mẫu
 ```
+
+Nếu không muốn dữ liệu mẫu, chạy `01`, sau đó `00_RBAC_Admin_MySQL.sql`, rồi `02`.
+Các file `.sql` ở ngay thư mục `sql/` là bản SQL Server cũ, chỉ giữ để đối chiếu.
 
 ### Bước 3 — Import dự án vào Eclipse
 
@@ -75,7 +77,7 @@ sql/SIMS_seed_admin.sql    -- Tạo tài khoản admin mặc định
 
 ### Bước 4 — Khai báo cấu hình gốc trong `merged.properties`
 
-Mở file `merged.properties` ở thư mục gốc dự án, cập nhật các giá trị cho đúng môi trường của bạn (thông tin kết nối SQL Server vừa tạo ở Bước 2, email OTP, các key thanh toán...).
+Mở file `merged.properties` ở thư mục gốc dự án, điền `DB_USER` và `DB_PASSWORD` MySQL được cấp. URL phpMyAdmin là giao diện web, không phải JDBC URL; ứng dụng mặc định thử kết nối MySQL tại `42.112.26.37:3306`. Nếu nhà cung cấp dùng host/port/database khác, sửa `DB_URL` tương ứng.
 
 ### Bước 5 — Sinh master key (genkey)
 
@@ -166,11 +168,11 @@ và mối quan hệ giữa các bảng trong cơ sở dữ liệu.
                             │ gọi
 ┌───────────────────────────▼───────────────────────────────┐
 │                         DAO LAYER                         │
-│   Data Access Object – CRUD qua JDBC (mssql-jdbc)         │
+│   Data Access Object – CRUD qua JDBC (mysql-connector-j)  │
 └───────────────────────────┬───────────────────────────────┘
                             │
                     ┌───────▼────────┐
-                    │  SQL Server DB │
+                    │    MySQL DB    │
                     │    SIMS_DB     │
                     └────────────────┘
 ```

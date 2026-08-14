@@ -23,9 +23,9 @@ public class ChatHistoryDAO {
 
     /** Tìm hoặc tạo hội thoại hỗ trợ của 1 khách. */
     public ChatConversation findOrCreateCustomerSupport(int customerUserId) {
-        String select = "SELECT TOP 1 * FROM ChatConversations "
+        String select = "SELECT * FROM ChatConversations "
                 + "WHERE ConversationType = 'CUSTOMER_SUPPORT' AND CustomerUserID = ? AND IsClosed = 0 "
-                + "ORDER BY ConversationID DESC";
+                + "ORDER BY ConversationID DESC LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(select)) {
             ps.setInt(1, customerUserId);
@@ -61,9 +61,9 @@ public class ChatHistoryDAO {
     }
 
     private ChatConversation findCustomerSupport(int customerUserId) {
-        String select = "SELECT TOP 1 * FROM ChatConversations "
+        String select = "SELECT * FROM ChatConversations "
                 + "WHERE ConversationType = 'CUSTOMER_SUPPORT' AND CustomerUserID = ? AND IsClosed = 0 "
-                + "ORDER BY ConversationID DESC";
+                + "ORDER BY ConversationID DESC LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(select)) {
             ps.setInt(1, customerUserId);
@@ -81,8 +81,8 @@ public class ChatHistoryDAO {
         int a = Math.min(userId1, userId2);
         int b = Math.max(userId1, userId2);
 
-        String select = "SELECT TOP 1 * FROM ChatConversations "
-                + "WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA = ? AND StaffUserIdB = ?";
+        String select = "SELECT * FROM ChatConversations "
+                + "WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA = ? AND StaffUserIdB = ? LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(select)) {
             ps.setInt(1, a);
@@ -160,7 +160,7 @@ public class ChatHistoryDAO {
     }
 
     private void touchConversation(int conversationId) {
-        String sql = "UPDATE ChatConversations SET LastMessageAt = GETDATE() WHERE ConversationID = ?";
+        String sql = "UPDATE ChatConversations SET LastMessageAt = CURRENT_TIMESTAMP WHERE ConversationID = ?";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, conversationId);
@@ -175,8 +175,8 @@ public class ChatHistoryDAO {
     public List<ChatHistoryMessage> listMessages(int conversationId, int limit) {
         int lim = Math.max(1, Math.min(limit, 500));
         String sql = "SELECT * FROM ("
-                + "  SELECT TOP (" + lim + ") * FROM ChatMessages "
-                + "  WHERE ConversationID = ? ORDER BY CreatedAt DESC, MessageID DESC"
+                + "  SELECT * FROM ChatMessages "
+                + "  WHERE ConversationID = ? ORDER BY CreatedAt DESC, MessageID DESC LIMIT " + lim
                 + ") t ORDER BY CreatedAt ASC, MessageID ASC";
         List<ChatHistoryMessage> list = new ArrayList<>();
         try (Connection con = DBConnection.getConnection();
@@ -205,15 +205,15 @@ public class ChatHistoryDAO {
     public List<ChatHistoryMessage> listNewCustomerMessagesSince(long afterMessageId, int limit) {
         if (limit <= 0) limit = 50;
         // FromStaff=0: SenderUserID = khách. CustomerUserID dùng khi SenderUserID thiếu.
-        String sql = "SELECT TOP (" + limit + ") m.MessageID, m.ConversationID, m.SenderUserID, "
+        String sql = "SELECT m.MessageID, m.ConversationID, m.SenderUserID, "
                 + "m.SenderName, m.FromStaff, m.BodyText, m.ImagePath, m.ImageMime, "
-                + "m.FilePath, m.FileName, m.CreatedAt, m.ReadByPeer, c.CustomerUserID "
+                + "m.FilePath, m.FileName, m.CreatedAt, m.IsReadByPeer, c.CustomerUserID "
                 + "FROM ChatMessages m "
                 + "INNER JOIN ChatConversations c ON c.ConversationID = m.ConversationID "
                 + "WHERE c.ConversationType = 'CUSTOMER_SUPPORT' "
                 + "AND m.FromStaff = 0 "
                 + "AND m.MessageID > ? "
-                + "ORDER BY m.MessageID ASC";
+                + "ORDER BY m.MessageID ASC LIMIT " + limit;
         List<ChatHistoryMessage> list = new ArrayList<>();
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -238,7 +238,7 @@ public class ChatHistoryDAO {
 
     /** Max MessageID hiện có (mọi loại) — khởi tạo watermark poller. */
     public long getMaxMessageId() {
-        String sql = "SELECT ISNULL(MAX(MessageID), 0) FROM ChatMessages";
+        String sql = "SELECT COALESCE(MAX(MessageID), 0) FROM ChatMessages";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -289,8 +289,8 @@ public class ChatHistoryDAO {
     public int deleteStaffDmMessages(int userId1, int userId2) {
         int a = Math.min(userId1, userId2);
         int b = Math.max(userId1, userId2);
-        String select = "SELECT TOP 1 ConversationID FROM ChatConversations "
-                + "WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA = ? AND StaffUserIdB = ?";
+        String select = "SELECT ConversationID FROM ChatConversations "
+                + "WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA = ? AND StaffUserIdB = ? LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(select)) {
             ps.setInt(1, a);
@@ -309,8 +309,8 @@ public class ChatHistoryDAO {
     public List<ChatHistoryMessage> listStaffDmHistory(int userId1, int userId2, int limit) {
         int a = Math.min(userId1, userId2);
         int b = Math.max(userId1, userId2);
-        String select = "SELECT TOP 1 ConversationID FROM ChatConversations "
-                + "WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA = ? AND StaffUserIdB = ?";
+        String select = "SELECT ConversationID FROM ChatConversations "
+                + "WHERE ConversationType = 'STAFF_DM' AND StaffUserIdA = ? AND StaffUserIdB = ? LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(select)) {
             ps.setInt(1, a);
@@ -328,9 +328,9 @@ public class ChatHistoryDAO {
     /** Danh sách hội thoại hỗ trợ gần đây (cho admin inbox). */
     public List<ChatConversation> listRecentCustomerSupport(int limit) {
         int lim = Math.max(1, Math.min(limit, 100));
-        String sql = "SELECT TOP (" + lim + ") * FROM ChatConversations "
+        String sql = "SELECT * FROM ChatConversations "
                 + "WHERE ConversationType = 'CUSTOMER_SUPPORT' "
-                + "ORDER BY LastMessageAt DESC";
+                + "ORDER BY LastMessageAt DESC LIMIT " + lim;
         List<ChatConversation> list = new ArrayList<>();
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql);

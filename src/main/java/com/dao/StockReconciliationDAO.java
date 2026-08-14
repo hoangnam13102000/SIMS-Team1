@@ -91,7 +91,7 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                         ps.setInt(2, row.getActualStock());
                         String note = row.getNote();
                         if (note == null || note.isBlank()) {
-                            ps.setNull(3, Types.NVARCHAR);
+                            ps.setNull(3, Types.VARCHAR);
                         } else {
                             ps.setString(3, note);
                         }
@@ -147,7 +147,7 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -166,18 +166,17 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
         return getPaged(page, pageSize, whereClause, params.toArray());
     }
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
     /**
      * Kiem tra da co it nhat 1 dong doi chieu trong ngay {@code date} chua.
      */
     public boolean hasSessionForDate(LocalDate date) {
         if (date == null) return false;
-        String sql = "SELECT TOP 1 1 FROM StockReconciliation "
-                + "WHERE CreatedAt >= ? AND CreatedAt < ?";
+        String sql = "SELECT 1 FROM StockReconciliation "
+                + "WHERE CreatedAt >= ? AND CreatedAt < ? LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setTimestamp(1, Timestamp.valueOf(date.atStartOfDay()));
@@ -358,8 +357,8 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
      * hien da sang ngay moi chua tao phien). Tra ve null neu chua co dong nao.
      */
     public LocalDate getLatestSessionDate() {
-        String sql = "SELECT TOP 1 CAST(CreatedAt AS DATE) AS SessionDate "
-                + "FROM StockReconciliation ORDER BY CreatedAt DESC";
+        String sql = "SELECT CAST(CreatedAt AS DATE) AS SessionDate "
+                + "FROM StockReconciliation ORDER BY CreatedAt DESC LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

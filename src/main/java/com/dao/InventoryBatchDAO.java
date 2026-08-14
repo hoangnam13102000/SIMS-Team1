@@ -96,7 +96,7 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
     public void syncExpiredStatus() {
         String sql = "UPDATE InventoryBatch SET Status = 'EXPIRED' "
                 + "WHERE Status = 'ACTIVE' AND RemainingQty > 0 "
-                + "AND ExpiryDate IS NOT NULL AND ExpiryDate < CAST(GETDATE() AS DATE)";
+                + "AND ExpiryDate IS NOT NULL AND ExpiryDate < CAST(CURRENT_TIMESTAMP AS DATE)";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.executeUpdate();
@@ -155,7 +155,7 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -171,10 +171,9 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
     }
 
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     /**
@@ -232,7 +231,7 @@ public class InventoryBatchDAO extends BaseDAO<InventoryBatch> {
     public int countExpiringSoon(int days) {
         String sql = "SELECT COUNT(*) FROM InventoryBatch "
                 + "WHERE Status = 'ACTIVE' AND RemainingQty > 0 AND ExpiryDate IS NOT NULL "
-                + "AND ExpiryDate BETWEEN CAST(GETDATE() AS DATE) AND DATEADD(DAY, ?, CAST(GETDATE() AS DATE))";
+                + "AND ExpiryDate BETWEEN CURRENT_DATE AND DATE_ADD(CURRENT_DATE, INTERVAL ? DAY)";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, days);

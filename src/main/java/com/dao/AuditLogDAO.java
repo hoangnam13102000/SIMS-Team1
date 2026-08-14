@@ -117,11 +117,12 @@ public class AuditLogDAO extends BaseDAO<ActivityLog> {
 
         if (keyword != null && !keyword.isBlank()) {
             String escaped = keyword.trim()
-                    .replace("[", "[[]")
-                    .replace("%", "[%]")
-                    .replace("_", "[_]");
+                    .replace("!", "!!")
+                    .replace("%", "!%")
+                    .replace("_", "!_");
             String likeValue = "%" + escaped + "%";
-            conditions.add("(u.Username LIKE ? OR a.Detail LIKE ? OR a.TableName LIKE ? OR a.Action LIKE ?)");
+            conditions.add("(u.Username LIKE ? ESCAPE '!' OR a.Detail LIKE ? ESCAPE '!' "
+                    + "OR a.TableName LIKE ? ESCAPE '!' OR a.Action LIKE ? ESCAPE '!')");
             params.add(likeValue);
             params.add(likeValue);
             params.add(likeValue);
@@ -177,9 +178,9 @@ public class AuditLogDAO extends BaseDAO<ActivityLog> {
     public AuditLogStats getStatsSummary() {
         String sql = "SELECT " +
                 "COUNT(*) AS TotalLogs, " +
-                "SUM(CASE WHEN CAST(a.CreatedAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS TodayLogs, " +
-                "SUM(CASE WHEN a.Action = ? AND CAST(a.CreatedAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS FailedLoginsToday, " +
-                "COUNT(DISTINCT CASE WHEN CAST(a.CreatedAt AS DATE) = CAST(GETDATE() AS DATE) THEN a.UserID END) AS ActiveUsersToday " +
+                "SUM(CASE WHEN CAST(a.CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE) THEN 1 ELSE 0 END) AS TodayLogs, " +
+                "SUM(CASE WHEN a.Action = ? AND CAST(a.CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE) THEN 1 ELSE 0 END) AS FailedLoginsToday, " +
+                "COUNT(DISTINCT CASE WHEN CAST(a.CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE) THEN a.UserID END) AS ActiveUsersToday " +
                 "FROM AuditLogs a";
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -218,8 +219,8 @@ public class AuditLogDAO extends BaseDAO<ActivityLog> {
     /** Xuat CSV/Excel: gioi han 5000 dong gan nhat de tranh export "treo" khi bang qua lon theo thoi gian. */
     public List<ActivityLog> getRecentForExport() {
         List<ActivityLog> list = new ArrayList<>();
-        String sql = "SELECT TOP 5000 " + getColumns() + " FROM " + getTableName() + " " + getJoinClause() +
-                " ORDER BY " + getOrderBy();
+        String sql = "SELECT " + getColumns() + " FROM " + getTableName() + " " + getJoinClause() +
+                " ORDER BY " + getOrderBy() + " LIMIT 5000";
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

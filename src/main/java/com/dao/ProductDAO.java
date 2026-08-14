@@ -86,7 +86,7 @@ public class ProductDAO extends BaseDAO<Product> {
             String[] columns = getSearchableColumns();
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) condition.append(" OR ");
-                condition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                condition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(like);
             }
             condition.append(")");
@@ -111,7 +111,7 @@ public class ProductDAO extends BaseDAO<Product> {
             String[] columns = getSearchableColumns();
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) condition.append(" OR ");
-                condition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                condition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(like);
             }
             condition.append(")");
@@ -148,8 +148,15 @@ public class ProductDAO extends BaseDAO<Product> {
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (keys.next()) {
                     int productId = keys.getInt(1);
+                    String productCode = generateProductCode(productId);
+                    try (PreparedStatement codePs = con.prepareStatement(
+                            "UPDATE Products SET ProductCode = ? WHERE ProductID = ?")) {
+                        codePs.setString(1, productCode);
+                        codePs.setInt(2, productId);
+                        codePs.executeUpdate();
+                    }
                     product.setProductId(productId);
-                    product.setProductCode(generateProductCode(productId));
+                    product.setProductCode(productCode);
                 }
             }
             AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.PRODUCT));
@@ -202,7 +209,7 @@ public class ProductDAO extends BaseDAO<Product> {
 
     public boolean update(Product product) {
         String sql = "UPDATE Products SET ProductName = ?, CategoryID = ?, Brand = ?, Unit = ?, WeightVolume = ?, Description = ?, "
-                + "ImportPrice = ?, SellPrice = ?, ImageUrl = ?, Stock = ?, MinStock = ?, Status = ?, UpdatedAt = GETDATE() "
+                + "ImportPrice = ?, SellPrice = ?, ImageUrl = ?, Stock = ?, MinStock = ?, Status = ?, UpdatedAt = CURRENT_TIMESTAMP "
                 + "WHERE ProductID = ?";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -260,7 +267,7 @@ public class ProductDAO extends BaseDAO<Product> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -305,7 +312,7 @@ public class ProductDAO extends BaseDAO<Product> {
 
         String trimmedKeyword = keyword == null ? "" : keyword.trim();
         if (!trimmedKeyword.isEmpty()) {
-            sql.append("AND (p.ProductName LIKE ? ESCAPE '\\' OR c.CategoryName LIKE ? ESCAPE '\\') ");
+            sql.append("AND (p.ProductName LIKE ? ESCAPE '!' OR c.CategoryName LIKE ? ESCAPE '!') ");
             String likeParam = "%" + escapeLike(trimmedKeyword) + "%";
             params.add(likeParam);
             params.add(likeParam);
@@ -356,10 +363,9 @@ public class ProductDAO extends BaseDAO<Product> {
     }
 
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     private Product mapProduct(ResultSet rs) throws SQLException {
