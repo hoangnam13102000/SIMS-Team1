@@ -2,6 +2,8 @@ package com.dao;
 
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
+import com.event.AppEventBus;
+import com.event.DataChangedEvent;
 import com.model.Category;
 import com.utils.DBConnection;
 
@@ -92,6 +94,7 @@ public class CategoryDAO extends BaseDAO<Category> {
                     category.setCategoryId(keys.getInt(1));
                 }
             }
+            AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.CATEGORY));
             return true;
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
@@ -109,7 +112,11 @@ public class CategoryDAO extends BaseDAO<Category> {
             ps.setString(1, category.getCategoryName());
             ps.setString(2, category.getStatus());
             ps.setInt(3, category.getCategoryId());
-            return ps.executeUpdate() > 0;
+            boolean ok = ps.executeUpdate() > 0;
+            if (ok) {
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.CATEGORY));
+            }
+            return ok;
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
                     "CategoryDAO.updateCategory - categoryId=" + category.getCategoryId(), e);
@@ -205,7 +212,11 @@ public class CategoryDAO extends BaseDAO<Category> {
              PreparedStatement ps = con.prepareStatement(sql)) {
 
             ps.setInt(1, categoryId);
-            return ps.executeUpdate() > 0;
+            boolean ok = ps.executeUpdate() > 0;
+            if (ok) {
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.CATEGORY));
+            }
+            return ok;
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_DELETE_FAIL,
                     "CategoryDAO.deleteCategory - categoryId=" + categoryId, e);

@@ -19,7 +19,9 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 
 public class InvoiceDAO extends BaseDAO<Invoice> {
@@ -163,6 +165,33 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     /**
      * Lap 1 hoa don ban hang THAT SU (POS).
      */
+    /**
+     * true neu TAT CA productId truyen vao hien van Status = 'ACTIVE' VA
+     * category cha cua no cung Status = 'ACTIVE'. Dung ben trong transaction
+     * cua {@link #createInvoice} de chan ban hang cho san pham da bi khoa
+     * hoac thuoc danh muc da ngung ban - xem chi tiet o noi goi.
+     */
+    private boolean allProductsSellable(Connection con, Set<Integer> productIds) throws SQLException {
+        if (productIds.isEmpty()) return true;
+        StringBuilder sql = new StringBuilder(
+                "SELECT COUNT(*) FROM Products p JOIN Categories c ON c.CategoryID = p.CategoryID "
+                        + "WHERE p.Status = 'ACTIVE' AND c.Status = 'ACTIVE' AND p.ProductID IN (");
+        for (int i = 0; i < productIds.size(); i++) {
+            sql.append(i == 0 ? "?" : ", ?");
+        }
+        sql.append(")");
+        try (PreparedStatement ps = con.prepareStatement(sql.toString())) {
+            int idx = 1;
+            for (Integer id : productIds) {
+                ps.setInt(idx++, id);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                int sellableCount = rs.next() ? rs.getInt(1) : 0;
+                return sellableCount == productIds.size();
+            }
+        }
+    }
+
     public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
         if (items == null || items.isEmpty()) return false;
 
@@ -183,6 +212,21 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
                 BigDecimal requestedDiscount = invoice.getDiscountAmount() != null
                         ? invoice.getDiscountAmount() : BigDecimal.ZERO;
                 if (requestedDiscount.signum() < 0) requestedDiscount = BigDecimal.ZERO;
+
+                // Kiem tra LAI ngay trong transaction (khong chi tin vao du lieu
+                // POS da nap luc dau phien lam viec): tung san pham trong gio
+                // hang van phai Status = ACTIVE VA category cha cung phai
+                // Status = ACTIVE. Phong truong hop giua luc thu ngan dang phuc
+                // vu khach (san pham da nam san trong gio hang tu truoc) thi
+                // Admin vua khoa san pham hoac ngung ban ca danh muc o 1 tab
+                // quan tri khac - neu khong chan o day, hoa don van duoc tao
+                // binh thuong du san pham "khong con ban duoc" nua.
+                Set<Integer> productIds = new LinkedHashSet<>();
+                for (InvoiceDetail item : items) productIds.add(item.getProductId());
+                if (!allProductsSellable(con, productIds)) {
+                    con.rollback();
+                    return false;
+                }
 
                 try (PreparedStatement ps = con.prepareStatement(insertInvoiceSql, Statement.RETURN_GENERATED_KEYS)) {
                     ps.setString(1, "TMP-" + System.nanoTime());

@@ -97,6 +97,19 @@ public class FilterDropdown<T> extends JPanel {
         return String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
     }
 
+    /**
+     * Thay toan bo danh sach lua chon bang items moi (vd sau khi du lieu o
+     * trang khac thay doi - category bi vo hieu hoa/kich hoat lai...). Neu
+     * value cu (theo equals()) van con trong danh sach moi thi giu nguyen
+     * lua chon do; nguoc lai tu dong ve phan tu dau tien (quy uoc = "Tat ca").
+     * KHONG tu ban listener - goi lai onChange thu cong (neu can) sau khi
+     * setItems de tranh doi listener khi khong that su can thiet.
+     */
+    public void setItems(T[] items) {
+        combo.setModel(new DefaultComboBoxModel<>(items));
+        if (items.length > 0) combo.setSelectedIndex(0);
+    }
+
     /** Gọi listener mỗi khi lựa chọn thay đổi (kể cả do code gọi setSelectedItem). */
     public void onChange(Consumer<T> listener) {
         combo.addActionListener(e -> listener.accept(getSelected()));

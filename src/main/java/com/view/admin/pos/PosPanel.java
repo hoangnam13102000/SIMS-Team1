@@ -71,6 +71,7 @@ public class PosPanel extends JPanel {
     // private final JComboBox<Category> categoryCombo = new JComboBox<>();  // ← CŨ, ĐÃ XÓA
     private FilterDropdown<CategoryOption> categoryFilter;   // ← MỚI: FilterDropdown chuẩn
     // ================================================================
+    private final BaseSearch searchBar = new BaseSearch("Tìm sản phẩm theo tên hoặc danh mục...");
 
     private final JPanel cartListPanel = new JPanel();
     private final JLabel customerStatusLabel = new JLabel();
@@ -143,7 +144,31 @@ public class PosPanel extends JPanel {
 
         loadProducts(null, null);
         refreshCartSummary();
-        AutoRefresher.bind(this, DataChangedEvent.class, 300, this::reloadVatRate);
+        // Nghe MOI DataChangedEvent (VAT/config, san pham bi khoa/ngung ban,
+        // category bi vo hieu hoa...) va lam moi toan bo du lieu dang hien thi -
+        // truoc day chi reload VAT nen POS "khong dong bo" khi Quan ly san pham
+        // khoa san pham hoac Quan ly danh muc ngung ban 1 danh muc.
+        AutoRefresher.bind(this, DataChangedEvent.class, 300, this::refreshPosData);
+    }
+
+    /**
+     * Lam moi toan bo du lieu POS dang hien thi sau khi co DataChangedEvent
+     * bat ky (VAT rate, san pham, danh muc...). Danh muc bi vo hieu hoa/ngung
+     * ban se bien mat khoi danh sach loc va cac san pham thuoc category do
+     * (hoac ban than san pham bi ngung ban) se tu dong bien mat khoi luoi -
+     * dung productDAO.findActive()/categoryDAO.findAllActive() von da loc
+     * theo Status = ACTIVE o ca 2 phia.
+     * <p>
+     * Bo loc danh muc dang chon se ve lai "Tat ca danh muc" moi lan lam moi -
+     * don gian va an toan hon viec co gang giu nguyen lua chon cu (danh muc
+     * dang chon co the vua bi vo hieu hoa).
+     */
+    private void refreshPosData() {
+        reloadVatRate();
+        if (categoryFilter != null) {
+            categoryFilter.setItems(buildCategoryOptions());
+        }
+        loadProducts(searchBar.getText(), selectedCategoryId());
     }
 
     private void reloadVatRate() {
@@ -166,7 +191,7 @@ public class PosPanel extends JPanel {
         JPanel filterRow = new JPanel(new BorderLayout(AppSpacing.MD, 0));
         filterRow.setOpaque(false);
 
-        BaseSearch search = new BaseSearch("Tìm sản phẩm theo tên hoặc danh mục...");
+        BaseSearch search = searchBar;
         search.onSearch(keyword -> loadProducts(keyword, selectedCategoryId()));
         filterRow.add(search, BorderLayout.CENTER);
 
@@ -268,6 +293,16 @@ public class PosPanel extends JPanel {
     // ====== ĐỔI: loadCategories tạo CategoryOption[] + FilterDropdown ======
     // ================================================================
     private void loadCategories() {
+        categoryFilter = new FilterDropdown<>(FontAwesomeSolid.LAYER_GROUP, buildCategoryOptions());
+    }
+
+    /**
+     * Danh sach danh muc CON DANG BAN (Status = ACTIVE), dung ca luc khoi
+     * tao lan dau (loadCategories) lan luc lam moi sau khi co thay doi tu
+     * trang Quan ly danh muc (xem refreshPosData). Phan tu dau tien luon la
+     * "Tat ca danh muc" (id = null).
+     */
+    private CategoryOption[] buildCategoryOptions() {
         List<Category> categories = categoryDAO.findAllActive();
         CategoryOption[] options = new CategoryOption[categories.size() + 1];
         options[0] = new CategoryOption(null, "Tất cả danh mục");   // index 0 = Tất cả (null id)
@@ -275,8 +310,7 @@ public class PosPanel extends JPanel {
             Category c = categories.get(i);
             options[i + 1] = new CategoryOption(c.getCategoryId(), c.getCategoryName());
         }
-        // Icon LAYER_GROUP (📚) giống hệt ProductPanel
-        categoryFilter = new FilterDropdown<>(FontAwesomeSolid.LAYER_GROUP, options);
+        return options;
     }
     // ================================================================
     // ====================== HẾT PHẦN THAY ĐỔI ======================
@@ -906,6 +940,28 @@ public class PosPanel extends JPanel {
     private void handleCheckout() {
         if (cart.isEmpty()) {
             AppAlert.warning(this, "Giỏ hàng đang trống.");
+            return;
+        }
+        // Kiem tra lai gio hang truoc khi mo dialog xac nhan: san pham da
+        // them tu truoc co the vua bi Admin khoa hoac category cha vua bi
+        // ngung ban o 1 tab khac trong luc thu ngan dang phuc vu khach. Neu
+        // co, tu dong go khoi gio + bao cho thu ngan, KHONG cho thanh toan
+        // tiep tuc voi gio hang cu (InvoiceDAO.createInvoice cung se tu choi
+        // nhung kiem tra som o day cho trai nghiem ro rang hon).
+        List<Integer> cartProductIds = new ArrayList<>();
+        for (CartItem it : cart.getItems()) cartProductIds.add(it.getProduct().getProductId());
+        java.util.Set<Integer> inactiveIds = productDAO.findInactiveIds(cartProductIds);
+        if (!inactiveIds.isEmpty()) {
+            List<String> removedNames = new ArrayList<>();
+            for (CartItem it : new ArrayList<>(cart.getItems())) {
+                if (inactiveIds.contains(it.getProduct().getProductId())) {
+                    removedNames.add(it.getProduct().getProductName());
+                    cart.removeItem(it.getProduct().getProductId());
+                }
+            }
+            AppAlert.warning(this, "Sản phẩm sau đã ngừng bán (sản phẩm bị khóa hoặc danh mục ngừng bán) "
+                    + "nên đã tự động bị xóa khỏi giỏ hàng: " + String.join(", ", removedNames)
+                    + ". Vui lòng kiểm tra lại giỏ hàng trước khi thanh toán.");
             return;
         }
         User currentUser = AuthService.getInstance().getCurrentUser();

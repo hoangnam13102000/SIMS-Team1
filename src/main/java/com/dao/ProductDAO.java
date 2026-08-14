@@ -2,6 +2,8 @@ package com.dao;
 
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
+import com.event.AppEventBus;
+import com.event.DataChangedEvent;
 import com.model.Product;
 import com.utils.DBConnection;
 import com.utils.PaginationHelper;
@@ -150,12 +152,48 @@ public class ProductDAO extends BaseDAO<Product> {
                     product.setProductCode(generateProductCode(productId));
                 }
             }
+            AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.PRODUCT));
             return true;
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
                     "ProductDAO.insert - " + product.getProductName(), e);
             return false;
         }
+    }
+
+    /**
+     * Tra ve tap con productId (trong danh sach truyen vao) HIEN KHONG con
+     * ban duoc nua - san pham bi ngung ban HOAC category cha bi vo hieu hoa.
+     * Dung o POS de kiem tra lai gio hang truoc khi thanh toan, phong truong
+     * hop san pham da them vao gio TU LUC CON active nhung Admin vua khoa/
+     * ngung ban o 1 tab quan tri khac trong luc thu ngan dang phuc vu khach.
+     */
+    public java.util.Set<Integer> findInactiveIds(List<Integer> productIds) {
+        java.util.Set<Integer> result = new java.util.LinkedHashSet<>();
+        if (productIds == null || productIds.isEmpty()) return result;
+        java.util.Set<Integer> distinctIds = new java.util.LinkedHashSet<>(productIds);
+        StringBuilder sql = new StringBuilder(
+                "SELECT p.ProductID FROM Products p JOIN Categories c ON c.CategoryID = p.CategoryID "
+                        + "WHERE p.ProductID IN (");
+        for (int i = 0; i < distinctIds.size(); i++) {
+            sql.append(i == 0 ? "?" : ", ?");
+        }
+        sql.append(") AND (p.Status <> 'ACTIVE' OR c.Status <> 'ACTIVE')");
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql.toString())) {
+            int idx = 1;
+            for (Integer id : distinctIds) {
+                ps.setInt(idx++, id);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getInt(1));
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "ProductDAO.findInactiveIds", e);
+        }
+        return result;
     }
 
     private String generateProductCode(int productId) {
@@ -170,7 +208,11 @@ public class ProductDAO extends BaseDAO<Product> {
              PreparedStatement ps = con.prepareStatement(sql)) {
             int nextIndex = bindProduct(ps, product);
             ps.setInt(nextIndex, product.getProductId());
-            return ps.executeUpdate() > 0;
+            boolean ok = ps.executeUpdate() > 0;
+            if (ok) {
+                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.PRODUCT));
+            }
+            return ok;
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
                     "ProductDAO.update - productId=" + product.getProductId(), e);
