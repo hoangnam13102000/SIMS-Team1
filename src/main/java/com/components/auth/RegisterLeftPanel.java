@@ -35,7 +35,7 @@ public class RegisterLeftPanel extends JPanel {
         JComponent logo = buildLogoBadge();
         logo.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel brand = new JLabel("Connect Smart");
+        JLabel brand = new JLabel("Connect Mart");
         brand.setFont(AppFont.BRAND);
         brand.setForeground(Color.WHITE);
         brand.setAlignmentX(Component.LEFT_ALIGNMENT);

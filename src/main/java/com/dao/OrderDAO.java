@@ -362,6 +362,55 @@ public class OrderDAO extends BaseDAO<Order> {
         return updateOrderStatus(orderId, newStatus, actorUserId, null, false);
     }
 
+    /**
+     * Huỷ đơn hàng do CHÍNH khách hàng thực hiện (OrderHistoryPanel, phía client).
+     * <p>
+     * Khác với {@link #updateOrderStatus(int, String, int, String, boolean)} -
+     * hàm dùng bởi admin/AI (đã được xác thực quyền ORDER_MANAGE ở tầng gọi,
+     * cho phép thao tác trên MỌI đơn) - hàm này PHẢI tự xác minh đơn hàng
+     * thực sự thuộc về {@code customerUserId} trước khi cho hủy. Trước đây
+     * việc "khách chỉ hủy được đơn của mình" hoàn toàn dựa vào UI (OrderHistoryPanel
+     * chỉ load đơn theo CustomerID hiện tại) - tầng DAO không tự chặn, nên nếu
+     * sau này có đường gọi khác (API, chatbot, deep link...) truyền thẳng
+     * orderId thì một khách có thể hủy được đơn của khách khác (IDOR).
+     */
+    public StatusUpdateResult cancelOwnOrder(int orderId, int customerUserId, String cancelReason) {
+        if (cancelReason == null || cancelReason.trim().isEmpty()) {
+            return StatusUpdateResult.fail("Vui lòng nhập lý do hủy đơn.");
+        }
+        try (Connection con = DBConnection.getConnection()) {
+            Integer ownerCustomerId = getOrderCustomerId(con, orderId);
+            if (ownerCustomerId == null) {
+                return StatusUpdateResult.fail("Đơn hàng không tồn tại.");
+            }
+            if (ownerCustomerId != customerUserId) {
+                AppLogger.getInstance().error(ErrorCode.ORDER_STATUS_UPDATE_FAIL,
+                        "OrderDAO.cancelOwnOrder - customerUserId=" + customerUserId
+                                + " co gang huy don orderId=" + orderId
+                                + " thuoc ve CustomerID=" + ownerCustomerId, null);
+                return StatusUpdateResult.fail("Bạn không có quyền hủy đơn hàng này.");
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "OrderDAO.cancelOwnOrder - kiem tra chu don that bai, orderId=" + orderId, e);
+            return StatusUpdateResult.fail("Đã xảy ra lỗi hệ thống. Vui lòng thử lại.");
+        }
+        return updateOrderStatus(orderId, "CANCELLED", customerUserId, cancelReason, false);
+    }
+
+    /** CustomerID của 1 đơn hàng (null nếu không tồn tại) - dùng để xác minh chủ đơn trước khi cho tự hủy. */
+    private Integer getOrderCustomerId(Connection con, int orderId) throws SQLException {
+        String sql = "SELECT CustomerID FROM Orders WHERE OrderID = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                int customerId = rs.getInt(1);
+                return rs.wasNull() ? null : customerId;
+            }
+        }
+    }
+
     /** Overload AI: viaAssistant = true khi lenh tu chatbot (AiToolExecutor). */
     public StatusUpdateResult updateOrderStatus(int orderId, String newStatus, int actorUserId, boolean viaAssistant) {
         return updateOrderStatus(orderId, newStatus, actorUserId, null, viaAssistant);

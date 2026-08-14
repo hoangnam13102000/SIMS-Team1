@@ -423,7 +423,10 @@ public class InvoiceDetailDialog extends JDialog {
             left.add(returnBtn);
         }
 
-        if (!invoice.isCancelled()) {
+        boolean canCancelInvoice = !invoice.isCancelled()
+                && PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL);
+
+        if (canCancelInvoice) {
             JButton cancelBtn = new JButton("Hủy hóa đơn");
             styleButton(cancelBtn, AppColor.ERROR, Color.WHITE);
             cancelBtn.addActionListener(e -> onCancelInvoice());
@@ -488,6 +491,10 @@ public class InvoiceDetailDialog extends JDialog {
     }
 
     private void onCancelInvoice() {
+        if (!PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL)) {
+            AppAlert.error(this, "Không có quyền", "Bạn không có quyền hủy hóa đơn.");
+            return;
+        }
         if (invoice.hasReturns()) {
             int ok = JOptionPane.showConfirmDialog(this,
                     "Hóa đơn đã có phiếu đổi/trả. Vẫn hủy toàn bộ hóa đơn?\n"

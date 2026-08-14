@@ -33,7 +33,7 @@ public class AuthLeftPanel extends JPanel {
         logo.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         // Brand
-        JLabel brand = new JLabel("Connect Smart");
+        JLabel brand = new JLabel("Connect Mart");
         brand.setFont(AppFont.BRAND);
         brand.setForeground(Color.WHITE);
         brand.setAlignmentX(Component.LEFT_ALIGNMENT);

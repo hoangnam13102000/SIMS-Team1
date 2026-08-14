@@ -192,30 +192,36 @@ public class AdminMainFrame extends JFrame {
                 new ExceptionReportPanel(),
                 AppPermission.EXCEPTION_REPORT_CREATE, AppPermission.EXCEPTION_REPORT_HANDLE);
 
-        // ========== KHO: ẩn với SALES_MANAGER, Admin / QL kho vẫn thấy ==========
-        if (!isSalesManager()) {
-            layout.addSection(Lang.get("sidebar.section.warehouse"));
-            // QL kho đã dùng InventoryOverviewPanel làm dashboard → không hiện lại trong tab Kho
-            if (!isInventoryManager()) {
-                layout.addPage("inventoryOverview", Lang.get("sidebar.inventoryOverview"), FontAwesomeSolid.TH_LARGE,
-                        new InventoryOverviewPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
-            }
-            layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE,
-                    new PurchaseReceiptPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
-            layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES,
-                    new InventoryBatchPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
-            layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE,
-                    new StockReconciliationPanel(), AppPermission.STOCK_RECONCILE);
-            layout.addPage("stockDisposal", Lang.get("sidebar.stockDisposal"), FontAwesomeSolid.TRASH,
-                    new StockDisposalPanel(), AppPermission.STOCK_DISPOSE, AppPermission.STOCK_DISPOSE_VIEW);
-            layout.addPage("supplierReturn", Lang.get("sidebar.supplierReturn"), FontAwesomeSolid.UNDO,
-                    new SupplierReturnPanel(),
-                    AppPermission.SUPPLIER_RETURN_CREATE, AppPermission.SUPPLIER_RETURN_VIEW);
-            layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE,
-                    new StockAlertPanel(), AppPermission.STOCK_ALERT_VIEW);
-            layout.addPage("inventoryReport", Lang.get("sidebar.inventoryReport"), FontAwesomeSolid.WAREHOUSE,
-                    new InventoryReportPanel(), AppPermission.STOCK_VIEW);
+        // ========== KHO ==========
+        // Không ẩn cứng theo role nữa: mỗi trang tự lọc theo quyền của
+        // RolePermissions, nhờ vậy quyền cấp cho SALES_MANAGER (VD:
+        // STOCK_DISPOSE_VIEW) sẽ thực sự hiện đúng trang tương ứng thay vì
+        // bị section-level override che mất (quyền không khớp menu).
+        // Sales Manager mặc định không có STOCK_IMPORT/STOCK_VIEW/STOCK_RECONCILE
+        // nên các trang đó vẫn tự ẩn với họ; chỉ Tiêu hủy tồn kho (được cấp
+        // quyền STOCK_DISPOSE_VIEW) là hiện, đúng với thiết kế "xem tiêu hủy
+        // để đối soát doanh thu/chi phí" của vai trò này.
+        layout.addSection(Lang.get("sidebar.section.warehouse"));
+        // QL kho đã dùng InventoryOverviewPanel làm dashboard → không hiện lại trong tab Kho
+        if (!isInventoryManager()) {
+            layout.addPage("inventoryOverview", Lang.get("sidebar.inventoryOverview"), FontAwesomeSolid.TH_LARGE,
+                    new InventoryOverviewPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
         }
+        layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE,
+                new PurchaseReceiptPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+        layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES,
+                new InventoryBatchPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+        layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE,
+                new StockReconciliationPanel(), AppPermission.STOCK_RECONCILE);
+        layout.addPage("stockDisposal", Lang.get("sidebar.stockDisposal"), FontAwesomeSolid.TRASH,
+                new StockDisposalPanel(), AppPermission.STOCK_DISPOSE, AppPermission.STOCK_DISPOSE_VIEW);
+        layout.addPage("supplierReturn", Lang.get("sidebar.supplierReturn"), FontAwesomeSolid.UNDO,
+                new SupplierReturnPanel(),
+                AppPermission.SUPPLIER_RETURN_CREATE, AppPermission.SUPPLIER_RETURN_VIEW);
+        layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE,
+                new StockAlertPanel(), AppPermission.STOCK_ALERT_VIEW);
+        layout.addPage("inventoryReport", Lang.get("sidebar.inventoryReport"), FontAwesomeSolid.WAREHOUSE,
+                new InventoryReportPanel(), AppPermission.STOCK_VIEW);
 
         layout.addSection(Lang.get("sidebar.section.sales"));
         // ========== POS: ẩn với SALES_MANAGER, Admin / NV bán hàng vẫn thấy ==========

@@ -397,8 +397,11 @@ public class OrderHistoryPanel extends JPanel {
         if (!confirmed) return;
 
         int userId = AuthService.getInstance().getCurrentUser().getUserId();
-        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
-                order.getOrderId(), "CANCELLED", userId, reason);
+        // Dung cancelOwnOrder() thay vi updateOrderStatus() truc tiep: ham nay
+        // tu xac minh don thuc su thuoc ve userId truoc khi cho huy (khong
+        // chi dua vao viec UI da loc san don theo khach dang dang nhap).
+        OrderDAO.StatusUpdateResult result = orderDAO.cancelOwnOrder(
+                order.getOrderId(), userId, reason);
         if (!result.success) {
             BaseDialog.error(this, "Không thể hủy đơn", result.errorMessage);
             return;
