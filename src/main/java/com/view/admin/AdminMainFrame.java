@@ -42,6 +42,7 @@ import com.view.admin.product.ProductPanel;
 import com.view.admin.promotion.PromotionPanel;
 import com.view.admin.report.RevenueReportPanel;
 import com.view.admin.returnexchange.ReturnExchangePanel;
+import com.view.admin.security.TwoFactorSettingsPanel;
 import com.view.admin.stockalert.StockAlertPanel;
 import com.view.admin.supplier.SupplierPanel;
 import com.view.client.ProfilePanel;
@@ -248,6 +249,17 @@ public class AdminMainFrame extends JFrame {
         layout.addSection(Lang.get("sidebar.section.system"));
         layout.addPage("settings", Lang.get("sidebar.settings"), FontAwesomeSolid.COGS, new SettingsPanel(),
                 AppPermission.SETTINGS_MANAGE);
+
+        // ===== Bảo mật đăng nhập (2FA) - CHỈ hiện với Role.ADMIN vì 2FA hiện
+        // chỉ bắt buộc/áp dụng cho role này (xem TwoFactorAuthService). Không
+        // gắn AppPermission riêng vì đây là cài đặt CÁ NHÂN của chính admin
+        // đang đăng nhập (đổi/tắt 2FA của TÀI KHOẢN MÌNH), không phải quản lý
+        // người khác - nên chỉ cần kiểm tra role, không qua PermissionManager.
+        if (AuthService.getInstance().isAdmin()) {
+            layout.addPage("twoFactorSettings", Lang.get("sidebar.twoFactor"), FontAwesomeSolid.SHIELD_ALT,
+                    new TwoFactorSettingsPanel());
+        }
+
         layout.addPage("backup", Lang.get("sidebar.backup"), FontAwesomeSolid.SHIELD_ALT, new BackupRecoveryPanel(),
                 AppPermission.BACKUP_MANAGE);
         layout.addPage("auditLogs", Lang.get("sidebar.auditLogs"), FontAwesomeSolid.HISTORY, new AuditLogPanel(),

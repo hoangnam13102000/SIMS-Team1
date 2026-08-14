@@ -213,9 +213,22 @@ public class LoginTwoFactorEnrollDialog extends JDialog {
                 Lang.get("twofa.enroll.totp.subtitle"), AppFont.BODY, AppColor.TEXT_MUTED));
         panel.add(Box.createVerticalStrut(AppSpacing.MD));
 
+        // ---- QR: panel rieng GIAN HET CHIEU RONG THAT (khong gioi han
+        // CONTENT_WIDTH nhu cac field khac), roi moi dung FlowLayout.CENTER
+        // de canh QR vao giua khoang do. Neu gioi han maximumSize.width =
+        // CONTENT_WIDTH nhu truoc, khi panel bi cac dong khac (vd secretLabel
+        // chua chuoi ma dai) day rong hon CONTENT_WIDTH thi QR se bi lech trai. ----
         qrLabel = new JLabel();
-        qrLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(WizardWidgets.centeredRow(qrLabel));
+        qrLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        qrLabel.setVerticalAlignment(SwingConstants.CENTER);
+
+        JPanel qrWrapper = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        qrWrapper.setOpaque(false);
+        qrWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        qrWrapper.setPreferredSize(new Dimension(Integer.MAX_VALUE, 240));
+        qrWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 240));
+        qrWrapper.add(qrLabel);
+        panel.add(qrWrapper);
         panel.add(Box.createVerticalStrut(AppSpacing.SM));
 
         secretLabel = WizardWidgets.createWrappedLabel(" ", AppFont.SMALL_BOLD, AppColor.TEXT_MUTED);
