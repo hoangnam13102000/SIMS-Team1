@@ -89,13 +89,13 @@ public class UserTwoFactorDAO {
     }
 
     private boolean upsert(int userId, TwoFactorMethod method, String encryptedSecret, boolean enabled) {
-        String sql =
-                "MERGE UserTwoFactor AS target " +
-                "USING (SELECT ? AS UserID) AS src ON target.UserID = src.UserID " +
-                "WHEN MATCHED THEN UPDATE SET Method = ?, TotpSecretEnc = ?, Enabled = ?, " +
-                "    EnrolledAt = CASE WHEN ? = 1 THEN GETDATE() ELSE target.EnrolledAt END, UpdatedAt = GETDATE() " +
-                "WHEN NOT MATCHED THEN INSERT (UserID, Method, TotpSecretEnc, Enabled, EnrolledAt, UpdatedAt) " +
-                "    VALUES (?, ?, ?, ?, CASE WHEN ? = 1 THEN GETDATE() ELSE NULL END, GETDATE());";
+        String sql = "INSERT INTO UserTwoFactor "
+                + "(UserID, Method, TotpSecretEnc, Enabled, EnrolledAt, UpdatedAt) "
+                + "VALUES (?, ?, ?, ?, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP) "
+                + "ON DUPLICATE KEY UPDATE Method = VALUES(Method), "
+                + "TotpSecretEnc = VALUES(TotpSecretEnc), Enabled = VALUES(Enabled), "
+                + "EnrolledAt = CASE WHEN VALUES(Enabled) = 1 THEN CURRENT_TIMESTAMP ELSE EnrolledAt END, "
+                + "UpdatedAt = CURRENT_TIMESTAMP";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, userId);
@@ -103,12 +103,8 @@ public class UserTwoFactorDAO {
             ps.setString(3, encryptedSecret);
             ps.setBoolean(4, enabled);
             ps.setBoolean(5, enabled);
-            ps.setInt(6, userId);
-            ps.setString(7, method.name());
-            ps.setString(8, encryptedSecret);
-            ps.setBoolean(9, enabled);
-            ps.setBoolean(10, enabled);
-            return ps.executeUpdate() > 0;
+            ps.executeUpdate();
+            return true;
         } catch (SQLException e) {
             AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "UserTwoFactorDAO.upsert - userId=" + userId, e);
             return false;
@@ -165,7 +161,7 @@ public class UserTwoFactorDAO {
     }
 
     public boolean markBackupCodeUsed(int backupCodeId) {
-        String sql = "UPDATE UserTwoFactorBackupCodes SET UsedAt = GETDATE() WHERE BackupCodeID = ? AND UsedAt IS NULL";
+        String sql = "UPDATE UserTwoFactorBackupCodes SET UsedAt = CURRENT_TIMESTAMP WHERE BackupCodeID = ? AND UsedAt IS NULL";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, backupCodeId);

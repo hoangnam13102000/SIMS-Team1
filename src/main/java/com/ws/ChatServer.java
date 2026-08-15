@@ -37,7 +37,7 @@ public class ChatServer {
     private InternalServer server;
     private final AtomicBoolean bindFailureNotified = new AtomicBoolean(false);
 
-    private ChatServer(int port) { this.port = port; }
+    ChatServer(int port) { this.port = port; }
 
     public static synchronized ChatServer getInstance() {
         if (instance == null) instance = new ChatServer(loadPort());
@@ -283,6 +283,26 @@ public class ChatServer {
                     return;
                 }
 
+                // Tin hỗ trợ từ nhân viên phải đi qua WebSocket server này. Trước đây màn hình
+                // quản trị gọi sendToCustomer() cục bộ nên khác máy/process không thể chuyển tiếp.
+                if (chatMessage.isChat() && chatMessage.fromAdmin) {
+                    ChatMessage staffSession = staffSessionByConnection.get(conn);
+                    if (staffSession == null) {
+                        AppLogger.getInstance().error(ErrorCode.WS_MESSAGE_FAIL,
+                                "ChatServer.onMessage - tu choi tin gui khach tu socket khong phai nhan vien", null);
+                        return;
+                    }
+                    // Không tin userName do client gửi lên; dùng danh tính đã đăng ký khi STAFF_JOIN.
+                    chatMessage.userName = staffSession.userName;
+                    WebSocket customer = connectionsByUserId.get(chatMessage.userId);
+                    if (customer != null && customer.isOpen()) {
+                        customer.send(GSON.toJson(chatMessage));
+                    }
+                    ChatHistoryService.getInstance().saveCustomerChatAsync(chatMessage, staffSession.userId);
+                    dispatch(chatMessage);
+                    return;
+                }
+
                 if (chatMessage.isLeave()) {
                     connectionsByUserId.remove(chatMessage.userId, conn);
                     sessionByConnection.remove(conn);
@@ -296,14 +316,7 @@ public class ChatServer {
                 if (chatMessage.isChat()
                         && ((chatMessage.text != null && !chatMessage.text.isBlank())
                             || chatMessage.hasImage() || chatMessage.hasFile() || chatMessage.hasVoice())) {
-                    int staffSenderId = 0;
-                    if (chatMessage.fromAdmin) {
-                        ChatMessage staffSession = staffSessionByConnection.get(conn);
-                        if (staffSession != null) {
-                            staffSenderId = staffSession.userId;
-                        }
-                    }
-                    ChatHistoryService.getInstance().saveCustomerChatAsync(chatMessage, staffSenderId);
+                    ChatHistoryService.getInstance().saveCustomerChatAsync(chatMessage, 0);
                 }
 
                 // FIX: đẩy tin khách (kể cả thoại) tới MỌI nhân viên đang online qua WebSocket.

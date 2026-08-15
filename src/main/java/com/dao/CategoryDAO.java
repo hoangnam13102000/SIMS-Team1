@@ -126,7 +126,7 @@ public class CategoryDAO extends BaseDAO<Category> {
 
     /**
      * Kiem tra ten danh muc da ton tai chua (khong phan biet hoa/thuong, vi
-     * CategoryName la NVARCHAR UNIQUE tren SQL Server voi collation mac dinh
+     * CategoryName la VARCHAR UNIQUE tren MySQL voi collation utf8mb4_unicode_ci
      * khong phan biet hoa thuong). excludeCategoryId = -1 khi dang THEM moi
      * (khong loai tru dong nao).
      */

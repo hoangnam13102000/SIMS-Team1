@@ -32,7 +32,7 @@ public class ShiftDAO {
     }
 
     private Integer findOpenShiftId(int userId) {
-        String sql = "SELECT TOP 1 ShiftID FROM Shifts WHERE UserID = ? AND Status = 'OPEN' ORDER BY ShiftID DESC";
+        String sql = "SELECT ShiftID FROM Shifts WHERE UserID = ? AND Status = 'OPEN' ORDER BY ShiftID DESC LIMIT 1";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, userId);
@@ -47,7 +47,7 @@ public class ShiftDAO {
     }
 
     private int openNewShift(int userId) {
-        String sql = "INSERT INTO Shifts (UserID, StartTime, Status) VALUES (?, GETDATE(), 'OPEN')";
+        String sql = "INSERT INTO Shifts (UserID, StartTime, Status) VALUES (?, CURRENT_TIMESTAMP, 'OPEN')";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, userId);

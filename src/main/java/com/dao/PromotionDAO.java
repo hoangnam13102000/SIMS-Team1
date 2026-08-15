@@ -191,7 +191,7 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -212,10 +212,9 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
     }
 
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     public Promotion findByCode(String code) {
@@ -270,8 +269,8 @@ public class PromotionDAO extends SoftDeleteDAO<Promotion> {
     public List<Promotion> findBannerPromotions() {
         String sql = "SELECT " + getColumns() + " FROM Promotions "
                 + "WHERE IsDeleted = 0 AND IsActive = 1 AND ShowOnBanner = 1 "
-                + "  AND StartDate <= CAST(GETDATE() AS DATE) "
-                + "  AND EndDate   >= CAST(GETDATE() AS DATE) "
+                + "  AND StartDate <= CAST(CURRENT_TIMESTAMP AS DATE) "
+                + "  AND EndDate   >= CAST(CURRENT_TIMESTAMP AS DATE) "
                 + "  AND (UsageLimit IS NULL OR UsedCount < UsageLimit) "
                 + "ORDER BY CASE WHEN BannerSortOrder IS NULL THEN 1 ELSE 0 END, "
                 + "         BannerSortOrder ASC, CreatedAt DESC";

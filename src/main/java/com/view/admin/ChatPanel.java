@@ -1039,8 +1039,8 @@ public class ChatPanel extends JPanel {
                 if (!sent) AppAlert.warning(this, "Gửi thoại nội bộ thất bại.");
             } else {
                 if (selectedCustomerId == null) return;
-                ChatServer.getInstance().sendVoiceToCustomer(
-                        selectedCustomerId, myName, transcript, b64, "audio/wav", dur, myUserId);
+                ChatClient.getInstance().sendCustomerVoice(
+                        selectedCustomerId, transcript, b64, "audio/wav", dur);
                 ChatMessage record = ChatMessage.voiceFromAdmin(
                         selectedCustomerId, myName, transcript, b64, "audio/wav", dur);
                 customerConversations.computeIfAbsent(selectedCustomerId, k -> new ArrayList<>()).add(record);
@@ -1083,11 +1083,12 @@ public class ChatPanel extends JPanel {
         if (selectedCustomerId == null) return;
         String text = inputField.getText() == null ? "" : inputField.getText().trim();
         if (text.isEmpty()) return;
-        ChatServer.getInstance().sendToCustomer(selectedCustomerId, myName, text, myUserId);
+        boolean sent = ChatClient.getInstance().sendCustomerMessage(selectedCustomerId, text);
         ChatMessage record = ChatMessage.chatFromAdmin(selectedCustomerId, myName, text);
         customerConversations.computeIfAbsent(selectedCustomerId, k -> new ArrayList<>()).add(record);
         addBubble(text, null, true, TIME_FORMAT.format(new Date(record.timestamp)));
         inputField.setText("");
+        if (!sent) AppAlert.warning(this, "Chưa kết nối máy chủ chat. Tin nhắn chưa được gửi.");
     }
 
     private void sendStaffReply() {
@@ -1164,8 +1165,8 @@ public class ChatPanel extends JPanel {
                                 caption.isEmpty() ? null : caption, img.base64, img.mime);
                         staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
                     } else {
-                        sent = ChatServer.getInstance().sendImageToCustomer(
-                                targetId, myName, caption.isEmpty() ? null : caption, img.base64, img.mime, myUserId);
+                        sent = ChatClient.getInstance().sendCustomerImage(
+                                targetId, caption.isEmpty() ? null : caption, img.base64, img.mime);
                         record = ChatMessage.imageFromAdmin(targetId, myName,
                                 caption.isEmpty() ? null : caption, img.base64, img.mime);
                         customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
@@ -1185,9 +1186,9 @@ public class ChatPanel extends JPanel {
                                 caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
                         staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
                     } else {
-                        sent = ChatServer.getInstance().sendFileToCustomer(
-                                targetId, myName, caption.isEmpty() ? null : caption,
-                                f.base64, f.fileName, f.mime, myUserId);
+                        sent = ChatClient.getInstance().sendCustomerFile(
+                                targetId, caption.isEmpty() ? null : caption,
+                                f.base64, f.fileName, f.mime);
                         record = ChatMessage.fileFromAdmin(targetId, myName,
                                 caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
                         customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);

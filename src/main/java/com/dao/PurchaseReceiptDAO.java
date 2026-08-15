@@ -106,7 +106,7 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -126,10 +126,9 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
     }
 
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     public int createReceipt(int supplierId, int createdByUserId, List<PurchaseReceiptDetail> details) {
@@ -187,7 +186,7 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
                         if (d.getLotNumber() != null && !d.getLotNumber().isBlank()) {
                             ps.setString(5, d.getLotNumber().trim());
                         } else {
-                            ps.setNull(5, Types.NVARCHAR);
+                            ps.setNull(5, Types.VARCHAR);
                         }
                         if (d.getManufactureDate() != null) {
                             ps.setDate(6, Date.valueOf(d.getManufactureDate()));
@@ -204,6 +203,17 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
                     ps.executeBatch();
                 }
 
+                // MySQL khong cho generated column tham chieu AUTO_INCREMENT;
+                // gan ma lo sau khi trigger da tao InventoryBatch.
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE InventoryBatch b "
+                                + "JOIN PurchaseReceiptDetails d ON d.ReceiptDetailID = b.ReceiptDetailID "
+                                + "SET b.BatchCode = CONCAT('LOT_', LPAD(b.BatchID, 6, '0')) "
+                                + "WHERE d.ReceiptID = ?")) {
+                    ps.setInt(1, receiptId);
+                    ps.executeUpdate();
+                }
+
                 // Liên kết giá nhập lô/phiếu → Products.ImportPrice (giá lần nhập gần nhất).
                 // Báo cáo lợi nhuận dùng Products.ImportPrice; không cập nhật sẽ lệch với giá thực tế trên lô.
                 // PHẢI cập nhật ImportPrice + SellPrice CÙNG 1 câu UPDATE vì CHECK
@@ -216,7 +226,7 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
                         "UPDATE Products SET "
                         + "ImportPrice = ?, "
                         + "SellPrice = CASE WHEN AutoPrice = 1 "
-                        + "THEN ? + ISNULL(Margin, dbo.fn_GetDefaultMargin()) "
+                        + "THEN ? + COALESCE(Margin, fn_GetDefaultMargin()) "
                         + "ELSE SellPrice END "
                         + "WHERE ProductID = ? "
                         + "AND (AutoPrice = 1 OR ? <= SellPrice)";
@@ -293,8 +303,8 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
     }
 
     public BigDecimal sumTodayAmount() {
-        String sql = "SELECT ISNULL(SUM(TotalAmount), 0) FROM PurchaseReceipts "
-                + "WHERE Status = 'COMPLETED' AND CAST(CreatedAt AS DATE) = CAST(GETDATE() AS DATE)";
+        String sql = "SELECT COALESCE(SUM(TotalAmount), 0) FROM PurchaseReceipts "
+                + "WHERE Status = 'COMPLETED' AND CAST(CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

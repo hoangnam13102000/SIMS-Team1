@@ -4,6 +4,7 @@ import com.backup.BackupException;
 import com.backup.BackupStrategy;
 import com.backup.DatabaseConnectionProvider;
 import com.backup.RestoreStrategy;
+import com.backup.dialect.MySqlDialect;
 import com.backup.dialect.SqlDialect;
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -75,6 +77,9 @@ public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrateg
                 for (String table : tables) {
                     dumpTableData(conn, table, writer);
                 }
+                if (dialect instanceof MySqlDialect) {
+                    dumpMySqlRoutinesAndTriggers(conn, writer);
+                }
                 writer.flush();
             }
         } catch (SQLException e) {
@@ -97,6 +102,16 @@ public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrateg
     }
 
     private String buildCreateTableStatement(Connection conn, String table) throws SQLException {
+        // SHOW CREATE TABLE preserves AUTO_INCREMENT, generated columns,
+        // defaults, indexes and foreign keys that generic JDBC metadata loses.
+        if (dialect instanceof MySqlDialect) {
+            String sql = "SHOW CREATE TABLE " + dialect.quoteIdentifier(table);
+            try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+                if (!rs.next()) throw new SQLException("SHOW CREATE TABLE khong tra ve ket qua cho " + table);
+                return rs.getString(2).replace('\r', ' ').replace('\n', ' ') + ";";
+            }
+        }
+
         DatabaseMetaData meta = conn.getMetaData();
         StringBuilder sb = new StringBuilder("CREATE TABLE ").append(dialect.quoteIdentifier(table)).append(" (");
 
@@ -141,19 +156,25 @@ public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrateg
             try (ResultSet rs = stmt.executeQuery(sql)) {
                 ResultSetMetaData rsMeta = rs.getMetaData();
                 int colCount = rsMeta.getColumnCount();
+                Set<String> generatedColumns = dialect instanceof MySqlDialect
+                        ? listGeneratedColumns(conn, table) : Set.of();
+                List<Integer> includedColumns = new ArrayList<>();
 
                 StringBuilder colList = new StringBuilder();
                 for (int i = 1; i <= colCount; i++) {
-                    if (i > 1) colList.append(", ");
+                    if (generatedColumns.contains(rsMeta.getColumnName(i).toUpperCase())) continue;
+                    if (!includedColumns.isEmpty()) colList.append(", ");
                     colList.append(dialect.quoteIdentifier(rsMeta.getColumnName(i)));
+                    includedColumns.add(i);
                 }
                 String insertPrefix = "INSERT INTO " + dialect.quoteIdentifier(table) + " (" + colList + ") VALUES (";
 
                 int rowCount = 0;
                 while (rs.next()) {
                     StringBuilder row = new StringBuilder(insertPrefix);
-                    for (int i = 1; i <= colCount; i++) {
-                        if (i > 1) row.append(", ");
+                    for (int pos = 0; pos < includedColumns.size(); pos++) {
+                        int i = includedColumns.get(pos);
+                        if (pos > 0) row.append(", ");
                         row.append(formatValue(rs, i, rsMeta.getColumnType(i)));
                     }
                     row.append(");");
@@ -163,6 +184,79 @@ public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrateg
                 }
             }
         }
+    }
+
+    private Set<String> listGeneratedColumns(Connection conn, String table) throws SQLException {
+        Set<String> result = new LinkedHashSet<>();
+        DatabaseMetaData meta = conn.getMetaData();
+        try (ResultSet cols = meta.getColumns(conn.getCatalog(), schemaPattern, table, "%")) {
+            while (cols.next()) {
+                String generated;
+                try {
+                    generated = cols.getString("IS_GENERATEDCOLUMN");
+                } catch (SQLException unsupported) {
+                    generated = "NO";
+                }
+                if ("YES".equalsIgnoreCase(generated)) {
+                    result.add(cols.getString("COLUMN_NAME").toUpperCase());
+                }
+            }
+        }
+        return result;
+    }
+
+    private void dumpMySqlRoutinesAndTriggers(Connection conn, BufferedWriter writer)
+            throws SQLException, IOException {
+        String catalog = conn.getCatalog();
+        if (catalog == null || catalog.isBlank()) return;
+
+        List<String[]> routines = new ArrayList<>();
+        String routineSql = "SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES "
+                + "WHERE ROUTINE_SCHEMA = ? ORDER BY CASE WHEN ROUTINE_TYPE = 'FUNCTION' THEN 0 ELSE 1 END, ROUTINE_NAME";
+        try (PreparedStatement ps = conn.prepareStatement(routineSql)) {
+            ps.setString(1, catalog);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) routines.add(new String[]{rs.getString(1), rs.getString(2)});
+            }
+        }
+        for (String[] routine : routines) {
+            String name = routine[0];
+            String type = routine[1];
+            writer.write("DROP " + type + " IF EXISTS " + dialect.quoteIdentifier(name) + ";");
+            writer.newLine();
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SHOW CREATE " + type + " " + dialect.quoteIdentifier(name))) {
+                if (rs.next()) {
+                    writer.write(stripMySqlDefiner(rs.getString(3)).replace('\r', ' ').replace('\n', ' ') + ";");
+                    writer.newLine();
+                }
+            }
+        }
+
+        List<String> triggers = new ArrayList<>();
+        String triggerSql = "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS "
+                + "WHERE TRIGGER_SCHEMA = ? ORDER BY TRIGGER_NAME";
+        try (PreparedStatement ps = conn.prepareStatement(triggerSql)) {
+            ps.setString(1, catalog);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) triggers.add(rs.getString(1));
+            }
+        }
+        for (String trigger : triggers) {
+            writer.write("DROP TRIGGER IF EXISTS " + dialect.quoteIdentifier(trigger) + ";");
+            writer.newLine();
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SHOW CREATE TRIGGER " + dialect.quoteIdentifier(trigger))) {
+                if (rs.next()) {
+                    writer.write(stripMySqlDefiner(rs.getString(3)).replace('\r', ' ').replace('\n', ' ') + ";");
+                    writer.newLine();
+                }
+            }
+        }
+    }
+
+    private String stripMySqlDefiner(String ddl) {
+        return ddl.replaceFirst("(?i)DEFINER\\s*=\\s*`[^`]+`@`[^`]+`\\s*", "");
     }
 
     private String formatValue(ResultSet rs, int index, int jdbcType) throws SQLException {
@@ -211,9 +305,8 @@ public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrateg
             if (conn == null) throw new BackupException("Khong lay duoc Connection (tra ve null).");
             conn.setAutoCommit(true);
 
-            // Xoa han rang buoc FK truoc (khong the chi NOCHECK vi SQL Server van chan
-            // DROP TABLE khi con bi FK tham chieu toi). Strategy nay khong dump lai FK
-            // nen chap nhan mat FK sau khi restore (da ghi ro trong javadoc class nay).
+            // Tat kiem tra FK trong luc drop/create/insert. MySqlDialect dung
+            // SHOW CREATE TABLE nen rang buoc va index duoc phuc hoi day du.
             String dropFks = dialect.dropAllForeignKeysStatement();
             if (dropFks != null) safeExecute(conn, dropFks);
             String disableFk = dialect.disableForeignKeyChecksStatement();
@@ -281,6 +374,7 @@ public class JdbcSqlDumpBackupStrategy implements BackupStrategy, RestoreStrateg
         // Bo dau ngoac vuong/nhay kep de dung lam ten bang tho khi truy van sys.identity_columns.
         if (raw.startsWith("[") && raw.endsWith("]")) raw = raw.substring(1, raw.length() - 1).replace("]]", "]");
         else if (raw.startsWith("\"") && raw.endsWith("\"")) raw = raw.substring(1, raw.length() - 1).replace("\"\"", "\"");
+        else if (raw.startsWith("`") && raw.endsWith("`")) raw = raw.substring(1, raw.length() - 1).replace("``", "`");
         return raw;
     }
 

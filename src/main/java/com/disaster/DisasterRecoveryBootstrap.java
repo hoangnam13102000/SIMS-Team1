@@ -6,10 +6,9 @@ import com.backup.BackupManager;
 import com.backup.BackupResult;
 import com.backup.BackupStorage;
 import com.backup.BackupStrategy;
-import com.backup.dialect.SqlServerDialect;
+import com.backup.dialect.MySqlDialect;
 import com.backup.strategy.EncryptingBackupStrategy;
 import com.backup.strategy.JdbcSqlDumpBackupStrategy;
-import com.backup.strategy.SqlServerNativeBackupStrategy;
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.incident.DbHealthMonitor;
@@ -76,19 +75,12 @@ public final class DisasterRecoveryBootstrap {
         });
 
         BackupStorage storage = new BackupStorage(backupDir);
-        String dbName = SIMSBackupTarget.currentDatabaseName();
-
-        SqlServerNativeBackupStrategy nativeStrategy = new SqlServerNativeBackupStrategy(
+        JdbcSqlDumpBackupStrategy mysqlDump = new JdbcSqlDumpBackupStrategy(
                 SIMSBackupTarget.appConnectionProvider(),
-                SIMSBackupTarget.masterConnectionProvider(),
-                dbName);
-
-        JdbcSqlDumpBackupStrategy jdbcFallback = new JdbcSqlDumpBackupStrategy(
-                SIMSBackupTarget.appConnectionProvider(),
-                new SqlServerDialect(), "dbo",
+                new MySqlDialect(), null,
                 JdbcSqlDumpBackupStrategy.noExclusions());
 
-        List<BackupStrategy> strategiesInOrder = buildStrategyChain(config, nativeStrategy, jdbcFallback);
+        List<BackupStrategy> strategiesInOrder = buildStrategyChain(config, mysqlDump);
 
         backupManager = new BackupManager(storage, strategiesInOrder);
         backupManager.addListener(new BackupListener() {
@@ -151,14 +143,13 @@ public final class DisasterRecoveryBootstrap {
      * SU chap nhan luu backup dang plain text (khong khuyen nghi).
      */
     private static List<BackupStrategy> buildStrategyChain(AppConfig config,
-                                                             SqlServerNativeBackupStrategy nativeStrategy,
-                                                             JdbcSqlDumpBackupStrategy jdbcFallback) {
+                                                             JdbcSqlDumpBackupStrategy mysqlDump) {
         boolean encryptionEnabled = Boolean.parseBoolean(config.get("BACKUP_ENCRYPTION_ENABLED", "true"));
         if (!encryptionEnabled) {
             AppLogger.getInstance().warn("system",
                     "BACKUP_ENCRYPTION_ENABLED=false - file backup se duoc luu KHONG ma hoa. "
                             + "Khong khuyen nghi cho moi truong production.");
-            return List.of(nativeStrategy, jdbcFallback);
+            return List.of(mysqlDump);
         }
 
         String passphrase = config.get("BACKUP_ENCRYPTION_PASSPHRASE", null);
@@ -174,9 +165,7 @@ public final class DisasterRecoveryBootstrap {
         }
         Supplier<String> passphraseSupplier = () -> AppConfig.getInstance().get("BACKUP_ENCRYPTION_PASSPHRASE", null);
 
-        return List.of(
-                new EncryptingBackupStrategy(nativeStrategy, passphraseSupplier),
-                new EncryptingBackupStrategy(jdbcFallback, passphraseSupplier));
+        return List.of(new EncryptingBackupStrategy(mysqlDump, passphraseSupplier));
     }
 
     private static void maybeEmergencyBackup(BackupStorage storage, long staleHours) {

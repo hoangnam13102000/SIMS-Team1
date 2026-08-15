@@ -45,18 +45,18 @@ public class OrderDAO extends BaseDAO<Order> {
                 + "CASE WHEN EXISTS (SELECT 1 FROM ReturnExchanges r "
                 + "WHERE r.InvoiceID = o.InvoiceID) "
                 + "THEN 1 ELSE 0 END AS ReturnRequested, "
-                + "(SELECT TOP 1 r.Status FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
-                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnStatus, "
-                + "(SELECT TOP 1 r.Type FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
-                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnType, "
-                + "(SELECT TOP 1 r.TotalValue FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
-                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnValue, "
-                + "(SELECT TOP 1 r.RejectionReason FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
-                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnRejectionReason, "
-                + "(SELECT TOP 1 r.Reason FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
-                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnReason, "
-                + "(SELECT TOP 1 r.CreatedAt FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
-                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC) AS LatestReturnCreatedAt";
+                + "(SELECT r.Status FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT 1) AS LatestReturnStatus, "
+                + "(SELECT r.Type FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT 1) AS LatestReturnType, "
+                + "(SELECT r.TotalValue FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT 1) AS LatestReturnValue, "
+                + "(SELECT r.RejectionReason FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT 1) AS LatestReturnRejectionReason, "
+                + "(SELECT r.Reason FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT 1) AS LatestReturnReason, "
+                + "(SELECT r.CreatedAt FROM ReturnExchanges r WHERE r.InvoiceID = o.InvoiceID "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT 1) AS LatestReturnCreatedAt";
     }
 
     @Override
@@ -189,6 +189,14 @@ public class OrderDAO extends BaseDAO<Order> {
                     ps.executeBatch();
                 }
 
+                String orderCode = "DH" + String.format("%04d", orderId);
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE Orders SET OrderCode = ? WHERE OrderID = ?")) {
+                    ps.setString(1, orderCode);
+                    ps.setInt(2, orderId);
+                    ps.executeUpdate();
+                }
+
                 // PAYPAL da thu tien thuc su qua PayPalService.captureOrder()
                 // TRUOC khi goi ham nay (xem javadoc + CartPanel) - lap Invoice
                 // ngay de doanh thu duoc ghi nhan dung luc thu tien, khong phai
@@ -215,7 +223,7 @@ public class OrderDAO extends BaseDAO<Order> {
 
                 con.commit();
                 order.setOrderId(orderId);
-                order.setOrderCode("DH" + String.format("%04d", orderId));
+                order.setOrderCode(orderCode);
                 AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
                 return true;
             } catch (SQLException e) {
@@ -254,7 +262,7 @@ public class OrderDAO extends BaseDAO<Order> {
             StringBuilder keywordCondition = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) keywordCondition.append(" OR ");
-                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '\\'");
+                keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
             keywordCondition.append(")");
@@ -276,10 +284,9 @@ public class OrderDAO extends BaseDAO<Order> {
     }
 
     private String escapeLike(String raw) {
-        return raw.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
+        return raw.replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     /** Danh sách đơn CHƯA được admin xem (dùng cho polling chuông thông báo). */
@@ -453,7 +460,7 @@ public class OrderDAO extends BaseDAO<Order> {
 
                 if ("COMPLETED".equals(newStatus)) {
                     try (PreparedStatement ps = con.prepareStatement(
-                            "UPDATE Orders SET OrderStatus = ?, PaymentStatus = 'PAID', CompletedAt = GETDATE() WHERE OrderID = ?")) {
+                            "UPDATE Orders SET OrderStatus = ?, PaymentStatus = 'PAID', CompletedAt = CURRENT_TIMESTAMP WHERE OrderID = ?")) {
                         ps.setString(1, newStatus);
                         ps.setInt(2, orderId);
                         ps.executeUpdate();
@@ -724,7 +731,7 @@ public class OrderDAO extends BaseDAO<Order> {
                 String paymentMethod;
                 String paymentStatus;
                 try (PreparedStatement ps = con.prepareStatement(
-                        "SELECT OrderStatus, PaymentMethod, PaymentStatus FROM Orders WITH (UPDLOCK, ROWLOCK) WHERE OrderID = ?")) {
+                        "SELECT OrderStatus, PaymentMethod, PaymentStatus FROM Orders WHERE OrderID = ? FOR UPDATE")) {
                     ps.setInt(1, orderId);
                     try (ResultSet rs = ps.executeQuery()) {
                         if (!rs.next()) {
@@ -775,9 +782,9 @@ public class OrderDAO extends BaseDAO<Order> {
         }
     }
 
-    /** Đọc OrderStatus hiện tại, khóa dòng (FOR UPDATE kiểu SQL Server: UPDLOCK, ROWLOCK) để tránh 2 admin cùng xác nhận 1 lúc gây trừ kho 2 lần. */
+    /** Đọc OrderStatus hiện tại và khóa dòng bằng MySQL FOR UPDATE để tránh 2 admin cùng xác nhận, gây trừ kho 2 lần. */
     private String getOrderStatusForUpdate(Connection con, int orderId) throws SQLException {
-        String sql = "SELECT OrderStatus FROM Orders WITH (UPDLOCK, ROWLOCK) WHERE OrderID = ?";
+        String sql = "SELECT OrderStatus FROM Orders WHERE OrderID = ? FOR UPDATE";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, orderId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -808,10 +815,10 @@ public class OrderDAO extends BaseDAO<Order> {
      * ro rang thay vi that bai am tham.
      */
     private Integer getFallbackAdminUserId(Connection con) throws SQLException {
-        String sql = "SELECT TOP 1 u.UserID FROM Users u "
+        String sql = "SELECT u.UserID FROM Users u "
                 + "JOIN Roles r ON r.RoleID = u.RoleID "
                 + "WHERE r.RoleCode = 'ADMIN' AND u.Status = 'ACTIVE' AND u.IsDeleted = 0 "
-                + "ORDER BY u.UserID";
+                + "ORDER BY u.UserID LIMIT 1";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             return rs.next() ? rs.getInt(1) : null;
@@ -953,8 +960,8 @@ public class OrderDAO extends BaseDAO<Order> {
         List<OrderDetail> list = new ArrayList<>();
         String sql = "SELECT od.OrderDetailID, od.ProductID, od.ProductName, od.Quantity "
                 + "FROM OrderDetails od "
-                + "JOIN Products p WITH (UPDLOCK, ROWLOCK) ON p.ProductID = od.ProductID "
-                + "WHERE od.OrderID = ?";
+                + "JOIN Products p ON p.ProductID = od.ProductID "
+                + "WHERE od.OrderID = ? FOR UPDATE";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, orderId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -973,9 +980,9 @@ public class OrderDAO extends BaseDAO<Order> {
 
     /** Tồn khả dụng = tổng RemainingQty các lô ACTIVE, chưa hết hạn (khớp điều kiện lọc của getFefoBatches). */
     private int getAvailableStock(Connection con, int productId) throws SQLException {
-        String sql = "SELECT ISNULL(SUM(RemainingQty), 0) FROM InventoryBatch "
+        String sql = "SELECT COALESCE(SUM(RemainingQty), 0) FROM InventoryBatch "
                 + "WHERE ProductID = ? AND Status = 'ACTIVE' "
-                + "AND (ExpiryDate IS NULL OR ExpiryDate >= CAST(GETDATE() AS DATE))";
+                + "AND (ExpiryDate IS NULL OR ExpiryDate >= CAST(CURRENT_TIMESTAMP AS DATE))";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, productId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -987,10 +994,10 @@ public class OrderDAO extends BaseDAO<Order> {
     /** Danh sách lô còn hàng theo thứ tự FEFO (hết hạn sớm nhất trước, lô không HSD xếp sau cùng), loại lô đã hết hạn. */
     private List<int[]> getFefoBatches(Connection con, int productId) throws SQLException {
         List<int[]> batches = new ArrayList<>();
-        String sql = "SELECT BatchID, RemainingQty FROM InventoryBatch WITH (UPDLOCK, ROWLOCK) "
+        String sql = "SELECT BatchID, RemainingQty FROM InventoryBatch "
                 + "WHERE ProductID = ? AND Status = 'ACTIVE' AND RemainingQty > 0 "
-                + "AND (ExpiryDate IS NULL OR ExpiryDate >= CAST(GETDATE() AS DATE)) "
-                + "ORDER BY ISNULL(ExpiryDate, '9999-12-31'), BatchID";
+                + "AND (ExpiryDate IS NULL OR ExpiryDate >= CAST(CURRENT_TIMESTAMP AS DATE)) "
+                + "ORDER BY COALESCE(ExpiryDate, '9999-12-31'), BatchID FOR UPDATE";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, productId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -1041,7 +1048,7 @@ public class OrderDAO extends BaseDAO<Order> {
         // neu san pham da bi xoa.
         String sql = "SELECT od.OrderDetailID, od.OrderID, od.ProductID, od.ProductName, "
                 + "od.Quantity, od.UnitPrice, od.LineTotal, p.ImageUrl AS ProductImageUrl, "
-                + "ISNULL(( "
+                + "COALESCE(( "
                 + "  SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
                 + "  JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
                 + "  JOIN Orders o2 ON o2.InvoiceID = r.InvoiceID "
@@ -1104,13 +1111,13 @@ public class OrderDAO extends BaseDAO<Order> {
         if (order == null || order.getInvoiceId() == null) return;
 
         String sqlRefund = "SELECT "
-                + "ISNULL(SUM(CASE WHEN Status = 'APPROVED' THEN TotalValue ELSE 0 END), 0) AS Refunded, "
+                + "COALESCE(SUM(CASE WHEN Status = 'APPROVED' THEN TotalValue ELSE 0 END), 0) AS Refunded, "
                 + "SUM(CASE WHEN Status = 'APPROVED' THEN 1 ELSE 0 END) AS Cnt "
                 + "FROM ReturnExchanges WHERE InvoiceID = ?";
 
         String sqlQty = "SELECT "
-                + "ISNULL((SELECT SUM(d.Quantity) FROM OrderDetails d WHERE d.OrderID = ?), 0) AS SoldQty, "
-                + "ISNULL((SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
+                + "COALESCE((SELECT SUM(d.Quantity) FROM OrderDetails d WHERE d.OrderID = ?), 0) AS SoldQty, "
+                + "COALESCE((SELECT SUM(rd.Quantity) FROM ReturnExchangeDetails rd "
                 + "         JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID "
                 + "         WHERE r.InvoiceID = ? AND r.Status = 'APPROVED' AND rd.Direction = 'IN'), 0) AS ReturnedQty";
 
@@ -1175,7 +1182,7 @@ public class OrderDAO extends BaseDAO<Order> {
 
         try (PreparedStatement ps = con.prepareStatement(
                 "SELECT CustomerID, TotalAmount, PointsUsed, PromotionID, DiscountAmount "
-                        + "FROM Invoices WITH (UPDLOCK, ROWLOCK) WHERE InvoiceID = ? AND Status = 'ACTIVE'")) {
+                        + "FROM Invoices WHERE InvoiceID = ? AND Status = 'ACTIVE' FOR UPDATE")) {
             ps.setInt(1, invoiceId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return;
@@ -1196,7 +1203,7 @@ public class OrderDAO extends BaseDAO<Order> {
         }
 
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, CancelledAt = GETDATE() "
+                "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, CancelledAt = CURRENT_TIMESTAMP "
                         + "WHERE InvoiceID = ? AND Status = 'ACTIVE'")) {
             ps.setString(1, reason);
             ps.setInt(2, invoiceId);

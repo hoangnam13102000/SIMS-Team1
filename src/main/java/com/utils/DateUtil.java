@@ -64,7 +64,7 @@ public final class DateUtil {
     public static Date parseDate(String text) { return parse(text, PATTERN_DATE); }
     public static Date parseDateTime(String text) { return parse(text, PATTERN_DATE_TIME); }
 
-    // ---------- SQL helpers (tien cho DAO / SQL Server) ----------
+    // ---------- SQL helpers (tien cho DAO / MySQL) ----------
 
     public static java.sql.Timestamp toSqlTimestamp(Date date) {
         return date == null ? null : new java.sql.Timestamp(date.getTime());

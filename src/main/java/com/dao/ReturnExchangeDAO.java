@@ -173,15 +173,15 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
             return getPagedFiltered(pageNumber, pageSize, fromDate, toDate);
         }
         String escaped = keyword.trim()
-                .replace("[", "[[]")
-                .replace("%", "[%]")
-                .replace("_", "[_]");
+                .replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
         String likeValue = "%" + escaped + "%";
         StringBuilder where = new StringBuilder("(");
         Object[] searchParams = new Object[columns.length];
         for (int i = 0; i < columns.length; i++) {
             if (i > 0) where.append(" OR ");
-            where.append(columns[i]).append(" LIKE ?");
+            where.append(columns[i]).append(" LIKE ? ESCAPE '!'");
             searchParams[i] = likeValue;
         }
         where.append(")");
@@ -307,14 +307,14 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)";
         String insertDetailSql = "INSERT INTO ReturnExchangeDetails "
                 + "(ReturnID, ProductID, Quantity, Direction, UnitPrice) VALUES (?, ?, ?, ?, ?)";
-        String approveSql = "UPDATE ReturnExchanges SET Status = 'APPROVED', ApprovedBy = ?, ApprovedAt = GETDATE() "
+        String approveSql = "UPDATE ReturnExchanges SET Status = 'APPROVED', ApprovedBy = ?, ApprovedAt = CURRENT_TIMESTAMP "
                 + "WHERE ReturnID = ?";
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
                 String invStatus;
                 try (PreparedStatement ps = con.prepareStatement(
-                        "SELECT Status FROM Invoices WITH (UPDLOCK, ROWLOCK) WHERE InvoiceID = ?")) {
+                        "SELECT Status FROM Invoices WHERE InvoiceID = ? FOR UPDATE")) {
                     ps.setInt(1, header.getInvoiceId());
                     try (ResultSet rs = ps.executeQuery()) {
                         if (!rs.next()) {
@@ -346,7 +346,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                         returnRequestedSoFar.put(d.getProductId(), already + d.getQuantity());
                     } else if (d.isOut()) {
                         try (PreparedStatement ps = con.prepareStatement(
-                                "SELECT Stock, ProductName FROM Products WITH (UPDLOCK, ROWLOCK) WHERE ProductID = ?")) {
+                                "SELECT Stock, ProductName FROM Products WHERE ProductID = ? FOR UPDATE")) {
                             ps.setInt(1, d.getProductId());
                             try (ResultSet rs = ps.executeQuery()) {
                                 if (!rs.next()) {
@@ -428,12 +428,12 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
     }
 
     public String approve(int returnId, int approverId) {
-        String lockRequestSql = "SELECT Status, InvoiceID FROM ReturnExchanges WITH (UPDLOCK, ROWLOCK) WHERE ReturnID = ?";
+        String lockRequestSql = "SELECT Status, InvoiceID FROM ReturnExchanges WHERE ReturnID = ? FOR UPDATE";
         String outDetailSql = "SELECT d.Quantity, p.Stock, p.ProductName "
                 + "FROM ReturnExchangeDetails d "
-                + "JOIN Products p WITH (UPDLOCK, ROWLOCK) ON p.ProductID = d.ProductID "
-                + "WHERE d.ReturnID = ? AND d.Direction = 'OUT'";
-        String updateSql = "UPDATE ReturnExchanges SET Status = 'APPROVED', ApprovedBy = ?, ApprovedAt = GETDATE() "
+                + "JOIN Products p ON p.ProductID = d.ProductID "
+                + "WHERE d.ReturnID = ? AND d.Direction = 'OUT' FOR UPDATE";
+        String updateSql = "UPDATE ReturnExchanges SET Status = 'APPROVED', ApprovedBy = ?, ApprovedAt = CURRENT_TIMESTAMP "
                 + "WHERE ReturnID = ? AND Status = 'PENDING'";
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
@@ -500,7 +500,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         if (rejectionReason == null || rejectionReason.isBlank()) {
             return "Vui lòng nhập lý do từ chối.";
         }
-        String sql = "UPDATE ReturnExchanges SET Status = 'REJECTED', RejectionReason = ?, ApprovedBy = ?, ApprovedAt = GETDATE() "
+        String sql = "UPDATE ReturnExchanges SET Status = 'REJECTED', RejectionReason = ?, ApprovedBy = ?, ApprovedAt = CURRENT_TIMESTAMP "
                 + "WHERE ReturnID = ? AND Status = 'PENDING'";
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -567,7 +567,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
     }
 
     private BigDecimal sumApprovedReturnedGross(Connection con, int invoiceId) throws SQLException {
-        String sql = "SELECT ISNULL(SUM(d.Quantity * d.UnitPrice), 0) "
+        String sql = "SELECT COALESCE(SUM(d.Quantity * d.UnitPrice), 0) "
                 + "FROM ReturnExchangeDetails d "
                 + "JOIN ReturnExchanges r ON r.ReturnID = d.ReturnID "
                 + "WHERE r.InvoiceID = ? AND r.Status = 'APPROVED' AND d.Direction = 'IN'";
@@ -589,7 +589,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
         BigDecimal originalSubTotal = BigDecimal.ZERO;
         try (PreparedStatement ps = con.prepareStatement(
                 "SELECT CustomerID, PointsUsed, SubTotal, DiscountAmount, PointsDiscountAmount, VATRate, "
-                        + "ISNULL((SELECT SUM(id.Quantity * id.UnitPrice) FROM InvoiceDetails id WHERE id.InvoiceID = i.InvoiceID), 0) AS OriginalSubTotal "
+                        + "COALESCE((SELECT SUM(id.Quantity * id.UnitPrice) FROM InvoiceDetails id WHERE id.InvoiceID = i.InvoiceID), 0) AS OriginalSubTotal "
                         + "FROM Invoices i WHERE i.InvoiceID = ?")) {
             ps.setInt(1, invoiceId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -647,7 +647,7 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
     }
 
     private BigDecimal sumReturnGross(Connection con, int returnId) throws SQLException {
-        String sql = "SELECT ISNULL(SUM(d.Quantity * d.UnitPrice), 0) "
+        String sql = "SELECT COALESCE(SUM(d.Quantity * d.UnitPrice), 0) "
                 + "FROM ReturnExchangeDetails d WHERE d.ReturnID = ? AND d.Direction = 'IN'";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, returnId);

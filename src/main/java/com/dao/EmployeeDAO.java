@@ -407,15 +407,15 @@ public class EmployeeDAO extends BaseDAO<Employee> {
 
         if (keyword != null && !keyword.trim().isEmpty()) {
             String escaped = keyword.trim()
-                    .replace("[", "[[]")
-                    .replace("%", "[%]")
-                    .replace("_", "[_]");
+                    .replace("!", "!!")
+                    .replace("%", "!%")
+                    .replace("_", "!_");
             String like = "%" + escaped + "%";
             String[] columns = getSearchableColumns();
             where.append("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) where.append(" OR ");
-                where.append(columns[i]).append(" LIKE ?");
+                where.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(like);
             }
             where.append(")");

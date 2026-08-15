@@ -136,14 +136,14 @@ public class InventoryReportDAO {
      * rieng trang Quan ly lo hang). Sap xep giam dan theo ton kho.
      */
     public List<ProductStock> getProductStockOverview() {
-        String sql = "SELECT TOP 20 p.ProductID, p.ProductName, p.Stock, p.MinStock, "
+        String sql = "SELECT p.ProductID, p.ProductName, p.Stock, p.MinStock, "
                 + "MIN(CASE WHEN b.Status <> 'DEPLETED' AND b.RemainingQty > 0 THEN b.ExpiryDate END) AS NearestExpiry, "
                 + "MAX(CASE WHEN b.Status <> 'DEPLETED' AND b.RemainingQty > 0 "
-                + "         AND b.ExpiryDate IS NOT NULL AND b.ExpiryDate < CAST(GETDATE() AS DATE) "
+                + "         AND b.ExpiryDate IS NOT NULL AND b.ExpiryDate < CAST(CURRENT_TIMESTAMP AS DATE) "
                 + "     THEN 1 ELSE 0 END) AS HasExpired "
                 + "FROM Products p LEFT JOIN InventoryBatch b ON b.ProductID = p.ProductID "
                 + "GROUP BY p.ProductID, p.ProductName, p.Stock, p.MinStock "
-                + "ORDER BY p.Stock DESC, p.ProductName ASC";
+                + "ORDER BY p.Stock DESC, p.ProductName ASC LIMIT 20";
 
         List<ProductStock> list = new ArrayList<>();
         try (Connection con = getConnection();
@@ -186,12 +186,12 @@ public class InventoryReportDAO {
     public MovementSummary getMovementSummary(int days) {
         int safeDays = Math.max(1, days);
         String sql = "SELECT "
-                + "ISNULL(SUM(CASE WHEN Direction = 'IN' THEN Quantity ELSE 0 END), 0) AS InQty, "
-                + "ISNULL(SUM(CASE WHEN Direction = 'OUT' THEN Quantity ELSE 0 END), 0) AS OutQty, "
-                + "ISNULL(SUM(CASE WHEN TransactionType = 'DISPOSAL' THEN Quantity ELSE 0 END), 0) AS DisposalQty, "
+                + "COALESCE(SUM(CASE WHEN Direction = 'IN' THEN Quantity ELSE 0 END), 0) AS InQty, "
+                + "COALESCE(SUM(CASE WHEN Direction = 'OUT' THEN Quantity ELSE 0 END), 0) AS OutQty, "
+                + "COALESCE(SUM(CASE WHEN TransactionType = 'DISPOSAL' THEN Quantity ELSE 0 END), 0) AS DisposalQty, "
                 + "COUNT(*) AS TxCount "
                 + "FROM InventoryTransactions "
-                + "WHERE CreatedAt >= DATEADD(DAY, ?, CAST(GETDATE() AS DATE))";
+                + "WHERE CreatedAt >= DATE_ADD(CURRENT_DATE, INTERVAL ? DAY)";
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, -(safeDays - 1));
@@ -214,9 +214,9 @@ public class InventoryReportDAO {
 
     /** Tong quan ton kho HIEN TAI: tong so SP, tong so luong, gia tri theo gia ban/gia nhap, so SP sap/het hang. */
     public OverallSummary getOverallSummary() {
-        String sql = "SELECT COUNT(*) AS ProductCount, ISNULL(SUM(Stock), 0) AS TotalQty, "
-                + "ISNULL(SUM(CAST(Stock AS DECIMAL(18,2)) * SellPrice), 0) AS ValueSell, "
-                + "ISNULL(SUM(CAST(Stock AS DECIMAL(18,2)) * ImportPrice), 0) AS ValueImport, "
+        String sql = "SELECT COUNT(*) AS ProductCount, COALESCE(SUM(Stock), 0) AS TotalQty, "
+                + "COALESCE(SUM(CAST(Stock AS DECIMAL(18,2)) * SellPrice), 0) AS ValueSell, "
+                + "COALESCE(SUM(CAST(Stock AS DECIMAL(18,2)) * ImportPrice), 0) AS ValueImport, "
                 + "SUM(CASE WHEN Stock > 0 AND Stock <= MinStock THEN 1 ELSE 0 END) AS LowStockCnt, "
                 + "SUM(CASE WHEN Stock = 0 THEN 1 ELSE 0 END) AS OutOfStockCnt "
                 + "FROM Products";
@@ -237,8 +237,8 @@ public class InventoryReportDAO {
 
     /** Ton kho gop nhom theo danh muc san pham, sap xep giam dan theo gia tri (tinh theo gia ban). */
     public List<CategoryStock> getStockByCategory() {
-        String sql = "SELECT c.CategoryName, COUNT(*) AS ProductCount, ISNULL(SUM(p.Stock), 0) AS TotalQty, "
-                + "ISNULL(SUM(CAST(p.Stock AS DECIMAL(18,2)) * p.SellPrice), 0) AS ValueSell "
+        String sql = "SELECT c.CategoryName, COUNT(*) AS ProductCount, COALESCE(SUM(p.Stock), 0) AS TotalQty, "
+                + "COALESCE(SUM(CAST(p.Stock AS DECIMAL(18,2)) * p.SellPrice), 0) AS ValueSell "
                 + "FROM Products p JOIN Categories c ON c.CategoryID = p.CategoryID "
                 + "GROUP BY c.CategoryID, c.CategoryName "
                 + "ORDER BY ValueSell DESC";
@@ -271,8 +271,8 @@ public class InventoryReportDAO {
                 + "  WHEN SellPrice < 200000 THEN 3 "
                 + "  WHEN SellPrice < 500000 THEN 4 "
                 + "  ELSE 5 END AS Bucket, "
-                + "COUNT(*) AS ProductCount, ISNULL(SUM(Stock), 0) AS TotalQty, "
-                + "ISNULL(SUM(CAST(Stock AS DECIMAL(18,2)) * SellPrice), 0) AS ValueSell "
+                + "COUNT(*) AS ProductCount, COALESCE(SUM(Stock), 0) AS TotalQty, "
+                + "COALESCE(SUM(CAST(Stock AS DECIMAL(18,2)) * SellPrice), 0) AS ValueSell "
                 + "FROM Products "
                 + "GROUP BY CASE "
                 + "  WHEN SellPrice < 50000 THEN 1 "
