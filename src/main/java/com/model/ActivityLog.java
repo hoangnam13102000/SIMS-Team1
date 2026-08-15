@@ -14,6 +14,17 @@ public class ActivityLog {
     public static final String ACTION_PASSWORD_RESET = "PASSWORD_RESET";
     public static final String ACTION_RESTORE = "RESTORE";
     public static final String ACTION_PERMANENT_DELETE = "PERMANENT_DELETE";
+    /** Nhan vien mo ca ban hang. */
+    public static final String ACTION_SHIFT_OPEN = "SHIFT_OPEN";
+
+    /** Thu them tien mat vao quy. */
+    public static final String ACTION_CASH_IN = "CASH_IN";
+
+    /** Chi tien mat ra khoi quy. */
+    public static final String ACTION_CASH_OUT = "CASH_OUT";
+
+    /** Dong ca va doi soat quy. */
+    public static final String ACTION_SHIFT_CLOSE = "SHIFT_CLOSE";
 
     public static final String ENTITY_PHONE = "PHONE";
     public static final String ENTITY_CATEGORY = "CATEGORY";
@@ -27,6 +38,12 @@ public class ActivityLog {
     public static final String ENTITY_INVOICE = "INVOICE";
     public static final String ENTITY_PURCHASE_RECEIPT = "PURCHASE_RECEIPT";
     public static final String ENTITY_STOCK_ALERT = "STOCK_ALERT";
+    /** Ca ban hang. */
+    public static final String ENTITY_SHIFT = "SHIFT";
+
+    /** Giao dich thu/chi tien mat trong ca. */
+    public static final String ENTITY_SHIFT_CASH_TRANSACTION ="SHIFT_CASH_TRANSACTION";
+    
     public static final String ACTION_LOGIN_2FA_SUCCESS = "LOGIN_2FA_SUCCESS";
     public static final String ACTION_LOGIN_2FA_FAILED = "LOGIN_2FA_FAILED";
     public static final String ACTION_2FA_ENABLED = "2FA_ENABLED";

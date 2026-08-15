@@ -23,6 +23,7 @@ public final class RolePermissions {
                 AppPermission.ORDER_VIEW,
                 AppPermission.ORDER_MANAGE,
                 AppPermission.RETURN_EXCHANGE_APPROVE,
+                AppPermission.SHIFT_VIEW_ALL,
                 AppPermission.EXCEPTION_REPORT_HANDLE,
                 AppPermission.STOCK_DISPOSE_VIEW,
                 AppPermission.PROMOTION_MANAGE
@@ -36,7 +37,9 @@ public final class RolePermissions {
                 AppPermission.STOCK_RECONCILE,
                 AppPermission.STOCK_DISPOSE,
                 AppPermission.STOCK_DISPOSE_VIEW,
-                AppPermission.STOCK_ALERT_VIEW
+                AppPermission.STOCK_ALERT_VIEW,
+                AppPermission.SUPPLIER_RETURN_CREATE,
+                AppPermission.SUPPLIER_RETURN_VIEW
         ));
 
         MAP.put(Role.SALES_STAFF, PermissionSet.of(
@@ -44,6 +47,7 @@ public final class RolePermissions {
                 AppPermission.CUSTOMER_MANAGE,
                 AppPermission.PRODUCT_VIEW,
                 AppPermission.INVOICE_CREATE,
+                AppPermission.SHIFT_OPERATE,
                 AppPermission.INVOICE_CANCEL,
                 AppPermission.RETURN_EXCHANGE_CREATE,
                 AppPermission.EXCEPTION_REPORT_CREATE,

@@ -13,7 +13,6 @@ import com.dao.CategoryDAO;
 import com.dao.CustomerDAO;
 import com.dao.InvoiceDAO;
 import com.dao.ProductDAO;
-import com.dao.ShiftDAO;
 import com.dao.StoreConfigDAO;
 import com.dao.StockAlertDAO;
 import com.event.AutoRefresher;
@@ -24,9 +23,11 @@ import com.model.Customer;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
 import com.model.Product;
+import com.model.Shift;
 import com.model.User;
 import com.service.AuthService;
 import com.service.PosCartService;
+import com.service.ShiftService;
 import com.service.payment.PayPalService;
 import com.theme.AppColor;
 import com.theme.AppFont;
@@ -55,7 +56,7 @@ public class PosPanel extends JPanel {
     private final CategoryDAO categoryDAO = new CategoryDAO();
     private final CustomerDAO customerDAO = new CustomerDAO();
     private final InvoiceDAO invoiceDAO = new InvoiceDAO();
-    private final ShiftDAO shiftDAO = new ShiftDAO();
+    private final ShiftService shiftService = new ShiftService();
     private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
     private final PosCartService cart = PosCartService.getInstance();
 
@@ -965,7 +966,35 @@ public class PosPanel extends JPanel {
             return;
         }
         User currentUser = AuthService.getInstance().getCurrentUser();
-        if (currentUser == null) return;
+
+        if (currentUser == null) {
+            AppAlert.error(
+                    this,
+                    "Phiên đăng nhập không hợp lệ",
+                    "Không tìm thấy tài khoản đang đăng nhập. "
+                            + "Vui lòng đăng nhập lại."
+            );
+            return;
+        }
+
+        Shift checkoutShift = shiftService.getMyOpenShift();
+
+        if (checkoutShift == null) {
+            AppAlert.warning(
+                    this,
+                    "Bạn chưa mở ca bán hàng",
+                    "Hãy vào mục Ca bán hàng & đối soát quỹ, "
+                            + "nhập tiền đầu ca và mở ca trước khi thanh toán."
+            );
+            return;
+        }
+
+        /*
+         * Ghi nhớ đúng ca được dùng tại thời điểm bắt đầu thanh toán.
+         * Không được tự chuyển hóa đơn sang một ca khác nếu ca này bị đóng.
+         */
+        int checkoutShiftId = checkoutShift.getShiftId();
+
         boolean confirmed = BaseDialog.confirm(this, "Xác nhận thanh toán",
                 "Lập hóa đơn cho " + cart.getItems().size() + " mặt hàng, tổng cộng "
                         + totalValue.getText() + "?");
@@ -988,17 +1017,21 @@ public class PosPanel extends JPanel {
         int pointsToUse = cart.getPointsToUse();
         BigDecimal pointsDiscountBd = cart.getPointsDiscountAmount();
         if ("PAYPAL".equals(selectedPaymentMethod)) {
-            payWithPayPalThenCreateInvoice(currentUser, snapshot, customerId,
+        	payWithPayPalThenCreateInvoice(
+        	        currentUser,
+        	        checkoutShiftId,
+        	        snapshot,
+        	        customerId,
                     expectedSubTotal, expectedTotal, discountBd, promotionId, promotionCode,
                     pointsToUse, pointsDiscountBd);
         } else {
-            createInvoiceAndFinish(currentUser, snapshot, customerId, expectedSubTotal,
+            createInvoiceAndFinish(currentUser, checkoutShiftId, snapshot, customerId, expectedSubTotal,
                     selectedPaymentMethod, null, null, discountBd, promotionId, promotionCode,
                     pointsToUse, pointsDiscountBd);
         }
     }
 
-    private void createInvoiceAndFinish(User currentUser, List<CartItem> snapshot, Integer customerId,
+    private void createInvoiceAndFinish(User currentUser,int checkoutShiftId, List<CartItem> snapshot, Integer customerId,
                                          long expectedSubTotal, String paymentMethod,
                                          String payPalOrderId, String payPalCaptureId,
                                          BigDecimal discountAmount, Integer promotionId, String promotionCode,
@@ -1007,12 +1040,24 @@ public class PosPanel extends JPanel {
         loadingOverlay.start("Đang lập hóa đơn...");
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
             private Invoice invoice;
+            private String failureMessage;
             @Override
             protected Boolean doInBackground() {
-                int shiftId = shiftDAO.getOrOpenShiftId(currentUser.getUserId());
-                if (shiftId <= 0) return false;
-                invoice = new Invoice();
-                invoice.setShiftId(shiftId);
+            	Shift currentShift = shiftService.getMyOpenShift();
+
+            	if (
+            	        currentShift == null
+            	        || currentShift.getShiftId() != checkoutShiftId
+            	) {
+            	    failureMessage =
+            	            "Ca được dùng khi bắt đầu thanh toán không còn mở. "
+            	            + "Vui lòng kiểm tra ca bán hàng rồi thực hiện lại.";
+
+            	    return false;
+            	}
+
+            	invoice = new Invoice();
+            	invoice.setShiftId(checkoutShiftId);
                 invoice.setCreatedBy(currentUser.getUserId());
                 invoice.setCustomerId(customerId);
                 invoice.setPaymentMethod(paymentMethod);
@@ -1056,9 +1101,15 @@ public class PosPanel extends JPanel {
                             owner instanceof Frame ? (Frame) owner : null, invoice, invoiceDAO);
                     successDialog.setVisible(true);
                 } else {
-                    AppAlert.error(PosPanel.this, "Không thể lập hóa đơn",
-                            "Có thể do sản phẩm trong giỏ đã hết hàng hoặc có lỗi hệ thống. "
-                                    + "Vui lòng kiểm tra lại giỏ hàng và thử lại.");
+                	AppAlert.error(
+                	        PosPanel.this,
+                	        "Không thể lập hóa đơn",
+                	        failureMessage != null
+                	                ? failureMessage
+                	                : "Ca có thể vừa bị đóng, sản phẩm đã hết hàng "
+                	                        + "hoặc dữ liệu thanh toán không còn hợp lệ. "
+                	                        + "Vui lòng kiểm tra ca và giỏ hàng rồi thử lại."
+                	);
                     loadProducts(null, null);
                 }
             }
@@ -1067,7 +1118,7 @@ public class PosPanel extends JPanel {
     }
 
     // ---------------- Thanh toan PayPal (sandbox) tai quay ----------------
-    private void payWithPayPalThenCreateInvoice(User currentUser, List<CartItem> snapshot, Integer customerId,
+    private void payWithPayPalThenCreateInvoice(User currentUser, int checkoutShiftId, List<CartItem> snapshot, Integer customerId,
                                                  long expectedSubTotal, long totalVnd,
                                                  BigDecimal discountAmount, Integer promotionId, String promotionCode,
                                                  int pointsUsed, BigDecimal pointsDiscountAmount) {
@@ -1100,21 +1151,132 @@ public class PosPanel extends JPanel {
             @Override
             protected PayPalPosResult doInBackground() throws Exception {
                 PayPalService.LocalCallbackServer server = payPalService.startLocalCallbackServer();
+
+                boolean approvalReceived = false;
+
                 try {
-                    PayPalService.CreatedOrder created = payPalService.createOrder(
-                            BigDecimal.valueOf(totalVnd), "POS-" + System.currentTimeMillis(),
-                            server.returnUrl(), server.cancelUrl());
-                    approveUrlHolder[0] = created.approveUrl();
-                    publish(created.approveUrl());
-                    PayPalService.ApprovalResult approval = server.await(Duration.ofMinutes(5));
+                    PayPalService.CreatedOrder created =
+                            payPalService.createOrder(
+                                    BigDecimal.valueOf(totalVnd),
+                                    "POS-" + System.currentTimeMillis(),
+                                    server.returnUrl(),
+                                    server.cancelUrl()
+                            );
+
+                    approveUrlHolder[0] =
+                            created.approveUrl();
+
+                    publish(
+                            created.approveUrl()
+                    );
+
+                    PayPalService.ApprovalResult approval =
+                            server.await(
+                                    Duration.ofMinutes(5)
+                            );
+
                     if (!approval.approved()) {
-                        return new PayPalPosResult(false, "CANCELLED", null, null);
+                        return new PayPalPosResult(
+                                false,
+                                "CANCELLED",
+                                created.payPalOrderId(),
+                                null
+                        );
                     }
-                    PayPalService.CaptureResult result = payPalService.captureOrder(created.payPalOrderId());
+
+                    approvalReceived = true;
+
+                    /*
+                     * Kiểm tra đúng ca đã bắt đầu thanh toán.
+                     */
+                    Shift currentShift =
+                            shiftService.getMyOpenShift();
+
+                    if (
+                            currentShift == null
+                            || currentShift.getShiftId()
+                                    != checkoutShiftId
+                    ) {
+                        server.completeBrowserFailure(
+                                "Ca bán hàng đã bị đóng "
+                              + "hoặc đã chuyển sang ca khác. "
+                              + "SIMS không gửi yêu cầu capture, "
+                              + "khách hàng không bị trừ tiền."
+                        );
+
+                        server.awaitBrowserResponse(
+                                Duration.ofSeconds(5)
+                        );
+
+                        return new PayPalPosResult(
+                                false,
+                                "SHIFT_CLOSED",
+                                created.payPalOrderId(),
+                                null
+                        );
+                    }
+
+                    /*
+                     * Chỉ gọi PayPal capture khi ca vẫn hợp lệ.
+                     */
+                    PayPalService.CaptureResult result =
+                            payPalService.captureOrder(
+                                    created.payPalOrderId()
+                            );
+
                     if (result.success()) {
-                        return new PayPalPosResult(true, "COMPLETED", created.payPalOrderId(), result.captureId());
+                        server.completeBrowserSuccess(
+                                "PayPal đã xác nhận giao dịch "
+                              + "và SIMS đã hoàn tất thanh toán."
+                        );
+
+                        server.awaitBrowserResponse(
+                                Duration.ofSeconds(5)
+                        );
+
+                        return new PayPalPosResult(
+                                true,
+                                "COMPLETED",
+                                created.payPalOrderId(),
+                                result.captureId()
+                        );
                     }
-                    return new PayPalPosResult(false, result.status(), created.payPalOrderId(), null);
+
+                    server.completeBrowserFailure(
+                            "PayPal không thể hoàn tất giao dịch. "
+                          + "Không có thanh toán thành công được ghi nhận."
+                    );
+
+                    server.awaitBrowserResponse(
+                            Duration.ofSeconds(5)
+                    );
+
+                    return new PayPalPosResult(
+                            false,
+                            result.status(),
+                            created.payPalOrderId(),
+                            null
+                    );
+
+                } catch (Exception e) {
+                    /*
+                     * Nếu callback PayPal đã trở về nhưng quá trình
+                     * capture phát sinh lỗi thì trả trang thất bại.
+                     */
+                    if (approvalReceived) {
+                        server.completeBrowserFailure(
+                                "Thanh toán thất bại do SIMS "
+                              + "không thể hoàn tất giao dịch. "
+                              + "Vui lòng quay lại ứng dụng để kiểm tra."
+                        );
+
+                        server.awaitBrowserResponse(
+                                Duration.ofSeconds(5)
+                        );
+                    }
+
+                    throw e;
+
                 } finally {
                     server.stop();
                 }
@@ -1140,16 +1302,46 @@ public class PosPanel extends JPanel {
                 try {
                     PayPalPosResult result = get();
                     if (result.success()) {
-                        createInvoiceAndFinish(currentUser, snapshot, customerId, expectedSubTotal,
-                                "PAYPAL", result.orderId(), result.captureId(),
-                                discountAmount, promotionId, promotionCode,
-                                pointsUsed, pointsDiscountAmount);
+                        createInvoiceAndFinish(
+                                currentUser,
+                                checkoutShiftId,
+                                snapshot,
+                                customerId,
+                                expectedSubTotal,
+                                "PAYPAL",
+                                result.orderId(),
+                                result.captureId(),
+                                discountAmount,
+                                promotionId,
+                                promotionCode,
+                                pointsUsed,
+                                pointsDiscountAmount
+                        );
+
+                    } else if ("SHIFT_CLOSED".equals(result.status())) {
+                        AppAlert.warning(
+                                PosPanel.this,
+                                "Ca bán hàng không còn hợp lệ",
+                                "Ca được dùng khi bắt đầu thanh toán đã bị đóng "
+                                        + "hoặc đã chuyển sang ca khác. "
+                                        + "PayPal chưa được capture. Vui lòng mở đúng ca và thanh toán lại."
+                        );
+
                     } else if (!"CANCELLED".equals(result.status())) {
-                        AppAlert.error(PosPanel.this, "Thanh toán PayPal thất bại",
-                                "Không thể chốt giao dịch PayPal. Vui lòng thử lại hoặc chọn phương thức khác.");
+                        AppAlert.error(
+                                PosPanel.this,
+                                "Thanh toán PayPal thất bại",
+                                "Không thể chốt giao dịch PayPal. "
+                                        + "Vui lòng thử lại hoặc chọn phương thức khác."
+                        );
+
                     } else {
-                        AppAlert.warning(PosPanel.this, "Đã hủy thanh toán PayPal",
-                                "Khách chưa duyệt thanh toán trong trang PayPal. Giỏ hàng vẫn được giữ nguyên.");
+                        AppAlert.warning(
+                                PosPanel.this,
+                                "Đã hủy thanh toán PayPal",
+                                "Khách chưa duyệt thanh toán trong trang PayPal. "
+                                        + "Giỏ hàng vẫn được giữ nguyên."
+                        );
                     }
                 } catch (CancellationException ignored) {
                 } catch (Exception e) {

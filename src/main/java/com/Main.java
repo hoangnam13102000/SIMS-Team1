@@ -11,11 +11,18 @@ import com.view.LoginFrame;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import java.util.TimeZone;
 
 
 public class Main {
 
     public static void main(String[] args) {
+    	
+    	TimeZone.setDefault(
+    	        TimeZone.getTimeZone(
+    	                "Asia/Ho_Chi_Minh"
+    	        )
+    	);
 
         System.setProperty("sun.java2d.uiScale.enabled", "true");
         System.setProperty("flatlaf.uiScale", "100%");

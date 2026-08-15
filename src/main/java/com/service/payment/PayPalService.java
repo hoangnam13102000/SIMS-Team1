@@ -145,8 +145,33 @@ public final class PayPalService {
 
     /** 1 server tạm cho 1 lần thanh toán - start() rồi lấy port() để build return/cancel URL, chờ waitForApproval(), rồi stop(). */
     public static final class LocalCallbackServer {
-        private final HttpServer server;
-        private final CompletableFuture<ApprovalResult> resultFuture = new CompletableFuture<>();
+    	private final HttpServer server;
+
+    	/*
+    	 * Kết quả khách xác nhận hoặc hủy trên PayPal.
+    	 */
+    	private final CompletableFuture<ApprovalResult> resultFuture =
+    	        new CompletableFuture<>();
+
+    	/*
+    	 * Kết quả cuối cùng do ứng dụng SIMS quyết định
+    	 * sau khi kiểm tra ca và gọi capture.
+    	 */
+    	private final CompletableFuture<BrowserResult> browserResultFuture =
+    	        new CompletableFuture<>();
+
+    	/*
+    	 * Báo cho SwingWorker biết trang kết quả đã được gửi
+    	 * xong tới trình duyệt trước khi dừng callback server.
+    	 */
+    	private final CompletableFuture<Void> responseSentFuture =
+    	        new CompletableFuture<>();
+
+    	private record BrowserResult(
+    	        boolean success,
+    	        String message
+    	) {
+    	}
 
         LocalCallbackServer() throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -174,20 +199,162 @@ public final class PayPalService {
             }
         }
 
-        public void stop() { server.stop(0); }
-
-        private void handleReturn(HttpExchange exchange) throws IOException {
-            String query = exchange.getRequestURI().getQuery();
-            String token = extractParam(query, "token"); // PayPal tra ve OrderID qua param "token"
-            respond(exchange, "<html><body style='font-family:sans-serif;text-align:center;padding-top:60px'>"
-                    + "<h2>Thanh toán thành công!</h2><p>Bạn có thể đóng tab này và quay lại ứng dụng SIMS.</p></body></html>");
-            resultFuture.complete(new ApprovalResult(true, token));
+        /**
+         * Báo cho trang callback rằng thanh toán đã hoàn tất.
+         */
+        public void completeBrowserSuccess(String message) {
+            browserResultFuture.complete(
+                    new BrowserResult(
+                            true,
+                            message
+                    )
+            );
         }
 
-        private void handleCancel(HttpExchange exchange) throws IOException {
-            respond(exchange, "<html><body style='font-family:sans-serif;text-align:center;padding-top:60px'>"
-                    + "<h2>Đã hủy thanh toán</h2><p>Bạn có thể đóng tab này và quay lại ứng dụng SIMS.</p></body></html>");
-            resultFuture.complete(new ApprovalResult(false, null));
+        /**
+         * Báo cho trang callback rằng thanh toán thất bại.
+         */
+        public void completeBrowserFailure(String message) {
+            browserResultFuture.complete(
+                    new BrowserResult(
+                            false,
+                            message
+                    )
+            );
+        }
+
+        /**
+         * Chờ trang kết quả được gửi xong trước khi dừng server.
+         */
+        public void awaitBrowserResponse(Duration timeout) {
+            try {
+                responseSentFuture.get(
+                        timeout.toMillis(),
+                        TimeUnit.MILLISECONDS
+                );
+            } catch (Exception ignored) {
+                /*
+                 * Không làm hỏng luồng thanh toán nếu người dùng
+                 * đã đóng trình duyệt hoặc callback mất kết nối.
+                 */
+            }
+        }
+
+        public void stop() {
+            server.stop(0);
+        }
+
+        private void handleReturn(
+                HttpExchange exchange
+        ) throws IOException {
+
+            String query =
+                    exchange.getRequestURI().getQuery();
+
+            String token =
+                    extractParam(query, "token");
+
+            /*
+             * Đánh thức SwingWorker để ứng dụng kiểm tra ca
+             * và quyết định có capture hay không.
+             */
+            resultFuture.complete(
+                    new ApprovalResult(
+                            true,
+                            token
+                    )
+            );
+
+            BrowserResult finalResult;
+
+            try {
+                /*
+                 * Chờ SIMS kiểm tra ca và xử lý capture.
+                 * Thời gian này ngắn hơn thời gian chờ PayPal 5 phút.
+                 */
+                finalResult = browserResultFuture.get(
+                        60,
+                        TimeUnit.SECONDS
+                );
+
+            } catch (Exception e) {
+                finalResult = new BrowserResult(
+                        false,
+                        "SIMS không nhận được kết quả thanh toán cuối cùng. "
+                                + "Vui lòng quay lại ứng dụng để kiểm tra."
+                );
+            }
+
+            String title = finalResult.success()
+                    ? "Thanh toán thành công"
+                    : "Thanh toán thất bại";
+
+            String color = finalResult.success()
+                    ? "#15803d"
+                    : "#dc2626";
+
+            String html =
+                    "<html>"
+                  + "<body style='font-family:sans-serif;"
+                  + "text-align:center;padding-top:60px'>"
+                  + "<h2 style='color:" + color + "'>"
+                  + title
+                  + "</h2>"
+                  + "<p>"
+                  + finalResult.message()
+                  + "</p>"
+                  + "<p>Bạn có thể đóng tab này "
+                  + "và quay lại ứng dụng SIMS.</p>"
+                  + "</body>"
+                  + "</html>";
+
+            try {
+                respond(
+                        exchange,
+                        html
+                );
+            } finally {
+                /*
+                 * Cho SwingWorker biết có thể dừng server.
+                 */
+                responseSentFuture.complete(null);
+            }
+        }
+
+        private void handleCancel(
+                HttpExchange exchange
+        ) throws IOException {
+
+            /*
+             * Trường hợp khách tự hủy thì kết quả đã rõ,
+             * không cần chờ PosPanel quyết định.
+             */
+            resultFuture.complete(
+                    new ApprovalResult(
+                            false,
+                            null
+                    )
+            );
+
+            try {
+                respond(
+                        exchange,
+                        "<html>"
+                      + "<body style='font-family:sans-serif;"
+                      + "text-align:center;padding-top:60px'>"
+                      + "<h2 style='color:#d97706'>"
+                      + "Đã hủy thanh toán"
+                      + "</h2>"
+                      + "<p>Giao dịch chưa được capture "
+                      + "và khách hàng không bị trừ tiền.</p>"
+                      + "<p>Bạn có thể đóng tab này "
+                      + "và quay lại ứng dụng SIMS.</p>"
+                      + "</body>"
+                      + "</html>"
+                );
+            } finally {
+                responseSentFuture.complete(null);
+            }
         }
 
         private void respond(HttpExchange exchange, String html) throws IOException {

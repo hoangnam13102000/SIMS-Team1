@@ -27,6 +27,7 @@ import java.util.Set;
 public class InvoiceDAO extends BaseDAO<Invoice> {
 
     private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
+    private final ShiftDAO shiftDAO = new ShiftDAO();
 
     private static final String BASE_TABLE =
             "Invoices inv "
@@ -192,7 +193,13 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
     }
 
     public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
-        if (items == null || items.isEmpty()) return false;
+        if (invoice == null || items == null || items.isEmpty()) {
+            return false;
+        }
+
+        if (invoice.getShiftId() <= 0 || invoice.getCreatedBy() <= 0) {
+            return false;
+        }
 
         String insertInvoiceSql = "INSERT INTO Invoices "
                 + "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
@@ -208,6 +215,13 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
             con.setAutoCommit(false);
             try {
                 int invoiceId;
+                
+                shiftDAO.lockOwnedOpenShift(
+                        con,
+                        invoice.getShiftId(),
+                        invoice.getCreatedBy()
+                );
+                
                 BigDecimal requestedDiscount = invoice.getDiscountAmount() != null
                         ? invoice.getDiscountAmount() : BigDecimal.ZERO;
                 if (requestedDiscount.signum() < 0) requestedDiscount = BigDecimal.ZERO;

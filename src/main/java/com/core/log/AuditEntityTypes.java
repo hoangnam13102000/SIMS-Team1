@@ -31,6 +31,8 @@ public final class AuditEntityTypes {
         LABEL_TO_ENTITY.put("đơn hàng", ActivityLog.ENTITY_ORDER);
         LABEL_TO_ENTITY.put("cảnh báo", ActivityLog.ENTITY_STOCK_ALERT);
         LABEL_TO_ENTITY.put("phiếu nhập kho", ActivityLog.ENTITY_PURCHASE_RECEIPT);
+        LABEL_TO_ENTITY.put("ca bán hàng", ActivityLog.ENTITY_SHIFT);
+        LABEL_TO_ENTITY.put("giao dịch quỹ", ActivityLog.ENTITY_SHIFT_CASH_TRANSACTION);
     }
 
     private AuditEntityTypes() {}
