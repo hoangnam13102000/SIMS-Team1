@@ -11,7 +11,7 @@
         <version>3.7.1</version>
     </dependency>
 
-    <!-- MySQL 8.x / MariaDB-compatible JDBC driver -->
+    <!-- MySQL JDBC driver -->
     <dependency>
         <groupId>com.mysql</groupId>
         <artifactId>mysql-connector-j</artifactId>
@@ -131,17 +131,54 @@
     <maven.compiler.target>17</maven.compiler.target>
   </properties>
   
-   <build>
+<build>
     <plugins>
-    <!--  Bat buoc phai co / cap nhat plugin nay de Maven nhan dien va chay
-                duoc test JUnit 5 (Jupiter). Ban Maven/Eclipse cu di kem plugin
-                surefire qua cu se KHONG chay duoc JUnit 5.  -->
-    <plugin>
-      <groupId>org.apache.maven.plugins</groupId>
-      <artifactId>maven-surefire-plugin</artifactId>
-      <version>3.2.5</version>
-      </plugin>
+
+        <!-- JUnit 5 -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.2.5</version>
+        </plugin>
+
+        <!-- Tạo Fat JAR -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-shade-plugin</artifactId>
+            <version>3.6.0</version>
+
+            <executions>
+                <execution>
+                    <phase>package</phase>
+                    <goals>
+                        <goal>shade</goal>
+                    </goals>
+
+                    <configuration>
+                        <filters>
+                            <filter>
+                                <artifact>*:*</artifact>
+                                <excludes>
+                                    <exclude>META-INF/*.SF</exclude>
+                                    <exclude>META-INF/*.RSA</exclude>
+                                    <exclude>META-INF/*.DSA</exclude>
+                                </excludes>
+                            </filter>
+                        </filters>
+
+                        <transformers>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <mainClass>com.Main</mainClass>
+                            </transformer>
+                        </transformers>
+                    </configuration>
+                </execution>
+            </executions>
+        </plugin>
+
     </plugins>
-  </build>
+</build>
 
 </project>
