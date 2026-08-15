@@ -7,6 +7,8 @@ import com.dao.ProductDAO;
 import com.dao.StoreConfigDAO;
 import com.model.Category;
 import com.model.Product;
+import com.service.media.CloudinaryService;
+import com.service.media.CloudinaryUploadException;
 import com.theme.AppColor;
 import com.utils.CurrencyDocumentFilter;
 import com.utils.FileUtil;
@@ -47,7 +49,6 @@ import java.util.List;
 
 public class ProductFormDialog extends BaseFormDialog<Product> {
 
-    private static final String UPLOAD_DIR = "uploads/products";
     private static final String[] STATUS_LABELS = {"Đang bán", "Ngừng bán"};
     private static final String[] UNIT_SUGGESTIONS = {"Cái", "Kg", "Hộp", "Chai", "Gói", "Lốc", "Thùng", "Lon"};
     private static final int PREVIEW_SIZE = 140;
@@ -684,13 +685,46 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     }
 
     @Override
-    protected boolean persist(Product entity, CrudMode mode) {
-        // File I/O chạy trên SwingWorker (BaseFormDialog) — không block EDT
+    protected boolean persist(
+            Product entity,
+            CrudMode mode
+    ) {
+        /*
+         * BaseFormDialog đã chạy persist trên SwingWorker,
+         * vì vậy upload mạng không làm đứng giao diện.
+         */
         if (pendingImageFile != null) {
-            File saved = FileUtil.copyToDirectory(pendingImageFile, UPLOAD_DIR);
-            entity.setImageUrl(saved != null ? saved.getPath() : currentImageUrl);
+            try {
+                String cloudUrl =
+                        CloudinaryService
+                                .getInstance()
+                                .uploadProductImage(
+                                        pendingImageFile
+                                );
+
+                entity.setImageUrl(cloudUrl);
+
+                /*
+                 * Nếu DB lỗi, lần bấm Lưu tiếp theo không tải
+                 * trùng thêm một ảnh lên Cloudinary.
+                 */
+                currentImageUrl = cloudUrl;
+                pendingImageFile = null;
+
+            } catch (CloudinaryUploadException e) {
+                setPersistFailureMessage(
+                        e.getMessage()
+                );
+
+                return false;
+            }
         }
-        return mode == CrudMode.ADD ? productDAO.insert(entity) : productDAO.update(entity);
+
+        if (mode == CrudMode.ADD) {
+            return productDAO.insert(entity);
+        }
+
+        return productDAO.update(entity);
     }
 
     private static String blankToNull(String value) {

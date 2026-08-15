@@ -5,6 +5,7 @@ import com.security.AppConfig;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.sql.Statement;
 
 /**
  * DB_URL / DB_USER / DB_PASSWORD KHONG con hardcode trong source code nua.
@@ -14,18 +15,88 @@ import java.sql.SQLException;
 public class DBConnection {
 
 
-    public static Connection getConnection() throws SQLException {
-        AppConfig config = AppConfig.getInstance();
-        String url = config.get("DB_URL");
-        String user = config.get("DB_USER");
-        String pass = config.get("DB_PASSWORD");
-        try {
-            // Gioi han thoi gian cho ket noi - tranh app "dung im" vo thoi han khi
-            // MySQL khong chay / sai DB_URL / firewall chan.
-            DriverManager.setLoginTimeout(8);
-            return DriverManager.getConnection(url, user, pass);
-        } catch (SQLException e) {
-            throw new SQLException("Không kết nối được cơ sở dữ liệu (" + e.getMessage() + ")", e);
-        }
-    }
+	public static Connection getConnection()
+	        throws SQLException {
+
+	    AppConfig config =
+	            AppConfig.getInstance();
+
+	    String url =
+	            config.get("DB_URL");
+
+	    String user =
+	            config.get("DB_USER");
+
+	    String pass =
+	            config.get("DB_PASSWORD");
+
+	    Connection connection = null;
+
+	    try {
+	        DriverManager.setLoginTimeout(8);
+
+	        connection =
+	                DriverManager.getConnection(
+	                        url,
+	                        user,
+	                        pass
+	                );
+
+	        /*
+	         * Moi connection cua ung dung deu su dung
+	         * gio Viet Nam UTC+7.
+	         *
+	         * Vi Viet Nam khong co daylight saving time,
+	         * su dung +07:00 la on dinh.
+	         */
+	        configureSessionTimeZone(
+	                connection
+	        );
+
+	        return connection;
+
+	    } catch (SQLException e) {
+	        /*
+	         * Neu da mo connection nhung cau lenh SET time_zone
+	         * bi loi thi dong connection de tranh ro ri.
+	         */
+	        if (connection != null) {
+	            try {
+	                connection.close();
+
+	            } catch (SQLException closeError) {
+	                e.addSuppressed(
+	                        closeError
+	                );
+	            }
+	        }
+
+	        throw new SQLException(
+	                "Không kết nối được cơ sở dữ liệu ("
+	              + e.getMessage()
+	              + ")",
+	                e
+	        );
+	    }
+	}
+	
+	/**
+	 * Dat timezone cho tung session MySQL.
+	 *
+	 * CURRENT_TIMESTAMP, NOW() va cac cot co
+	 * DEFAULT CURRENT_TIMESTAMP se dung UTC+7.
+	 */
+	private static void configureSessionTimeZone(
+	        Connection connection
+	) throws SQLException {
+
+	    String sql =
+	            "SET SESSION time_zone = '+07:00'";
+
+	    try (Statement statement =
+	             connection.createStatement()) {
+
+	        statement.execute(sql);
+	    }
+	}
 }

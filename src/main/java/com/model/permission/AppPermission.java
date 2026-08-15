@@ -18,8 +18,11 @@ public enum AppPermission implements Permission {
     /** Doi chieu / kiem ke kho cuoi ngay - so sanh ton he thong voi ton dem thuc te. */
     STOCK_RECONCILE,
     /** Tao hoa don ban hang. */
-    
-    INVOICE_CREATE,     
+    INVOICE_CREATE,
+    /** Mo ca, ghi thu/chi va dong/doi soat ca cua chinh nhan vien. */
+    SHIFT_OPERATE,
+    /** Xem lich su ca va chenh lech quy cua tat ca nhan vien. */
+    SHIFT_VIEW_ALL,
     /** Huy hoa don. */
     INVOICE_CANCEL,      
     /** Tao yeu cau doi/tra hang cho 1 hoa don (R4: bat buoc ghi ro ly do). */

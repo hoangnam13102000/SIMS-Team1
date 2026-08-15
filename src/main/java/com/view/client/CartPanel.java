@@ -775,9 +775,41 @@ public class CartPanel extends JPanel {
                     order.setPayPalOrderId(created.payPalOrderId());
                     payPalService.openApprovalPage(created.approveUrl());
 
-                    PayPalService.ApprovalResult approval = server.await(Duration.ofMinutes(5));
-                    if (!approval.approved()) return new PayPalService.CaptureResult(false, null, "CANCELLED");
-                    return payPalService.captureOrder(created.payPalOrderId());
+                    PayPalService.ApprovalResult approval =
+                            server.await(
+                                    Duration.ofMinutes(5)
+                            );
+
+                    if (!approval.approved()) {
+                        return new PayPalService.CaptureResult(
+                                false,
+                                null,
+                                "CANCELLED"
+                        );
+                    }
+
+                    PayPalService.CaptureResult result =
+                            payPalService.captureOrder(
+                                    created.payPalOrderId()
+                            );
+
+                    if (result.success()) {
+                        server.completeBrowserSuccess(
+                                "Thanh toán đơn hàng online "
+                              + "đã hoàn tất thành công."
+                        );
+                    } else {
+                        server.completeBrowserFailure(
+                                "PayPal không thể hoàn tất giao dịch. "
+                              + "Đơn hàng chưa được thanh toán."
+                        );
+                    }
+
+                    server.awaitBrowserResponse(
+                            Duration.ofSeconds(5)
+                    );
+
+                    return result;
                 } finally {
                     server.stop();
                 }

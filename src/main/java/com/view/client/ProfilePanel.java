@@ -8,6 +8,7 @@ import com.theme.AppColor;
 import com.dao.UserDAO;
 import com.model.User;
 import com.service.AuthService;
+import com.service.media.CloudinaryService;
 import com.utils.BarcodeUtil;
 import com.utils.FileUtil;
 import com.utils.ImageUtil;
@@ -42,6 +43,8 @@ public class ProfilePanel extends JPanel {
     private JLabel phoneValueLabel;
     private JLabel joinedLabel;
     private JLabel avatarMessage;
+    private JButton cameraButton;
+    private boolean avatarUploading;
     private JPanel barcodeCard;
     private JLabel barcodeValueLabel;
 
@@ -122,7 +125,10 @@ public class ProfilePanel extends JPanel {
         avatarLabel.setBounds(2, 2, AVATAR_SIZE, AVATAR_SIZE);
         avatarWrapper.add(avatarLabel);
 
-        JButton cameraButton = circularIconButton(FontAwesomeSolid.CAMERA);
+        cameraButton =
+                circularIconButton(
+                        FontAwesomeSolid.CAMERA
+                );
         cameraButton.setBounds(AVATAR_SIZE - 22, AVATAR_SIZE - 22, 34, 34);
         cameraButton.setToolTipText("Đổi ảnh đại diện");
         cameraButton.addActionListener(e -> chooseAndUploadAvatar());
@@ -339,30 +345,155 @@ public class ProfilePanel extends JPanel {
     }
 
     private void chooseAndUploadAvatar() {
-        File selected = FileUtil.chooseImageFile(this);
-        if (selected == null) return;
-
-        if (!FileUtil.isWithinSizeLimit(selected, 5)) {
-            showMessage(avatarMessage, "Ảnh vượt quá 5MB, vui lòng chọn ảnh khác.", AppColor.ERROR);
+        if (avatarUploading) {
             return;
         }
 
-        File saved = FileUtil.copyToDirectory(selected, "uploads/avatars");
-        if (saved == null) {
-            showMessage(avatarMessage, "Tải ảnh lên thất bại, vui lòng thử lại.", AppColor.ERROR);
+        File selected =
+                FileUtil.chooseImageFile(this);
+
+        if (selected == null) {
             return;
         }
 
-        User user = AuthService.getInstance().getCurrentUser();
-        boolean ok = userDAO.updateAvatar(user.getUserId(), saved.getPath());
-        if (ok) {
-            user.setAvatarUrl(saved.getPath());
-            avatarLabel.setIcon(ImageUtil.circularIcon(saved.getPath(), AVATAR_SIZE, user.getFullName()));
-            showMessage(avatarMessage, "Đã cập nhật ảnh đại diện.", AppColor.SUCCESS);
-            if (onSavedListener != null) onSavedListener.run();
-        } else {
-            showMessage(avatarMessage, "Lưu ảnh đại diện thất bại, vui lòng thử lại.", AppColor.ERROR);
+        if (!FileUtil.isWithinSizeLimit(
+                selected,
+                5
+        )) {
+            showMessage(
+                    avatarMessage,
+                    "Ảnh vượt quá 5MB, "
+                            + "vui lòng chọn ảnh khác.",
+                    AppColor.ERROR
+            );
+
+            return;
         }
+
+        User user =
+                AuthService
+                        .getInstance()
+                        .getCurrentUser();
+
+        if (user == null) {
+            showMessage(
+                    avatarMessage,
+                    "Phiên đăng nhập không còn hợp lệ.",
+                    AppColor.ERROR
+            );
+
+            return;
+        }
+
+        setAvatarUploading(true);
+
+        showMessage(
+                avatarMessage,
+                "Đang tải ảnh lên Cloudinary...",
+                AppColor.TEXT_MUTED
+        );
+
+        SwingWorker<String, Void> worker =
+                new SwingWorker<>() {
+
+            @Override
+            protected String doInBackground()
+                    throws Exception {
+
+                String cloudUrl =
+                        CloudinaryService
+                                .getInstance()
+                                .uploadAvatar(selected);
+
+                boolean saved =
+                        userDAO.updateAvatar(
+                                user.getUserId(),
+                                cloudUrl
+                        );
+
+                if (!saved) {
+                    throw new IllegalStateException(
+                            "Không lưu được URL ảnh "
+                                    + "vào cơ sở dữ liệu."
+                    );
+                }
+
+                return cloudUrl;
+            }
+
+            @Override
+            protected void done() {
+                setAvatarUploading(false);
+
+                try {
+                    String cloudUrl = get();
+
+                    user.setAvatarUrl(cloudUrl);
+
+                    /*
+                     * Hiện ngay file local vừa chọn để không
+                     * phải tải lại ảnh trên EDT.
+                     */
+                    avatarLabel.setIcon(
+                            ImageUtil.circularIcon(
+                                    selected.getPath(),
+                                    AVATAR_SIZE,
+                                    user.getFullName()
+                            )
+                    );
+
+                    showMessage(
+                            avatarMessage,
+                            "Đã cập nhật ảnh đại diện "
+                                    + "trên Cloudinary.",
+                            AppColor.SUCCESS
+                    );
+
+                    if (onSavedListener != null) {
+                        onSavedListener.run();
+                    }
+
+                } catch (Exception e) {
+                    Throwable cause =
+                            e.getCause() != null
+                                    ? e.getCause()
+                                    : e;
+
+                    String errorMessage =
+                            cause.getMessage();
+
+                    showMessage(
+                            avatarMessage,
+                            errorMessage != null
+                                    && !errorMessage.isBlank()
+                                    ? errorMessage
+                                    : "Tải ảnh lên thất bại, "
+                                            + "vui lòng thử lại.",
+                            AppColor.ERROR
+                    );
+                }
+            }
+        };
+
+        worker.execute();
+    }
+    
+    private void setAvatarUploading(
+            boolean uploading
+    ) {
+        avatarUploading = uploading;
+
+        if (cameraButton != null) {
+            cameraButton.setEnabled(!uploading);
+        }
+
+        setCursor(
+                uploading
+                        ? Cursor.getPredefinedCursor(
+                                Cursor.WAIT_CURSOR
+                        )
+                        : Cursor.getDefaultCursor()
+        );
     }
 
     private JPanel buildInfoFormCard() {

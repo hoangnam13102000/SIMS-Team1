@@ -7,6 +7,9 @@ public final class DataChangedEvent {
     public static final String PHONE = "PHONE";
     public static final String PURCHASE_RECEIPT = "PURCHASE_RECEIPT";
     public static final String INVOICE = "INVOICE";
+    /** Ca ban hang hoac giao dich thu/chi trong ca vua thay doi. */
+    public static final String SHIFT = "SHIFT";
+    
     public static final String STOCK_ALERT = "STOCK_ALERT";
     public static final String STOCK_RECONCILIATION = "STOCK_RECONCILIATION";
     public static final String RETURN_EXCHANGE = "RETURN_EXCHANGE";

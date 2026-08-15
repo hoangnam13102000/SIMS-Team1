@@ -43,6 +43,7 @@ import com.view.admin.promotion.PromotionPanel;
 import com.view.admin.report.RevenueReportPanel;
 import com.view.admin.returnexchange.ReturnExchangePanel;
 import com.view.admin.security.TwoFactorSettingsPanel;
+import com.view.admin.shift.ShiftManagementPanel;
 import com.view.admin.stockalert.StockAlertPanel;
 import com.view.admin.supplier.SupplierPanel;
 import com.view.client.ProfilePanel;
@@ -224,6 +225,11 @@ public class AdminMainFrame extends JFrame {
                 new InventoryReportPanel(), AppPermission.STOCK_VIEW);
 
         layout.addSection(Lang.get("sidebar.section.sales"));
+        
+        layout.addPage("shifts", Lang.get("sidebar.shifts"), FontAwesomeSolid.CLOCK,
+                new ShiftManagementPanel(),
+                AppPermission.SHIFT_OPERATE, AppPermission.SHIFT_VIEW_ALL);
+        
         // ========== POS: ẩn với SALES_MANAGER, Admin / NV bán hàng vẫn thấy ==========
         if (!isSalesManager()) {
             layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),

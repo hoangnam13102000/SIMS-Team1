@@ -35,6 +35,7 @@ public abstract class BaseFormDialog<T> extends JDialog {
     private LoadingOverlay loadingOverlay;
     private boolean saved = false;
     private boolean saving = false;
+    private volatile String persistFailureMessage;
     private T result;
     private CrudCallback<T> callback;
 
@@ -206,6 +207,7 @@ public abstract class BaseFormDialog<T> extends JDialog {
         }
         // collectFormData() đụng Swing components → phải gọi trên EDT
         final T data = collectFormData();
+        persistFailureMessage = null;
 
         setSaving(true, mode == CrudMode.ADD ? "Đang thêm " + entityLabel + "..." : "Đang lưu " + entityLabel + "...");
 
@@ -234,11 +236,29 @@ public abstract class BaseFormDialog<T> extends JDialog {
                     dispose();
                 } else {
                     setSaving(false, null);
-                    showMessage("Không thể lưu " + entityLabel + ". Vui lòng thử lại.");
+
+                    showMessage(
+                            persistFailureMessage != null
+                                    && !persistFailureMessage.isBlank()
+                                    ? persistFailureMessage
+                                    : "Không thể lưu "
+                                            + entityLabel
+                                            + ". Vui lòng thử lại."
+                    );
                 }
             }
         };
         worker.execute();
+    }
+    
+    /**
+     * Cho phép persist() gửi thông báo lỗi cụ thể
+     * từ background thread về giao diện.
+     */
+    protected final void setPersistFailureMessage(
+            String message
+    ) {
+        persistFailureMessage = message;
     }
 
     private void setSaving(boolean active, String message) {

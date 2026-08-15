@@ -7,6 +7,8 @@ import com.components.crud.CrudMode;
 import com.dao.EmployeeDAO;
 import com.model.Employee;
 import com.model.Role;
+import com.service.media.CloudinaryService;
+import com.service.media.CloudinaryUploadException;
 import com.theme.AppColor;
 import com.utils.CurrencyDocumentFilter;
 import com.utils.FileUtil;
@@ -62,7 +64,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
 
     private static final Employee.Gender[] GENDERS = {Employee.Gender.MALE, Employee.Gender.FEMALE, Employee.Gender.OTHER};
     private static final String[] GENDER_LABELS = {"Nam", "Nữ", "Khác"};
-    private static final String UPLOAD_DIR = "uploads/avatars";
     private static final int AVATAR_PREVIEW = 140;
 
     private final EmployeeDAO employeeDAO;
@@ -522,10 +523,28 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
     @Override
     protected boolean persist(Employee entity, CrudMode mode) {
         // File I/O + DB + gửi email chạy trên SwingWorker — không block EDT
-        if (pendingAvatarFile != null) {
-            File saved = FileUtil.copyToDirectory(pendingAvatarFile, UPLOAD_DIR);
-            entity.setAvatarUrl(saved != null ? saved.getPath() : currentAvatarUrl);
-        }
+    	if (pendingAvatarFile != null) {
+    	    try {
+    	        String cloudUrl =
+    	                CloudinaryService
+    	                        .getInstance()
+    	                        .uploadAvatar(
+    	                                pendingAvatarFile
+    	                        );
+
+    	        entity.setAvatarUrl(cloudUrl);
+
+    	        currentAvatarUrl = cloudUrl;
+    	        pendingAvatarFile = null;
+
+    	    } catch (CloudinaryUploadException e) {
+    	        setPersistFailureMessage(
+    	                e.getMessage()
+    	        );
+
+    	        return false;
+    	    }
+    	}
         if (mode == CrudMode.ADD) {
             EmployeeDAO.EmployeeCreationResult result = employeeDAO.createEmployee(entity);
             if (!result.success) {
