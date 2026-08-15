@@ -36,7 +36,9 @@ public final class RolePermissions {
                 AppPermission.STOCK_RECONCILE,
                 AppPermission.STOCK_DISPOSE,
                 AppPermission.STOCK_DISPOSE_VIEW,
-                AppPermission.STOCK_ALERT_VIEW
+                AppPermission.STOCK_ALERT_VIEW,
+                AppPermission.SUPPLIER_RETURN_CREATE,
+                AppPermission.SUPPLIER_RETURN_VIEW
         ));
 
         MAP.put(Role.SALES_STAFF, PermissionSet.of(
