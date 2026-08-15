@@ -20,6 +20,8 @@ public final class RolePermissions {
                 AppPermission.PROFIT_REPORT_VIEW,
                 AppPermission.INVOICE_CREATE,
                 AppPermission.INVOICE_CANCEL,
+                AppPermission.ORDER_VIEW,
+                AppPermission.ORDER_MANAGE,
                 AppPermission.RETURN_EXCHANGE_APPROVE,
                 AppPermission.EXCEPTION_REPORT_HANDLE,
                 AppPermission.STOCK_DISPOSE_VIEW,
