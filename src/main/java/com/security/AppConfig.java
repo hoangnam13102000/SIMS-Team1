@@ -25,6 +25,15 @@ public final class AppConfig {
      */
     public static final String ENV_KEY_NAME =
             System.getProperty("secureconfig.envKeyName", "MYSHOP_CONFIG_KEY");
+    /**
+     * Ten JVM system property (-D) chua master key, dung khi dong goi .exe qua
+     * jpackage --java-options -D<ten_nay>=<key> - de KHONG bat nguoi dung phai
+     * tu set bien moi truong OS sau khi cai app. Uu tien kiem tra property nay
+     * TRUOC, chi fallback ve bien moi truong ENV_KEY_NAME khi chay tu IDE/dev
+     * (luc do khong co jpackage bake san property).
+     */
+    public static final String SYS_PROP_KEY_NAME =
+            System.getProperty("secureconfig.sysPropKeyName", "myshop.config.key");
     public static final String DEFAULT_FILE_NAME =
             System.getProperty("secureconfig.fileName", "secure-config.enc");
 
@@ -62,10 +71,18 @@ public final class AppConfig {
         instance = null;
     }
 
-    /** Kiem tra nhanh bien moi truong master key da duoc set chua, KHONG giai ma config. */
+    /** Kiem tra nhanh master key da san sang chua (system property do jpackage bake, hoac bien moi truong dev), KHONG giai ma config. */
     public static boolean isEnvKeySet() {
-        String value = System.getenv(ENV_KEY_NAME);
-        return value != null && !value.trim().isEmpty();
+        return resolveRawKey() != null;
+    }
+
+    /** Doc gia tri key tho (chua base64-decode), uu tien system property truoc, fallback bien moi truong. */
+    private static String resolveRawKey() {
+        String value = System.getProperty(SYS_PROP_KEY_NAME);
+        if (value == null || value.trim().isEmpty()) {
+            value = System.getenv(ENV_KEY_NAME);
+        }
+        return (value != null && !value.trim().isEmpty()) ? value : null;
     }
 
     /** true neu AppConfig da nap thanh cong it nhat 1 lan (dung cho SecurityCheck, khong ep nap lai). */
@@ -101,22 +118,24 @@ public final class AppConfig {
     }
 
     /**
-     * Doc va giai ma master key AES-256 tu bien moi truong MYSHOP_CONFIG_KEY.
+     * Doc va giai ma master key AES-256 - uu tien system property SYS_PROP_KEY_NAME
+     * (do jpackage bake san khi dong goi .exe, xem build.bat), fallback ve bien moi
+     * truong ENV_KEY_NAME (dung khi chay tu IDE/dev, hoac chua build ban .exe).
      * Public + static de cac module khac (vd ma hoa file backup) dung CHUNG
-     * 1 master key voi secure-config.enc, KHONG can secure-config.enc ton tai
-     * (chi can bien moi truong).
+     * 1 master key voi secure-config.enc.
      */
     public static SecretKey getMasterKey() {
-        String envValue = System.getenv(ENV_KEY_NAME);
-        if (envValue == null || envValue.trim().isEmpty()) {
+        String rawKey = resolveRawKey();
+        if (rawKey == null) {
             throw new IllegalStateException(
-                "Thieu bien moi truong " + ENV_KEY_NAME + ". Ung dung KHONG THE khoi dong neu khong co master key.\n"
+                "Thieu master key. Ung dung KHONG THE khoi dong neu khong co master key.\n"
                 + "Cach khac phuc:\n"
                 + "  1) Chay ConfigTool de sinh key moi (neu chua co):\n"
                 + "     java -cp target/classes com.security.tool.ConfigTool genkey\n"
-                + "  2) Set bien moi truong " + ENV_KEY_NAME + " = key vua sinh ra, roi chay lai app.");
+                + "  2a) Chay tu ban .exe da dong goi qua build.bat (key duoc bake san, khong can lam gi them), hoac\n"
+                + "  2b) Neu chay tu IDE/dev, set bien moi truong " + ENV_KEY_NAME + " = key vua sinh ra, roi chay lai app.");
         }
-        return CryptoUtil.decodeKey(envValue);
+        return CryptoUtil.decodeKey(rawKey);
     }
 
     private String loadEncryptedContent() {
