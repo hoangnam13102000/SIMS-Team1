@@ -48,6 +48,7 @@ import com.view.admin.shift.ShiftManagementPanel;
 import com.view.admin.stockalert.StockAlertPanel;
 import com.view.admin.supplier.SupplierPanel;
 import com.view.client.ProfilePanel;
+import com.view.admin.permission.RolePermissionPanel;
 import com.view.layouts.MainLayout;
 import com.ws.ChatClient;
 import com.ws.ChatServer;
@@ -61,7 +62,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class AdminMainFrame extends JFrame {
-
     private MainLayout layout;
     private final List<NotificationItem> orderNotifications = new ArrayList<>();
     private final List<NotificationItem> chatNotifications = new ArrayList<>();
@@ -122,10 +122,10 @@ public class AdminMainFrame extends JFrame {
             refreshHeaderNotifications();
         });
         stockAlertNotifyPoller.start();
+
         returnExchangeNotifyPoller.start();
 
         AppEventBus.getInstance().subscribe(OrderStatusChangedEvent.class, orderStatusListener);
-
         ThemeManager.getInstance().addRebuildListener(onThemeChanged);
         LanguageManager.getInstance().addRebuildListener(onLangChanged);
 
@@ -165,7 +165,6 @@ public class AdminMainFrame extends JFrame {
             remove(layout);
         }
         getContentPane().setBackground(AppColor.PAGE_BG);
-
         layout = new MainLayout(Lang.get("admin.mainlayout.title"));
 
         // Dashboard: QL kho → overview kho; role khác → dashboard bán hàng
@@ -203,49 +202,70 @@ public class AdminMainFrame extends JFrame {
         // nên các trang đó vẫn tự ẩn với họ; chỉ Tiêu hủy tồn kho (được cấp
         // quyền STOCK_DISPOSE_VIEW) là hiện, đúng với thiết kế "xem tiêu hủy
         // để đối soát doanh thu/chi phí" của vai trò này.
+
         layout.addSection(Lang.get("sidebar.section.warehouse"));
+
+        // STOCK_VIEW ("Xem tồn kho") mở đúng 2 trang, khớp mô tả trong catalog
+        // ("Xem tình trạng tồn kho, danh sách lô hàng"): Tổng quan kho (tình
+        // trạng tồn kho) + Quản lý lô hàng (danh sách lô hàng).
+        // STOCK_IMPORT ("Nhập kho") chỉ mở Quản lý nhập kho (lập phiếu nhập).
+        // STOCK_REPORT_VIEW ("Báo cáo hàng tồn kho") là quyền RIÊNG cho trang
+        // thống kê/phân tích tồn kho - không nằm trong phạm vi STOCK_VIEW.
         // QL kho đã dùng InventoryOverviewPanel làm dashboard → không hiện lại trong tab Kho
+
         if (!isInventoryManager()) {
             layout.addPage("inventoryOverview", Lang.get("sidebar.inventoryOverview"), FontAwesomeSolid.TH_LARGE,
-                    new InventoryOverviewPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+                    new InventoryOverviewPanel(), AppPermission.STOCK_VIEW);
         }
+
         layout.addPage("purchaseReceipts", Lang.get("sidebar.purchaseReceipts"), FontAwesomeSolid.FILE_INVOICE,
-                new PurchaseReceiptPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+                new PurchaseReceiptPanel(), AppPermission.STOCK_IMPORT);
+
         layout.addPage("inventoryBatches", Lang.get("sidebar.inventoryBatches"), FontAwesomeSolid.BOXES,
-                new InventoryBatchPanel(), AppPermission.STOCK_IMPORT, AppPermission.STOCK_VIEW);
+                new InventoryBatchPanel(), AppPermission.STOCK_VIEW);
+
         layout.addPage("stockReconciliation", Lang.get("sidebar.stockReconciliation"), FontAwesomeSolid.BALANCE_SCALE,
                 new StockReconciliationPanel(), AppPermission.STOCK_RECONCILE);
+
         layout.addPage("stockDisposal", Lang.get("sidebar.stockDisposal"), FontAwesomeSolid.TRASH,
                 new StockDisposalPanel(), AppPermission.STOCK_DISPOSE, AppPermission.STOCK_DISPOSE_VIEW);
+
         layout.addPage("supplierReturn", Lang.get("sidebar.supplierReturn"), FontAwesomeSolid.UNDO,
                 new SupplierReturnPanel(),
                 AppPermission.SUPPLIER_RETURN_CREATE, AppPermission.SUPPLIER_RETURN_VIEW);
+
         layout.addPage("stockAlerts", Lang.get("sidebar.stockAlerts"), FontAwesomeSolid.EXCLAMATION_TRIANGLE,
                 new StockAlertPanel(), AppPermission.STOCK_ALERT_VIEW);
+
         layout.addPage("inventoryReport", Lang.get("sidebar.inventoryReport"), FontAwesomeSolid.WAREHOUSE,
-                new InventoryReportPanel(), AppPermission.STOCK_VIEW);
+                new InventoryReportPanel(), AppPermission.STOCK_REPORT_VIEW);
 
         layout.addSection(Lang.get("sidebar.section.sales"));
-        
+
         layout.addPage("shifts", Lang.get("sidebar.shifts"), FontAwesomeSolid.CLOCK,
                 new ShiftManagementPanel(),
                 AppPermission.SHIFT_OPERATE, AppPermission.SHIFT_VIEW_ALL);
-        
+
         // ========== POS: ẩn với SALES_MANAGER, Admin / NV bán hàng vẫn thấy ==========
         if (!isSalesManager()) {
             layout.addPage("pos", Lang.get("sidebar.pos"), FontAwesomeSolid.STORE, new PosPanel(),
                     AppPermission.INVOICE_CREATE);
         }
+
         layout.addPage("invoices", Lang.get("sidebar.invoices"), FontAwesomeSolid.RECEIPT, new InvoicePanel(),
                 AppPermission.INVOICE_CREATE, AppPermission.INVOICE_CANCEL);
+
         layout.addPage("returnExchange", Lang.get("sidebar.returnExchange"), FontAwesomeSolid.EXCHANGE_ALT,
                 new ReturnExchangePanel(),
                 AppPermission.RETURN_EXCHANGE_CREATE, AppPermission.RETURN_EXCHANGE_APPROVE);
+
         layout.addPage("revenueReport", Lang.get("sidebar.revenueReport"), FontAwesomeSolid.CHART_LINE,
                 new RevenueReportPanel(),
                 AppPermission.REVENUE_REPORT_VIEW, AppPermission.PROFIT_REPORT_VIEW);
+
         layout.addPage("promotions", Lang.get("sidebar.promotions"), FontAwesomeSolid.PERCENT,
                 new PromotionPanel(), AppPermission.PROMOTION_MANAGE);
+
         layout.addPage("orders", Lang.get("sidebar.orders.short"), FontAwesomeSolid.SHOPPING_CART, new OrderPanel(),
                 AppPermission.ORDER_VIEW, AppPermission.ORDER_MANAGE);
 
@@ -262,6 +282,8 @@ public class AdminMainFrame extends JFrame {
         layout.addSection(Lang.get("sidebar.section.system"));
         layout.addPage("settings", Lang.get("sidebar.settings"), FontAwesomeSolid.COGS, new SettingsPanel(),
                 AppPermission.SETTINGS_MANAGE);
+        layout.addPage("rolePermissions", Lang.get("sidebar.rolePermissions"), FontAwesomeSolid.USER_SHIELD,
+                new RolePermissionPanel(), AppPermission.RBAC_MANAGE);
 
         // ===== Bảo mật đăng nhập (2FA) - CHỈ hiện với Role.ADMIN vì 2FA hiện
         // chỉ bắt buộc/áp dụng cho role này (xem TwoFactorAuthService). Không
@@ -305,7 +327,9 @@ public class AdminMainFrame extends JFrame {
                 layout.showPage("returnExchange");
             }
         });
+
         layout.getHeader().onNotificationDismiss(this::dismissNotificationSource);
+
         layout.getHeader().onClearAllNotifications(() -> {
             if (chatPanelRef != null) chatPanelRef.clearAllUnread();
             try {
@@ -333,7 +357,6 @@ public class AdminMainFrame extends JFrame {
         });
 
         refreshHeaderNotifications();
-
         add(layout, BorderLayout.CENTER);
         revalidate();
         repaint();
@@ -393,6 +416,7 @@ public class AdminMainFrame extends JFrame {
         String message = code + (evt.isViaAssistant()
                 ? " · " + Lang.get("admin.header.notification.viaAssistant")
                 : "");
+
         NotificationItem item = new NotificationItem(
                 "orderstatus-" + evt.getOrderId() + "-" + System.currentTimeMillis(),
                 NotificationItem.Type.ORDER,
@@ -401,10 +425,12 @@ public class AdminMainFrame extends JFrame {
                 java.time.LocalDateTime.now(),
                 evt.getOrderId()
         );
+
         orderStatusNotifications.add(0, item);
         while (orderStatusNotifications.size() > 20) {
             orderStatusNotifications.remove(orderStatusNotifications.size() - 1);
         }
+
         refreshHeaderNotifications();
         if (!NotificationSettings.getInstance().isOrdersMuted()) {
             com.utils.NotificationSound.playDing();
@@ -428,6 +454,7 @@ public class AdminMainFrame extends JFrame {
         merged.addAll(orderStatusNotifications);
         merged.addAll(returnNotifications);
         merged.addAll(stockAlertNotifications);
+
         layout.setBadge("returnExchange", returnNotifications.size());
         layout.getHeader().setNotifications(merged);
     }

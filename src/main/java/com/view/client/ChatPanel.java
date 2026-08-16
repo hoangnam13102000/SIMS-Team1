@@ -13,6 +13,8 @@ import com.model.chat.ChatHistoryMessage;
 import com.service.ChatHistoryService;
 import com.utils.ImageUtil;
 import com.ws.ChatMessage;
+import com.service.media.CloudinaryService;
+import com.service.media.CloudinaryUploadException;
 import com.ws.VoiceNotePlayer;
 import com.ws.VoiceNoteSender;
 import com.components.common.SoundWaveIcon;
@@ -309,7 +311,7 @@ public class ChatPanel extends JPanel {
                         String time = h.getCreatedAt() != null
                                 ? TIME_FORMAT.format(java.sql.Timestamp.valueOf(h.getCreatedAt()))
                                 : TIME_FORMAT.format(new java.util.Date());
-                        addBubble(h.getBodyText(), image, fileName, fileB64, mine, time, h.getMessageId());
+                        addBubble(h.getBodyText(), image, fileName, fileB64, null, mine, time, h.getMessageId());
                     }
                     messagesContainer.revalidate();
                     messagesContainer.repaint();
@@ -378,7 +380,7 @@ public class ChatPanel extends JPanel {
 
     private void addWelcomeBubble() {
         addBubble("Xin chào! Bạn cần hỗ trợ gì, hãy nhắn cho chúng tôi nhé.",
-                null, false, TIME_FORMAT.format(new Date()), 0L);
+                null, null, null, null, false, TIME_FORMAT.format(new Date()), 0L);
     }
 
 
@@ -471,7 +473,7 @@ public class ChatPanel extends JPanel {
             int dur = voiceSender.lastDurationEstimateMs();
             boolean sent = ChatClient.getInstance().sendVoice(transcript, b64, "audio/wav", dur);
             String label = (transcript != null && !transcript.isBlank()) ? transcript : "[Tin nhắn thoại]";
-            addBubble(label, null, "voice.wav", b64, true, TIME_FORMAT.format(new Date()), 0L);
+            addBubble(label, null, "voice.wav", b64, null, true, TIME_FORMAT.format(new Date()), 0L);
             if (!sent) {
                 addBubble("Không thể gửi thoại: hỗ trợ chưa trực tuyến.",
                         null, false, TIME_FORMAT.format(new Date()), 0L);
@@ -526,56 +528,109 @@ public class ChatPanel extends JPanel {
                     "Không hỗ trợ", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        if (file.length() > ChatFileUtil.MAX_BYTES) {
+
+        // Kiểm tra xem có phải ảnh không
+        final boolean asImage = ChatFileUtil.isImageExtension(file.getName())
+                && ChatImageUtil.isSupportedImage(file);
+
+        // Quyết định chế độ gửi
+        final boolean useCloudinary = !asImage && file.length() >= 2 * 1024 * 1024;
+
+        // Kiểm tra giới hạn kích thước
+        if (useCloudinary && file.length() > 25 * 1024 * 1024) {
             JOptionPane.showMessageDialog(this,
-                    "File quá lớn (tối đa " + (ChatFileUtil.MAX_BYTES / 1_000_000) + " MB).",
+                    "File quá lớn (tối đa 25 MB khi dùng Cloudinary).",
                     "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        final boolean asImage = ChatFileUtil.isImageExtension(file.getName())
-                && ChatImageUtil.isSupportedImage(file);
+        if (!useCloudinary && file.length() > ChatFileUtil.MAX_BYTES) {
+            JOptionPane.showMessageDialog(this,
+                    "File quá lớn (tối đa " + (ChatFileUtil.MAX_BYTES / 1_000_000) + " MB cho file nhỏ).\n"
+                    + "File lớn hơn 2MB sẽ tự động dùng Cloudinary.",
+                    "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        inputField.setEnabled(false);
+
+        final String caption = inputField.getText() == null ? "" : inputField.getText().trim();
+        final long fileSize = file.length();
+
         new SwingWorker<Object, Void>() {
             @Override
             protected Object doInBackground() {
-                if (asImage) return ChatImageUtil.encodeForChat(file);
+                if (asImage) {
+                    return ChatImageUtil.encodeForChat(file);
+                }
+                if (useCloudinary) {
+                    try {
+                        String cloudUrl = CloudinaryService.getInstance().uploadFile(file);
+                        return new CloudinaryFileResult(cloudUrl, file.getName(), fileSize);
+                    } catch (CloudinaryUploadException e) {
+                        return new UploadError(e.getMessage());
+                    }
+                }
                 return ChatFileUtil.encodeForChat(file);
             }
+
             @Override
             protected void done() {
                 setCursor(Cursor.getDefaultCursor());
-                Object encoded;
-                try { encoded = get(); } catch (Exception ex) { encoded = null; }
-                if (encoded == null) {
+                inputField.setEnabled(true);
+
+                Object result;
+                try {
+                    result = get();
+                } catch (Exception ex) {
+                    result = null;
+                }
+
+                if (result == null) {
                     JOptionPane.showMessageDialog(ChatPanel.this,
                             asImage ? "Không đọc được ảnh." : "Không đọc được file.",
                             "Lỗi", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
-                String caption = inputField.getText() == null ? "" : inputField.getText().trim();
-                if (asImage) {
-                    ChatImageUtil.EncodedImage img = (ChatImageUtil.EncodedImage) encoded;
-                    boolean sent = ChatClient.getInstance().sendImage(
-                            caption.isEmpty() ? null : caption, img.base64, img.mime);
-                    BufferedImage preview = ChatImageUtil.decodeBase64(img.base64);
-                    addBubble(caption.isEmpty() ? null : caption, preview, null, null, true,
-                            TIME_FORMAT.format(new Date()), 0L);
-                    if (!sent) {
-                        addBubble("Không thể gửi: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
-                                null, null, null, false, TIME_FORMAT.format(new Date()), 0L);
-                    }
-                } else {
-                    ChatFileUtil.EncodedFile f = (ChatFileUtil.EncodedFile) encoded;
-                    boolean sent = ChatClient.getInstance().sendFile(
-                            caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
-                    addBubble(caption.isEmpty() ? null : caption, null, f.fileName, f.base64, true,
-                            TIME_FORMAT.format(new Date()), 0L);
-                    if (!sent) {
-                        addBubble("Không thể gửi: bộ phận hỗ trợ hiện chưa trực tuyến. Vui lòng thử lại sau.",
-                                null, null, null, false, TIME_FORMAT.format(new Date()), 0L);
-                    }
+
+                if (result instanceof UploadError) {
+                    JOptionPane.showMessageDialog(ChatPanel.this,
+                            "Lỗi upload file: " + ((UploadError) result).message,
+                            "Lỗi Cloudinary", JOptionPane.ERROR_MESSAGE);
+                    return;
                 }
+
+                ChatClient chatClient = ChatClient.getInstance();
+                boolean sent;
+
+                if (asImage) {
+                    ChatImageUtil.EncodedImage img = (ChatImageUtil.EncodedImage) result;
+                    sent = chatClient.sendImage(caption.isEmpty() ? null : caption, img.base64, img.mime);
+                    BufferedImage preview = ChatImageUtil.decodeBase64(img.base64);
+                    addBubble(caption.isEmpty() ? null : caption, preview,
+                            null, null, null, true,
+                            TIME_FORMAT.format(new Date()), 0L);
+                } else if (result instanceof CloudinaryFileResult) {
+                    CloudinaryFileResult cloudFile = (CloudinaryFileResult) result;
+                    sent = chatClient.sendFileUrl(caption.isEmpty() ? null : caption,
+                            cloudFile.url, cloudFile.fileName, cloudFile.fileSize);
+                    addBubble(caption.isEmpty() ? null : caption, null,
+                            cloudFile.fileName, null, cloudFile.url, true,
+                            TIME_FORMAT.format(new Date()), 0L);
+                } else {
+                    ChatFileUtil.EncodedFile f = (ChatFileUtil.EncodedFile) result;
+                    sent = chatClient.sendFile(caption.isEmpty() ? null : caption,
+                            f.base64, f.fileName, f.mime);
+                    addBubble(caption.isEmpty() ? null : caption, null,
+                            f.fileName, f.base64, null, true,
+                            TIME_FORMAT.format(new Date()), 0L);
+                }
+
                 inputField.setText("");
+                if (!sent) {
+                    AppAlert.warning(ChatPanel.this, "Chưa kết nối máy chủ chat",
+                            "Tin của bạn đã được giữ lại và sẽ gửi tự động khi kết nối lại.");
+                }
             }
         }.execute();
     }
@@ -588,13 +643,15 @@ public class ChatPanel extends JPanel {
                 || (message.hasFile() && message.fileName != null
                     && ("voice.wav".equalsIgnoreCase(message.fileName)
                         || message.fileName.toLowerCase().endsWith(".wav")));
+        boolean hasFileUrl = message.hasFileUrl();
         boolean hasFile = message.hasFile() && !isVoice;
         String voiceOrFileB64 = isVoice
                 ? (message.hasVoice() ? message.voiceBase64 : message.fileBase64)
-                : (hasFile ? message.fileBase64 : null);
+                : (hasFile && !hasFileUrl ? message.fileBase64 : null);
+        String fileUrl = (!isVoice && hasFileUrl) ? message.fileUrl : null;
         String fileName = isVoice ? "voice.wav" : (hasFile ? message.fileName : null);
         if ((text == null || text.isBlank()) && image == null && !hasFile && !isVoice) return;
-        addBubble(text, image, fileName, voiceOrFileB64,
+        addBubble(text, image, fileName, voiceOrFileB64, fileUrl,
                 false, TIME_FORMAT.format(new Date(message.timestamp)),
                 message.messageId);
         if (text != null && !text.isBlank()) {
@@ -613,21 +670,26 @@ public class ChatPanel extends JPanel {
     }
 
     private void addBubble(String text, BufferedImage image, boolean isMine, String time) {
-        addBubble(text, image, null, null, isMine, time, 0L);
+        addBubble(text, image, null, null, null, isMine, time, 0L);
     }
 
     /** Overload: text + image + isMine + time + messageId (không có file). */
     private void addBubble(String text, BufferedImage image, boolean isMine, String time, long messageId) {
-        addBubble(text, image, null, null, isMine, time, messageId);
+        addBubble(text, image, null, null, null, isMine, time, messageId);
     }
 
     private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
                            boolean isMine, String time) {
-        addBubble(text, image, fileName, fileBase64, isMine, time, 0L);
+        addBubble(text, image, fileName, fileBase64, null, isMine, time, 0L);
     }
 
     private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
-                           boolean isMine, String time, long messageId) {
+                           String fileUrl, boolean isMine, String time) {
+        addBubble(text, image, fileName, fileBase64, fileUrl, isMine, time, 0L);
+    }
+
+    private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
+                           String fileUrl, boolean isMine, String time, long messageId) {
         int viewportW = scrollPane.getViewport().getWidth();
         if (viewportW <= 0) viewportW = 300;
         int maxBubbleW = Math.max(160, Math.min(260, viewportW - 48));
@@ -672,6 +734,10 @@ public class ChatPanel extends JPanel {
                     || fileName.toLowerCase().endsWith(".wav");
             if (isVoiceFile && fileBase64 != null && !fileBase64.isBlank()) {
                 contentWrap.add(buildVoicePlayControl(fileBase64, isMine));
+            } else if (fileUrl != null && !fileUrl.isBlank()) {
+                JLabel fileLabel = buildCloudinaryFileLabel(fileName, fileUrl, 0L, isMine);
+                fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                contentWrap.add(fileLabel);
             } else {
                 FontIcon fileIcon = FontIcon.of(FontAwesomeSolid.FILE, 14);
                 fileIcon.setIconColor(isMine ? Color.WHITE : AppColor.ACCENT_HOVER);
@@ -812,4 +878,81 @@ public class ChatPanel extends JPanel {
             return new Insets(1, 1, 1, 1);
         }
     }
+
+    // ================================================================
+    // CLOUDINARY FILE ATTACHMENT - MỚI
+    // ================================================================
+
+    /** Hiển thị file đính kèm dạng URL Cloudinary */
+    private JLabel buildCloudinaryFileLabel(String fileName, String fileUrl, long fileSize, boolean isMine) {
+        String sizeText = fileSize > 0 ? " (" + formatFileSize(fileSize) + ")" : "";
+        JLabel label = new JLabel("📎 " + fileName + sizeText);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        label.setForeground(isMine ? Color.WHITE : AppColor.ACCENT_HOVER);
+        label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        label.setToolTipText("<html>Nhấp để tải file từ Cloudinary<br>" + fileUrl + "</html>");
+        label.setBorder(new EmptyBorder(6, 0, 0, 0));
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                openCloudinaryFile(fileUrl, fileName);
+            }
+        });
+        return label;
+    }
+
+    /** Mở/tải file từ Cloudinary URL */
+    private void openCloudinaryFile(String fileUrl, String fileName) {
+        int option = JOptionPane.showConfirmDialog(this,
+                "Mở file '" + fileName + "' trong trình duyệt?\n"
+                + "File sẽ được tải trực tiếp từ Cloudinary.",
+                "Tải file",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+
+        if (option == JOptionPane.YES_OPTION) {
+            try {
+                java.awt.Desktop.getDesktop().browse(new java.net.URI(fileUrl));
+            } catch (Exception ex) {
+                JTextField urlField = new JTextField(fileUrl);
+                urlField.setEditable(false);
+                urlField.selectAll();
+                JOptionPane.showMessageDialog(this,
+                        new Object[]{"Không thể mở tự động. Copy URL bên dưới:", urlField},
+                        "URL file", JOptionPane.INFORMATION_MESSAGE);
+            }
+        }
+    }
+
+    /** Định dạng dung lượng file */
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    // ================================================================
+    // CLASS HỖ TRỢ CHO UPLOAD CLOUDINARY
+    // ================================================================
+
+    /** Kết quả upload Cloudinary thành công */
+    private static class CloudinaryFileResult {
+        final String url;
+        final String fileName;
+        final long fileSize;
+        CloudinaryFileResult(String url, String fileName, long fileSize) {
+            this.url = url;
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+        }
+    }
+
+    /** Lỗi upload Cloudinary */
+    private static class UploadError {
+        final String message;
+        UploadError(String message) {
+            this.message = message;
+        }
+    }
+
 }

@@ -56,10 +56,17 @@ public enum AppPermission implements Permission {
     STOCK_DISPOSE,
     /** Xem lich su tieu huy va bao cao ton that tai chinh. */
     STOCK_DISPOSE_VIEW,
+    /** Xem trang "Bao cao hang ton kho" - thong ke so luong/gia tri ton theo
+     *  danh muc, khoang gia ban, xu huong ton kho theo thang (khac STOCK_VIEW:
+     *  chi xem tinh trang ton kho hien tai / danh sach lo hang, khong bao gom
+     *  bao cao thong ke nay). */
+    STOCK_REPORT_VIEW,
     /** Lap phieu tra hang lo ve nha cung cap (tru lo + ghi cong no NCC). */
     SUPPLIER_RETURN_CREATE,
     /** Xem lich su tra hang NCC va bao cao cong no. */
     SUPPLIER_RETURN_VIEW,
     /** Quan ly khuyen mai / ma giam gia (tao, sua, bat-tat, xoa). */
     PROMOTION_MANAGE,
+    /** Xem/chinh sua trang "Phan quyen vai tro" - bat/tat quyen cua tung Role. Mac dinh chi ADMIN co (xem RolePermissions). */
+    RBAC_MANAGE,
 }

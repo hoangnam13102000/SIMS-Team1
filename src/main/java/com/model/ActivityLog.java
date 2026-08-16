@@ -49,6 +49,9 @@ public class ActivityLog {
     public static final String ACTION_2FA_ENABLED = "2FA_ENABLED";
     public static final String ACTION_2FA_DISABLED = "2FA_DISABLED";
     public static final String ACTION_2FA_BACKUP_CODE_USED = "2FA_BACKUP_CODE_USED";
+    
+    /** Danh sach quyen (AppPermission) gan cho 1 vai tro (Role) - RolePermissionPanel. */
+    public static final String ENTITY_ROLE_PERMISSION = "ROLE_PERMISSION";
 
     /** Nhan vien/QL phe duyet don doi/tra co gia tri lon (vuot nguong tu duyet). */
     public static final String ACTION_RETURN_APPROVE = "RETURN_APPROVE";
