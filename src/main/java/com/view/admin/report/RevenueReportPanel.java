@@ -16,18 +16,21 @@ import com.dao.RevenueReportDAO.Summary;
 import com.dao.RevenueReportDAO.TopProduct;
 import com.event.AutoRefresher;
 import com.event.DataChangedEvent;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppRadius;
 import com.theme.AppSpacing;
 import com.utils.FileUtil;
 import com.utils.TableExportUtil;
+import com.utils.pdf.RevenueReportPdfExporter;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.Desktop;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
@@ -61,6 +64,7 @@ public class RevenueReportPanel extends JPanel {
     private JButton revenueTabButton;
     private JButton trendTabButton;
     private String activeCard = CARD_REVENUE;
+    private ReportData lastReportData;
 
     public RevenueReportPanel() {
         setLayout(new BorderLayout());
@@ -114,6 +118,7 @@ public class RevenueReportPanel extends JPanel {
                 "Thống kê doanh thu, phương thức thanh toán, sản phẩm bán chạy và so sánh giá nhập/giá bán để tính lợi nhuận");
         header.addOverflowAction("Xuất CSV", FontAwesomeSolid.FILE_CSV, () -> exportReport("csv"));
         header.addOverflowAction("Xuất Excel", FontAwesomeSolid.FILE_EXCEL, () -> exportReport("xlsx"));
+        header.addOverflowAction("Tạo báo cáo PDF", FontAwesomeSolid.FILE_PDF, this::exportPdfReport);
         return header;
     }
 
@@ -259,6 +264,7 @@ public class RevenueReportPanel extends JPanel {
                 loadingOverlay.stop();
                 try {
                     ReportData data = get();
+                    lastReportData = data;
                     revenueTab.applyData(
                             data.summary, data.previousSummary, data.daily,
                             data.financeDaily, data.payments, data.topProducts,
@@ -386,6 +392,64 @@ public class RevenueReportPanel extends JPanel {
                 } catch (Exception e) {
                     e.printStackTrace();
                     BaseDialog.error(RevenueReportPanel.this, "Lỗi", "Xuất file thất bại: " + e.getMessage());
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void exportPdfReport() {
+        if (lastReportData == null || lastReportData.summary == null) {
+            BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu để tạo báo cáo trong khoảng thời gian đang chọn.");
+            return;
+        }
+        LocalDate from = fromField.getValue();
+        LocalDate to = toField.getValue();
+        if (from == null || to == null) return;
+
+        String defaultName = "bao_cao_doanh_thu_" + timestamp() + ".pdf";
+        File chosen = FileUtil.chooseSaveLocation(this, defaultName);
+        if (chosen == null) return;
+        File file = ensureExtension(chosen, "pdf");
+
+        RevenueReportPdfExporter.ReportContext ctx = new RevenueReportPdfExporter.ReportContext();
+        ctx.from = from;
+        ctx.to = to;
+        ctx.summary = lastReportData.summary;
+        ctx.previousSummary = lastReportData.previousSummary;
+        ctx.profitSummary = lastReportData.profitSummary;
+        ctx.financeDaily = lastReportData.financeDaily;
+        ctx.payments = lastReportData.payments;
+        ctx.categories = lastReportData.categories;
+        ctx.topProducts = lastReportData.topProducts;
+        ctx.topProductsProfit = lastReportData.topProductsProfit;
+        var currentUser = AuthService.getInstance().getCurrentUser();
+        ctx.preparedByName = currentUser != null ? currentUser.getFullName() : null;
+
+        loadingOverlay.start("Đang tạo báo cáo PDF...");
+        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                RevenueReportPdfExporter.export(ctx, file);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                loadingOverlay.stop();
+                try {
+                    get();
+                    BaseDialog.success(RevenueReportPanel.this, "Thành công",
+                            "Đã tạo báo cáo PDF tại \"" + file.getName() + "\"");
+                    if (Desktop.isDesktopSupported()) {
+                        try {
+                            Desktop.getDesktop().open(file);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    BaseDialog.error(RevenueReportPanel.this, "Lỗi", "Tạo báo cáo PDF thất bại: " + e.getMessage());
                 }
             }
         };

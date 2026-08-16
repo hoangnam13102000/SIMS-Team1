@@ -1,6 +1,7 @@
 package com.view.client;
 
 import com.components.BaseDialog;
+import com.components.RebuildOverlay;
 import com.components.SettingsButton;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
@@ -154,8 +155,10 @@ public class ClientMainFrame extends JFrame {
     }
 
     private void rebuildContent() {
-        buildContent();
-        getLayeredPane().repaint();
+        RebuildOverlay.runWithOverlay(this, () -> {
+            buildContent();
+            getLayeredPane().repaint();
+        });
     }
 
     private void addPage(String key, String label, FontAwesomeSolid icon, JPanel panel) {

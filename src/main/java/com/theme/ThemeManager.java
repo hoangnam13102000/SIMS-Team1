@@ -33,6 +33,7 @@ public final class ThemeManager {
     private static ThemeManager instance;
 
     private static final String PREF_KEY = "myshop.theme.mode";
+    private static final String PREF_KEY_ACCENT = "myshop.theme.accent";
 
     private ThemeMode currentMode;
     private final List<Runnable> rebuildListeners = new ArrayList<>();
@@ -47,6 +48,15 @@ public final class ThemeManager {
         }
         this.currentMode = mode;
         AppColor.applyTheme(mode);
+
+        String savedAccent = Preferences.userRoot().node("myshop").get(PREF_KEY_ACCENT, AccentColor.BLUE.name());
+        AccentColor accent;
+        try {
+            accent = AccentColor.valueOf(savedAccent);
+        } catch (IllegalArgumentException e) {
+            accent = AccentColor.BLUE;
+        }
+        AppColor.applyAccent(accent);
     }
 
     public static synchronized ThemeManager getInstance() {
@@ -62,6 +72,27 @@ public final class ThemeManager {
 
     public boolean isDark() {
         return currentMode == ThemeMode.DARK;
+    }
+
+    public AccentColor getAccent() {
+        return AppColor.getCurrentAccent();
+    }
+
+    /**
+     * Doi mau chu dao (accent) - doc lap voi Light/Dark, khong doi FlatLaf
+     * Look&Feel, chi tinh lai bang mau ACCENT_* trong AppColor roi goi lai
+     * rebuild listener de UI dang mo ve lai voi mau moi (giong het co che
+     * setMode ben duoi).
+     */
+    public void setAccent(AccentColor accent) {
+        if (accent == AppColor.getCurrentAccent()) return;
+
+        Preferences.userRoot().node("myshop").put(PREF_KEY_ACCENT, accent.name());
+        AppColor.applyAccent(accent);
+
+        for (Runnable listener : new ArrayList<>(rebuildListeners)) {
+            listener.run();
+        }
     }
 
     /**

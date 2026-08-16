@@ -1,6 +1,7 @@
 package com.view.admin;
 
 import com.components.BaseDialog;
+import com.components.RebuildOverlay;
 import com.components.SettingsButton;
 import com.event.AppEventBus;
 import com.event.OrderStatusChangedEvent;
@@ -339,8 +340,10 @@ public class AdminMainFrame extends JFrame {
     }
 
     private void rebuildContent() {
-        buildContent();
-        getLayeredPane().repaint();
+        RebuildOverlay.runWithOverlay(this, () -> {
+            buildContent();
+            getLayeredPane().repaint();
+        });
     }
 
     private void doLogout() {
