@@ -147,7 +147,7 @@ Trong Eclipse, đảm bảo biến môi trường `MYSHOP_CONFIG_KEY` đã đư�
 Sơ đồ ERD của hệ thống SIMS thể hiện các bảng, khóa chính, khóa ngoại
 và mối quan hệ giữa các bảng trong cơ sở dữ liệu.
 
-🔗 [Xem sơ đồ ERD trực tuyến trên dbdiagram.io](https://dbdiagram.io/d/SIMS-6a68100ac3a90dd98dca30f9)
+🔗 [Xem sơ đồ ERD trực tuyến trên dbdiagram.io](https://dbdiagram.io/d/SIMS_DB-6a820b33e093539a9ec6141f)
 
 
 ## Kiến trúc hệ thống (mô hình 3 lớp)
