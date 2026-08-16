@@ -30,9 +30,10 @@ import java.util.List;
 import javax.swing.SwingUtilities;
 
 public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation> {
-    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final int COL_ACTUAL = 3;
-    private static final int COL_DIFF = 4;
+    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM HH:mm:ss");
+    private static final int COL_CHECKED = 4;
+    private static final int COL_ACTUAL = 5;
+    private static final int COL_DIFF = 6;
     private static final int DAY_ROLLOVER_CHECK_MS = 30_000;
 
     private final StockReconciliationDAO reconciliationDAO = new StockReconciliationDAO();
@@ -47,9 +48,13 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     public StockReconciliationPanel() {
         super();
         trackedDate = LocalDate.now();
-        table.setColumnWidths(90, 170, 100, 100, 90, 130, 130);
-        table.setColumnMinWidths(70, 130, 80, 80, 70, 100, 110);
+        table.setColumnWidths(90, 170, 130, 90, 90, 100, 90, 130, 130, 130);
+        table.setColumnMinWidths(70, 130, 100, 70, 70, 80, 70, 100, 110, 110);
+        // BaseTable mac dinh khoa tat ca o. Cho phep tick Da kiem ke va sua Ton thuc te
+        // thi JTable moi goi CellEditor.isCellEditable(...); khi do isToday moi duoc kiem tra.
+        table.setEditableColumns(COL_CHECKED, COL_ACTUAL);
         table.setBadgeColumn(COL_DIFF, this::discrepancyLabel, this::discrepancyColor);
+        installCheckedColumn();
         installConditionalActualEditor();
 
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
@@ -88,8 +93,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 c.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
                 int modelRow = tbl.convertRowIndexToModel(row);
                 StockReconciliation item = rowToItem(modelRow);
-                boolean isToday = item != null && item.getCreatedAt() != null
-                        && item.getCreatedAt().toLocalDate().equals(LocalDate.now());
+                boolean isToday = isToday(item);
                 c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG
                         : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 if (isToday) {
@@ -188,18 +192,102 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         worker.execute();
     }
 
+    private void installCheckedColumn() {
+        JTable jt = table.getTable();
+        jt.getColumnModel().getColumn(COL_CHECKED).setCellRenderer(new DefaultTableCellRenderer() {
+            private final JCheckBox box = new JCheckBox();
+            { box.setHorizontalAlignment(SwingConstants.CENTER); box.setOpaque(false); }
+            @Override
+            public Component getTableCellRendererComponent(JTable tbl, Object value, boolean selected, boolean focus, int row, int column) {
+                box.setSelected(Boolean.TRUE.equals(value));
+                box.setEnabled(isToday(rowToItem(tbl.convertRowIndexToModel(row))));
+                box.setToolTipText(box.isEnabled() ? "Tick khi da kiem ke lo hang" : "Phien da khoa");
+                box.setBackground(selected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                return box;
+            }
+        });
+        jt.getColumnModel().getColumn(COL_CHECKED).setCellEditor(new DefaultCellEditor(new JCheckBox()) {
+            {
+                JCheckBox cb = (JCheckBox) getComponent();
+                cb.setHorizontalAlignment(SwingConstants.CENTER);
+            }
+            @Override
+            public boolean isCellEditable(EventObject event) {
+                if (!super.isCellEditable(event)) return false;
+                int viewRow = event instanceof MouseEvent
+                        ? jt.rowAtPoint(((MouseEvent) event).getPoint())
+                        : jt.getSelectedRow();
+                if (viewRow < 0) return false;
+                StockReconciliation item = rowToItem(jt.convertRowIndexToModel(viewRow));
+                if (!isToday(item)) {
+                    SwingUtilities.invokeLater(() -> AppAlert.warning(StockReconciliationPanel.this,
+                            "Phiên đã khóa", "Đã qua 00:00 — không thể đánh dấu kiểm kê phiên cũ."));
+                    return false;
+                }
+                return true;
+            }
+        });
+
+        table.getModel().addTableModelListener(e -> {
+            if (suppressActualEdit || e.getType() != TableModelEvent.UPDATE || e.getColumn() != COL_CHECKED) return;
+            int modelRow = e.getFirstRow();
+            if (modelRow < 0) return;
+            StockReconciliation item = rowToItem(modelRow);
+            if (item == null || !isToday(item)) return;
+            Object raw = table.getModel().getValueAt(modelRow, COL_CHECKED);
+            boolean checked = Boolean.TRUE.equals(raw);
+            Integer userId = currentUserId();
+            if (userId == null) return;
+            boolean ok = reconciliationDAO.setChecked(item.getReconciliationId(), checked, userId);
+            if (!ok) {
+                suppressActualEdit = true;
+                try { table.getModel().setValueAt(item.isChecked(), modelRow, COL_CHECKED); }
+                finally { suppressActualEdit = false; }
+                AppAlert.error(this, "Cập nhật thất bại", "Không thể cập nhật trạng thái kiểm kê.");
+                return;
+            }
+            item.setChecked(checked);
+            item.setCheckedBy(checked ? userId : 0);
+            item.setCheckedByName(checked && AuthService.getInstance().getCurrentUser() != null
+                    ? AuthService.getInstance().getCurrentUser().getFullName() : null);
+            item.setCheckedAt(checked ? java.time.LocalDateTime.now() : null);
+            suppressActualEdit = true;
+            try {
+                table.getModel().setValueAt(checked ? item.getCheckedByName() : "-", modelRow, 7);
+                table.getModel().setValueAt(checked && item.getCheckedAt() != null
+                        ? item.getCheckedAt().format(DATE_TIME_FORMAT) : "-", modelRow, 8);
+            } finally { suppressActualEdit = false; }
+            jt.repaint();
+        });
+    }
+
     private void installConditionalActualEditor() {
         JTable jt = table.getTable();
         jt.getColumnModel().getColumn(COL_ACTUAL).setCellEditor(new DefaultCellEditor(new JTextField()) {
+            {
+                // Mặc định DefaultCellEditor của JTextField cần 2 click.
+                // Cho phép 1 click để nhân viên nhập số ngay trên bảng.
+                setClickCountToStart(1);
+            }
+
             @Override
             public boolean isCellEditable(EventObject anEvent) {
                 if (!super.isCellEditable(anEvent)) return false;
-                int row = jt.getEditingRow();
-                if (row < 0) return false;
-                int modelRow = jt.convertRowIndexToModel(row);
+
+                // getEditingRow() không dùng được ở đây vì editor chưa bắt đầu,
+                // nên trước đây luôn có thể trả -1 và chặn việc nhập.
+                int viewRow;
+                if (anEvent instanceof MouseEvent) {
+                    MouseEvent me = (MouseEvent) anEvent;
+                    viewRow = jt.rowAtPoint(me.getPoint());
+                } else {
+                    viewRow = jt.getSelectedRow();
+                }
+                if (viewRow < 0) return false;
+
+                int modelRow = jt.convertRowIndexToModel(viewRow);
                 StockReconciliation item = rowToItem(modelRow);
-                boolean editable = item != null && item.getCreatedAt() != null
-                        && item.getCreatedAt().toLocalDate().equals(LocalDate.now());
+                boolean editable = isToday(item);
                 if (!editable) {
                     SwingUtilities.invokeLater(() ->
                         AppAlert.warning(StockReconciliationPanel.this,
@@ -218,8 +306,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             if (modelRow < 0) return;
             StockReconciliation item = rowToItem(modelRow);
             if (item == null) return;
-            if (item.getCreatedAt() == null
-                    || !item.getCreatedAt().toLocalDate().equals(LocalDate.now())) {
+            if (!isToday(item)) {
                 suppressActualEdit = true;
                 try {
                     table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
@@ -248,7 +335,6 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 AppAlert.error(this, "So khong hop le", "Ton thuc te phai la so nguyen ≥ 0.");
                 return;
             }
-            if (newActual == item.getActualStock()) return;
             Integer userId = currentUserId();
             if (userId == null) return;
             boolean ok = reconciliationDAO.updateActualStock(
@@ -261,20 +347,28 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     suppressActualEdit = false;
                 }
                 AppAlert.error(this, "Cap nhat that bai",
-                        "Khong the cap nhat ton thuc te. Vui long thu lai.");
+                        "Khong the cap nhat ton thuc te. Kiem tra so ton theo lo (khong duoc vuot so luong nhap cua lo) va thu lai.");
                 return;
             }
             item.setActualStock(newActual);
             item.setDiscrepancy(newActual - item.getSystemStock());
+            item.setChecked(true);
+            item.setCheckedBy(userId);
+            item.setCheckedByName(AuthService.getInstance().getCurrentUser() != null
+                    ? AuthService.getInstance().getCurrentUser().getFullName() : null);
+            item.setCheckedAt(java.time.LocalDateTime.now());
             suppressActualEdit = true;
             try {
+                table.getModel().setValueAt(true, modelRow, COL_CHECKED);
                 table.getModel().setValueAt(discrepancyText(item.getDiscrepancy()), modelRow, COL_DIFF);
+                table.getModel().setValueAt(item.getCheckedByName() != null ? item.getCheckedByName() : "-", modelRow, 7);
+                table.getModel().setValueAt(item.getCheckedAt().format(DATE_TIME_FORMAT), modelRow, 8);
             } finally {
                 suppressActualEdit = false;
             }
             table.getTable().repaint();
             AppAlert.success(this, "Da cap nhat",
-                    "Ton thuc te \"" + item.getProductName() + "\" = " + newActual
+                    "Ton thuc te lo \"" + (item.getBatchCode() != null ? item.getBatchCode() : item.getProductName()) + "\" = " + newActual
                             + " (chenh lech: " + discrepancyText(item.getDiscrepancy()) + ")");
         });
     }
@@ -315,6 +409,12 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             }
         };
         worker.execute();
+    }
+
+    /** Chi phien duoc tao trong ngay hien tai moi duoc phep sua ton thuc te. */
+    private boolean isToday(StockReconciliation item) {
+        if (item == null || item.getCreatedAt() == null) return false;
+        return item.getCreatedAt().toLocalDate().equals(LocalDate.now());
     }
 
     private Integer currentUserId() {
@@ -407,7 +507,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
 
     @Override
     protected String getPageSubtitle() {
-        return "00:00 tự động KHÓA phiên cũ + tạo phiên mới hôm nay — sửa tồn thực tế trực tiếp trên bảng";
+        return "00:00 tự động KHÓA phiên cũ + tạo phiên mới hôm nay — mỗi dòng tương ứng 1 lô hàng";
     }
 
     @Override
@@ -415,7 +515,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Ma SP", "San pham", "Ton he thong", "Ton thuc te",
+        return new String[]{"Ma SP", "San pham", "Ma lo", "Ton lo hang", "Da kiem ke", "Ton thuc te",
                 "Chenh lech", "Nguoi doi chieu", "Thoi gian"};
     }
 
@@ -424,16 +524,18 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         return new Object[]{
                 item.getProductCode(),
                 item.getProductName(),
+                item.getBatchCode() != null ? item.getBatchCode() : "-",
                 item.getSystemStock(),
+                item.isChecked(),
                 item.getActualStock(),
                 discrepancyText(item.getDiscrepancy()),
-                item.getCreatedByName(),
-                item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-"
+                item.getCheckedByName() != null ? item.getCheckedByName() : "-",
+                item.getCheckedAt() != null ? item.getCheckedAt().format(DATE_TIME_FORMAT) : "-"
         };
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{2, 3}; }
+    protected int[] numericColumns() { return new int[]{3, 5}; }
 
     @Override
     protected String getEntityLabel() { return "phien doi chieu kho"; }

@@ -2,6 +2,7 @@
    SIMS - Sales and Inventory Management System (Connect Mart)
    Schema hoàn chỉnh - MySQL 8.0+ / MariaDB 10.5+
    Đã tích hợp: DiscountShare + PointsShare vào ReturnExchanges
+   Đã tích hợp: Shift cash reconciliation + ShiftCashTransactions.
    ============================================================ */
 CREATE DATABASE IF NOT EXISTS SIMS_DB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE SIMS_DB;
@@ -143,7 +144,54 @@ CREATE TABLE Shifts (
     EndTime         DATETIME NULL,
     Status          VARCHAR(20) NOT NULL DEFAULT 'OPEN'
                         CHECK (Status IN ('OPEN', 'CLOSED')),
-    CONSTRAINT FK_Shifts_Users FOREIGN KEY (UserID) REFERENCES Users(UserID)
+
+    OpeningCash     DECIMAL(18,0) NOT NULL DEFAULT 0,
+    ExpectedCash    DECIMAL(18,0) NULL,
+    CountedCash     DECIMAL(18,0) NULL,
+    CashDifference  DECIMAL(18,0) NULL,
+    OpeningNote     VARCHAR(500) NULL,
+    ClosingNote     VARCHAR(500) NULL,
+    ClosedBy        INT NULL,
+    LastUpdatedAt   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
+
+    OpenUserID INT
+        GENERATED ALWAYS AS (
+            CASE WHEN Status = 'OPEN' THEN UserID ELSE NULL END
+        ) STORED,
+
+    CONSTRAINT FK_Shifts_Users
+        FOREIGN KEY (UserID) REFERENCES Users(UserID),
+
+    CONSTRAINT FK_Shifts_ClosedBy
+        FOREIGN KEY (ClosedBy) REFERENCES Users(UserID),
+
+    UNIQUE KEY UQ_Shifts_OneOpenPerUser (OpenUserID)
+) ENGINE=InnoDB;
+
+/* ============================================================
+   CASH TRANSACTIONS TRONG CA
+   ============================================================ */
+CREATE TABLE ShiftCashTransactions (
+    CashTransactionID   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    TransactionCode     VARCHAR(40) NOT NULL UNIQUE,
+    ShiftID             INT NOT NULL,
+    TransactionType     VARCHAR(20) NOT NULL
+                            CHECK (TransactionType IN ('CASH_IN', 'CASH_OUT')),
+    Amount              DECIMAL(18,0) NOT NULL CHECK (Amount > 0),
+    Reason              VARCHAR(255) NOT NULL,
+    CreatedBy           INT NOT NULL,
+    CreatedAt           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Status              VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+                            CHECK (Status IN ('ACTIVE', 'VOIDED')),
+
+    CONSTRAINT FK_ShiftCashTransactions_Shifts
+        FOREIGN KEY (ShiftID) REFERENCES Shifts(ShiftID),
+
+    CONSTRAINT FK_ShiftCashTransactions_Users
+        FOREIGN KEY (CreatedBy) REFERENCES Users(UserID),
+
+    INDEX IX_ShiftCashTransactions_ShiftTime (ShiftID, CreatedAt)
 ) ENGINE=InnoDB;
 
 /* ============================================================
@@ -424,16 +472,24 @@ CREATE INDEX IX_AuditLogs_User_Date ON AuditLogs(UserID, CreatedAt);
 CREATE TABLE StockReconciliation (
     ReconciliationID    INT AUTO_INCREMENT PRIMARY KEY,
     ProductID           INT NOT NULL,
+    BatchID        INT NULL,
     SystemStock         INT NOT NULL,
     ActualStock         INT NOT NULL,
     Discrepancy         INT AS (ActualStock - SystemStock) STORED,
     Note                VARCHAR(255) NULL,
     CreatedBy           INT NOT NULL,
     CreatedAt           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Checked        TINYINT(1) NOT NULL DEFAULT 0,
+    CheckedBy      INT NULL,
+    CheckedAt      DATETIME NULL,
     CONSTRAINT FK_StockReconciliation_Products
         FOREIGN KEY (ProductID) REFERENCES Products(ProductID),
     CONSTRAINT FK_StockReconciliation_CreatedBy
         FOREIGN KEY (CreatedBy) REFERENCES Users(UserID)
+    CONSTRAINT FK_StockReconciliation_CheckedBy
+        FOREIGN KEY (CheckedBy) REFERENCES Users(UserID),
+    CONSTRAINT FK_StockReconciliation_Batch
+        FOREIGN KEY (BatchID) REFERENCES InventoryBatch(BatchID)
 ) ENGINE=InnoDB;
 
 CREATE TABLE Orders (

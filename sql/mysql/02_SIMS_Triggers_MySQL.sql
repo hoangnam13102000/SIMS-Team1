@@ -579,3 +579,189 @@ END //
 DELIMITER ;
 
 CALL sp_BackfillAllCodes();
+
+
+/* ============================================================
+   STOCK RECONCILIATION - FINAL V006 LOGIC
+   ============================================================ */
+
+DROP TRIGGER IF EXISTS trg_StockReconciliation_Prepare;
+DROP TRIGGER IF EXISTS trg_StockReconciliation_Apply;
+
+DELIMITER $$
+
+CREATE TRIGGER trg_StockReconciliation_Prepare
+BEFORE INSERT ON StockReconciliation
+FOR EACH ROW
+BEGIN
+    DECLARE v_product_stock INT DEFAULT 0;
+    DECLARE v_batch_product_id INT;
+    DECLARE v_batch_stock INT DEFAULT 0;
+    DECLARE v_has_batch INT DEFAULT 0;
+
+    SELECT Stock
+    INTO v_product_stock
+    FROM Products
+    WHERE ProductID = NEW.ProductID;
+
+    IF v_product_stock IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT =
+                'San pham khong ton tai, khong the doi chieu kho.';
+    END IF;
+
+    IF NEW.BatchID IS NOT NULL THEN
+
+        SELECT ProductID, RemainingQty
+        INTO v_batch_product_id, v_batch_stock
+        FROM InventoryBatch
+        WHERE BatchID = NEW.BatchID;
+
+        IF v_batch_product_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Lo hang khong ton tai.';
+        END IF;
+
+        IF v_batch_product_id <> NEW.ProductID THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT =
+                    'Lo hang khong thuoc san pham dang doi chieu.';
+        END IF;
+
+        SET NEW.SystemStock = COALESCE(v_batch_stock, 0);
+
+    ELSE
+
+        SELECT COUNT(*)
+        INTO v_has_batch
+        FROM InventoryBatch
+        WHERE ProductID = NEW.ProductID;
+
+        IF v_has_batch > 0 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT =
+                    'San pham da quan ly theo lo; phai doi chieu theo tung lo.';
+        END IF;
+
+        SET NEW.SystemStock = COALESCE(v_product_stock, 0);
+
+    END IF;
+END$$
+
+
+CREATE TRIGGER trg_StockReconciliation_Apply
+AFTER INSERT ON StockReconciliation
+FOR EACH ROW
+BEGIN
+    DECLARE v_diff INT DEFAULT 0;
+    DECLARE v_before INT DEFAULT 0;
+    DECLARE v_after INT DEFAULT 0;
+    DECLARE v_new_batch_qty INT DEFAULT 0;
+    DECLARE v_batch_quantity INT DEFAULT 0;
+
+    IF NEW.BatchID IS NOT NULL THEN
+
+        SELECT RemainingQty, Quantity
+        INTO v_new_batch_qty, v_batch_quantity
+        FROM InventoryBatch
+        WHERE BatchID = NEW.BatchID
+          AND ProductID = NEW.ProductID;
+
+        IF NEW.ActualStock < 0
+           OR NEW.ActualStock > v_batch_quantity THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT =
+                    'Ton thuc te cua lo vuot gioi han so luong cua lo.';
+        END IF;
+
+        SELECT COALESCE(SUM(RemainingQty), 0)
+        INTO v_before
+        FROM InventoryBatch
+        WHERE ProductID = NEW.ProductID;
+
+        IF NEW.ActualStock <> NEW.SystemStock THEN
+
+            UPDATE InventoryBatch
+            SET RemainingQty = NEW.ActualStock,
+                Status = CASE
+                    WHEN NEW.ActualStock <= 0 THEN 'DEPLETED'
+                    ELSE 'ACTIVE'
+                END
+            WHERE BatchID = NEW.BatchID
+              AND ProductID = NEW.ProductID;
+
+            IF ROW_COUNT() <> 1 THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT =
+                        'Khong the cap nhat ton cua lo hang.';
+            END IF;
+
+        END IF;
+
+        SELECT COALESCE(SUM(RemainingQty), 0)
+        INTO v_after
+        FROM InventoryBatch
+        WHERE ProductID = NEW.ProductID;
+
+        UPDATE Products
+        SET Stock = v_after
+        WHERE ProductID = NEW.ProductID;
+
+        SET v_diff = v_after - v_before;
+
+    ELSE
+
+        SELECT Stock
+        INTO v_before
+        FROM Products
+        WHERE ProductID = NEW.ProductID;
+
+        UPDATE Products
+        SET Stock = NEW.ActualStock
+        WHERE ProductID = NEW.ProductID;
+
+        SET v_after = NEW.ActualStock;
+        SET v_diff = v_after - v_before;
+
+    END IF;
+
+    IF v_diff <> 0 THEN
+
+        INSERT INTO InventoryTransactions
+            (
+                ProductID,
+                TransactionType,
+                Direction,
+                Quantity,
+                StockBefore,
+                StockAfter,
+                RefTable,
+                RefID,
+                CreatedBy,
+                Note
+            )
+        VALUES
+            (
+                NEW.ProductID,
+                'RECONCILE_ADJUST',
+                CASE
+                    WHEN v_diff > 0 THEN 'IN'
+                    ELSE 'OUT'
+                END,
+                ABS(v_diff),
+                v_before,
+                v_after,
+                'StockReconciliation',
+                NEW.ReconciliationID,
+                NEW.CreatedBy,
+                CASE
+                    WHEN NEW.BatchID IS NOT NULL
+                    THEN 'Dieu chinh ton thuc te theo lo hang tren bang doi chieu'
+                    ELSE 'Dieu chinh ton thuc te tren bang doi chieu'
+                END
+            );
+
+    END IF;
+END$$
+
+DELIMITER ;
