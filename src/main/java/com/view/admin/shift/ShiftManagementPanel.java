@@ -209,16 +209,6 @@ public class ShiftManagementPanel extends JPanel {
 		closeButton.addActionListener(event -> loadClosePreview());
 
 		refreshButton.addActionListener(event -> loadData());
-
-		openButton.addActionListener(event -> showOpenDialog());
-
-		cashInButton.addActionListener(event -> showCashMovementDialog(ShiftCashTransaction.CASH_IN));
-
-		cashOutButton.addActionListener(event -> showCashMovementDialog(ShiftCashTransaction.CASH_OUT));
-
-		closeButton.addActionListener(event -> loadClosePreview());
-
-		refreshButton.addActionListener(event -> loadData());
 		
 		historyPagination.setVisiblePages(5);
 
