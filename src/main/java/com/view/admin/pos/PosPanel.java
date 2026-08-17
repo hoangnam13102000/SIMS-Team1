@@ -980,12 +980,12 @@ public class PosPanel extends JPanel {
         Shift checkoutShift = shiftService.getMyOpenShift();
 
         if (checkoutShift == null) {
-            AppAlert.warning(
-                    this,
-                    "Bạn chưa mở ca bán hàng",
-                    "Hãy vào mục Ca bán hàng & đối soát quỹ, "
-                            + "nhập tiền đầu ca và mở ca trước khi thanh toán."
-            );
+        	AppAlert.warning(
+        	        this,
+        	        "Bạn chưa mở ca bán hàng",
+        	        "Hãy vào mục Ca bán hàng, "
+        	                + "nhập tiền đầu ca và mở ca trước khi thanh toán."
+        	);
             return;
         }
 
