@@ -15,7 +15,6 @@ import com.model.permission.RolePermissions;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.AppFont;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -62,16 +61,15 @@ public class RolePermissionPanel extends JPanel {
 
     private final RolePermissionDAO dao = new RolePermissionDAO();
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang tải phân quyền...");
-
     private final JPanel roleListPanel = new JPanel();
     private final JPanel permissionListPanel = new ScrollableFormPanel();
     private final JLabel currentRoleLabel = new JLabel();
-
     private JButton saveButton;
     private JButton resetButton;
 
     /** Quyen cua tung Role doc tu DB (hoac mac dinh neu DB loi) - nguon du lieu cho danh sach ben trai. */
     private Map<Role, Set<AppPermission>> roleDataCache = new EnumMap<>(Role.class);
+
     /** Quyen dang CHINH SUA tren UI cho Role dang chon (chua luu xuong DB cho toi khi bam "Lưu thay đổi"). */
     private final Set<AppPermission> workingSet = EnumSet.noneOf(AppPermission.class);
 
@@ -85,6 +83,7 @@ public class RolePermissionPanel extends JPanel {
         SectionHeader header = new SectionHeader(FontAwesomeSolid.USER_SHIELD, AppColor.ACCENT,
                 "Phân quyền vai trò",
                 "Bật/tắt chức năng mà từng vai trò (Role) được phép sử dụng trong hệ thống");
+
         resetButton = header.addButton("Khôi phục mặc định", FontAwesomeSolid.UNDO,
                 SectionHeader.ButtonStyle.OUTLINE, this::onResetClicked);
         saveButton = header.addButton("Lưu thay đổi", FontAwesomeSolid.SAVE,
@@ -107,7 +106,6 @@ public class RolePermissionPanel extends JPanel {
     private void loadAllAsync() {
         loadingOverlay.start("Đang tải phân quyền...");
         setControlsEnabled(false);
-
         SwingWorker<Map<Role, Set<AppPermission>>, Void> worker = new SwingWorker<>() {
             @Override
             protected Map<Role, Set<AppPermission>> doInBackground() {
@@ -129,6 +127,7 @@ public class RolePermissionPanel extends JPanel {
                     roleDataCache = get();
                 } catch (Exception ex) {
                     AppAlert.error(RolePermissionPanel.this,
+                            "Tải dữ liệu thất bại",
                             "Không tải được dữ liệu phân quyền: " + ex.getMessage());
                 }
                 loadingOverlay.stop();
@@ -285,11 +284,9 @@ public class RolePermissionPanel extends JPanel {
     private void selectRole(Role role) {
         this.selectedRole = role;
         currentRoleLabel.setText("Quyền của vai trò: " + roleLabel(role));
-
         Set<AppPermission> current = roleDataCache.getOrDefault(role, EnumSet.noneOf(AppPermission.class));
         workingSet.clear();
         workingSet.addAll(current);
-
         rebuildRoleList();
         rebuildPermissionList();
     }
@@ -333,28 +330,34 @@ public class RolePermissionPanel extends JPanel {
         boolean nguoiDungInserted = false;
         boolean hangHoaInserted = false;
         boolean baoCaoInserted = false;
+
         for (Map.Entry<String, List<AppPermission>> group : byGroup.entrySet()) {
             String key = group.getKey();
             if ("Người dùng".equals(key) || "Hàng hoá".equals(key) || "Báo cáo".equals(key)) {
                 continue;
             }
+
             if (!nguoiDungInserted && !"Tổng quan".equals(key)) {
                 permissionListPanel.add(buildNguoiDungGroupCard(isAdmin));
                 permissionListPanel.add(Box.createVerticalStrut(12));
                 nguoiDungInserted = true;
+
                 permissionListPanel.add(buildHangHoaGroupCard(isAdmin));
                 permissionListPanel.add(Box.createVerticalStrut(12));
                 hangHoaInserted = true;
             }
+
             // Chen Báo cáo truoc "Hệ thống"
             if (!baoCaoInserted && "Hệ thống".equals(key)) {
                 permissionListPanel.add(buildBaoCaoGroupCard(isAdmin));
                 permissionListPanel.add(Box.createVerticalStrut(12));
                 baoCaoInserted = true;
             }
+
             permissionListPanel.add(buildGroupCard(key, group.getValue(), isAdmin));
             permissionListPanel.add(Box.createVerticalStrut(12));
         }
+
         if (!nguoiDungInserted) {
             permissionListPanel.add(buildNguoiDungGroupCard(isAdmin));
             permissionListPanel.add(Box.createVerticalStrut(12));
@@ -399,6 +402,7 @@ public class RolePermissionPanel extends JPanel {
                 card.add(sep);
             }
         }
+
         return card;
     }
 
@@ -438,6 +442,7 @@ public class RolePermissionPanel extends JPanel {
                 AppPermission.PROFIT_REPORT_VIEW,
                 AppPermission.STOCK_REPORT_VIEW
         };
+
         for (int i = 0; i < reportViews.length; i++) {
             card.add(buildPermissionRow(reportViews[i], isAdmin));
             if (i < reportViews.length - 1) {
@@ -447,6 +452,7 @@ public class RolePermissionPanel extends JPanel {
                 card.add(sep);
             }
         }
+
         return card;
     }
 
@@ -592,6 +598,7 @@ public class RolePermissionPanel extends JPanel {
                 AppPermission.USER_MANAGE,
                 isAdmin));
         card.add(Box.createVerticalStrut(6));
+
         card.add(buildResourceDropdown(
                 "Khách hàng",
                 "Xem / sửa / xoá mềm khách hàng",
@@ -639,6 +646,7 @@ public class RolePermissionPanel extends JPanel {
                 AppPermission.CATEGORY_MANAGE,
                 isAdmin));
         card.add(Box.createVerticalStrut(6));
+
         card.add(buildResourceDropdown(
                 "Sản phẩm",
                 "Xem / sửa / thêm-xoá thông tin sản phẩm, giá bán",
@@ -647,6 +655,7 @@ public class RolePermissionPanel extends JPanel {
                 AppPermission.PRODUCT_MANAGE,
                 isAdmin));
         card.add(Box.createVerticalStrut(6));
+
         card.add(buildResourceDropdown(
                 "Nhà cung cấp",
                 "Xem / sửa / thêm-xoá nhà cung cấp",
@@ -680,15 +689,6 @@ public class RolePermissionPanel extends JPanel {
         body.setBorder(new EmptyBorder(4, 12, 8, 12));
         body.setVisible(false);
         body.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        body.add(buildNestedToggleRow("Chỉ xem", "Chỉ xem/tìm kiếm, không thêm/sửa/xoá",
-                viewPerm, isAdmin));
-        body.add(new JSeparator());
-        body.add(buildNestedToggleRow("Chỉ sửa", "Sửa bản ghi đã có, không thêm mới / xoá",
-                editPerm, isAdmin));
-        body.add(new JSeparator());
-        body.add(buildNestedToggleRow("Quản lý đầy đủ", "Thêm mới + sửa + xoá / đổi trạng thái",
-                managePerm, isAdmin));
 
         FontIcon chevron = FontIcon.of(FontAwesomeSolid.CHEVRON_DOWN, 12);
         chevron.setIconColor(AppColor.TEXT_MUTED);
@@ -730,7 +730,6 @@ public class RolePermissionPanel extends JPanel {
         Runnable refreshSummary = () ->
                 summary.setText(summarizeResourcePerms(viewPerm, editPerm, managePerm));
 
-        // Re-wire toggles in body to also refresh summary - rebuild nested with callback
         body.removeAll();
         body.add(buildNestedToggleRow("Chỉ xem", "Chỉ xem/tìm kiếm, không thêm/sửa/xoá",
                 viewPerm, isAdmin, refreshSummary));
@@ -842,17 +841,14 @@ public class RolePermissionPanel extends JPanel {
         JPanel textCol = new JPanel();
         textCol.setOpaque(false);
         textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
-
         JLabel label = new JLabel(entry.label);
         label.setFont(AppFont.BODY_BOLD);
         label.setForeground(AppColor.TEXT_PRIMARY);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         JLabel desc = new JLabel(entry.description);
         desc.setFont(AppFont.SMALL);
         desc.setForeground(AppColor.TEXT_MUTED);
         desc.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         textCol.add(label);
         textCol.add(desc);
 
@@ -887,28 +883,28 @@ public class RolePermissionPanel extends JPanel {
 
     private void onResetClicked() {
         if (selectedRole == Role.ADMIN) {
-            AppAlert.info(this, "Quản trị viên luôn có toàn quyền hệ thống, không cần khôi phục.");
+            AppAlert.info(this, "Khôi phục mặc định",
+                    "Quản trị viên luôn có toàn quyền hệ thống, không cần khôi phục.");
             return;
         }
         workingSet.clear();
         workingSet.addAll(RolePermissions.getDefaultAppPermissions(selectedRole));
         rebuildPermissionList();
-        AppAlert.info(this, "Đã khôi phục về danh sách quyền mặc định của vai trò \""
-                + roleLabel(selectedRole) + "\". Bấm \"Lưu thay đổi\" để áp dụng.");
+        AppAlert.info(this, "Đã khôi phục",
+                "Đã khôi phục về danh sách quyền mặc định của vai trò \""
+                        + roleLabel(selectedRole) + "\". Bấm \"Lưu thay đổi\" để áp dụng.");
     }
 
     private void onSaveClicked() {
         if (selectedRole == Role.ADMIN) {
-            AppAlert.info(this, "Quản trị viên luôn có toàn quyền hệ thống, không cần lưu.");
+            AppAlert.info(this, "Lưu phân quyền",
+                    "Quản trị viên luôn có toàn quyền hệ thống, không cần lưu.");
             return;
         }
-
         Role roleToSave = selectedRole;
         Set<AppPermission> toSave = EnumSet.copyOf(workingSet);
-
         setControlsEnabled(false);
         loadingOverlay.start("Đang lưu phân quyền...");
-
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
             @Override
             protected Boolean doInBackground() {
@@ -919,25 +915,24 @@ public class RolePermissionPanel extends JPanel {
             protected void done() {
                 loadingOverlay.stop();
                 setControlsEnabled(true);
-
                 boolean ok;
                 try {
                     ok = Boolean.TRUE.equals(get());
                 } catch (Exception ex) {
                     ok = false;
                 }
-
                 if (ok) {
                     roleDataCache.put(roleToSave, EnumSet.copyOf(toSave.isEmpty()
                             ? EnumSet.noneOf(AppPermission.class) : toSave));
                     RolePermissions.reload();
                     logChange(roleToSave);
                     rebuildRoleList();
-                    AppAlert.success(RolePermissionPanel.this,
+                    AppAlert.success(RolePermissionPanel.this, "Lưu thành công",
                             "Đã lưu phân quyền cho vai trò \"" + roleLabel(roleToSave)
                                     + "\". Áp dụng ngay cho các lần đăng nhập tiếp theo.");
                 } else {
-                    AppAlert.error(RolePermissionPanel.this, "Lưu phân quyền thất bại, vui lòng thử lại.");
+                    AppAlert.error(RolePermissionPanel.this, "Lưu thất bại",
+                            "Lưu phân quyền thất bại, vui lòng thử lại.\nNếu vấn đề tiếp diễn, kiểm tra kết nối CSDL.");
                 }
             }
         };

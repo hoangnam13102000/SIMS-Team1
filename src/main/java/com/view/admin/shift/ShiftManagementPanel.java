@@ -1,5 +1,6 @@
 package com.view.admin.shift;
 
+import com.components.Pagination;
 import com.components.AppAlert;
 import com.components.SectionHeader;
 import com.event.AutoRefresher;
@@ -14,17 +15,25 @@ import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppSpacing;
 import com.utils.NumberUtil;
+import com.utils.FileUtil;
+import com.utils.TableExportUtil;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
+
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 
 import java.awt.*;
+import java.io.File;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -70,14 +79,50 @@ public class ShiftManagementPanel extends JPanel {
 
 	private final JTable historyTable = buildTable(historyModel);
 
+	private final JTextField historySearchField = filterSearchField("Tìm mã ca, nhân viên...");
+
+	private final JComboBox<String> historyStatusFilter = filterCombo("Tất cả trạng thái", "Đang mở", "Đã đóng");
+
+	private final JComboBox<String> historyDayFilter = dayFilterCombo();
+
+	private final JComboBox<String> historyMonthFilter = monthFilterCombo();
+
+	private final JComboBox<String> historyYearFilter = yearFilterCombo();
+
+	private final Pagination historyPagination =
+	        new Pagination();
+
 	private final DefaultTableModel transactionModel = readOnlyModel("Mã giao dịch", "Loại", "Số tiền", "Lý do",
 			"Người tạo", "Thời gian");
 
 	private final JTable transactionTable = buildTable(transactionModel);
 
+	private final JTextField transactionSearchField = filterSearchField("Tìm mã giao dịch, lý do, người tạo...");
+
+	private final JComboBox<String> transactionTypeFilter = filterCombo("Tất cả loại", "Thu tiền", "Chi tiền");
+
+	private final JComboBox<String> transactionDayFilter = dayFilterCombo();
+
+	private final JComboBox<String> transactionMonthFilter = monthFilterCombo();
+
+	private final JComboBox<String> transactionYearFilter = yearFilterCombo();
+
+	private final Pagination transactionPagination =
+	        new Pagination();
+
 	private final JLabel transactionTitle = new JLabel("Thu/chi của ca");
 
+	private final JToggleButton historyTabButton = tabButton("Lịch sử ca gần nhất");
+
+	private final JToggleButton transactionTabButton = tabButton("Thu / chi của ca");
+
 	private List<Shift> visibleShifts = new ArrayList<>();
+
+	// Danh sách ca đang hiển thị ở trang hiện tại
+	private List<Shift> pagedShifts = new ArrayList<>();
+
+	// Toàn bộ giao dịch Thu/Chi của ca đang chọn
+	private List<ShiftCashTransaction> allTransactions = new ArrayList<>();
 
 	private Shift currentOpenShift;
 
@@ -101,8 +146,35 @@ public class ShiftManagementPanel extends JPanel {
 			subtitle = "Theo dõi lịch sử ca và " + "chênh lệch quỹ của " + "nhân viên bán hàng";
 		}
 
-		SectionHeader header = new SectionHeader(FontAwesomeSolid.CLOCK, AppColor.ACCENT, "Ca bán hàng & đối soát quỹ",
-				subtitle);
+		SectionHeader header = new SectionHeader(
+		        FontAwesomeSolid.CLOCK,
+		        AppColor.ACCENT,
+		        "Ca bán hàng & đối soát quỹ",
+		        subtitle
+		);
+
+
+		/*
+		 * Tùy chọn giống trang Quản lý hóa đơn.
+		 *
+		 * SectionHeader sẽ tự tạo nút:
+		 *
+		 * [ Tùy chọn ▼ ]
+		 *
+		 * khi có ít nhất một addOverflowAction().
+		 */
+		header.addOverflowAction(
+		        "Xuất CSV",
+		        FontAwesomeSolid.FILE_CSV,
+		        () -> exportCurrentTab("csv")
+		);
+
+		header.addOverflowAction(
+		        "Xuất Excel",
+		        FontAwesomeSolid.FILE_EXCEL,
+		        () -> exportCurrentTab("xlsx")
+		);
+
 
 		add(header, BorderLayout.NORTH);
 
@@ -138,6 +210,25 @@ public class ShiftManagementPanel extends JPanel {
 
 		refreshButton.addActionListener(event -> loadData());
 
+		openButton.addActionListener(event -> showOpenDialog());
+
+		cashInButton.addActionListener(event -> showCashMovementDialog(ShiftCashTransaction.CASH_IN));
+
+		cashOutButton.addActionListener(event -> showCashMovementDialog(ShiftCashTransaction.CASH_OUT));
+
+		closeButton.addActionListener(event -> loadClosePreview());
+
+		refreshButton.addActionListener(event -> loadData());
+		
+		historyPagination.setVisiblePages(5);
+
+		transactionPagination.setVisiblePages(5);
+
+		// Kích hoạt tìm kiếm và lọc
+		bindFilters();
+		// Phân trang
+		bindPagination();
+
 		historyTable.getSelectionModel().addListSelectionListener(event -> {
 			if (!event.getValueIsAdjusting() && !updatingHistory) {
 				loadSelectedTransactions();
@@ -156,10 +247,8 @@ public class ShiftManagementPanel extends JPanel {
 		JPanel cards = new JPanel(new GridLayout(1, 5, AppSpacing.MD, 0));
 
 		cards.setOpaque(false);
-		
-		cards.setAlignmentX(
-		        Component.LEFT_ALIGNMENT
-		);
+
+		cards.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		cards.setMaximumSize(new Dimension(Integer.MAX_VALUE, 104));
 
@@ -206,59 +295,456 @@ public class ShiftManagementPanel extends JPanel {
 	}
 
 	private JPanel buildActions() {
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 0));
+		JPanel row = new JPanel(new BorderLayout());
 
 		row.setOpaque(false);
-		
-		row.setAlignmentX(
-		        Component.LEFT_ALIGNMENT
-		);
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
 
-		/*
-		 * Quan ly chi co SHIFT_VIEW_ALL khong thay cac nut thao tac.
-		 */
+		JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, AppSpacing.SM, 0));
+
+		actions.setOpaque(false);
+
 		if (canOperate) {
-			row.add(openButton);
-			row.add(cashInButton);
-			row.add(cashOutButton);
-			row.add(closeButton);
+			actions.add(openButton);
+			actions.add(cashInButton);
+			actions.add(cashOutButton);
+			actions.add(closeButton);
 		}
 
-		row.add(refreshButton);
+		actions.add(refreshButton);
+
+		row.add(actions, BorderLayout.EAST);
 
 		return row;
 	}
 
 	private JComponent buildTables() {
-		JPanel historyCard = tableCard("Lịch sử ca gần nhất", historyTable);
 
 		transactionTitle.setFont(AppFont.HEADING_MD);
-
 		transactionTitle.setForeground(AppColor.TEXT_PRIMARY);
 
-		JPanel transactionCard = tableCard(transactionTitle, transactionTable);
+		JPanel historyCard =
+		        filterTableCard(
+		                buildHistoryFilterBar(),
+		                historyTable,
+		                historyPagination
+		        );
 
-		JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, historyCard, transactionCard);
+		JPanel transactionCard =
+		        filterTableCard(
+		                buildTransactionHeader(),
+		                transactionTable,
+		                transactionPagination
+		        );
 
-		split.setResizeWeight(0.58);
-		split.setDividerSize(8);
-		split.setBorder(null);
-		split.setOpaque(false);
+		/*
+		 * CardLayout: chỉ hiển thị 1 bảng tại một thời điểm.
+		 */
+		CardLayout cardLayout = new CardLayout();
 
-		split.setAlignmentX(Component.LEFT_ALIGNMENT);
-		
-		split.setPreferredSize(
-		        new Dimension(
-		                900,
-		                430
-		        )
-		);
+		JPanel cards = new JPanel(cardLayout);
+		cards.setOpaque(false);
 
-		split.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+		cards.add(historyCard, "history");
 
-		return split;
+		cards.add(transactionCard, "transactions");
+
+		/*
+		 * Nhóm 2 tab lại. Chỉ một tab được active.
+		 */
+		ButtonGroup group = new ButtonGroup();
+
+		group.add(historyTabButton);
+		group.add(transactionTabButton);
+
+		/*
+		 * Mặc định mở tab lịch sử ca.
+		 */
+		historyTabButton.setSelected(true);
+
+		updateTabStyles();
+
+		/*
+		 * Bấm Lịch sử ca.
+		 */
+		historyTabButton.addActionListener(event -> {
+
+			cardLayout.show(cards, "history");
+
+			updateTabStyles();
+		});
+
+		/*
+		 * Bấm Thu / chi.
+		 */
+		transactionTabButton.addActionListener(event -> {
+
+			cardLayout.show(cards, "transactions");
+
+			updateTabStyles();
+		});
+
+		/*
+		 * Thanh chứa 2 tab.
+		 */
+		JPanel tabs = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 0));
+
+		tabs.setOpaque(false);
+
+		tabs.add(historyTabButton);
+		tabs.add(transactionTabButton);
+
+		/*
+		 * Khung cuối cùng:
+		 *
+		 * [Tab 1] [Tab 2]
+		 *
+		 * [ Nội dung bảng ]
+		 */
+		JPanel wrapper = new JPanel(new BorderLayout(0, AppSpacing.SM));
+
+		wrapper.setOpaque(false);
+
+		wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		wrapper.setPreferredSize(new Dimension(900, 430));
+
+		wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+
+		wrapper.add(tabs, BorderLayout.NORTH);
+
+		wrapper.add(cards, BorderLayout.CENTER);
+
+		return wrapper;
+	}
+
+	private JPanel buildHistoryFilterBar() {
+
+	    return buildFilterBar(
+	            historySearchField,
+	            historyStatusFilter,
+	            "Trạng thái:",
+	            historyDayFilter,
+	            historyMonthFilter,
+	            historyYearFilter
+	    );
+	}
+
+	private JPanel buildTransactionHeader() {
+
+	    JPanel panel = new JPanel();
+
+	    panel.setOpaque(false);
+
+	    panel.setLayout(
+	            new BoxLayout(
+	                    panel,
+	                    BoxLayout.Y_AXIS
+	            )
+	    );
+
+
+	    /*
+	     * Tiêu đề Thu/Chi vẫn nằm phía trên.
+	     */
+	    transactionTitle.setAlignmentX(
+	            Component.LEFT_ALIGNMENT
+	    );
+
+	    panel.add(transactionTitle);
+
+	    panel.add(
+	            Box.createVerticalStrut(10)
+	    );
+
+
+	    /*
+	     * Tìm kiếm + loại + ngày/tháng/năm
+	     * nằm chung một dòng.
+	     */
+	    JPanel filters =
+	            buildFilterBar(
+	                    transactionSearchField,
+	                    transactionTypeFilter,
+	                    "Loại:",
+	                    transactionDayFilter,
+	                    transactionMonthFilter,
+	                    transactionYearFilter
+	            );
+
+	    filters.setAlignmentX(
+	            Component.LEFT_ALIGNMENT
+	    );
+
+	    panel.add(filters);
+
+	    return panel;
+	}
+
+	private JPanel buildFilterBar(
+	        JTextField searchField,
+	        JComboBox<String> comboBox,
+	        String labelText,
+	        JComboBox<String> dayBox,
+	        JComboBox<String> monthBox,
+	        JComboBox<String> yearBox
+	) {
+
+	    JPanel bar =
+	            new JPanel(
+	                    new BorderLayout(
+	                            AppSpacing.MD,
+	                            0
+	                    )
+	            );
+
+	    bar.setOpaque(false);
+
+
+	    /*
+	     * ==========================
+	     * BÊN TRÁI: TÌM KIẾM
+	     * ==========================
+	     */
+
+	    JPanel left =
+	            new JPanel(
+	                    new FlowLayout(
+	                            FlowLayout.LEFT,
+	                            0,
+	                            0
+	                    )
+	            );
+
+	    left.setOpaque(false);
+
+	    left.add(searchField);
+
+
+	    /*
+	     * ==========================
+	     * BÊN PHẢI: CÁC BỘ LỌC
+	     * ==========================
+	     */
+
+	    JPanel right =
+	            new JPanel(
+	                    new FlowLayout(
+	                            FlowLayout.RIGHT,
+	                            AppSpacing.SM,
+	                            0
+	                    )
+	            );
+
+	    right.setOpaque(false);
+
+
+	    /*
+	     * Trạng thái / Loại
+	     */
+	    JLabel comboLabel =
+	            new JLabel(labelText);
+
+	    comboLabel.setFont(AppFont.BODY);
+
+	    comboLabel.setForeground(
+	            AppColor.TEXT_SECONDARY
+	    );
+
+	    right.add(comboLabel);
+
+	    right.add(comboBox);
+
+
+	    /*
+	     * Lọc thời gian
+	     */
+	    JLabel dateLabel =
+	            new JLabel("Lọc thời gian:");
+
+	    dateLabel.setFont(AppFont.BODY);
+
+	    dateLabel.setForeground(
+	            AppColor.TEXT_SECONDARY
+	    );
+
+	    right.add(dateLabel);
+
+	    right.add(dayBox);
+
+	    right.add(monthBox);
+
+	    right.add(yearBox);
+
+
+	    /*
+	     * Đưa 2 nhóm vào cùng một dòng.
+	     */
+	    bar.add(
+	            left,
+	            BorderLayout.WEST
+	    );
+
+	    bar.add(
+	            right,
+	            BorderLayout.EAST
+	    );
+
+	    return bar;
+	}
+
+	private JPanel filterTableCard(
+	        JComponent header,
+	        JTable table,
+	        JComponent pagination
+	) {
+
+	    JPanel card =
+	            new JPanel(
+	                    new BorderLayout()
+	            );
+
+	    card.setBackground(
+	            AppColor.WHITE
+	    );
+
+	    card.setBorder(
+	            new LineBorder(
+	                    AppColor.BORDER,
+	                    1,
+	                    true
+	            )
+	    );
+
+
+	    /*
+	     * ========================
+	     * Thanh tìm kiếm + lọc
+	     * ========================
+	     */
+
+	    JPanel toolbarWrapper =
+	            new JPanel(
+	                    new BorderLayout()
+	            );
+
+	    toolbarWrapper.setBackground(
+	            AppColor.WHITE
+	    );
+
+	    toolbarWrapper.setBorder(
+	            BorderFactory.createCompoundBorder(
+
+	                    BorderFactory.createMatteBorder(
+	                            0,
+	                            0,
+	                            1,
+	                            0,
+	                            AppColor.BORDER
+	                    ),
+
+	                    new EmptyBorder(
+	                            14,
+	                            16,
+	                            14,
+	                            16
+	                    )
+	            )
+	    );
+
+	    toolbarWrapper.add(
+	            header,
+	            BorderLayout.CENTER
+	    );
+
+
+	    /*
+	     * ========================
+	     * Bảng
+	     * ========================
+	     */
+
+	    JScrollPane scroll =
+	            new JScrollPane(table);
+
+	    scroll.setBorder(null);
+
+	    scroll.getViewport()
+	            .setBackground(
+	                    AppColor.WHITE
+	            );
+
+
+	    /*
+	     * ========================
+	     * Pagination
+	     * ========================
+	     */
+
+	    JPanel paginationWrapper =
+	            new JPanel(
+	                    new BorderLayout()
+	            );
+
+	    paginationWrapper.setBackground(
+	            AppColor.WHITE
+	    );
+
+	    paginationWrapper.setBorder(
+	            BorderFactory.createMatteBorder(
+	                    1,
+	                    0,
+	                    0,
+	                    0,
+	                    AppColor.BORDER
+	            )
+	    );
+
+	    paginationWrapper.add(
+	            pagination,
+	            BorderLayout.CENTER
+	    );
+
+
+	    card.add(
+	            toolbarWrapper,
+	            BorderLayout.NORTH
+	    );
+
+	    card.add(
+	            scroll,
+	            BorderLayout.CENTER
+	    );
+
+	    card.add(
+	            paginationWrapper,
+	            BorderLayout.SOUTH
+	    );
+
+
+	    return card;
+	}
+
+	private JPanel tableCard(JTable table) {
+
+		JPanel card = new JPanel(new BorderLayout());
+
+		card.setBackground(AppColor.WHITE);
+
+		card.setBorder(BorderFactory.createCompoundBorder(new LineBorder(AppColor.BORDER, 1, true),
+				new EmptyBorder(14, 16, 14, 16)));
+
+		JScrollPane scroll = new JScrollPane(table);
+
+		scroll.setBorder(new LineBorder(AppColor.BORDER));
+
+		scroll.getViewport().setBackground(AppColor.WHITE);
+
+		card.add(scroll, BorderLayout.CENTER);
+
+		return card;
 	}
 
 	private JPanel tableCard(String title, JTable table) {
@@ -301,7 +787,8 @@ public class ShiftManagementPanel extends JPanel {
 			protected DashboardData doInBackground() {
 				Shift openShift = shiftService.getMyOpenShift();
 
-				List<Shift> history = shiftService.getVisibleHistory(50);
+				List<Shift> history =
+				        shiftService.getVisibleHistory(200);
 
 				return new DashboardData(openShift, history);
 			}
@@ -368,76 +855,261 @@ public class ShiftManagementPanel extends JPanel {
 	}
 
 	private void renderHistory() {
-		updatingHistory = true;
 
-		historyModel.setRowCount(0);
+	    updatingHistory = true;
 
-		int openRow = -1;
 
-		for (int index = 0; index < visibleShifts.size(); index++) {
-			Shift shift = visibleShifts.get(index);
+	    /*
+	     * ====================================
+	     * 1. Lọc dữ liệu trước
+	     * ====================================
+	     */
 
-			if (currentOpenShift != null && shift.getShiftId() == currentOpenShift.getShiftId()) {
-				openRow = index;
-			}
+	    List<Shift> filtered =
+	            getFilteredShifts();
 
-			BigDecimal expected;
+	    int totalItems =
+	            filtered.size();
 
-			if (shift.isOpen()) {
-				expected = expectedOf(shift);
-			} else {
-				expected = shift.getExpectedCash();
-			}
 
-			historyModel.addRow(new Object[] { "#" + shift.getShiftId(),
+	    /*
+	     * ====================================
+	     * 2. Cập nhật Pagination
+	     * ====================================
+	     */
 
-					shift.getUserName(),
+	    historyPagination.setTotalItems(
+	            totalItems
+	    );
 
-					dateTime(shift.getStartTime()),
 
-					dateTime(shift.getEndTime()),
+	    int pageSize =
+	            historyPagination.getPageSize();
 
-					shift.isOpen() ? "Đang mở" : "Đã đóng",
+	    int currentPage =
+	            historyPagination.getCurrentPage();
 
-					shift.getInvoiceCount(),
 
-					money(expected),
+	    /*
+	     * ====================================
+	     * 3. Tính vị trí dữ liệu trang hiện tại
+	     * ====================================
+	     */
 
-					moneyOrDash(shift.getCountedCash()),
+	    int from =
+	            totalItems == 0
+	                    ? 0
+	                    : (
+	                        currentPage - 1
+	                      ) * pageSize;
 
-					signedMoneyOrDash(shift.getCashDifference()) });
-		}
 
-		if (!visibleShifts.isEmpty()) {
-			int selectedRow = openRow >= 0 ? openRow : 0;
+	    /*
+	     * Trường hợp sau khi lọc,
+	     * trang hiện tại vượt quá dữ liệu.
+	     */
+	    if (from >= totalItems && totalItems > 0) {
 
-			historyTable.setRowSelectionInterval(selectedRow, selectedRow);
+	        historyPagination.setCurrentPage(1);
 
-		} else {
-			transactionModel.setRowCount(0);
+	        currentPage = 1;
 
-			transactionTitle.setText("Thu/chi của ca");
-		}
+	        from = 0;
+	    }
 
-		updatingHistory = false;
 
-		loadSelectedTransactions();
+	    int to =
+	            Math.min(
+	                    from + pageSize,
+	                    totalItems
+	            );
+
+
+	    /*
+	     * ====================================
+	     * 4. Lấy dữ liệu trang
+	     * ====================================
+	     */
+
+	    pagedShifts =
+	            totalItems == 0
+	                    ? new ArrayList<>()
+	                    : new ArrayList<>(
+	                            filtered.subList(
+	                                    from,
+	                                    to
+	                            )
+	                    );
+
+
+	    /*
+	     * ====================================
+	     * 5. Render JTable
+	     * ====================================
+	     */
+
+	    historyModel.setRowCount(0);
+
+	    int openRow = -1;
+
+
+	    for (
+	            int index = 0;
+	            index < pagedShifts.size();
+	            index++
+	    ) {
+
+	        Shift shift =
+	                pagedShifts.get(index);
+
+
+	        if (
+	                currentOpenShift != null
+	                && shift.getShiftId()
+	                    == currentOpenShift.getShiftId()
+	        ) {
+
+	            openRow = index;
+	        }
+
+
+	        BigDecimal expected =
+	                shift.isOpen()
+	                        ? expectedOf(shift)
+	                        : shift.getExpectedCash();
+
+
+	        historyModel.addRow(
+	                new Object[] {
+
+	                    "#" + shift.getShiftId(),
+
+	                    shift.getUserName(),
+
+	                    dateTime(
+	                            shift.getStartTime()
+	                    ),
+
+	                    dateTime(
+	                            shift.getEndTime()
+	                    ),
+
+	                    shift.isOpen()
+	                            ? "Đang mở"
+	                            : "Đã đóng",
+
+	                    shift.getInvoiceCount(),
+
+	                    money(expected),
+
+	                    moneyOrDash(
+	                            shift.getCountedCash()
+	                    ),
+
+	                    signedMoneyOrDash(
+	                            shift.getCashDifference()
+	                    )
+	                }
+	        );
+	    }
+
+
+	    /*
+	     * ====================================
+	     * 6. Chọn dòng
+	     * ====================================
+	     */
+
+	    if (!pagedShifts.isEmpty()) {
+
+	        int selectedModelRow =
+	                openRow >= 0
+	                        ? openRow
+	                        : 0;
+
+
+	        int selectedViewRow =
+	                historyTable
+	                        .convertRowIndexToView(
+	                                selectedModelRow
+	                        );
+
+
+	        if (selectedViewRow >= 0) {
+
+	            historyTable
+	                    .setRowSelectionInterval(
+	                            selectedViewRow,
+	                            selectedViewRow
+	                    );
+
+	        } else if (
+	                historyTable.getRowCount() > 0
+	        ) {
+
+	            historyTable
+	                    .setRowSelectionInterval(
+	                            0,
+	                            0
+	                    );
+	        }
+
+	    } else {
+
+	        historyTable.clearSelection();
+
+	        allTransactions =
+	                new ArrayList<>();
+
+	        transactionTitle.setText(
+	                "Thu/chi của ca"
+	        );
+
+	        transactionPagination.setCurrentPage(1);
+
+	        renderTransactionPage();
+	    }
+
+
+	    updatingHistory = false;
+
+
+	    /*
+	     * Load bảng Thu / Chi theo ca được chọn.
+	     */
+	    loadSelectedTransactions();
 	}
 
 	private void loadSelectedTransactions() {
 		int viewRow = historyTable.getSelectedRow();
 
 		if (viewRow < 0) {
-			return;
+
+		    allTransactions =
+		            new ArrayList<>();
+
+		    transactionTitle.setText(
+		            "Thu/chi của ca"
+		    );
+
+		    transactionPagination.setCurrentPage(1);
+
+		    renderTransactionPage();
+
+		    return;
 		}
 
 		int modelRow = historyTable.convertRowIndexToModel(viewRow);
 
-		if (modelRow < 0 || modelRow >= visibleShifts.size()) {
-			return;
+		if (
+		        modelRow < 0
+		        || modelRow >= pagedShifts.size()
+		) {
+		    return;
 		}
 
-		Shift selectedShift = visibleShifts.get(modelRow);
+		Shift selectedShift =
+		        pagedShifts.get(modelRow);
 
 		transactionTitle.setText("Thu/chi của ca #" + selectedShift.getShiftId() + " — " + selectedShift.getUserName());
 
@@ -463,24 +1135,559 @@ public class ShiftManagementPanel extends JPanel {
 		worker.execute();
 	}
 
-	private void renderTransactions(List<ShiftCashTransaction> transactions) {
-		transactionModel.setRowCount(0);
+	private void renderTransactions(
+	        List<ShiftCashTransaction> transactions
+	) {
 
-		for (ShiftCashTransaction transaction : transactions) {
-			String typeLabel = transaction.isCashIn() ? "Thu tiền" : "Chi tiền";
+	    allTransactions =
+	            transactions == null
 
-			transactionModel.addRow(new Object[] { transaction.getTransactionCode(),
+	            ? new ArrayList<>()
 
-					typeLabel,
+	            : new ArrayList<>(
+	                    transactions
+	            );
 
-					money(transaction.getAmount()),
 
-					transaction.getReason(),
+	    /*
+	     * Mỗi khi đổi ca,
+	     * Thu/Chi quay về trang 1.
+	     */
+	    transactionPagination.setCurrentPage(1);
 
-					transaction.getCreatedByName(),
 
-					dateTime(transaction.getCreatedAt()) });
-		}
+	    renderTransactionPage();
+	}
+	
+	private void renderTransactionPage() {
+
+	    /*
+	     * ====================================
+	     * 1. Lọc
+	     * ====================================
+	     */
+
+	    List<ShiftCashTransaction> filtered =
+	            getFilteredTransactions();
+
+	    int totalItems =
+	            filtered.size();
+
+
+	    /*
+	     * ====================================
+	     * 2. Pagination
+	     * ====================================
+	     */
+
+	    transactionPagination.setTotalItems(
+	            totalItems
+	    );
+
+
+	    int pageSize =
+	            transactionPagination.getPageSize();
+
+	    int currentPage =
+	            transactionPagination.getCurrentPage();
+
+
+	    /*
+	     * ====================================
+	     * 3. Tính khoảng dữ liệu
+	     * ====================================
+	     */
+
+	    int from =
+	            totalItems == 0
+	                    ? 0
+	                    : (
+	                        currentPage - 1
+	                      ) * pageSize;
+
+
+	    if (
+	            from >= totalItems
+	            && totalItems > 0
+	    ) {
+
+	        transactionPagination
+	                .setCurrentPage(1);
+
+	        currentPage = 1;
+
+	        from = 0;
+	    }
+
+
+	    int to =
+	            Math.min(
+	                    from + pageSize,
+	                    totalItems
+	            );
+
+
+	    /*
+	     * ====================================
+	     * 4. Render JTable
+	     * ====================================
+	     */
+
+	    transactionModel.setRowCount(0);
+
+
+	    if (totalItems > 0) {
+
+	        for (
+	                ShiftCashTransaction transaction
+	                : filtered.subList(
+	                        from,
+	                        to
+	                )
+	        ) {
+
+	            String typeLabel =
+	                    transaction.isCashIn()
+	                            ? "Thu tiền"
+	                            : "Chi tiền";
+
+
+	            transactionModel.addRow(
+	                    new Object[] {
+
+	                        transaction
+	                                .getTransactionCode(),
+
+	                        typeLabel,
+
+	                        money(
+	                                transaction
+	                                        .getAmount()
+	                        ),
+
+	                        transaction.getReason(),
+
+	                        transaction
+	                                .getCreatedByName(),
+
+	                        dateTime(
+	                                transaction
+	                                        .getCreatedAt()
+	                        )
+	                    }
+	            );
+	        }
+	    }
+	}
+	
+	/**
+	 * Xuất dữ liệu của tab đang được mở.
+	 *
+	 * - Tab Lịch sử ca:
+	 *      xuất toàn bộ ca sau tìm kiếm/lọc.
+	 *
+	 * - Tab Thu/Chi:
+	 *      xuất toàn bộ giao dịch của ca đang chọn
+	 *      sau tìm kiếm/lọc.
+	 *
+	 * Không chỉ xuất dữ liệu của trang pagination hiện tại.
+	 */
+	private void exportCurrentTab(String format) {
+
+	    if (historyTabButton.isSelected()) {
+
+	        exportShiftHistory(format);
+
+	    } else {
+
+	        exportShiftTransactions(format);
+	    }
+	}
+	
+	private void exportShiftHistory(String format) {
+
+	    /*
+	     * Lấy dữ liệu SAU khi đã áp dụng:
+	     *
+	     * - tìm kiếm
+	     * - trạng thái
+	     * - ngày
+	     * - tháng
+	     * - năm
+	     *
+	     * Không lấy pagedShifts vì pagedShifts
+	     * chỉ chứa 10/20/... dòng của trang hiện tại.
+	     */
+	    List<Shift> shifts =
+	            getFilteredShifts();
+
+
+	    if (shifts.isEmpty()) {
+
+	        AppAlert.warning(
+	                this,
+	                "Không có dữ liệu",
+	                "Không có ca bán hàng nào phù hợp để xuất."
+	        );
+
+	        return;
+	    }
+
+
+	    /*
+	     * Tiêu đề các cột trong file.
+	     */
+	    String[] headers = {
+	            "Mã ca",
+	            "Nhân viên",
+	            "Bắt đầu",
+	            "Kết thúc",
+	            "Trạng thái",
+	            "Hóa đơn",
+	            "Tiền hệ thống",
+	            "Tiền thực tế",
+	            "Chênh lệch"
+	    };
+
+
+	    /*
+	     * Chuyển List<Shift>
+	     * thành List<Object[]> mà TableExportUtil cần.
+	     */
+	    List<Object[]> rows =
+	            new ArrayList<>();
+
+
+	    for (Shift shift : shifts) {
+
+	        BigDecimal expected =
+	                shift.isOpen()
+	                        ? expectedOf(shift)
+	                        : shift.getExpectedCash();
+
+
+	        rows.add(
+	                new Object[] {
+
+	                        "#" + shift.getShiftId(),
+
+	                        shift.getUserName(),
+
+	                        dateTime(
+	                                shift.getStartTime()
+	                        ),
+
+	                        dateTime(
+	                                shift.getEndTime()
+	                        ),
+
+	                        shift.isOpen()
+	                                ? "Đang mở"
+	                                : "Đã đóng",
+
+	                        shift.getInvoiceCount(),
+
+	                        money(expected),
+
+	                        moneyOrDash(
+	                                shift.getCountedCash()
+	                        ),
+
+	                        signedMoneyOrDash(
+	                                shift.getCashDifference()
+	                        )
+	                }
+	        );
+	    }
+
+
+	    /*
+	     * Gọi hàm xuất chung.
+	     */
+	    exportRows(
+	            format,
+	            "lich_su_ca",
+	            "Lịch sử ca",
+	            headers,
+	            rows
+	    );
+	}
+	
+	private void exportShiftTransactions(String format) {
+
+	    /*
+	     * allTransactions chứa toàn bộ Thu/Chi
+	     * của ca đang chọn.
+	     *
+	     * getFilteredTransactions() tiếp tục áp dụng
+	     * tìm kiếm + loại + ngày/tháng/năm.
+	     */
+	    List<ShiftCashTransaction> transactions =
+	            getFilteredTransactions();
+
+
+	    if (transactions.isEmpty()) {
+
+	        AppAlert.warning(
+	                this,
+	                "Không có dữ liệu",
+	                "Ca đang chọn không có giao dịch Thu/Chi phù hợp để xuất."
+	        );
+
+	        return;
+	    }
+
+
+	    String[] headers = {
+	            "Mã giao dịch",
+	            "Loại",
+	            "Số tiền",
+	            "Lý do",
+	            "Người tạo",
+	            "Thời gian"
+	    };
+
+
+	    List<Object[]> rows =
+	            new ArrayList<>();
+
+
+	    for (
+	            ShiftCashTransaction transaction
+	            : transactions
+	    ) {
+
+	        String typeLabel =
+	                transaction.isCashIn()
+	                        ? "Thu tiền"
+	                        : "Chi tiền";
+
+
+	        rows.add(
+	                new Object[] {
+
+	                        transaction
+	                                .getTransactionCode(),
+
+	                        typeLabel,
+
+	                        money(
+	                                transaction.getAmount()
+	                        ),
+
+	                        transaction.getReason(),
+
+	                        transaction
+	                                .getCreatedByName(),
+
+	                        dateTime(
+	                                transaction.getCreatedAt()
+	                        )
+	                }
+	        );
+	    }
+
+
+	    exportRows(
+	            format,
+	            "thu_chi_ca",
+	            "Thu chi ca",
+	            headers,
+	            rows
+	    );
+	}
+	
+	private void exportRows(
+	        String format,
+	        String filePrefix,
+	        String sheetName,
+	        String[] headers,
+	        List<Object[]> rows
+	) {
+
+	    /*
+	     * VD:
+	     *
+	     * lich_su_ca_20260817_213500.csv
+	     *
+	     * hoặc:
+	     *
+	     * thu_chi_ca_20260817_213500.xlsx
+	     */
+	    String defaultFileName =
+	            filePrefix
+	            + "_"
+	            + exportTimestamp()
+	            + "."
+	            + format;
+
+
+	    /*
+	     * Hiện hộp thoại Save As
+	     * giống chức năng xuất của các màn quản lý.
+	     */
+	    File chosen =
+	            FileUtil.chooseSaveLocation(
+	                    this,
+	                    defaultFileName
+	            );
+
+
+	    /*
+	     * Người dùng bấm Cancel.
+	     */
+	    if (chosen == null) {
+	        return;
+	    }
+
+
+	    /*
+	     * Đảm bảo đúng đuôi file.
+	     */
+	    File file =
+	            ensureExportExtension(
+	                    chosen,
+	                    format
+	            );
+
+
+	    /*
+	     * Chạy xuất file ở background thread.
+	     *
+	     * Tránh giao diện bị đứng nếu dữ liệu lớn.
+	     */
+	    setBusy(true);
+
+
+	    SwingWorker<Integer, Void> worker =
+	            new SwingWorker<>() {
+
+	        @Override
+	        protected Integer doInBackground()
+	                throws Exception {
+
+	            if ("csv".equalsIgnoreCase(format)) {
+
+	                TableExportUtil.exportCsv(
+	                        file,
+	                        headers,
+	                        rows
+	                );
+
+	            } else {
+
+	                TableExportUtil.exportExcel(
+	                        file,
+	                        sheetName,
+	                        headers,
+	                        rows
+	                );
+	            }
+
+
+	            return rows.size();
+	        }
+
+
+	        @Override
+	        protected void done() {
+
+	            setBusy(false);
+
+
+	            try {
+
+	                int count = get();
+
+
+	                AppAlert.success(
+	                        ShiftManagementPanel.this,
+	                        "Xuất file thành công",
+	                        "Đã xuất "
+	                        + count
+	                        + " dòng vào file "
+	                        + file.getName()
+	                );
+
+
+	            } catch (Exception e) {
+
+	                e.printStackTrace();
+
+
+	                AppAlert.error(
+	                        ShiftManagementPanel.this,
+	                        "Xuất file thất bại",
+	                        e.getMessage() != null
+	                                ? e.getMessage()
+	                                : "Không thể tạo file."
+	                );
+	            }
+	        }
+	    };
+
+
+	    worker.execute();
+	}
+	
+	private static File ensureExportExtension(
+	        File file,
+	        String extension
+	) {
+
+	    String name =
+	            file.getName();
+
+
+	    /*
+	     * Người dùng đã nhập đúng đuôi:
+	     *
+	     * abc.xlsx
+	     */
+	    if (
+	            name.toLowerCase()
+	                    .endsWith(
+	                            "." + extension.toLowerCase()
+	                    )
+	    ) {
+
+	        return file;
+	    }
+
+
+	    /*
+	     * Nếu người dùng nhập:
+	     *
+	     * abc
+	     *
+	     * thì tự thành:
+	     *
+	     * abc.xlsx
+	     */
+	    int dot =
+	            name.lastIndexOf('.');
+
+
+	    String baseName =
+	            dot > 0
+	                    ? name.substring(0, dot)
+	                    : name;
+
+
+	    return new File(
+	            file.getParentFile(),
+	            baseName + "." + extension
+	    );
+	}
+	
+	private static String exportTimestamp() {
+
+	    return LocalDateTime.now()
+	            .format(
+	                    DateTimeFormatter.ofPattern(
+	                            "yyyyMMdd_HHmmss"
+	                    )
+	            );
 	}
 
 	/**
@@ -787,7 +1994,78 @@ public class ShiftManagementPanel extends JPanel {
 	}
 
 	private static JButton actionButton(String text, Color color) {
-		JButton button = new JButton(text);
+
+		JButton button = new JButton(text) {
+
+			@Override
+			protected void paintComponent(Graphics graphics) {
+
+				Graphics2D g2 = (Graphics2D) graphics.create();
+
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+				Color background;
+
+				/*
+				 * Enabled: dùng màu thật.
+				 *
+				 * Disabled: dùng màu đó nhưng nhạt hơn.
+				 */
+				if (isEnabled()) {
+					background = color;
+				} else {
+					background = mutedActionColor(color);
+				}
+
+				/*
+				 * Khi nhấn.
+				 */
+				if (isEnabled() && getModel().isPressed()) {
+
+					background = blendColor(color, Color.BLACK, 0.12);
+
+					/*
+					 * Khi rê chuột.
+					 */
+				} else if (isEnabled() && getModel().isRollover()) {
+
+					background = blendColor(color, Color.WHITE, 0.10);
+				}
+
+				/*
+				 * Vẽ nền bo góc.
+				 */
+				g2.setColor(background);
+
+				g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+
+				/*
+				 * Vẽ chữ chính giữa nút.
+				 */
+				String label = getText();
+
+				FontMetrics metrics = g2.getFontMetrics(getFont());
+
+				int x = (getWidth() - metrics.stringWidth(label)) / 2;
+
+				int y = (getHeight() - metrics.getHeight()) / 2 + metrics.getAscent();
+
+				g2.setFont(getFont());
+
+				if (isEnabled()) {
+
+					g2.setColor(Color.WHITE);
+
+				} else {
+
+					g2.setColor(blendColor(Color.WHITE, background, 0.28));
+				}
+
+				g2.drawString(label, x, y);
+
+				g2.dispose();
+			}
+		};
 
 		button.setFont(AppFont.BUTTON);
 
@@ -797,11 +2075,479 @@ public class ShiftManagementPanel extends JPanel {
 
 		button.setFocusPainted(false);
 
+		button.setBorderPainted(false);
+
+		button.setContentAreaFilled(false);
+
+		button.setOpaque(false);
+
+		button.setRolloverEnabled(true);
+
 		button.setBorder(new EmptyBorder(9, 16, 9, 16));
 
 		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
 		return button;
+	}
+
+	private static JToggleButton tabButton(String text) {
+
+		JToggleButton button = new JToggleButton(text);
+
+		button.setFont(AppFont.BUTTON);
+
+		button.setFocusPainted(false);
+
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+		button.setBorder(new EmptyBorder(9, 16, 9, 16));
+
+		return button;
+	}
+
+	private void updateTabStyles() {
+
+		styleTab(historyTabButton);
+
+		styleTab(transactionTabButton);
+	}
+
+	private void styleTab(JToggleButton button) {
+
+		if (button.isSelected()) {
+
+			button.setBackground(AppColor.ACCENT);
+
+			button.setForeground(Color.WHITE);
+
+		} else {
+
+			button.setBackground(AppColor.WHITE);
+
+			button.setForeground(AppColor.TEXT_SECONDARY);
+		}
+	}
+
+	private static Color mutedActionColor(Color base) {
+
+		return blendColor(base, AppColor.PAGE_BG, 0.48);
+	}
+
+	private static Color blendColor(Color source, Color target, double ratio) {
+
+		double safeRatio = Math.max(0.0, Math.min(1.0, ratio));
+
+		int red = (int) Math.round(source.getRed() * (1.0 - safeRatio) + target.getRed() * safeRatio);
+
+		int green = (int) Math.round(source.getGreen() * (1.0 - safeRatio) + target.getGreen() * safeRatio);
+
+		int blue = (int) Math.round(source.getBlue() * (1.0 - safeRatio) + target.getBlue() * safeRatio);
+
+		return new Color(red, green, blue);
+	}
+
+	private static JTextField filterSearchField(String placeholder) {
+
+		JTextField field = new JTextField();
+
+		field.setFont(AppFont.BODY);
+
+		field.setForeground(AppColor.TEXT_PRIMARY);
+
+		field.setBackground(AppColor.WHITE);
+
+		field.setPreferredSize(new Dimension(330, 38));
+
+		field.setBorder(BorderFactory.createCompoundBorder(new LineBorder(AppColor.BORDER, 1, true),
+				new EmptyBorder(0, 12, 0, 12)));
+
+		field.putClientProperty("JTextField.placeholderText", placeholder);
+
+		return field;
+	}
+
+	private static JComboBox<String> filterCombo(String... values) {
+
+		JComboBox<String> combo = new JComboBox<>(values);
+
+		combo.setFont(AppFont.BODY);
+
+		combo.setBackground(AppColor.WHITE);
+
+		combo.setForeground(AppColor.TEXT_PRIMARY);
+
+		combo.setPreferredSize(new Dimension(170, 38));
+
+		return combo;
+	}
+
+	private static JComboBox<String> dayFilterCombo() {
+
+		String[] values = new String[32];
+
+		values[0] = "Tất cả ngày";
+
+		for (int i = 1; i <= 31; i++) {
+			values[i] = String.valueOf(i);
+		}
+
+		JComboBox<String> combo = filterCombo(values);
+
+		combo.setPreferredSize(new Dimension(120, 38));
+
+		return combo;
+	}
+
+	private static JComboBox<String> monthFilterCombo() {
+
+		String[] values = new String[13];
+
+		values[0] = "Tất cả tháng";
+
+		for (int i = 1; i <= 12; i++) {
+			values[i] = String.valueOf(i);
+		}
+
+		JComboBox<String> combo = filterCombo(values);
+
+		combo.setPreferredSize(new Dimension(125, 38));
+
+		return combo;
+	}
+
+	private static JComboBox<String> yearFilterCombo() {
+
+		int currentYear = LocalDate.now().getYear();
+
+		/*
+		 * Năm hiện tại + 10 năm trước. Ví dụ 2026 -> 2026, 2025, ..., 2016.
+		 */
+		String[] values = new String[12];
+
+		values[0] = "Tất cả năm";
+
+		for (int i = 1; i < values.length; i++) {
+
+			values[i] = String.valueOf(currentYear - (i - 1));
+		}
+
+		JComboBox<String> combo = filterCombo(values);
+
+		combo.setPreferredSize(new Dimension(125, 38));
+
+		return combo;
+	}
+
+	private void bindFilters() {
+
+		/*
+		 * ============================= LỊCH SỬ CA =============================
+		 */
+
+		historySearchField.getDocument().addDocumentListener(new DocumentListener() {
+
+			@Override
+			public void insertUpdate(DocumentEvent event) {
+				applyHistoryFilter();
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent event) {
+				applyHistoryFilter();
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent event) {
+				applyHistoryFilter();
+			}
+		});
+
+		historyStatusFilter.addActionListener(event -> applyHistoryFilter());
+
+		historyDayFilter.addActionListener(event -> applyHistoryFilter());
+
+		historyMonthFilter.addActionListener(event -> applyHistoryFilter());
+
+		historyYearFilter.addActionListener(event -> applyHistoryFilter());
+
+		/*
+		 * ============================= THU / CHI =============================
+		 */
+
+		transactionSearchField.getDocument().addDocumentListener(new DocumentListener() {
+
+			@Override
+			public void insertUpdate(DocumentEvent event) {
+				applyTransactionFilter();
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent event) {
+				applyTransactionFilter();
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent event) {
+				applyTransactionFilter();
+			}
+		});
+
+		transactionTypeFilter.addActionListener(event -> applyTransactionFilter());
+
+		transactionDayFilter.addActionListener(event -> applyTransactionFilter());
+
+		transactionMonthFilter.addActionListener(event -> applyTransactionFilter());
+
+		transactionYearFilter.addActionListener(event -> applyTransactionFilter());
+	}
+
+	private void bindPagination() {
+
+	    /*
+	     * =====================================
+	     * LỊCH SỬ CA
+	     * =====================================
+	     */
+
+	    historyPagination.addPropertyChangeListener(
+	            "pageChanged",
+	            event -> {
+
+	                renderHistory();
+	            }
+	    );
+
+
+	    historyPagination.addPropertyChangeListener(
+	            "pageSizeChanged",
+	            event -> {
+
+	                historyPagination.setCurrentPage(1);
+
+	                renderHistory();
+	            }
+	    );
+
+
+	    /*
+	     * =====================================
+	     * THU / CHI
+	     * =====================================
+	     */
+
+	    transactionPagination.addPropertyChangeListener(
+	            "pageChanged",
+	            event -> {
+
+	                renderTransactionPage();
+	            }
+	    );
+
+
+	    transactionPagination.addPropertyChangeListener(
+	            "pageSizeChanged",
+	            event -> {
+
+	                transactionPagination.setCurrentPage(1);
+
+	                renderTransactionPage();
+	            }
+	    );
+	}
+
+	private void applyHistoryFilter() {
+
+	    historyPagination.setCurrentPage(1);
+
+	    renderHistory();
+	}
+
+	private void applyTransactionFilter() {
+
+	    transactionPagination.setCurrentPage(1);
+
+	    renderTransactionPage();
+	}
+
+	private List<Shift> getFilteredShifts() {
+
+		String query = lower(historySearchField.getText());
+
+		String selectedStatus = String.valueOf(historyStatusFilter.getSelectedItem());
+
+		List<Shift> result = new ArrayList<>();
+
+		for (Shift shift : visibleShifts) {
+
+			String statusLabel = shift.isOpen() ? "Đang mở" : "Đã đóng";
+
+			/*
+			 * Tìm kiếm.
+			 */
+			boolean textMatches = query.isEmpty()
+
+					|| lower("#" + shift.getShiftId()).contains(query)
+
+					|| lower(shift.getUserName()).contains(query)
+
+					|| lower(dateTime(shift.getStartTime())).contains(query)
+
+					|| lower(dateTime(shift.getEndTime())).contains(query)
+
+					|| lower(statusLabel).contains(query);
+
+			/*
+			 * Trạng thái.
+			 */
+			boolean statusMatches = "Tất cả trạng thái".equals(selectedStatus)
+
+					|| selectedStatus.equals(statusLabel);
+
+			/*
+			 * Ngày / Tháng / Năm.
+			 *
+			 * Lịch sử ca lấy ngày Bắt đầu ca.
+			 */
+			boolean dateMatches = matchesSelectedDate(shift.getStartTime(), historyDayFilter, historyMonthFilter,
+					historyYearFilter);
+
+			if (textMatches && statusMatches && dateMatches) {
+
+				result.add(shift);
+			}
+		}
+
+		return result;
+	}
+
+	private List<ShiftCashTransaction> getFilteredTransactions() {
+
+		String query = lower(transactionSearchField.getText());
+
+		String selectedType = String.valueOf(transactionTypeFilter.getSelectedItem());
+
+		List<ShiftCashTransaction> result = new ArrayList<>();
+
+		for (ShiftCashTransaction transaction : allTransactions) {
+
+			String typeLabel = transaction.isCashIn() ? "Thu tiền" : "Chi tiền";
+
+			/*
+			 * Tìm kiếm.
+			 */
+			boolean textMatches = query.isEmpty()
+
+					|| lower(transaction.getTransactionCode()).contains(query)
+
+					|| lower(typeLabel).contains(query)
+
+					|| lower(money(transaction.getAmount())).contains(query)
+
+					|| lower(transaction.getReason()).contains(query)
+
+					|| lower(transaction.getCreatedByName()).contains(query)
+
+					|| lower(dateTime(transaction.getCreatedAt())).contains(query);
+
+			/*
+			 * Loại Thu / Chi.
+			 */
+			boolean typeMatches = "Tất cả loại".equals(selectedType)
+
+					|| selectedType.equals(typeLabel);
+
+			/*
+			 * Lọc theo ngày tạo giao dịch.
+			 */
+			boolean dateMatches = matchesSelectedDate(transaction.getCreatedAt(), transactionDayFilter,
+					transactionMonthFilter, transactionYearFilter);
+
+			if (textMatches && typeMatches && dateMatches) {
+
+				result.add(transaction);
+			}
+		}
+
+		return result;
+	}
+	
+	private static boolean matchesSelectedDate(
+	        LocalDateTime dateTime,
+	        JComboBox<String> dayBox,
+	        JComboBox<String> monthBox,
+	        JComboBox<String> yearBox
+	) {
+
+	    if (dateTime == null) {
+	        return false;
+	    }
+
+	    Integer day =
+	            selectedNumber(dayBox);
+
+	    Integer month =
+	            selectedNumber(monthBox);
+
+	    Integer year =
+	            selectedNumber(yearBox);
+
+
+	    return (
+	            day == null
+	            || dateTime.getDayOfMonth() == day
+	    )
+	    &&
+	    (
+	            month == null
+	            || dateTime.getMonthValue() == month
+	    )
+	    &&
+	    (
+	            year == null
+	            || dateTime.getYear() == year
+	    );
+	}
+
+	private static Integer selectedNumber(
+	        JComboBox<String> combo
+	) {
+
+	    Object selected =
+	            combo.getSelectedItem();
+
+	    if (selected == null) {
+	        return null;
+	    }
+
+	    String value =
+	            selected.toString();
+
+	    /*
+	     * "Tất cả ngày"
+	     * "Tất cả tháng"
+	     * "Tất cả năm"
+	     */
+	    if (value.startsWith("Tất cả")) {
+	        return null;
+	    }
+
+	    try {
+
+	        return Integer.parseInt(value);
+
+	    } catch (NumberFormatException e) {
+
+	        return null;
+	    }
+	}
+
+	private static String lower(
+	        String value
+	) {
+
+	    return value == null
+	            ? ""
+	            : value.toLowerCase();
 	}
 
 	private static JTextField inputField(String value) {

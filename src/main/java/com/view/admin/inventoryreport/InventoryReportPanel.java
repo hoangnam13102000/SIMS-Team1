@@ -17,6 +17,7 @@ import com.dao.RevenueReportDAO.CategorySeries;
 import com.dao.RevenueReportDAO.MonthlyCategoryTrend;
 import com.event.AutoRefresher;
 import com.event.DataChangedEvent;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppRadius;
@@ -24,12 +25,14 @@ import com.theme.AppSpacing;
 import com.utils.FileUtil;
 import com.utils.NumberUtil;
 import com.utils.TableExportUtil;
+import com.utils.pdf.InventoryReportPdfExporter;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.Desktop;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
@@ -71,6 +74,9 @@ public class InventoryReportPanel extends JPanel {
     private ProductStockChartPanel stockChartPanel;
 
     private List<CategoryStock> lastCategoryStocks = new ArrayList<>();
+    private List<PriceRangeStock> lastPriceRangeStocks = new ArrayList<>();
+    private List<ProductStock> lastProductStocks = new ArrayList<>();
+    private OverallSummary lastSummary;
 
     public InventoryReportPanel() {
         setLayout(new BorderLayout());
@@ -119,6 +125,7 @@ public class InventoryReportPanel extends JPanel {
                 "Thống kê số lượng và giá trị tồn kho theo danh mục sản phẩm, theo khoảng giá bán, cùng xu hướng thay đổi theo tháng");
         header.addOverflowAction("Xuất CSV", FontAwesomeSolid.FILE_CSV, () -> exportCategoryBreakdown("csv"));
         header.addOverflowAction("Xuất Excel", FontAwesomeSolid.FILE_EXCEL, () -> exportCategoryBreakdown("xlsx"));
+        header.addOverflowAction("Tạo báo cáo PDF", FontAwesomeSolid.FILE_PDF, this::exportPdfReport);
         return header;
     }
 
@@ -317,7 +324,10 @@ public class InventoryReportPanel extends JPanel {
                 try {
                     SnapshotData data = get();
                     applySummary(data.summary);
+                    lastSummary = data.summary;
                     lastCategoryStocks = data.categories;
+                    lastPriceRangeStocks = data.priceRanges;
+                    lastProductStocks = data.productStocks;
                     renderCategoryList(data.categories);
                     renderPriceRangeList(data.priceRanges);
                     stockChartPanel.setData(data.productStocks);
@@ -486,6 +496,61 @@ public class InventoryReportPanel extends JPanel {
                 } catch (Exception e) {
                     e.printStackTrace();
                     BaseDialog.error(InventoryReportPanel.this, "Lỗi", "Xuất file thất bại: " + e.getMessage());
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    // ---------------------------------------------------------------
+    // Xuat PDF (bao cao ton kho day du, giong trang bao cao doanh thu)
+    // ---------------------------------------------------------------
+
+    private void exportPdfReport() {
+        if (lastSummary == null) {
+            BaseDialog.info(this, "Không có dữ liệu", "Chưa có dữ liệu tồn kho để tạo báo cáo.");
+            return;
+        }
+
+        String defaultName = "bao_cao_ton_kho_" + timestamp() + ".pdf";
+        File chosen = FileUtil.chooseSaveLocation(this, defaultName);
+        if (chosen == null) return;
+        File file = ensureExtension(chosen, "pdf");
+
+        InventoryReportPdfExporter.ReportContext ctx = new InventoryReportPdfExporter.ReportContext();
+        ctx.from = fromField.getValue();
+        ctx.to = toField.getValue();
+        ctx.summary = lastSummary;
+        ctx.categories = lastCategoryStocks;
+        ctx.priceRanges = lastPriceRangeStocks;
+        ctx.productStocks = lastProductStocks;
+        var currentUser = AuthService.getInstance().getCurrentUser();
+        ctx.preparedByName = currentUser != null ? currentUser.getFullName() : null;
+
+        loadingOverlay.start("Đang tạo báo cáo PDF...");
+        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                InventoryReportPdfExporter.export(ctx, file);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                loadingOverlay.stop();
+                try {
+                    get();
+                    BaseDialog.success(InventoryReportPanel.this, "Thành công",
+                            "Đã tạo báo cáo PDF tại \"" + file.getName() + "\"");
+                    if (Desktop.isDesktopSupported()) {
+                        try {
+                            Desktop.getDesktop().open(file);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    BaseDialog.error(InventoryReportPanel.this, "Lỗi", "Tạo báo cáo PDF thất bại: " + e.getMessage());
                 }
             }
         };

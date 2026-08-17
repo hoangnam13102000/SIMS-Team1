@@ -370,3 +370,26 @@ FROM Users u
 JOIN Roles r
     ON r.RoleID = u.RoleID
 WHERE u.Username = 'admin';
+
+
+USE SIMS_DB;
+
+-- Them cac quyen bi thieu vao bang Permissions
+INSERT IGNORE INTO Permissions (PermissionCode, Description) VALUES
+('USER_VIEW', 'Chỉ xem tài khoản & nhân viên'),
+('USER_EDIT', 'Chỉ sửa tài khoản & nhân viên'),
+('CUSTOMER_VIEW', 'Chỉ xem khách hàng'),
+('CUSTOMER_EDIT', 'Chỉ sửa khách hàng'),
+('CATEGORY_VIEW', 'Chỉ xem danh mục'),
+('CATEGORY_EDIT', 'Chỉ sửa danh mục'),
+('PRODUCT_EDIT', 'Chỉ sửa sản phẩm'),
+('SUPPLIER_VIEW', 'Chỉ xem nhà cung cấp'),
+('SUPPLIER_EDIT', 'Chỉ sửa nhà cung cấp'),
+('EXCEPTION_REPORT_VIEW', 'Chỉ xem báo cáo ngoại lệ'),
+('STOCK_REPORT_VIEW', 'Báo cáo hàng tồn kho');
+
+-- Cap STOCK_REPORT_VIEW cho INVENTORY_MANAGER
+INSERT IGNORE INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r, Permissions p
+WHERE r.RoleCode = 'INVENTORY_MANAGER' AND p.PermissionCode = 'STOCK_REPORT_VIEW';

@@ -31,9 +31,8 @@ public final class BaseDialog {
     private BaseDialog() {}
 
     // ---------------------------------------------------------------------
-    // XAC NHAN XOA 
+    // XAC NHAN XOA
     // ---------------------------------------------------------------------
-
     /** Xac nhan xoa 1 doi tuong theo ten. Vi du: confirmDelete(this, "điện thoại", "iPhone 15"). */
     public static boolean confirmDelete(Component parent, String itemType, String itemName) {
         String message = "Bạn có chắc muốn xóa " + itemType + " \"" + itemName + "\"?\nHành động này không thể hoàn tác.";
@@ -49,15 +48,12 @@ public final class BaseDialog {
                                    String confirmText, Color confirmColor, Color confirmHover, FontAwesomeSolid icon) {
         boolean[] resultHolder = {false};
         JDialog dialog = buildBaseDialog(parent, title);
-
         JPanel body = buildBody(icon, confirmColor, title, message, null);
         dialog.add(body, BorderLayout.CENTER);
-
         JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
         JButton confirmButton = createModernButton(confirmText, confirmColor, confirmHover, Color.WHITE);
         cancelButton.addActionListener(e -> dialog.dispose());
         confirmButton.addActionListener(e -> { resultHolder[0] = true; dialog.dispose(); });
-
         dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
         dialog.getRootPane().setDefaultButton(confirmButton);
         showCentered(dialog);
@@ -67,18 +63,14 @@ public final class BaseDialog {
     // ---------------------------------------------------------------------
     // NHAP LIEU DANG TEXT (thay cho JOptionPane.showInputDialog)
     // ---------------------------------------------------------------------
-
     /** Vi du: BaseDialog.inputText(this, "Thêm danh mục", "Tên danh mục:", "", "Thêm"). Tra ve null neu bam Hủy. */
     public static String inputText(Component parent, String title, String label, String initialValue, String confirmText) {
         String[] resultHolder = {null};
         JDialog dialog = buildBaseDialog(parent, title);
-
         JTextField field = new JTextField(initialValue == null ? "" : initialValue);
         styleField(field);
-
         JPanel body = buildBody(FontAwesomeSolid.EDIT, AppColor.ACCENT, title, label, field);
         dialog.add(body, BorderLayout.CENTER);
-
         JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
         JButton confirmButton = createModernButton(confirmText, AppColor.ACCENT, AppColor.ACCENT_HOVER, Color.WHITE);
         cancelButton.addActionListener(e -> dialog.dispose());
@@ -88,7 +80,6 @@ public final class BaseDialog {
         };
         confirmButton.addActionListener(e -> submit.run());
         field.addActionListener(e -> submit.run());
-
         dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
         dialog.getRootPane().setDefaultButton(confirmButton);
         SwingUtilities.invokeLater(field::requestFocusInWindow);
@@ -99,7 +90,6 @@ public final class BaseDialog {
     // ---------------------------------------------------------------------
     // NHAP LIEU DANG NHIEU DONG (JTextArea, danh cho noi dung dai - vd bao cao, mo ta)
     // ---------------------------------------------------------------------
-
     /**
      * Vi du: BaseDialog.inputTextArea(this, "Gửi báo cáo ngoại lệ", "Nội dung báo cáo",
      *   "VD: khách cần mua SP chưa có trong hệ thống, khách yêu cầu SP đặc biệt...",
@@ -144,6 +134,7 @@ public final class BaseDialog {
             hintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             body.add(hintLabel);
         }
+
         body.add(Box.createVerticalStrut(10));
 
         JTextArea textArea = new JTextArea(initialValue == null ? "" : initialValue, 6, 32);
@@ -154,6 +145,7 @@ public final class BaseDialog {
         textArea.setBackground(AppColor.WHITE);
         textArea.setCaretColor(AppColor.ACCENT);
         textArea.setBorder(new EmptyBorder(10, 12, 10, 12));
+
         if (maxLength > 0) {
             ((AbstractDocument) textArea.getDocument()).setDocumentFilter(new DocumentFilter() {
                 @Override
@@ -163,7 +155,6 @@ public final class BaseDialog {
                         super.insertString(fb, offset, string, attr);
                     }
                 }
-
                 @Override
                 public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
                     String safeText = text == null ? "" : text;
@@ -184,20 +175,17 @@ public final class BaseDialog {
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         body.add(scrollPane);
 
-        // Vien doi mau khi focus de nguoi dung de nhan biet dang nhap o dau (than thien hon)
         textArea.addFocusListener(new FocusAdapter() {
             @Override
             public void focusGained(FocusEvent e) {
                 scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.ACCENT, 2, true));
             }
-
             @Override
             public void focusLost(FocusEvent e) {
                 scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true));
             }
         });
 
-        // Bo dem so ky tu, dat ngay duoi khung nhap, canh phai
         JLabel counterLabel = new JLabel();
         counterLabel.setFont(AppFont.SMALL);
         counterLabel.setForeground(AppColor.TEXT_MUTED);
@@ -250,12 +238,10 @@ public final class BaseDialog {
     // ---------------------------------------------------------------------
     // CHON TU DANH SACH (thay cho JOptionPane.showInputDialog voi mang lua chon)
     // ---------------------------------------------------------------------
-
     /** Vi du: BaseDialog.select(this, "Cập nhật trạng thái", "Trạng thái mới:", STATUSES, order.getStatus()). */
     public static String select(Component parent, String title, String label, String[] options, String initialValue) {
         String[] resultHolder = {null};
         JDialog dialog = buildBaseDialog(parent, title);
-
         JComboBox<String> combo = new JComboBox<>(options);
         combo.setSelectedItem(initialValue);
         combo.setFont(AppFont.FIELD);
@@ -263,10 +249,8 @@ public final class BaseDialog {
         combo.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true),
                 new EmptyBorder(4, 8, 4, 8)));
-
         JPanel body = buildBody(FontAwesomeSolid.LIST_UL, AppColor.ACCENT, title, label, combo);
         dialog.add(body, BorderLayout.CENTER);
-
         JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
         JButton confirmButton = createModernButton("Cập nhật", AppColor.ACCENT, AppColor.ACCENT_HOVER, Color.WHITE);
         cancelButton.addActionListener(e -> dialog.dispose());
@@ -274,17 +258,15 @@ public final class BaseDialog {
             resultHolder[0] = (String) combo.getSelectedItem();
             dialog.dispose();
         });
-
         dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
         dialog.getRootPane().setDefaultButton(confirmButton);
         showCentered(dialog);
         return resultHolder[0];
     }
 
- // ---------------------------------------------------------------------
-    // THONG BAO 
     // ---------------------------------------------------------------------
-
+    // THONG BAO
+    // ---------------------------------------------------------------------
     public static void info(Component parent, String title, String message) {
         AppAlert.info(parent, title, message);
     }
@@ -300,15 +282,12 @@ public final class BaseDialog {
     // ---------------------------------------------------------------------
     // HELPERS DUNG CHUNG
     // ---------------------------------------------------------------------
-
     private static JDialog buildBaseDialog(Component parent, String title) {
         Window owner = SwingUtilities.getWindowAncestor(parent);
         JDialog dialog = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setLayout(new BorderLayout());
         dialog.getContentPane().setBackground(AppColor.WHITE);
         dialog.setResizable(false);
-
-        // ESC de dong (tuong duong Huy)
         dialog.getRootPane().registerKeyboardAction(e -> dialog.dispose(),
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
         return dialog;
@@ -324,25 +303,59 @@ public final class BaseDialog {
         JPanel headerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
         headerRow.setOpaque(false);
         headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         FontIcon icon = FontIcon.of(iconType, 26);
         icon.setIconColor(iconColor);
         JLabel iconLabel = new JLabel(icon);
-
         JLabel titleLabel = new JLabel(title);
         titleLabel.setFont(AppFont.DIALOG_TITLE);
         titleLabel.setForeground(AppColor.TEXT_PRIMARY);
-
         headerRow.add(iconLabel);
         headerRow.add(titleLabel);
         body.add(headerRow);
         body.add(Box.createVerticalStrut(14));
 
-        JLabel messageLabel = new JLabel("<html><div style='width:280px'>" + message.replace("\n", "<br>") + "</div></html>");
-        messageLabel.setFont(AppFont.BODY);
-        messageLabel.setForeground(AppColor.TEXT_MUTED);
-        messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(messageLabel);
+        // === NOI DUNG MESSAGE: TANG CHIEU RONG + HO TRO CUON NEU QUA DAI ===
+        final int MESSAGE_WIDTH = 420;
+        final int MESSAGE_MAX_HEIGHT = 240;
+
+        String htmlMessage = "<html><div style='width:" + MESSAGE_WIDTH + "px'>"
+                + message.replace("\n", "<br>") + "</div></html>";
+
+        JEditorPane tempPane = new JEditorPane("text/html", htmlMessage);
+        tempPane.setEditable(false);
+        tempPane.setOpaque(false);
+        tempPane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+        tempPane.setFont(AppFont.BODY);
+        int msgHeight = tempPane.getPreferredSize().height;
+
+        JComponent messageComponent;
+        if (msgHeight > MESSAGE_MAX_HEIGHT) {
+            JEditorPane messagePane = new JEditorPane("text/html", htmlMessage);
+            messagePane.setEditable(false);
+            messagePane.setOpaque(false);
+            messagePane.setFont(AppFont.BODY);
+            messagePane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+            messagePane.setForeground(AppColor.TEXT_MUTED);
+
+            JScrollPane scrollPane = new JScrollPane(messagePane);
+            scrollPane.setOpaque(false);
+            scrollPane.getViewport().setOpaque(false);
+            scrollPane.setBorder(null);
+            scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+            scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+            scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+            scrollPane.setMaximumSize(new Dimension(MESSAGE_WIDTH + 30, MESSAGE_MAX_HEIGHT));
+            scrollPane.setPreferredSize(new Dimension(MESSAGE_WIDTH + 30, MESSAGE_MAX_HEIGHT));
+            scrollPane.getVerticalScrollBar().setUnitIncrement(12);
+            messageComponent = scrollPane;
+        } else {
+            JLabel messageLabel = new JLabel(htmlMessage);
+            messageLabel.setFont(AppFont.BODY);
+            messageLabel.setForeground(AppColor.TEXT_MUTED);
+            messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            messageComponent = messageLabel;
+        }
+        body.add(messageComponent);
 
         if (extraField != null) {
             body.add(Box.createVerticalStrut(12));
@@ -378,33 +391,30 @@ public final class BaseDialog {
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                
-                // Draw rounded background
+
                 g2.setColor(getBackground());
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), BUTTON_CORNER_RADIUS, BUTTON_CORNER_RADIUS);
-                
-                // Draw text
+
                 g2.setColor(getForeground());
                 FontMetrics fm = g2.getFontMetrics();
                 int textX = (getWidth() - fm.stringWidth(getText())) / 2;
                 int textY = (getHeight() - fm.getHeight()) / 2 + fm.getAscent();
                 g2.drawString(getText(), textX, textY);
-                
+
                 g2.dispose();
             }
         };
-        
+
         button.setFont(AppFont.BODY_BOLD);
         button.setForeground(fg);
         button.setBackground(bg);
         button.setFocusPainted(false);
-        button.setBorder(new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+        button.setBorder(new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT,
                                         BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setOpaque(false); // Important for custom painting
-        button.setContentAreaFilled(false); // Prevent default painting
-        
-        // Add hover effect
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+
         button.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseEntered(java.awt.event.MouseEvent e) {
@@ -417,13 +427,12 @@ public final class BaseDialog {
                 button.repaint();
             }
         });
-        
+
         return button;
     }
 
     /**
      * Alternative modern button creation using JButton with rounded border
-     * (Simpler approach without custom painting)
      */
     private static JButton createModernButtonAlt(String text, Color bg, Color hover, Color fg) {
         JButton button = new JButton(text);
@@ -433,20 +442,19 @@ public final class BaseDialog {
         button.setFocusPainted(false);
         button.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(bg, 1, true),
-            new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+            new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT,
                           BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT)
         ));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
         button.setOpaque(true);
-        
-        // Add hover effect
+
         button.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseEntered(java.awt.event.MouseEvent e) {
                 button.setBackground(hover);
                 button.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(hover, 1, true),
-                    new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+                    new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT,
                                   BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT)
                 ));
             }
@@ -455,18 +463,19 @@ public final class BaseDialog {
                 button.setBackground(bg);
                 button.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(bg, 1, true),
-                    new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT, 
+                    new EmptyBorder(BUTTON_PADDING_TOP, BUTTON_PADDING_LEFT,
                                   BUTTON_PADDING_BOTTOM, BUTTON_PADDING_RIGHT)
                 ));
             }
         });
-        
+
         return button;
     }
 
     private static void showCentered(JDialog dialog) {
         dialog.pack();
-        if (dialog.getWidth() < 360) dialog.setSize(360, dialog.getHeight());
+        if (dialog.getWidth() < 460) dialog.setSize(460, dialog.getHeight());
+        if (dialog.getHeight() < 140) dialog.setSize(dialog.getWidth(), 140);
         dialog.setLocationRelativeTo(dialog.getOwner());
         dialog.setVisible(true);
     }
