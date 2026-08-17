@@ -485,7 +485,7 @@ CREATE TABLE StockReconciliation (
     CONSTRAINT FK_StockReconciliation_Products
         FOREIGN KEY (ProductID) REFERENCES Products(ProductID),
     CONSTRAINT FK_StockReconciliation_CreatedBy
-        FOREIGN KEY (CreatedBy) REFERENCES Users(UserID)
+        FOREIGN KEY (CreatedBy) REFERENCES Users(UserID),
     CONSTRAINT FK_StockReconciliation_CheckedBy
         FOREIGN KEY (CheckedBy) REFERENCES Users(UserID),
     CONSTRAINT FK_StockReconciliation_Batch
