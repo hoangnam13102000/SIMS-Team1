@@ -55,6 +55,7 @@ public final class RolePermissions {
                 AppPermission.DASHBOARD_VIEW,
                 AppPermission.CUSTOMER_MANAGE,
                 AppPermission.PRODUCT_VIEW,
+                AppPermission.STOCK_ALERT_REPORT,
                 AppPermission.INVOICE_CREATE,
                 AppPermission.SHIFT_OPERATE,
                 AppPermission.INVOICE_CANCEL,

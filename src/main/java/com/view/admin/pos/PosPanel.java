@@ -25,6 +25,7 @@ import com.model.InvoiceDetail;
 import com.model.Product;
 import com.model.Shift;
 import com.model.User;
+import com.model.permission.AppPermission;
 import com.service.AuthService;
 import com.service.PosCartService;
 import com.service.ShiftService;
@@ -239,22 +240,46 @@ public class PosPanel extends JPanel {
 
     private void openReportStockAlert(Product product) {
         if (product == null) return;
+
+        if (!AuthService.getInstance().can(AppPermission.STOCK_ALERT_REPORT)) {
+            AppAlert.warning(
+                    this,
+                    "Không có quyền",
+                    "Tài khoản hiện tại không có quyền gửi báo cáo tồn kho."
+            );
+            return;
+        }
+
         User user = AuthService.getInstance().getCurrentUser();
+
         if (user == null) {
-            AppAlert.error(this, "Chưa đăng nhập", "Vui lòng đăng nhập lại để gửi báo cáo tồn kho.");
+            AppAlert.error(
+                    this,
+                    "Chưa đăng nhập",
+                    "Vui lòng đăng nhập lại để gửi báo cáo tồn kho."
+            );
             return;
         }
+
         StockAlertDAO alertDAO = new StockAlertDAO();
+
         if (alertDAO.hasActiveAlert(product.getProductId())) {
-            AppAlert.warning(this, "Đã có cảnh báo đang xử lý",
+            AppAlert.warning(
+                    this,
+                    "Đã có cảnh báo đang xử lý",
                     "Sản phẩm \"" + product.getProductName()
-                            + "\" đã có cảnh báo tồn kho chưa xử lý. Quản lý kho sẽ nhận được thông báo.");
+                            + "\" đã có cảnh báo tồn kho chưa xử lý. "
+                            + "Quản lý kho sẽ nhận được thông báo."
+            );
             return;
         }
+
         Window owner = SwingUtilities.getWindowAncestor(this);
-        new ReportStockAlertDialog(owner instanceof Frame ? (Frame) owner : null,
-                product, user.getUserId())
-                .setVisible(true);
+
+        new ReportStockAlertDialog(
+                owner instanceof Frame ? (Frame) owner : null,
+                product
+        ).setVisible(true);
     }
 
     private JButton buildScanButton() {
