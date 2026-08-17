@@ -35,18 +35,36 @@ public final class AppPermissionCatalog {
                 "Xem trang tổng quan", "Xem số liệu tổng quan (doanh thu, đơn hàng, tồn kho...) trên Dashboard.");
 
         put(AppPermission.USER_MANAGE, "Người dùng",
-                "Quản lý tài khoản & nhân viên", "Thêm/sửa/xoá tài khoản đăng nhập và hồ sơ nhân viên.");
+                "Quản lý tài khoản & NV (đầy đủ)", "Thêm nhân viên + sửa + khoá/mở khoá tài khoản.");
+        put(AppPermission.USER_EDIT, "Người dùng",
+                "Chỉ sửa tài khoản & NV", "Sửa thông tin tài khoản/nhân viên, không thêm mới hay khoá.");
+        put(AppPermission.USER_VIEW, "Người dùng",
+                "Chỉ xem tài khoản & NV", "Chỉ xem/tìm kiếm tài khoản và nhân viên.");
         put(AppPermission.CUSTOMER_MANAGE, "Người dùng",
-                "Quản lý khách hàng", "Thêm/sửa/xoá thông tin khách hàng, xem lịch sử mua hàng.");
+                "Quản lý khách hàng (đầy đủ)", "Sửa + xoá mềm / thùng rác khách hàng.");
+        put(AppPermission.CUSTOMER_EDIT, "Người dùng",
+                "Chỉ sửa khách hàng", "Sửa thông tin khách hàng, không xoá.");
+        put(AppPermission.CUSTOMER_VIEW, "Người dùng",
+                "Chỉ xem khách hàng", "Chỉ xem/tìm kiếm khách hàng, không sửa/xoá.");
 
         put(AppPermission.CATEGORY_MANAGE, "Hàng hoá",
-                "Quản lý danh mục", "Thêm/sửa/xoá danh mục sản phẩm.");
+                "Quản lý danh mục (đầy đủ)", "Thêm mới + sửa + xoá/vô hiệu hoá danh mục sản phẩm.");
+        put(AppPermission.CATEGORY_EDIT, "Hàng hoá",
+                "Chỉ sửa danh mục", "Sửa danh mục đã có và đổi trạng thái, không được thêm mới.");
+        put(AppPermission.CATEGORY_VIEW, "Hàng hoá",
+                "Chỉ xem danh mục", "Chỉ xem/tìm kiếm danh mục, không được thêm/sửa/xoá.");
         put(AppPermission.PRODUCT_MANAGE, "Hàng hoá",
-                "Quản lý sản phẩm", "Thêm/sửa/xoá thông tin sản phẩm, giá bán.");
+                "Quản lý sản phẩm (đầy đủ)", "Thêm mới + sửa + đổi trạng thái bán sản phẩm.");
+        put(AppPermission.PRODUCT_EDIT, "Hàng hoá",
+                "Chỉ sửa sản phẩm", "Sửa thông tin sản phẩm đã có và đổi trạng thái bán, không được thêm mới.");
         put(AppPermission.PRODUCT_VIEW, "Hàng hoá",
                 "Chỉ xem sản phẩm", "Chỉ xem/tìm kiếm sản phẩm, không được thêm/sửa/xoá.");
         put(AppPermission.SUPPLIER_MANAGE, "Hàng hoá",
-                "Quản lý nhà cung cấp", "Thêm/sửa/xoá thông tin nhà cung cấp.");
+                "Quản lý nhà cung cấp (đầy đủ)", "Thêm mới + sửa + xoá mềm / thùng rác nhà cung cấp.");
+        put(AppPermission.SUPPLIER_EDIT, "Hàng hoá",
+                "Chỉ sửa nhà cung cấp", "Sửa thông tin nhà cung cấp đã có, không được thêm mới hay xoá.");
+        put(AppPermission.SUPPLIER_VIEW, "Hàng hoá",
+                "Chỉ xem nhà cung cấp", "Chỉ xem/tìm kiếm nhà cung cấp, không được thêm/sửa/xoá.");
 
         put(AppPermission.STOCK_VIEW, "Kho hàng",
                 "Xem tồn kho", "Xem tình trạng tồn kho, danh sách lô hàng.");
@@ -86,10 +104,12 @@ public final class AppPermissionCatalog {
         put(AppPermission.PROMOTION_MANAGE, "Bán hàng",
                 "Quản lý khuyến mãi", "Tạo, sửa, bật/tắt, xoá khuyến mãi / mã giảm giá.");
 
+        put(AppPermission.EXCEPTION_REPORT_VIEW, "Báo cáo",
+                "Chỉ xem báo cáo ngoại lệ", "Chỉ xem danh sách báo cáo ngoại lệ, không gửi mới / xử lý.");
         put(AppPermission.EXCEPTION_REPORT_CREATE, "Báo cáo",
-                "Gửi báo cáo ngoại lệ", "Báo cáo sản phẩm chưa có trong hệ thống / tình huống bất thường.");
+                "Gửi báo cáo ngoại lệ", "Gửi báo cáo sản phẩm chưa có trong hệ thống / tình huống bất thường.");
         put(AppPermission.EXCEPTION_REPORT_HANDLE, "Báo cáo",
-                "Xử lý báo cáo ngoại lệ", "Xem và xử lý các báo cáo ngoại lệ từ nhân viên bán hàng.");
+                "Xử lý báo cáo ngoại lệ", "Đánh dấu đã xử lý các báo cáo ngoại lệ từ nhân viên bán hàng.");
         put(AppPermission.REVENUE_REPORT_VIEW, "Báo cáo",
                 "Báo cáo doanh thu", "Thống kê doanh thu theo thời gian / sản phẩm / phương thức thanh toán.");
         put(AppPermission.PROFIT_REPORT_VIEW, "Báo cáo",

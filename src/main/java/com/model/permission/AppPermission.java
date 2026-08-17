@@ -5,12 +5,30 @@ import com.permission.Permission;
 public enum AppPermission implements Permission {
     DASHBOARD_VIEW,
     USER_MANAGE,
+    /** Chi xem tai khoan & nhan vien. */
+    USER_VIEW,
+    /** Chi sua tai khoan & nhan vien (khong them / khoa). */
+    USER_EDIT,
     CUSTOMER_MANAGE,
+    /** Chi xem khach hang. */
+    CUSTOMER_VIEW,
+    /** Chi sua khach hang (khong xoa). */
+    CUSTOMER_EDIT,
     CATEGORY_MANAGE,
+    /** Chi xem danh muc (khong them/sua/xoa). */
+    CATEGORY_VIEW,
+    /** Chi sua danh muc da co + doi trang thai (khong them moi). */
+    CATEGORY_EDIT,
     PRODUCT_MANAGE,
     /** Chi xem / tim kiem san pham (khong them/sua/xoa). */
     PRODUCT_VIEW,
+    /** Chi sua san pham da co + doi trang thai ban (khong them moi). */
+    PRODUCT_EDIT,
     SUPPLIER_MANAGE,
+    /** Chi xem nha cung cap (khong them/sua/xoa). */
+    SUPPLIER_VIEW,
+    /** Chi sua nha cung cap da co (khong them moi / xoa). */
+    SUPPLIER_EDIT,
     /** Xem trang thai ton kho / danh sach lo hang. */
     STOCK_VIEW,
     /** Nhap hang vao kho - tao lo hang moi. */
@@ -45,6 +63,8 @@ public enum AppPermission implements Permission {
     REVENUE_REPORT_VIEW,
     /** NV ban hang gui bao cao ngoai le (SP chua co trong he thong, tinh huong bat thuong) cho Quan ly ban hang. */
     EXCEPTION_REPORT_CREATE,
+    /** Chi xem danh sach bao cao ngoai le (khong gui / xu ly). */
+    EXCEPTION_REPORT_VIEW,
     /** Quan ly ban hang xem va xu ly cac bao cao ngoai le tu NV ban hang. */
     EXCEPTION_REPORT_HANDLE,
     /** Xem trang "Bao cao loi nhuan" - so sanh gia nhap/gia ban, loi nhuan gop

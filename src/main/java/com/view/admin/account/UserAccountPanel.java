@@ -8,6 +8,7 @@ import com.components.table.ActionColumn;
 import com.dao.UserDAO;
 import com.model.Role;
 import com.model.User;
+import com.model.permission.AppPermission;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
@@ -38,18 +39,23 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     public UserAccountPanel() {
         super();
 
-        table.setActionColumn(new ActionColumn()
+        ActionColumn actions = new ActionColumn()
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
-                        this::viewRowPublic)
-                .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
-                        this::editRowPublic)
-                .add("lock-toggle",
-                        this::lockToggleIcon,
-                        this::lockToggleColor,
-                        this::lockToggleTooltip,
-                        this::toggleLockRow,
-                        row -> canManage(row)));
+                        this::viewRowPublic);
+        if (canEditUsers()) {
+            actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
+                    this::editRowPublic);
+        }
+        if (canManageUsers()) {
+            actions.add("lock-toggle",
+                    this::lockToggleIcon,
+                    this::lockToggleColor,
+                    this::lockToggleTooltip,
+                    this::toggleLockRow,
+                    row -> canManage(row));
+        }
+        table.setActionColumn(actions);
 
         table.setBadgeColumn(4, this::statusLabel, this::statusColor);
         table.setBadgeColumn(5, this::lockLabel, this::lockColor);
@@ -76,6 +82,17 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     protected String getPageSubtitle() { return "Quản lý tài khoản người dùng và phân quyền trong hệ thống"; }
     @Override
     protected String getAddButtonLabel() { return null; }
+
+    /** Khoá / mở khoá — USER_MANAGE. */
+    private boolean canManageUsers() {
+        return AuthService.getInstance().can(AppPermission.USER_MANAGE);
+    }
+
+    /** Sửa — USER_MANAGE hoặc USER_EDIT. */
+    private boolean canEditUsers() {
+        return AuthService.getInstance().can(AppPermission.USER_MANAGE)
+                || AuthService.getInstance().can(AppPermission.USER_EDIT);
+    }
 
     @Override
     protected String[] getColumnNames() {

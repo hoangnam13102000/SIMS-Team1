@@ -309,14 +309,62 @@ public class RolePermissionPanel extends JPanel {
             permissionListPanel.add(note);
         }
 
+        // Quyen con cua cac "resource" Hàng hoá - hien trong dropdown, khong liet ke phang
+        Set<AppPermission> nestedPermissions = EnumSet.of(
+                AppPermission.USER_MANAGE, AppPermission.USER_EDIT, AppPermission.USER_VIEW,
+                AppPermission.CUSTOMER_MANAGE, AppPermission.CUSTOMER_EDIT, AppPermission.CUSTOMER_VIEW,
+                AppPermission.CATEGORY_MANAGE, AppPermission.CATEGORY_EDIT, AppPermission.CATEGORY_VIEW,
+                AppPermission.PRODUCT_MANAGE, AppPermission.PRODUCT_EDIT, AppPermission.PRODUCT_VIEW,
+                AppPermission.SUPPLIER_MANAGE, AppPermission.SUPPLIER_EDIT, AppPermission.SUPPLIER_VIEW,
+                AppPermission.EXCEPTION_REPORT_VIEW, AppPermission.EXCEPTION_REPORT_CREATE,
+                AppPermission.EXCEPTION_REPORT_HANDLE
+        );
+
         Map<String, List<AppPermission>> byGroup = new LinkedHashMap<>();
         for (AppPermission permission : AppPermission.values()) {
+            if (nestedPermissions.contains(permission)) {
+                continue; // ve trong buildHangHoaResourceDropdowns
+            }
             String group = AppPermissionCatalog.get(permission).group;
             byGroup.computeIfAbsent(group, g -> new ArrayList<>()).add(permission);
         }
 
+        // Thu tu: Tổng quan -> Người dùng -> Hàng hoá -> Kho/Bán hàng -> Báo cáo -> Hệ thống
+        boolean nguoiDungInserted = false;
+        boolean hangHoaInserted = false;
+        boolean baoCaoInserted = false;
         for (Map.Entry<String, List<AppPermission>> group : byGroup.entrySet()) {
-            permissionListPanel.add(buildGroupCard(group.getKey(), group.getValue(), isAdmin));
+            String key = group.getKey();
+            if ("Người dùng".equals(key) || "Hàng hoá".equals(key) || "Báo cáo".equals(key)) {
+                continue;
+            }
+            if (!nguoiDungInserted && !"Tổng quan".equals(key)) {
+                permissionListPanel.add(buildNguoiDungGroupCard(isAdmin));
+                permissionListPanel.add(Box.createVerticalStrut(12));
+                nguoiDungInserted = true;
+                permissionListPanel.add(buildHangHoaGroupCard(isAdmin));
+                permissionListPanel.add(Box.createVerticalStrut(12));
+                hangHoaInserted = true;
+            }
+            // Chen Báo cáo truoc "Hệ thống"
+            if (!baoCaoInserted && "Hệ thống".equals(key)) {
+                permissionListPanel.add(buildBaoCaoGroupCard(isAdmin));
+                permissionListPanel.add(Box.createVerticalStrut(12));
+                baoCaoInserted = true;
+            }
+            permissionListPanel.add(buildGroupCard(key, group.getValue(), isAdmin));
+            permissionListPanel.add(Box.createVerticalStrut(12));
+        }
+        if (!nguoiDungInserted) {
+            permissionListPanel.add(buildNguoiDungGroupCard(isAdmin));
+            permissionListPanel.add(Box.createVerticalStrut(12));
+        }
+        if (!hangHoaInserted) {
+            permissionListPanel.add(buildHangHoaGroupCard(isAdmin));
+            permissionListPanel.add(Box.createVerticalStrut(12));
+        }
+        if (!baoCaoInserted) {
+            permissionListPanel.add(buildBaoCaoGroupCard(isAdmin));
             permissionListPanel.add(Box.createVerticalStrut(12));
         }
 
@@ -352,6 +400,434 @@ public class RolePermissionPanel extends JPanel {
             }
         }
         return card;
+    }
+
+    /**
+     * Nhom "Báo cáo": Báo cáo ngoại lệ dạng dropdown (Xem / Gửi / Xử lý)
+     * + các báo cáo thống kê (doanh thu, lợi nhuận, tồn kho) dạng toggle phẳng.
+     */
+    private JPanel buildBaoCaoGroupCard(boolean isAdmin) {
+        JPanel card = new JPanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setOpaque(true);
+        card.setBackground(AppColor.WHITE);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(14, 16, 10, 16)));
+
+        JLabel title = new JLabel("Báo cáo");
+        title.setFont(AppFont.HEADING_MD);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(title);
+
+        JLabel hint = new JLabel("Báo cáo ngoại lệ: mở dropdown để bật Xem · Gửi · Xử lý");
+        hint.setFont(AppFont.SMALL);
+        hint.setForeground(AppColor.TEXT_MUTED);
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(hint);
+        card.add(Box.createVerticalStrut(8));
+
+        card.add(buildExceptionReportDropdown(isAdmin));
+        card.add(Box.createVerticalStrut(8));
+
+        AppPermission[] reportViews = {
+                AppPermission.REVENUE_REPORT_VIEW,
+                AppPermission.PROFIT_REPORT_VIEW,
+                AppPermission.STOCK_REPORT_VIEW
+        };
+        for (int i = 0; i < reportViews.length; i++) {
+            card.add(buildPermissionRow(reportViews[i], isAdmin));
+            if (i < reportViews.length - 1) {
+                JSeparator sep = new JSeparator();
+                sep.setForeground(AppColor.BORDER);
+                sep.setAlignmentX(Component.LEFT_ALIGNMENT);
+                card.add(sep);
+            }
+        }
+        return card;
+    }
+
+    /**
+     * Dropdown Báo cáo ngoại lệ: Chỉ xem / Gửi báo cáo / Xử lý báo cáo.
+     */
+    private JPanel buildExceptionReportDropdown(boolean isAdmin) {
+        AppPermission viewPerm = AppPermission.EXCEPTION_REPORT_VIEW;
+        AppPermission createPerm = AppPermission.EXCEPTION_REPORT_CREATE;
+        AppPermission handlePerm = AppPermission.EXCEPTION_REPORT_HANDLE;
+
+        JPanel wrap = new JPanel();
+        wrap.setLayout(new BoxLayout(wrap, BoxLayout.Y_AXIS));
+        wrap.setOpaque(false);
+        wrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrap.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(0, 0, 0, 0)));
+
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setOpaque(true);
+        body.setBackground(AppColor.BG_LIGHTER);
+        body.setBorder(new EmptyBorder(4, 12, 8, 12));
+        body.setVisible(false);
+        body.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        FontIcon chevron = FontIcon.of(FontAwesomeSolid.CHEVRON_DOWN, 12);
+        chevron.setIconColor(AppColor.TEXT_MUTED);
+        JLabel chevronLabel = new JLabel(chevron);
+
+        JLabel summary = new JLabel(summarizeExceptionPerms(viewPerm, createPerm, handlePerm));
+        summary.setFont(AppFont.SMALL);
+        summary.setForeground(AppColor.TEXT_MUTED);
+
+        JPanel header = new JPanel(new BorderLayout(10, 0));
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(10, 12, 10, 12));
+        header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
+
+        JPanel textCol = new JPanel();
+        textCol.setOpaque(false);
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+        JLabel nameLabel = new JLabel("Báo cáo ngoại lệ");
+        nameLabel.setFont(AppFont.BODY_BOLD);
+        nameLabel.setForeground(AppColor.TEXT_PRIMARY);
+        nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel descLabel = new JLabel("NV gửi báo cáo bất thường · QL xem và xử lý");
+        descLabel.setFont(AppFont.SMALL);
+        descLabel.setForeground(AppColor.TEXT_MUTED);
+        descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        textCol.add(nameLabel);
+        textCol.add(descLabel);
+
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        right.setOpaque(false);
+        right.add(summary);
+        right.add(chevronLabel);
+
+        header.add(textCol, BorderLayout.CENTER);
+        header.add(right, BorderLayout.EAST);
+
+        Runnable refreshSummary = () ->
+                summary.setText(summarizeExceptionPerms(viewPerm, createPerm, handlePerm));
+
+        body.add(buildNestedToggleRow("Chỉ xem", "Xem danh sách báo cáo, không gửi / xử lý",
+                viewPerm, isAdmin, refreshSummary));
+        JSeparator s1 = new JSeparator();
+        s1.setForeground(AppColor.BORDER);
+        body.add(s1);
+        body.add(buildNestedToggleRow("Gửi báo cáo", "Tạo báo cáo ngoại lệ mới (NV bán hàng)",
+                createPerm, isAdmin, refreshSummary));
+        JSeparator s2 = new JSeparator();
+        s2.setForeground(AppColor.BORDER);
+        body.add(s2);
+        body.add(buildNestedToggleRow("Xử lý báo cáo", "Đánh dấu đã xử lý báo cáo chờ xử lý",
+                handlePerm, isAdmin, refreshSummary));
+
+        header.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                boolean open = !body.isVisible();
+                body.setVisible(open);
+                FontIcon icon = FontIcon.of(
+                        open ? FontAwesomeSolid.CHEVRON_UP : FontAwesomeSolid.CHEVRON_DOWN, 12);
+                icon.setIconColor(AppColor.TEXT_MUTED);
+                chevronLabel.setIcon(icon);
+                wrap.revalidate();
+                wrap.repaint();
+                permissionListPanel.revalidate();
+            }
+        });
+
+        wrap.add(header);
+        wrap.add(body);
+        return wrap;
+    }
+
+    private String summarizeExceptionPerms(AppPermission view, AppPermission create, AppPermission handle) {
+        List<String> parts = new ArrayList<>();
+        if (workingSet.contains(view)) parts.add("Xem");
+        if (workingSet.contains(create)) parts.add("Gửi");
+        if (workingSet.contains(handle)) parts.add("Xử lý");
+        if (parts.isEmpty()) return "Chưa gán";
+        return String.join(" · ", parts);
+    }
+
+    /**
+     * Nhom "Người dùng": 2 resource (Tài khoản & NV / Khách hàng), mỗi resource
+     * dropdown 3 toggle: Chỉ xem / Chỉ sửa / Quản lý đầy đủ.
+     */
+    private JPanel buildNguoiDungGroupCard(boolean isAdmin) {
+        JPanel card = new JPanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setOpaque(true);
+        card.setBackground(AppColor.WHITE);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(14, 16, 10, 16)));
+
+        JLabel title = new JLabel("Người dùng");
+        title.setFont(AppFont.HEADING_MD);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(title);
+
+        JLabel hint = new JLabel("Bấm mũi tên để mở và bật/tắt từng quyền Xem · Sửa · Quản lý đầy đủ");
+        hint.setFont(AppFont.SMALL);
+        hint.setForeground(AppColor.TEXT_MUTED);
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(hint);
+        card.add(Box.createVerticalStrut(8));
+
+        card.add(buildResourceDropdown(
+                "Tài khoản & nhân viên",
+                "Xem / sửa / thêm NV · khoá tài khoản đăng nhập",
+                AppPermission.USER_VIEW,
+                AppPermission.USER_EDIT,
+                AppPermission.USER_MANAGE,
+                isAdmin));
+        card.add(Box.createVerticalStrut(6));
+        card.add(buildResourceDropdown(
+                "Khách hàng",
+                "Xem / sửa / xoá mềm khách hàng",
+                AppPermission.CUSTOMER_VIEW,
+                AppPermission.CUSTOMER_EDIT,
+                AppPermission.CUSTOMER_MANAGE,
+                isAdmin));
+
+        return card;
+    }
+
+    /**
+     * Nhom "Hàng hoá": 3 resource (Danh mục / Sản phẩm / Nhà cung cấp), mỗi resource
+     * là 1 hàng có nút mở dropdown với 3 toggle: Chỉ xem / Chỉ sửa / Quản lý đầy đủ.
+     */
+    private JPanel buildHangHoaGroupCard(boolean isAdmin) {
+        JPanel card = new JPanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setOpaque(true);
+        card.setBackground(AppColor.WHITE);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(14, 16, 10, 16)));
+
+        JLabel title = new JLabel("Hàng hoá");
+        title.setFont(AppFont.HEADING_MD);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(title);
+
+        JLabel hint = new JLabel("Bấm mũi tên để mở và bật/tắt từng quyền Xem · Sửa · Quản lý đầy đủ");
+        hint.setFont(AppFont.SMALL);
+        hint.setForeground(AppColor.TEXT_MUTED);
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(hint);
+        card.add(Box.createVerticalStrut(8));
+
+        card.add(buildResourceDropdown(
+                "Danh mục",
+                "Xem / sửa / thêm-xoá danh mục sản phẩm",
+                AppPermission.CATEGORY_VIEW,
+                AppPermission.CATEGORY_EDIT,
+                AppPermission.CATEGORY_MANAGE,
+                isAdmin));
+        card.add(Box.createVerticalStrut(6));
+        card.add(buildResourceDropdown(
+                "Sản phẩm",
+                "Xem / sửa / thêm-xoá thông tin sản phẩm, giá bán",
+                AppPermission.PRODUCT_VIEW,
+                AppPermission.PRODUCT_EDIT,
+                AppPermission.PRODUCT_MANAGE,
+                isAdmin));
+        card.add(Box.createVerticalStrut(6));
+        card.add(buildResourceDropdown(
+                "Nhà cung cấp",
+                "Xem / sửa / thêm-xoá nhà cung cấp",
+                AppPermission.SUPPLIER_VIEW,
+                AppPermission.SUPPLIER_EDIT,
+                AppPermission.SUPPLIER_MANAGE,
+                isAdmin));
+
+        return card;
+    }
+
+    /**
+     * 1 resource: hàng header (tên + summary + chevron), click để mở/đóng panel con
+     * chứa 3 toggle: Chỉ xem / Chỉ sửa / Quản lý đầy đủ (thêm + xoá).
+     */
+    private JPanel buildResourceDropdown(String resourceName, String resourceDesc,
+                                        AppPermission viewPerm, AppPermission editPerm,
+                                        AppPermission managePerm, boolean isAdmin) {
+        JPanel wrap = new JPanel();
+        wrap.setLayout(new BoxLayout(wrap, BoxLayout.Y_AXIS));
+        wrap.setOpaque(false);
+        wrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrap.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(0, 0, 0, 0)));
+
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setOpaque(true);
+        body.setBackground(AppColor.BG_LIGHTER);
+        body.setBorder(new EmptyBorder(4, 12, 8, 12));
+        body.setVisible(false);
+        body.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        body.add(buildNestedToggleRow("Chỉ xem", "Chỉ xem/tìm kiếm, không thêm/sửa/xoá",
+                viewPerm, isAdmin));
+        body.add(new JSeparator());
+        body.add(buildNestedToggleRow("Chỉ sửa", "Sửa bản ghi đã có, không thêm mới / xoá",
+                editPerm, isAdmin));
+        body.add(new JSeparator());
+        body.add(buildNestedToggleRow("Quản lý đầy đủ", "Thêm mới + sửa + xoá / đổi trạng thái",
+                managePerm, isAdmin));
+
+        FontIcon chevron = FontIcon.of(FontAwesomeSolid.CHEVRON_DOWN, 12);
+        chevron.setIconColor(AppColor.TEXT_MUTED);
+        JLabel chevronLabel = new JLabel(chevron);
+
+        JLabel summary = new JLabel(summarizeResourcePerms(viewPerm, editPerm, managePerm));
+        summary.setFont(AppFont.SMALL);
+        summary.setForeground(AppColor.TEXT_MUTED);
+
+        JPanel header = new JPanel(new BorderLayout(10, 0));
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(10, 12, 10, 12));
+        header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
+
+        JPanel textCol = new JPanel();
+        textCol.setOpaque(false);
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+        JLabel nameLabel = new JLabel(resourceName);
+        nameLabel.setFont(AppFont.BODY_BOLD);
+        nameLabel.setForeground(AppColor.TEXT_PRIMARY);
+        nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel descLabel = new JLabel(resourceDesc);
+        descLabel.setFont(AppFont.SMALL);
+        descLabel.setForeground(AppColor.TEXT_MUTED);
+        descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        textCol.add(nameLabel);
+        textCol.add(descLabel);
+
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        right.setOpaque(false);
+        right.add(summary);
+        right.add(chevronLabel);
+
+        header.add(textCol, BorderLayout.CENTER);
+        header.add(right, BorderLayout.EAST);
+
+        Runnable refreshSummary = () ->
+                summary.setText(summarizeResourcePerms(viewPerm, editPerm, managePerm));
+
+        // Re-wire toggles in body to also refresh summary - rebuild nested with callback
+        body.removeAll();
+        body.add(buildNestedToggleRow("Chỉ xem", "Chỉ xem/tìm kiếm, không thêm/sửa/xoá",
+                viewPerm, isAdmin, refreshSummary));
+        JSeparator s1 = new JSeparator();
+        s1.setForeground(AppColor.BORDER);
+        body.add(s1);
+        body.add(buildNestedToggleRow("Chỉ sửa", "Sửa bản ghi đã có, không thêm mới / xoá",
+                editPerm, isAdmin, refreshSummary));
+        JSeparator s2 = new JSeparator();
+        s2.setForeground(AppColor.BORDER);
+        body.add(s2);
+        body.add(buildNestedToggleRow("Quản lý đầy đủ", "Thêm mới + sửa + xoá / đổi trạng thái",
+                managePerm, isAdmin, refreshSummary));
+
+        header.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                boolean open = !body.isVisible();
+                body.setVisible(open);
+                FontIcon icon = FontIcon.of(
+                        open ? FontAwesomeSolid.CHEVRON_UP : FontAwesomeSolid.CHEVRON_DOWN, 12);
+                icon.setIconColor(AppColor.TEXT_MUTED);
+                chevronLabel.setIcon(icon);
+                wrap.revalidate();
+                wrap.repaint();
+                permissionListPanel.revalidate();
+            }
+        });
+
+        wrap.add(header);
+        wrap.add(body);
+        return wrap;
+    }
+
+    private String summarizeResourcePerms(AppPermission view, AppPermission edit, AppPermission manage) {
+        List<String> parts = new ArrayList<>();
+        if (workingSet.contains(view)) parts.add("Xem");
+        if (workingSet.contains(edit)) parts.add("Sửa");
+        if (workingSet.contains(manage)) parts.add("Đầy đủ");
+        if (parts.isEmpty()) return "Chưa gán";
+        return String.join(" · ", parts);
+    }
+
+    private JPanel buildNestedToggleRow(String label, String description,
+                                       AppPermission permission, boolean isAdmin) {
+        return buildNestedToggleRow(label, description, permission, isAdmin, null);
+    }
+
+    private JPanel buildNestedToggleRow(String label, String description,
+                                       AppPermission permission, boolean isAdmin,
+                                       Runnable onChanged) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setBorder(new EmptyBorder(8, 4, 8, 4));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
+
+        JPanel textCol = new JPanel();
+        textCol.setOpaque(false);
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+        JLabel name = new JLabel(label);
+        name.setFont(AppFont.BODY_BOLD);
+        name.setForeground(AppColor.TEXT_PRIMARY);
+        name.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel desc = new JLabel(description);
+        desc.setFont(AppFont.SMALL);
+        desc.setForeground(AppColor.TEXT_MUTED);
+        desc.setAlignmentX(Component.LEFT_ALIGNMENT);
+        textCol.add(name);
+        textCol.add(desc);
+
+        JComponent control;
+        if (isAdmin) {
+            FontIcon checkIcon = FontIcon.of(FontAwesomeSolid.CHECK_CIRCLE, 13);
+            checkIcon.setIconColor(AppColor.SUCCESS);
+            JLabel badge = new JLabel("Luôn bật", checkIcon, SwingConstants.LEFT);
+            badge.setIconTextGap(6);
+            badge.setFont(AppFont.SMALL_BOLD);
+            badge.setForeground(AppColor.SUCCESS);
+            control = badge;
+        } else {
+            ToggleSwitch toggle = new ToggleSwitch(workingSet.contains(permission));
+            toggle.onChange(selected -> {
+                if (selected) workingSet.add(permission);
+                else workingSet.remove(permission);
+                if (onChanged != null) onChanged.run();
+            });
+            control = toggle;
+        }
+
+        JPanel controlWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        controlWrap.setOpaque(false);
+        controlWrap.add(control);
+
+        row.add(textCol, BorderLayout.CENTER);
+        row.add(controlWrap, BorderLayout.EAST);
+        return row;
     }
 
     private JPanel buildPermissionRow(AppPermission permission, boolean isAdmin) {

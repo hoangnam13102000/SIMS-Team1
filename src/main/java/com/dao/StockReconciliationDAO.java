@@ -172,6 +172,10 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
         List<String> conditions = new ArrayList<>();
         List<Object> params = new ArrayList<>();
+        // Sản phẩm chưa từng có lô hàng (BatchID NULL) không thể bán qua POS/đơn
+        // online (kho chỉ trừ theo InventoryBatch), nên ẩn hẳn khỏi bảng đối
+        // chiếu — tránh nhân viên tưởng nhầm là "tồn thật" có thể tất toán được.
+        conditions.add("r.BatchID IS NOT NULL");
         String trimmedKeyword = keyword == null ? "" : keyword.trim();
         if (!trimmedKeyword.isEmpty()) {
             String[] columns = getSearchableColumns();
@@ -356,6 +360,29 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
      *
      * @return true neu cap nhat thanh cong
      */
+    /**
+     * Doc [RemainingQty, Quantity] cua lo cho Panel validation.
+     */
+    public int[] getBatchStockLimits(int reconciliationId) {
+        String sql = "SELECT COALESCE(b.RemainingQty, 0) AS RemainingQty, "
+                + "COALESCE(b.Quantity, 0) AS Quantity "
+                + "FROM StockReconciliation r "
+                + "JOIN InventoryBatch b ON r.BatchID = b.BatchID "
+                + "WHERE r.ReconciliationID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, reconciliationId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return new int[]{rs.getInt("RemainingQty"), rs.getInt("Quantity")};
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StockReconciliationDAO.getBatchStockLimits reconciliationId=" + reconciliationId, e);
+            return null;
+        }
+    }
+
     public boolean updateActualStock(int reconciliationId, int newActualStock, int userId) {
         if (newActualStock < 0) return false;
         String selectSql = "SELECT r.ProductID, r.BatchID, r.ActualStock, r.SystemStock, p.Stock AS CurrentStock, r.CreatedAt "
@@ -399,33 +426,17 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
                 int stockBefore = currentStock;
                 int stockAfter;
                 if (batchId > 0) {
-                    int batchQuantity;
                     int batchStockBefore;
                     try (PreparedStatement ps = con.prepareStatement(
-                            "SELECT RemainingQty, Quantity FROM InventoryBatch WHERE BatchID = ? AND ProductID = ? FOR UPDATE")) {
+                            "SELECT RemainingQty FROM InventoryBatch WHERE BatchID = ? AND ProductID = ? FOR UPDATE")) {
                         ps.setInt(1, batchId);
                         ps.setInt(2, productId);
                         try (ResultSet rs = ps.executeQuery()) {
                             if (!rs.next()) { con.rollback(); return false; }
                             rs.getInt("RemainingQty");
-                            batchQuantity = rs.getInt("Quantity");
                         }
                     }
 
-                    /*
-                     * NGHIEP VU: ton san pham = tong RemainingQty cua tat ca lo
-                     * cung ProductID. ActualStock cua dong nay chi la ton cua
-                     * BatchID nay.
-                     *
-                     * Vi du: System=300 -> dem=290 -> lo 300 -> 290.
-                     * Tim du hang -> sua 290 -> 300: dat truc tiep lo = 300,
-                     * sau do tinh lai Products.Stock = SUM(RemainingQty).
-                     * Tuyet doi khong lay Products.Stock + delta de cap nhat tong.
-                     */
-                    if (newActualStock > batchQuantity || newActualStock < 0) {
-                        con.rollback();
-                        return false;
-                    }
 
                     // Chuan hoa tong ton truoc khi thay doi neu Products.Stock dang bi lech.
                     try (PreparedStatement ps = con.prepareStatement(

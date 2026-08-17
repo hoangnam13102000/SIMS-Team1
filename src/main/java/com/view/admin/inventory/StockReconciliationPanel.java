@@ -335,6 +335,47 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 AppAlert.error(this, "Số không hợp lệ", "Tồn thực tế phải là số nguyên ≥ 0.");
                 return;
             }
+            // Chặn chung cho MỌI dòng (kể cả sản phẩm không quản lý theo lô):
+            // tồn thực tế không được lớn hơn tồn còn lại của hệ thống tại thời điểm
+            // lập phiên đối chiếu (cột "Tồn lô hàng" đang hiển thị trên bảng).
+            int systemStock = item.getSystemStock();
+            if (newActual > systemStock) {
+                suppressActualEdit = true;
+                try {
+                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                } finally {
+                    suppressActualEdit = false;
+                }
+                AppAlert.warning(this, "Tồn thực tế vượt giới hạn",
+                        "Tồn thực tế không được lớn hơn tồn còn lại của hệ thống (" + systemStock + ").");
+                return;
+            }
+            if (item.getBatchId() > 0) {
+                int[] batchLimits = reconciliationDAO.getBatchStockLimits(item.getReconciliationId());
+                if (batchLimits == null) {
+                    suppressActualEdit = true;
+                    try {
+                        table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                    } finally {
+                        suppressActualEdit = false;
+                    }
+                    AppAlert.error(this, "Không thể kiểm tra tồn lô",
+                            "Không đọc được tồn lô hiện tại. Chưa cập nhật tồn thực tế.");
+                    return;
+                }
+                if (newActual > batchLimits[0] || newActual > batchLimits[1]) {
+                    suppressActualEdit = true;
+                    try {
+                        table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                    } finally {
+                        suppressActualEdit = false;
+                    }
+                    AppAlert.warning(this, "Tồn thực tế vượt giới hạn",
+                            "Tồn thực tế không được lớn hơn tồn lô hiện tại.");
+                    return;
+                }
+            }
+
             Integer userId = currentUserId();
             if (userId == null) return;
             boolean ok = reconciliationDAO.updateActualStock(

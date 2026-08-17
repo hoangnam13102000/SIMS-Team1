@@ -352,7 +352,9 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.users.short"),
                 FontAwesomeSolid.USERS_COG,
                 new UserAccountPanel(),
-                AppPermission.USER_MANAGE
+                AppPermission.USER_MANAGE,
+                AppPermission.USER_EDIT,
+                AppPermission.USER_VIEW
         );
 
         layout.addPage(
@@ -360,7 +362,9 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.employees.short"),
                 FontAwesomeSolid.USER_TIE,
                 new EmployeePanel(),
-                AppPermission.USER_MANAGE
+                AppPermission.USER_MANAGE,
+                AppPermission.USER_EDIT,
+                AppPermission.USER_VIEW
         );
 
         layout.addPage(
@@ -368,7 +372,9 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.customers.short"),
                 FontAwesomeSolid.ID_CARD,
                 new CustomerPanel(),
-                AppPermission.CUSTOMER_MANAGE
+                AppPermission.CUSTOMER_MANAGE,
+                AppPermission.CUSTOMER_EDIT,
+                AppPermission.CUSTOMER_VIEW
         );
 
         /*
@@ -385,7 +391,9 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.categories.short"),
                 FontAwesomeSolid.TAGS,
                 new CategoryPanel(),
-                AppPermission.CATEGORY_MANAGE
+                AppPermission.CATEGORY_MANAGE,
+                AppPermission.CATEGORY_EDIT,
+                AppPermission.CATEGORY_VIEW
         );
 
         layout.addPage(
@@ -394,6 +402,7 @@ public class AdminMainFrame extends JFrame {
                 FontAwesomeSolid.BOX,
                 new ProductPanel(),
                 AppPermission.PRODUCT_MANAGE,
+                AppPermission.PRODUCT_EDIT,
                 AppPermission.PRODUCT_VIEW
         );
 
@@ -402,7 +411,9 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.suppliers.short"),
                 FontAwesomeSolid.TRUCK,
                 new SupplierPanel(),
-                AppPermission.SUPPLIER_MANAGE
+                AppPermission.SUPPLIER_MANAGE,
+                AppPermission.SUPPLIER_EDIT,
+                AppPermission.SUPPLIER_VIEW
         );
 
         layout.addPage(
@@ -410,6 +421,7 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.exceptionReport"),
                 FontAwesomeSolid.EXCLAMATION_TRIANGLE,
                 new ExceptionReportPanel(),
+                AppPermission.EXCEPTION_REPORT_VIEW,
                 AppPermission.EXCEPTION_REPORT_CREATE,
                 AppPermission.EXCEPTION_REPORT_HANDLE
         );
@@ -422,8 +434,8 @@ public class AdminMainFrame extends JFrame {
          * Permission được map riêng theo từng chức năng:
          *
          * STOCK_VIEW
-         *      -> Tổng quan kho
          *      -> Quản lý lô hàng
+         *      (Tổng quan kho chỉ là Dashboard của Quản lý kho, không hiện menu riêng)
          *
          * STOCK_IMPORT
          *      -> Quản lý nhập kho
@@ -445,18 +457,14 @@ public class AdminMainFrame extends JFrame {
         );
 
         /*
-         * Quản lý kho đã dùng InventoryOverviewPanel
-         * làm Dashboard nên không hiển thị lại tại đây.
+         * Tổng quan kho = dashboard riêng của Quản lý kho (đã gắn vào
+         * page "dashboard" ở trên khi isInventoryManager()).
+         *
+         * KHÔNG đăng ký thêm menu "Tổng quan kho" cho role khác (NV bán
+         * hàng / QL bán hàng...) dù họ có STOCK_VIEW — tránh nhầm với
+         * "Tổng quan" (DASHBOARD_VIEW) và lộ màn hình kho cho sales.
+         * STOCK_VIEW vẫn mở được các trang kho khác: lô hàng, v.v.
          */
-        if (!isInventoryManager()) {
-            layout.addPage(
-                    "inventoryOverview",
-                    Lang.get("sidebar.inventoryOverview"),
-                    FontAwesomeSolid.TH_LARGE,
-                    new InventoryOverviewPanel(),
-                    AppPermission.STOCK_VIEW
-            );
-        }
 
         /*
          * Nhập kho.

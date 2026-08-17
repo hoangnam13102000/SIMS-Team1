@@ -6,6 +6,8 @@ import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
 import com.dao.CategoryDAO;
 import com.model.Category;
+import com.model.permission.AppPermission;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -38,21 +40,21 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
     public CategoryPanel() {
         super();
 
-        table.setActionColumn(new ActionColumn()
-                .header("Thao tác")
-                .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
-                        this::editRowPublic)
-                // 1 slot duy nhat, doi hanh vi theo tung dong: danh muc CHUA
-                // co san pham nao -> nut "Xoa" (xoa cung); danh muc DA co san
-                // pham -> nut "Vo hieu hoa/Kich hoat lai" (xoa mem), vi
-                // Products.CategoryID la FOREIGN KEY khong CASCADE nen xoa
-                // cung se that bai neu con san pham tham chieu.
-                .add("delete-or-toggle",
+        ActionColumn actions = new ActionColumn().header("Thao tác");
+        if (canEditCategories()) {
+            actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
+                    this::editRowPublic);
+            // Xoa / vo hieu hoa chi CATEGORY_MANAGE (day du).
+            if (canCreateCategories()) {
+                actions.add("delete-or-toggle",
                         this::deleteOrToggleIcon,
                         this::deleteOrToggleColor,
                         this::deleteOrToggleTooltip,
                         this::handleDeleteOrToggle,
-                        null));
+                        null);
+            }
+        }
+        table.setActionColumn(actions);
 
         table.setBadgeColumn(1, this::statusLabel, this::statusColor);
 
@@ -76,7 +78,20 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
     protected String getPageSubtitle() { return "Quản lý danh mục sản phẩm hiển thị trên hệ thống"; }
 
     @Override
-    protected String getAddButtonLabel() { return "Thêm danh mục"; }
+    protected String getAddButtonLabel() {
+        return canCreateCategories() ? "Thêm danh mục" : null;
+    }
+
+    /** Thêm / import / xoá-toggle — chỉ CATEGORY_MANAGE. */
+    private boolean canCreateCategories() {
+        return AuthService.getInstance().can(AppPermission.CATEGORY_MANAGE);
+    }
+
+    /** Sửa — CATEGORY_MANAGE hoặc CATEGORY_EDIT. */
+    private boolean canEditCategories() {
+        return AuthService.getInstance().can(AppPermission.CATEGORY_MANAGE)
+                || AuthService.getInstance().can(AppPermission.CATEGORY_EDIT);
+    }
 
     @Override
     protected String[] getColumnNames() {
@@ -173,7 +188,9 @@ public class CategoryPanel extends BaseCrudPanel<Category> {
     }
 
     @Override
-    protected boolean supportsImport() { return true; }
+    protected boolean supportsImport() {
+        return canCreateCategories();
+    }
 
     @Override
     protected String[] getImportColumns() { return new String[]{"Tên danh mục"}; }
