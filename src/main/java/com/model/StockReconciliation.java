@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 
 /**
  * Model cho bang StockReconciliation (SIMS.sql, muc X. DOI CHIEU KHO CUOI
- * NGAY) - moi dong la ket qua doi chieu 1 san pham trong 1 phien kiem ke
+ * NGAY) - moi dong la ket qua doi chieu 1 lo hang trong 1 phien kiem ke
  * (SystemStock = ton theo he thong TAI THOI DIEM GHI, ActualStock = ton dem
  * thuc te do nhan vien nhap). Discrepancy la cot COMPUTED PERSISTED
  * (ActualStock - SystemStock), CHI DOC.
@@ -19,6 +19,8 @@ public class StockReconciliation {
     private int productId;
     private String productName;
     private String productCode;
+    private int batchId;
+    private String batchCode;
     private int systemStock;
     private int actualStock;
     private int discrepancy;
@@ -26,6 +28,10 @@ public class StockReconciliation {
     private int createdBy;
     private String createdByName;
     private LocalDateTime createdAt;
+    private boolean checked;
+    private int checkedBy;
+    private String checkedByName;
+    private LocalDateTime checkedAt;
 
     public StockReconciliation() {
     }
@@ -41,6 +47,12 @@ public class StockReconciliation {
 
     public String getProductCode() { return productCode; }
     public void setProductCode(String productCode) { this.productCode = productCode; }
+
+    public int getBatchId() { return batchId; }
+    public void setBatchId(int batchId) { this.batchId = batchId; }
+
+    public String getBatchCode() { return batchCode; }
+    public void setBatchCode(String batchCode) { this.batchCode = batchCode; }
 
     public int getSystemStock() { return systemStock; }
     public void setSystemStock(int systemStock) { this.systemStock = systemStock; }
@@ -62,6 +74,18 @@ public class StockReconciliation {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public boolean isChecked() { return checked; }
+    public void setChecked(boolean checked) { this.checked = checked; }
+
+    public int getCheckedBy() { return checkedBy; }
+    public void setCheckedBy(int checkedBy) { this.checkedBy = checkedBy; }
+
+    public String getCheckedByName() { return checkedByName; }
+    public void setCheckedByName(String checkedByName) { this.checkedByName = checkedByName; }
+
+    public LocalDateTime getCheckedAt() { return checkedAt; }
+    public void setCheckedAt(LocalDateTime checkedAt) { this.checkedAt = checkedAt; }
 
     public boolean hasDiscrepancy() {
         return discrepancy != 0;

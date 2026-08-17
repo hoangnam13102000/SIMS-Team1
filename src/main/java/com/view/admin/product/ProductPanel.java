@@ -51,7 +51,7 @@ public class ProductPanel extends BaseCrudPanel<Product> {
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
                         this::viewRowPublic);
-        if (canManageProducts()) {
+        if (canEditProducts()) {
             actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
                             this::editRowPublic)
                     .add("status-toggle",
@@ -228,10 +228,19 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     @Override
     protected String getPageSubtitle() { return "Quản lý danh sách sản phẩm, giá và tồn kho trong hệ thống"; }
     @Override
-    protected String getAddButtonLabel() { return canManageProducts() ? "Thêm sản phẩm" : null; }
+    protected String getAddButtonLabel() {
+        return canCreateProducts() ? "Thêm sản phẩm" : null;
+    }
 
-    private boolean canManageProducts() {
+    /** Thêm sản phẩm mới / import — chỉ PRODUCT_MANAGE. */
+    private boolean canCreateProducts() {
         return AuthService.getInstance().can(AppPermission.PRODUCT_MANAGE);
+    }
+
+    /** Sửa / đổi trạng thái bán — PRODUCT_MANAGE hoặc PRODUCT_EDIT. */
+    private boolean canEditProducts() {
+        return AuthService.getInstance().can(AppPermission.PRODUCT_MANAGE)
+                || AuthService.getInstance().can(AppPermission.PRODUCT_EDIT);
     }
 
     @Override
@@ -321,7 +330,9 @@ public class ProductPanel extends BaseCrudPanel<Product> {
     }
 
     @Override
-    protected boolean supportsImport() { return true; }
+    protected boolean supportsImport() {
+        return canCreateProducts();
+    }
 
     @Override
     protected String[] getImportColumns() {

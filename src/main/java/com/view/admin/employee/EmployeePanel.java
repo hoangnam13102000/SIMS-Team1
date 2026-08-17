@@ -9,6 +9,7 @@ import com.components.table.ActionColumn;
 import com.dao.EmployeeDAO;
 import com.model.Employee;
 import com.model.Role;
+import com.model.permission.AppPermission;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
@@ -45,18 +46,23 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     public EmployeePanel() {
         super();
 
-        table.setActionColumn(new ActionColumn()
+        ActionColumn actions = new ActionColumn()
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
-                        this::viewRowPublic)
-                .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
-                        this::editRowPublic)
-                .add("lock-toggle",
-                        this::lockToggleIcon,
-                        this::lockToggleColor,
-                        this::lockToggleTooltip,
-                        this::toggleLockRow,
-                        row -> canManage(row)));
+                        this::viewRowPublic);
+        if (canEditUsers()) {
+            actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
+                    this::editRowPublic);
+        }
+        if (canManageUsers()) {
+            actions.add("lock-toggle",
+                    this::lockToggleIcon,
+                    this::lockToggleColor,
+                    this::lockToggleTooltip,
+                    this::toggleLockRow,
+                    row -> canManage(row));
+        }
+        table.setActionColumn(actions);
 
         table.setBadgeColumn(5, this::statusLabel, this::statusColor);
         table.setBadgeColumn(6, this::lockLabel, this::lockColor);
@@ -128,7 +134,20 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     @Override
     protected String getPageSubtitle() { return "Quản lý hồ sơ nhân viên trong hệ thống (không bao gồm khách hàng)"; }
     @Override
-    protected String getAddButtonLabel() { return "Thêm nhân viên"; }
+    protected String getAddButtonLabel() {
+        return canManageUsers() ? "Thêm nhân viên" : null;
+    }
+
+    /** Thêm / import / khoá — USER_MANAGE. */
+    private boolean canManageUsers() {
+        return AuthService.getInstance().can(AppPermission.USER_MANAGE);
+    }
+
+    /** Sửa — USER_MANAGE hoặc USER_EDIT. */
+    private boolean canEditUsers() {
+        return AuthService.getInstance().can(AppPermission.USER_MANAGE)
+                || AuthService.getInstance().can(AppPermission.USER_EDIT);
+    }
 
     @Override
     protected String[] getColumnNames() {
@@ -272,7 +291,9 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
     }
 
     @Override
-    protected boolean supportsImport() { return true; }
+    protected boolean supportsImport() {
+        return canManageUsers();
+    }
 
     @Override
     protected String[] getImportColumns() {

@@ -3,7 +3,6 @@ package com.ws;
 import com.core.log.AppLogger;
 import com.core.log.ErrorCode;
 import com.google.gson.Gson;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -15,26 +14,21 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
 public class ChatClient {
-
     private static final Gson GSON = new Gson();
     private static final long RECONNECT_INTERVAL_SECONDS = 5;
     private static final int MAX_PENDING_MESSAGES = 100;
     private static ChatClient instance;
-
     private final CopyOnWriteArrayList<Consumer<ChatMessage>> messageListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Boolean>> connectionListeners = new CopyOnWriteArrayList<>();
-
     private volatile WebSocketClient client;
     private int userId;
     private String userName;
     private String roleCode;
     private boolean staffMode;
-
     private volatile boolean wantConnected = false;
     private volatile boolean connectAttemptInFlight = false;
     private ScheduledExecutorService reconnectScheduler;
@@ -80,13 +74,10 @@ public class ChatClient {
         if (!wantConnected) return;
         if (client != null && client.isOpen()) return;
         if (connectAttemptInFlight) return;
-
         Properties props = new Properties();
         try (InputStream in = ChatClient.class.getClassLoader().getResourceAsStream("ws.properties")) {
             if (in != null) props.load(in);
         } catch (IOException e) {
-            // Khong doc duoc ws.properties -> dung fallback WS_HOST/WS_CHAT_PORT ben duoi,
-            // nhung van ghi log de biet file config bi thieu/sai quyen thay vi im lang dung sai host.
             AppLogger.getInstance().error(ErrorCode.WS_CONNECTION_FAIL,
                     "ChatClient.attemptConnect - khong doc duoc ws.properties, dung gia tri mac dinh", e);
         }
@@ -99,7 +90,6 @@ public class ChatClient {
         String configuredPort = firstNonBlank(System.getProperty("ws.chat.port"),
                 System.getenv("WS_CHAT_PORT"), props.getProperty("WS_CHAT_PORT"), "8890");
         int port = Integer.parseInt(configuredPort);
-
         try {
             connectAttemptInFlight = true;
             URI endpoint = configuredUrl != null
@@ -122,7 +112,6 @@ public class ChatClient {
                     flushPendingMessages(this);
                     notifyConnection(true);
                 }
-
                 @Override
                 public void onMessage(String message) {
                     try {
@@ -133,7 +122,6 @@ public class ChatClient {
                                 "ChatClient.onMessage - khong parse duoc payload chat", e);
                     }
                 }
-
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
                     if (ChatClient.this.client == this) {
@@ -142,7 +130,6 @@ public class ChatClient {
                         notifyConnection(false);
                     }
                 }
-
                 @Override
                 public void onError(Exception ex) {
                     connectAttemptInFlight = false;
@@ -173,23 +160,44 @@ public class ChatClient {
         }, RECONNECT_INTERVAL_SECONDS, RECONNECT_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
 
+    // ================================================================
+    // GỬI TIN NHẮN VĂN BẢN
+    // ================================================================
+
     public boolean sendMessage(String text) {
         return sendOrQueue(ChatMessage.chat(userId, userName, text), false);
-    }
-
-    public boolean sendImage(String text, String imageBase64, String imageMime) {
-        if (imageBase64 == null || imageBase64.isBlank()) return false;
-        return sendOrQueue(ChatMessage.image(userId, userName, text, imageBase64, imageMime), false);
     }
 
     public boolean sendStaffMessage(int toUserId, String text) {
         return sendOrQueue(ChatMessage.staffChat(userId, userName, toUserId, text), true);
     }
 
+    public boolean sendCustomerMessage(int customerUserId, String text) {
+        return sendOrQueue(ChatMessage.chatFromAdmin(customerUserId, userName, text), true);
+    }
+
+    // ================================================================
+    // GỬI ẢNH (Base64)
+    // ================================================================
+
+    public boolean sendImage(String text, String imageBase64, String imageMime) {
+        if (imageBase64 == null || imageBase64.isBlank()) return false;
+        return sendOrQueue(ChatMessage.image(userId, userName, text, imageBase64, imageMime), false);
+    }
+
     public boolean sendStaffImage(int toUserId, String text, String imageBase64, String imageMime) {
         if (imageBase64 == null || imageBase64.isBlank()) return false;
         return sendOrQueue(ChatMessage.staffImage(userId, userName, toUserId, text, imageBase64, imageMime), true);
     }
+
+    public boolean sendCustomerImage(int customerUserId, String text, String imageBase64, String imageMime) {
+        if (imageBase64 == null || imageBase64.isBlank()) return false;
+        return sendOrQueue(ChatMessage.imageFromAdmin(customerUserId, userName, text, imageBase64, imageMime), true);
+    }
+
+    // ================================================================
+    // GỬI FILE DẠNG BASE64
+    // ================================================================
 
     public boolean sendFile(String text, String fileBase64, String fileName, String fileMime) {
         if (fileBase64 == null || fileBase64.isBlank() || fileName == null || fileName.isBlank()) return false;
@@ -200,33 +208,45 @@ public class ChatClient {
         if (fileBase64 == null || fileBase64.isBlank() || fileName == null || fileName.isBlank()) return false;
         return sendOrQueue(ChatMessage.staffFile(userId, userName, toUserId, text, fileBase64, fileName, fileMime), true);
     }
-    /** Gửi tin nhắn thoại (khách → hỗ trợ). transcript có thể null. */
+
+    public boolean sendCustomerFile(int customerUserId, String text, String fileBase64, String fileName, String fileMime) {
+        if (fileBase64 == null || fileBase64.isBlank() || fileName == null || fileName.isBlank()) return false;
+        return sendOrQueue(ChatMessage.fileFromAdmin(customerUserId, userName, text, fileBase64, fileName, fileMime), true);
+    }
+
+    // ================================================================
+    // GỬI FILE DẠNG URL CLOUDINARY (MỚI)
+    // ================================================================
+
+    public boolean sendFileUrl(String text, String fileUrl, String fileName, long fileSize) {
+        if (fileUrl == null || fileUrl.isBlank() || fileName == null || fileName.isBlank()) return false;
+        return sendOrQueue(ChatMessage.fileUrl(userId, userName, text, fileUrl, fileName, fileSize), false);
+    }
+
+    public boolean sendStaffFileUrl(int toUserId, String text, String fileUrl, String fileName, long fileSize) {
+        if (fileUrl == null || fileUrl.isBlank() || fileName == null || fileName.isBlank()) return false;
+        return sendOrQueue(ChatMessage.staffFileUrl(userId, userName, toUserId, text, fileUrl, fileName, fileSize), true);
+    }
+
+    public boolean sendCustomerFileUrl(int customerUserId, String text, String fileUrl, String fileName, long fileSize) {
+        if (fileUrl == null || fileUrl.isBlank() || fileName == null || fileName.isBlank()) return false;
+        return sendOrQueue(ChatMessage.fileUrlFromAdmin(customerUserId, userName, text, fileUrl, fileName, fileSize), true);
+    }
+
+    // ================================================================
+    // GỬI TIN NHẮN THOẠI
+    // ================================================================
+
     public boolean sendVoice(String transcript, String voiceBase64, String voiceMime, int durationMs) {
         if (voiceBase64 == null || voiceBase64.isBlank()) return false;
         return sendOrQueue(ChatMessage.voice(
                 userId, userName, transcript, voiceBase64, voiceMime, durationMs), false);
     }
 
-    /** Nhân viên gửi thoại cho khách (qua server helper) — dùng staff voice. */
     public boolean sendStaffVoice(int toUserId, String transcript, String voiceBase64, String voiceMime, int durationMs) {
         if (voiceBase64 == null || voiceBase64.isBlank()) return false;
         return sendOrQueue(ChatMessage.staffVoice(
                 userId, userName, toUserId, transcript, voiceBase64, voiceMime, durationMs), true);
-    }
-
-    /** Nhân viên gửi tin hỗ trợ cho khách qua server đang kết nối, kể cả khi server ở máy khác. */
-    public boolean sendCustomerMessage(int customerUserId, String text) {
-        return sendOrQueue(ChatMessage.chatFromAdmin(customerUserId, userName, text), true);
-    }
-
-    public boolean sendCustomerImage(int customerUserId, String text, String imageBase64, String imageMime) {
-        if (imageBase64 == null || imageBase64.isBlank()) return false;
-        return sendOrQueue(ChatMessage.imageFromAdmin(customerUserId, userName, text, imageBase64, imageMime), true);
-    }
-
-    public boolean sendCustomerFile(int customerUserId, String text, String fileBase64, String fileName, String fileMime) {
-        if (fileBase64 == null || fileBase64.isBlank() || fileName == null || fileName.isBlank()) return false;
-        return sendOrQueue(ChatMessage.fileFromAdmin(customerUserId, userName, text, fileBase64, fileName, fileMime), true);
     }
 
     public boolean sendCustomerVoice(int customerUserId, String transcript, String voiceBase64,
@@ -236,7 +256,9 @@ public class ChatClient {
                 voiceBase64, voiceMime, durationMs), true);
     }
 
-
+    // ================================================================
+    // KẾT NỐI & GỬI NỘI BỘ
+    // ================================================================
 
     public boolean isConnected() { return client != null && client.isOpen(); }
 
@@ -255,8 +277,6 @@ public class ChatClient {
             }
             client.close();
         } catch (Exception e) {
-            // Dong ket noi luc thoat/dang xuat - khong can chan nguoi dung, nhung ghi log de
-            // phan biet voi truong hop mat ket noi bat thuong luc dang chat.
             AppLogger.getInstance().error(ErrorCode.WS_CONNECTION_FAIL,
                     "ChatClient.disconnect - loi khi dong ket noi chat", e);
         }

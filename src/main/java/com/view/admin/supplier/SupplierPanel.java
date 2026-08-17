@@ -5,6 +5,8 @@ import com.components.crud.CrudMode;
 import com.components.crud.TrashConfig;
 import com.dao.SupplierDAO;
 import com.model.Supplier;
+import com.model.permission.AppPermission;
+import com.service.AuthService;
 import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -38,7 +40,30 @@ public class SupplierPanel extends BaseCrudPanel<Supplier> {
     @Override
     protected String getPageSubtitle() { return "Quản lý danh sách nhà cung cấp và mặt hàng họ cung cấp"; }
     @Override
-    protected String getAddButtonLabel() { return "Thêm nhà cung cấp"; }
+    protected String getAddButtonLabel() {
+        return canCreateSuppliers() ? "Thêm nhà cung cấp" : null;
+    }
+
+    /** Thêm / xoá mềm / thùng rác — chỉ SUPPLIER_MANAGE. */
+    private boolean canCreateSuppliers() {
+        return AuthService.getInstance().can(AppPermission.SUPPLIER_MANAGE);
+    }
+
+    /** Sửa — SUPPLIER_MANAGE hoặc SUPPLIER_EDIT. */
+    private boolean canEditSuppliers() {
+        return AuthService.getInstance().can(AppPermission.SUPPLIER_MANAGE)
+                || AuthService.getInstance().can(AppPermission.SUPPLIER_EDIT);
+    }
+
+    @Override
+    protected boolean supportsEdit() {
+        return canEditSuppliers();
+    }
+
+    @Override
+    protected boolean supportsDelete() {
+        return canCreateSuppliers();
+    }
 
     @Override
     protected String[] getColumnNames() {
@@ -131,6 +156,9 @@ public class SupplierPanel extends BaseCrudPanel<Supplier> {
      */
     @Override
     protected TrashConfig<Supplier> getTrashConfig() {
+        if (!canCreateSuppliers()) {
+            return null;
+        }
         return new TrashConfig<>(
                 supplierDAO::getDeletedItems,
                 item -> supplierDAO.restore(item.getSupplierId()),

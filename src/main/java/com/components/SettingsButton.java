@@ -3,6 +3,7 @@ package com.components;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
 import com.settings.NotificationSettings;
+import com.theme.AccentColor;
 import com.theme.AppColor;
 import com.theme.AppShadow;
 import com.theme.ThemeManager;
@@ -111,6 +112,11 @@ public class SettingsButton extends JPanel {
         card.add(Box.createVerticalStrut(4));
         card.add(buildThemeOption(Lang.get("settings.theme.dark"), FontAwesomeSolid.MOON, ThemeMode.DARK, tm, popup));
 
+        // ==== Mau chu dao (Accent color) ====
+        card.add(Box.createVerticalStrut(10));
+        card.add(buildSectionTitle(Lang.get("settings.section.accent")));
+        card.add(buildAccentSwatches(tm, popup));
+
         card.add(Box.createVerticalStrut(10));
         card.add(buildDivider());
         card.add(Box.createVerticalStrut(8));
@@ -210,6 +216,74 @@ public class SettingsButton extends JPanel {
             }
         });
         return row;
+    }
+
+    /** Hang cac vien tron mau (swatch) de nguoi dung chon mau chu dao (accent) cho toan app. */
+    private JPanel buildAccentSwatches(ThemeManager tm, JPopupMenu popup) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        row.setOpaque(false);
+        row.setBorder(new EmptyBorder(2, 8, 2, 8));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(MENU_ROW_WIDTH, 40));
+
+        for (AccentColor accent : AccentColor.values()) {
+            row.add(buildAccentSwatch(accent, tm, popup));
+        }
+        return row;
+    }
+
+    /** 1 vien tron mau bam duoc - dau check hien khi dang la mau dang chon. */
+    private JComponent buildAccentSwatch(AccentColor accent, ThemeManager tm, JPopupMenu popup) {
+        final int DOT = 26;
+        Color swatchColor = accent.getSwatch();
+
+        JComponent swatch = new JComponent() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                boolean active = tm.getAccent() == accent;
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                g2.setColor(swatchColor);
+                g2.fillOval(3, 3, DOT - 6, DOT - 6);
+
+                if (active) {
+                    g2.setColor(AppColor.TEXT_PRIMARY);
+                    g2.setStroke(new BasicStroke(2f));
+                    g2.drawOval(1, 1, DOT - 3, DOT - 3);
+
+                    FontIcon check = FontIcon.of(FontAwesomeSolid.CHECK, 10);
+                    check.setIconColor(isLightColor(swatchColor) ? Color.BLACK : Color.WHITE);
+                    int cx = (DOT - check.getIconWidth()) / 2;
+                    int cy = (DOT - check.getIconHeight()) / 2;
+                    check.paintIcon(this, g2, cx, cy);
+                }
+                g2.dispose();
+            }
+
+            @Override
+            public Dimension getPreferredSize() {
+                return new Dimension(DOT, DOT);
+            }
+        };
+        swatch.setToolTipText(Lang.get(accent.getI18nKey()));
+        swatch.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        swatch.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                popup.setVisible(false);
+                if (tm.getAccent() != accent) {
+                    tm.setAccent(accent);
+                }
+            }
+        });
+        return swatch;
+    }
+
+    /** Do sang xap xi (YIQ) de biet nen ve dau check mau den hay trang cho de nhin tren swatch. */
+    private static boolean isLightColor(Color c) {
+        double yiq = (c.getRed() * 299 + c.getGreen() * 587 + c.getBlue() * 114) / 1000.0;
+        return yiq > 150;
     }
 
     /** Giong het buildThemeOption(...) nhung cho lua chon ngon ngu (Locale). */

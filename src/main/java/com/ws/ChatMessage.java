@@ -1,25 +1,28 @@
 package com.ws;
 
 public class ChatMessage {
-
     public String type;
     public int userId;
     public String userName;
     public String text;
     public long timestamp;
-    /** ID tin đã lưu DB (0 nếu tin realtime chưa persist / không có id). Dùng để xóa từng tin. */
+    /** ID tin đã lưu DB (0 nếu tin realtime chưa persist / không có id). */
     public long messageId;
-    /** true neu tin nhan nay la cua nhan vien quan tri gui xuong cho khach hang. */
+    /** true nếu tin nhắn này là của nhân viên quản trị gửi xuống cho khách hàng. */
     public boolean fromAdmin;
-
     public String imageBase64;
     public String imageMime;
-
-    /** File dinh kem (pdf, doc, zip...). */
+    
+    /** File đính kèm (dạng Base64 - giữ lại cho tương thích ngược & file nhỏ < 3MB) */
     public String fileBase64;
     public String fileName;
     public String fileMime;
-
+    
+    /** File đính kèm (dạng URL Cloudinary - ưu tiên dùng cho file lớn) */
+    public String fileUrl;
+    /** Dung lượng file tính bằng bytes, 0 nếu không biết */
+    public long fileSize;
+    
     /**
      * Tin nhắn thoại: audio + (tuỳ chọn) transcript.
      * text thường chứa transcript hoặc nhãn "[Tin nhắn thoại]".
@@ -28,8 +31,8 @@ public class ChatMessage {
     public String voiceMime;
     /** Thời lượng ms (ước lượng), 0 nếu không biết. */
     public int voiceDurationMs;
-
-    /** STAFF_CHAT: userId = nguoi gui, toUserId = nguoi nhan. */
+    
+    /** STAFF_CHAT: userId = người gửi, toUserId = người nhận. */
     public int toUserId;
     public String roleCode;
     public boolean staff;
@@ -46,6 +49,10 @@ public class ChatMessage {
         this.timestamp = System.currentTimeMillis();
     }
 
+    // ================================================================
+    // HỆ THỐNG
+    // ================================================================
+
     public static ChatMessage join(int userId, String userName) {
         return new ChatMessage("JOIN", userId, userName, null, false);
     }
@@ -54,6 +61,10 @@ public class ChatMessage {
         return new ChatMessage("LEAVE", userId, userName, null, false);
     }
 
+    // ================================================================
+    // TIN NHẮN VĂN BẢN
+    // ================================================================
+
     public static ChatMessage chat(int userId, String userName, String text) {
         return new ChatMessage("CHAT", userId, userName, text, false);
     }
@@ -61,6 +72,10 @@ public class ChatMessage {
     public static ChatMessage chatFromAdmin(int toUserId, String adminName, String text) {
         return new ChatMessage("CHAT", toUserId, adminName, text, true);
     }
+
+    // ================================================================
+    // ẢNH (Base64)
+    // ================================================================
 
     public static ChatMessage image(int userId, String userName, String text,
                                     String imageBase64, String imageMime) {
@@ -77,6 +92,10 @@ public class ChatMessage {
         m.imageMime = imageMime != null ? imageMime : "image/jpeg";
         return m;
     }
+
+    // ================================================================
+    // FILE DẠNG BASE64 (giữ lại tương thích ngược)
+    // ================================================================
 
     public static ChatMessage file(int userId, String userName, String text,
                                    String fileBase64, String fileName, String fileMime) {
@@ -96,11 +115,32 @@ public class ChatMessage {
         return m;
     }
 
-    /**
-     * Tin thoại khách → hỗ trợ.
-     * @param transcript có thể null/blank
-     * @param voiceBase64 WAV/base64
-     */
+    // ================================================================
+    // FILE DẠNG URL CLOUDINARY (MỚI)
+    // ================================================================
+
+    public static ChatMessage fileUrl(int userId, String userName, String text,
+                                      String fileUrl, String fileName, long fileSize) {
+        ChatMessage m = new ChatMessage("CHAT", userId, userName, text, false);
+        m.fileUrl = fileUrl;
+        m.fileName = fileName;
+        m.fileSize = fileSize;
+        return m;
+    }
+
+    public static ChatMessage fileUrlFromAdmin(int toUserId, String adminName, String text,
+                                               String fileUrl, String fileName, long fileSize) {
+        ChatMessage m = new ChatMessage("CHAT", toUserId, adminName, text, true);
+        m.fileUrl = fileUrl;
+        m.fileName = fileName;
+        m.fileSize = fileSize;
+        return m;
+    }
+
+    // ================================================================
+    // TIN NHẮN THOẠI
+    // ================================================================
+
     public static ChatMessage voice(int userId, String userName, String transcript,
                                     String voiceBase64, String voiceMime, int durationMs) {
         String label = (transcript != null && !transcript.isBlank())
@@ -129,6 +169,10 @@ public class ChatMessage {
         m.fileMime = m.voiceMime;
         return m;
     }
+
+    // ================================================================
+    // NHÂN VIÊN / STAFF
+    // ================================================================
 
     public static ChatMessage staffJoin(int userId, String userName, String roleCode) {
         ChatMessage m = new ChatMessage("STAFF_JOIN", userId, userName, null, false);
@@ -171,6 +215,17 @@ public class ChatMessage {
         return m;
     }
 
+    public static ChatMessage staffFileUrl(int fromUserId, String fromName, int toUserId,
+                                           String text, String fileUrl, String fileName, long fileSize) {
+        ChatMessage m = new ChatMessage("STAFF_CHAT", fromUserId, fromName, text, false);
+        m.staff = true;
+        m.toUserId = toUserId;
+        m.fileUrl = fileUrl;
+        m.fileName = fileName;
+        m.fileSize = fileSize;
+        return m;
+    }
+
     public static ChatMessage staffVoice(int fromUserId, String fromName, int toUserId,
                                          String transcript, String voiceBase64, String voiceMime, int durationMs) {
         String label = (transcript != null && !transcript.isBlank())
@@ -187,6 +242,10 @@ public class ChatMessage {
         return m;
     }
 
+    // ================================================================
+    // KIỂM TRA LOẠI TIN NHẮN
+    // ================================================================
+
     public boolean isJoin() { return "JOIN".equals(type); }
     public boolean isChat() { return "CHAT".equals(type); }
     public boolean isLeave() { return "LEAVE".equals(type); }
@@ -194,10 +253,19 @@ public class ChatMessage {
     public boolean isStaffLeave() { return "STAFF_LEAVE".equals(type); }
     public boolean isStaffChat() { return "STAFF_CHAT".equals(type); }
     public boolean hasImage() { return imageBase64 != null && !imageBase64.isBlank(); }
+    
+    /** Kiểm tra tin nhắn có file đính kèm (dạng URL hoặc Base64) */
     public boolean hasFile() {
-        return fileBase64 != null && !fileBase64.isBlank()
-                && fileName != null && !fileName.isBlank();
+        return (fileUrl != null && !fileUrl.isBlank())
+                || (fileBase64 != null && !fileBase64.isBlank()
+                    && fileName != null && !fileName.isBlank());
     }
+    
+    /** Kiểm tra file dạng URL Cloudinary */
+    public boolean hasFileUrl() {
+        return fileUrl != null && !fileUrl.isBlank();
+    }
+    
     public boolean hasVoice() {
         return voiceBase64 != null && !voiceBase64.isBlank();
     }

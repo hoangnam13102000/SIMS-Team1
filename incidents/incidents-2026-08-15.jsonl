@@ -1,0 +1,1 @@
+{"timestamp":"2026-08-15T15:57:24.185653700Z","type":"BACKUP_SUCCEEDED","severity":"LOW","source":"BackupManager","message":"Backup thanh cong bang jdbc-sql-dump -> backup_20260815_jdbc-sql-dump.sql.enc (262191 bytes, PT4.6922943S)","stackTrace":""}

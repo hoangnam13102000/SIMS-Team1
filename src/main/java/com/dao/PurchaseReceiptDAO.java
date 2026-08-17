@@ -58,7 +58,15 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
 
     @Override
     protected String[] getSearchableColumns() {
-        return new String[]{"r.ReceiptCode", "s.SupplierName", "u.FullName"};
+        return new String[]{
+                "r.ReceiptCode",
+                "s.SupplierName",
+                "u.FullName",
+                "(SELECT GROUP_CONCAT(CONCAT_WS(' ', p.ProductCode, p.ProductName) SEPARATOR ' ') "
+                        + "FROM PurchaseReceiptDetails d "
+                        + "JOIN Products p ON p.ProductID = d.ProductID "
+                        + "WHERE d.ReceiptID = r.ReceiptID)"
+        };
     }
 
     @Override

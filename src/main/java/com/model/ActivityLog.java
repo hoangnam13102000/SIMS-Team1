@@ -49,6 +49,29 @@ public class ActivityLog {
     public static final String ACTION_2FA_ENABLED = "2FA_ENABLED";
     public static final String ACTION_2FA_DISABLED = "2FA_DISABLED";
     public static final String ACTION_2FA_BACKUP_CODE_USED = "2FA_BACKUP_CODE_USED";
+    
+    /** Danh sach quyen (AppPermission) gan cho 1 vai tro (Role) - RolePermissionPanel. */
+    public static final String ENTITY_ROLE_PERMISSION = "ROLE_PERMISSION";
+
+    /** Nhan vien/QL phe duyet don doi/tra co gia tri lon (vuot nguong tu duyet). */
+    public static final String ACTION_RETURN_APPROVE = "RETURN_APPROVE";
+    /** Cap nhat gia ban san pham (vd tu Insert_SIMS.sql seed / thao tac gia thu cong). */
+    public static final String ACTION_PRODUCT_PRICE_UPDATE = "PRODUCT_PRICE_UPDATE";
+    /** Tao phieu tra hang cho nha cung cap. */
+    public static final String ACTION_SUPPLIER_RETURN_CREATE = "SUPPLIER_RETURN_CREATE";
+
+    /**
+     * Cac gia tri TableName duoc trigger SQL (Trigger_SIMS.sql) / du lieu seed
+     * (Insert_SIMS.sql) ghi TRUC TIEP xuong AuditLogs, dung dung ten bang SQL
+     * (PascalCase, so nhieu) thay vi hang so ENTITY_* phia tren (SCREAMING_
+     * SNAKE_CASE, so it) do lop ung dung Java tu dinh nghia. Khai bao lai o
+     * day de actionLabel()/entityLabel() trong AuditLogPanel co the anh xa
+     * ve nhan tieng Viet thay vi hien thi nguyen van ten bang.
+     */
+    public static final String ENTITY_RETURN_EXCHANGE_SQL = "ReturnExchanges";
+    public static final String ENTITY_SUPPLIER_RETURN_SQL = "SupplierReturns";
+    public static final String ENTITY_PRODUCT_SQL = "Products";
+    public static final String ENTITY_USER_SQL = "Users";
 
     private int logId;
     private String username;

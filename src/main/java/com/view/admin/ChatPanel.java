@@ -17,7 +17,12 @@ import com.utils.NotificationSound;
 import com.ws.ChatClient;
 import com.ws.ChatImageUtil;
 import com.ws.ChatFileUtil;
+import com.security.FileSecurityScanner;
+import com.security.ScanResult;
+import com.components.common.AttachmentPreviewDialog;
 import com.ws.ChatMessage;
+import com.service.media.CloudinaryService;
+import com.service.media.CloudinaryUploadException;
 import com.ws.ChatServer;
 import com.ws.VoiceNotePlayer;
 import com.ws.VoiceNoteSender;
@@ -1115,49 +1120,110 @@ public class ChatPanel extends JPanel {
                     "Không hỗ trợ", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        if (file.length() > ChatFileUtil.MAX_BYTES) {
-            JOptionPane.showMessageDialog(this,
-                    "File quá lớn (tối đa " + (ChatFileUtil.MAX_BYTES / 1_000_000) + " MB).",
-                    "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
+
+        // Quét virus + xem trước nội dung — giống AI chatbot
+        ScanResult scan = FileSecurityScanner.getInstance().scan(file);
+        if (scan.isBlocked()) {
+            // Dialog hiện banner "ĐÃ CHẶN", nút gửi bị khóa
+            AttachmentPreviewDialog.showPreview(this, file, scan);
             return;
         }
+        if (!AttachmentPreviewDialog.showPreview(this, file, scan)) {
+            return; // user hủy
+        }
+
         final boolean forStaff = staffTabActive;
         final Integer targetId = forStaff ? selectedStaffId : selectedCustomerId;
         if (targetId == null) return;
+
+        // Kiểm tra xem có phải ảnh không (ảnh vẫn giữ cách cũ: nén + Base64 để hiển thị preview)
         final boolean asImage = ChatFileUtil.isImageExtension(file.getName())
                 && ChatImageUtil.isSupportedImage(file);
+
+        // Quyết định chế độ gửi:
+        // - Ảnh: dùng cách cũ (Base64) để hiển thị preview trực tiếp trong chat
+        // - File nhỏ (< 2MB): vẫn dùng Base64 cho đơn giản
+        // - File lớn (≥ 2MB): upload lên Cloudinary rồi gửi URL
+        final boolean useCloudinary = !asImage && file.length() >= 2 * 1024 * 1024;
+
+        // Kiểm tra giới hạn kích thước
+        if (useCloudinary && file.length() > 25 * 1024 * 1024) {
+            JOptionPane.showMessageDialog(this,
+                    "File quá lớn (tối đa 25 MB khi dùng Cloudinary).",
+                    "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (!useCloudinary && file.length() > ChatFileUtil.MAX_BYTES) {
+            JOptionPane.showMessageDialog(this,
+                    "File quá lớn (tối đa " + (ChatFileUtil.MAX_BYTES / 1_000_000) + " MB cho file nhỏ).\n"
+                    + "File lớn hơn 2MB sẽ tự động dùng Cloudinary.",
+                    "Quá dung lượng", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         imageButton.setEnabled(false);
         sendButton.setEnabled(false);
+        inputField.setEnabled(false);
+
+        final String caption = inputField.getText() == null ? "" : inputField.getText().trim();
+        final long fileSize = file.length();
+
         new SwingWorker<Object, Void>() {
             @Override
             protected Object doInBackground() {
-                if (asImage) return ChatImageUtil.encodeForChat(file);
+                if (asImage) {
+                    // Ảnh: nén + Base64 (cách cũ)
+                    return ChatImageUtil.encodeForChat(file);
+                }
+                if (useCloudinary) {
+                    // File lớn: upload lên Cloudinary
+                    try {
+                        String cloudUrl = CloudinaryService.getInstance().uploadFile(file);
+                        return new CloudinaryFileResult(cloudUrl, file.getName(), fileSize);
+                    } catch (CloudinaryUploadException e) {
+                        return new UploadError(e.getMessage());
+                    }
+                }
+                // File nhỏ: Base64 (cách cũ)
                 return ChatFileUtil.encodeForChat(file);
             }
+
             @Override
             protected void done() {
                 setCursor(Cursor.getDefaultCursor());
                 imageButton.setEnabled(true);
                 sendButton.setEnabled(true);
-                Object encoded;
+                inputField.setEnabled(true);
+
+                Object result;
                 try {
-                    encoded = get();
+                    result = get();
                 } catch (Exception ex) {
-                    encoded = null;
+                    result = null;
                 }
-                if (encoded == null) {
+
+                if (result == null) {
                     JOptionPane.showMessageDialog(ChatPanel.this,
                             asImage ? "Không đọc được ảnh." : "Không đọc được file.",
                             "Lỗi", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
-                String caption = inputField.getText() == null ? "" : inputField.getText().trim();
+
+                // Xử lý lỗi upload Cloudinary
+                if (result instanceof UploadError) {
+                    JOptionPane.showMessageDialog(ChatPanel.this,
+                            "Lỗi upload file: " + ((UploadError) result).message,
+                            "Lỗi Cloudinary", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+
                 boolean sent;
                 ChatMessage record;
-                BufferedImage preview = null;
+
                 if (asImage) {
-                    ChatImageUtil.EncodedImage img = (ChatImageUtil.EncodedImage) encoded;
+                    // ====== GỬI ẢNH (Base64 - giữ nguyên cách cũ) ======
+                    ChatImageUtil.EncodedImage img = (ChatImageUtil.EncodedImage) result;
                     if (forStaff) {
                         sent = ChatClient.getInstance().sendStaffImage(
                                 targetId, caption.isEmpty() ? null : caption, img.base64, img.mime);
@@ -1171,14 +1237,42 @@ public class ChatPanel extends JPanel {
                                 caption.isEmpty() ? null : caption, img.base64, img.mime);
                         customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
                     }
-                    preview = ChatImageUtil.decodeBase64(img.base64);
+                    BufferedImage preview = ChatImageUtil.decodeBase64(img.base64);
                     if ((forStaff && selectedStaffId != null && selectedStaffId.equals(targetId))
                             || (!forStaff && selectedCustomerId != null && selectedCustomerId.equals(targetId))) {
-                        addBubble(caption.isEmpty() ? null : caption, preview, null, null, true,
+                        addBubble(caption.isEmpty() ? null : caption, preview,
+                                null, null, null, true,
+                                TIME_FORMAT.format(new Date(record.timestamp)));
+                    }
+                } else if (result instanceof CloudinaryFileResult) {
+                    // ====== GỬI FILE LỚN (URL Cloudinary - MỚI) ======
+                    CloudinaryFileResult cloudFile = (CloudinaryFileResult) result;
+                    if (forStaff) {
+                        sent = ChatClient.getInstance().sendStaffFileUrl(
+                                targetId, caption.isEmpty() ? null : caption,
+                                cloudFile.url, cloudFile.fileName, cloudFile.fileSize);
+                        record = ChatMessage.staffFileUrl(myUserId, myName, targetId,
+                                caption.isEmpty() ? null : caption,
+                                cloudFile.url, cloudFile.fileName, cloudFile.fileSize);
+                        staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                    } else {
+                        sent = ChatClient.getInstance().sendCustomerFileUrl(
+                                targetId, caption.isEmpty() ? null : caption,
+                                cloudFile.url, cloudFile.fileName, cloudFile.fileSize);
+                        record = ChatMessage.fileUrlFromAdmin(targetId, myName,
+                                caption.isEmpty() ? null : caption,
+                                cloudFile.url, cloudFile.fileName, cloudFile.fileSize);
+                        customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
+                    }
+                    if ((forStaff && selectedStaffId != null && selectedStaffId.equals(targetId))
+                            || (!forStaff && selectedCustomerId != null && selectedCustomerId.equals(targetId))) {
+                        addBubble(caption.isEmpty() ? null : caption, null,
+                                cloudFile.fileName, null, cloudFile.url, true,
                                 TIME_FORMAT.format(new Date(record.timestamp)));
                     }
                 } else {
-                    ChatFileUtil.EncodedFile f = (ChatFileUtil.EncodedFile) encoded;
+                    // ====== GỬI FILE NHỎ (Base64 - giữ nguyên cách cũ) ======
+                    ChatFileUtil.EncodedFile f = (ChatFileUtil.EncodedFile) result;
                     if (forStaff) {
                         sent = ChatClient.getInstance().sendStaffFile(
                                 targetId, caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
@@ -1187,18 +1281,19 @@ public class ChatPanel extends JPanel {
                         staffConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
                     } else {
                         sent = ChatClient.getInstance().sendCustomerFile(
-                                targetId, caption.isEmpty() ? null : caption,
-                                f.base64, f.fileName, f.mime);
+                                targetId, caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
                         record = ChatMessage.fileFromAdmin(targetId, myName,
                                 caption.isEmpty() ? null : caption, f.base64, f.fileName, f.mime);
                         customerConversations.computeIfAbsent(targetId, k -> new ArrayList<>()).add(record);
                     }
                     if ((forStaff && selectedStaffId != null && selectedStaffId.equals(targetId))
                             || (!forStaff && selectedCustomerId != null && selectedCustomerId.equals(targetId))) {
-                        addBubble(caption.isEmpty() ? null : caption, null, f.fileName, f.base64, true,
+                        addBubble(caption.isEmpty() ? null : caption, null,
+                                f.fileName, f.base64, null, true,
                                 TIME_FORMAT.format(new Date(record.timestamp)));
                     }
                 }
+
                 inputField.setText("");
                 if (forStaff && !sent) {
                     JOptionPane.showMessageDialog(ChatPanel.this,
@@ -1236,7 +1331,11 @@ public class ChatPanel extends JPanel {
                     && selectedCustomerId != null && selectedCustomerId == message.userId;
             if (viewing) {
                 BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-                addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
+                addBubble(message.text, image,
+                        message.hasFile() ? message.fileName : null,
+                        message.hasFile() && !message.hasFileUrl() ? message.fileBase64 : null,
+                        message.hasFileUrl() ? message.fileUrl : null,
+                        false, TIME_FORMAT.format(new Date(message.timestamp)));
                 if (message.text != null && !message.text.isBlank()) {
                     speakIncomingIfEnabled(message.text);
                 }
@@ -1289,7 +1388,11 @@ public class ChatPanel extends JPanel {
                 && selectedStaffId != null && selectedStaffId == peerId;
         if (viewing) {
             BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
-            addBubble(message.text, image, message.hasFile() ? message.fileName : null, message.hasFile() ? message.fileBase64 : null, false, TIME_FORMAT.format(new Date(message.timestamp)));
+            addBubble(message.text, image,
+                    message.hasFile() ? message.fileName : null,
+                    message.hasFile() && !message.hasFileUrl() ? message.fileBase64 : null,
+                    message.hasFileUrl() ? message.fileUrl : null,
+                    false, TIME_FORMAT.format(new Date(message.timestamp)));
         } else {
             staffUnread.put(peerId, true);
             staffList.repaint();
@@ -1490,7 +1593,8 @@ public class ChatPanel extends JPanel {
                 BufferedImage image = message.hasImage() ? ChatImageUtil.decodeBase64(message.imageBase64) : null;
                 addBubbleSilently(message.text, image,
                         message.hasFile() ? message.fileName : null,
-                        message.hasFile() ? message.fileBase64 : null,
+                        message.hasFile() && !message.hasFileUrl() ? message.fileBase64 : null,
+                        message.hasFileUrl() ? message.fileUrl : null,
                         mine, TIME_FORMAT.format(new Date(message.timestamp)),
                         message.messageId, message);
             }
@@ -1501,33 +1605,38 @@ public class ChatPanel extends JPanel {
     }
 
     private void addBubble(String text, BufferedImage image, boolean isMine, String time) {
-        addBubble(text, image, null, null, isMine, time, 0L, null);
+        addBubble(text, image, null, null, null, isMine, time, 0L, null);
     }
 
     private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
                            boolean isMine, String time) {
-        addBubble(text, image, fileName, fileBase64, isMine, time, 0L, null);
+        addBubble(text, image, fileName, fileBase64, null, isMine, time, 0L, null);
     }
 
     private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
-                           boolean isMine, String time, long messageId, ChatMessage linked) {
-        addBubbleSilently(text, image, fileName, fileBase64, isMine, time, messageId, linked);
+                           String fileUrl, boolean isMine, String time) {
+        addBubble(text, image, fileName, fileBase64, fileUrl, isMine, time, 0L, null);
+    }
+
+    private void addBubble(String text, BufferedImage image, String fileName, String fileBase64,
+                           String fileUrl, boolean isMine, String time, long messageId, ChatMessage linked) {
+        addBubbleSilently(text, image, fileName, fileBase64, fileUrl, isMine, time, messageId, linked);
         messagesContainer.revalidate();
         messagesContainer.repaint();
         scrollToBottom();
     }
 
     private void addBubbleSilently(String text, BufferedImage image, boolean isMine, String time) {
-        addBubbleSilently(text, image, null, null, isMine, time, 0L, null);
+        addBubbleSilently(text, image, null, null, null, isMine, time, 0L, null);
     }
 
     private void addBubbleSilently(String text, BufferedImage image, String fileName, String fileBase64,
                                   boolean isMine, String time) {
-        addBubbleSilently(text, image, fileName, fileBase64, isMine, time, 0L, null);
+        addBubbleSilently(text, image, fileName, fileBase64, null, isMine, time, 0L, null);
     }
 
     private void addBubbleSilently(String text, BufferedImage image, String fileName, String fileBase64,
-                                  boolean isMine, String time, long messageId, ChatMessage linked) {
+                                   String fileUrl, boolean isMine, String time, long messageId, ChatMessage linked) {
         int viewportW = scrollPane.getViewport().getWidth();
         if (viewportW <= 0) viewportW = 480;
         int maxBubbleW = Math.max(200, Math.min(360, viewportW - 48));
@@ -1564,7 +1673,14 @@ public class ChatPanel extends JPanel {
                     || fileName.toLowerCase().endsWith(".wav");
             if (isVoiceFile && fileBase64 != null && !fileBase64.isBlank()) {
                 contentWrap.add(buildVoicePlayControl(fileBase64, isMine));
+            } else if (fileUrl != null && !fileUrl.isBlank()) {
+                // ====== FILE DẠNG URL CLOUDINARY (MỚI) ======
+                long fSize = (linked != null) ? linked.fileSize : 0;
+                JLabel fileLabel = buildCloudinaryFileLabel(fileName, fileUrl, fSize, isMine);
+                fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                contentWrap.add(fileLabel);
             } else {
+                // ====== FILE DẠNG BASE64 (CŨ) ======
                 JLabel fileLabel = buildFileAttachmentLabel(fileName, fileBase64, isMine);
                 fileLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
                 contentWrap.add(fileLabel);
@@ -2078,4 +2194,82 @@ public class ChatPanel extends JPanel {
             return this;
         }
     }
+
+    // ================================================================
+    // CLOUDINARY FILE ATTACHMENT - MỚI
+    // ================================================================
+
+    /** Hiển thị file đính kèm dạng URL Cloudinary */
+    private JLabel buildCloudinaryFileLabel(String fileName, String fileUrl, long fileSize, boolean isMine) {
+        String sizeText = fileSize > 0 ? " (" + formatFileSize(fileSize) + ")" : "";
+        JLabel label = new JLabel("📎 " + fileName + sizeText);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        label.setForeground(isMine ? Color.WHITE : AppColor.ACCENT);
+        label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        label.setToolTipText("<html>Nhấp để tải file từ Cloudinary<br>" + fileUrl + "</html>");
+        label.setBorder(new EmptyBorder(6, 0, 0, 0));
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                openCloudinaryFile(fileUrl, fileName);
+            }
+        });
+        return label;
+    }
+
+    /** Mở/tải file từ Cloudinary URL */
+    private void openCloudinaryFile(String fileUrl, String fileName) {
+        int option = JOptionPane.showConfirmDialog(this,
+                "Mở file '" + fileName + "' trong trình duyệt?\n"
+                + "File sẽ được tải trực tiếp từ Cloudinary.",
+                "Tải file",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+
+        if (option == JOptionPane.YES_OPTION) {
+            try {
+                java.awt.Desktop.getDesktop().browse(new java.net.URI(fileUrl));
+            } catch (Exception ex) {
+                // Fallback: hiển thị URL để người dùng copy
+                JTextField urlField = new JTextField(fileUrl);
+                urlField.setEditable(false);
+                urlField.selectAll();
+                JOptionPane.showMessageDialog(this,
+                        new Object[]{"Không thể mở tự động. Copy URL bên dưới:", urlField},
+                        "URL file", JOptionPane.INFORMATION_MESSAGE);
+            }
+        }
+    }
+
+    /** Định dạng dung lượng file */
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    // ================================================================
+    // CLASS HỖ TRỢ CHO UPLOAD CLOUDINARY
+    // ================================================================
+
+    /** Kết quả upload Cloudinary thành công */
+    private static class CloudinaryFileResult {
+        final String url;
+        final String fileName;
+        final long fileSize;
+        CloudinaryFileResult(String url, String fileName, long fileSize) {
+            this.url = url;
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+        }
+    }
+
+    /** Lỗi upload Cloudinary */
+    private static class UploadError {
+        final String message;
+        UploadError(String message) {
+            this.message = message;
+        }
+    }
+
 }

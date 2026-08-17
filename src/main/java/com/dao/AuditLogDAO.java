@@ -14,17 +14,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-/**
- * DAO cho bang AuditLogs (xem sql/SIMS.sql) - noi luu that su cac dong nhat
- * ky audit (AppLogger.log(...) muc AUDIT). Duoc dung boi:
- *  - com.core.log.DbAuditLogSink: ghi 1 dong moi cho moi lan AppLogger phat AUDIT.
- *  - com.view.admin.auditlog.AuditLogPanel: doc/loc/tim kiem de hien thi cho Admin.
- * <p>
- * LUU Y: insert() KHONG duoc phep goi AppLogger.getInstance().error(...) khi
- * that bai, vi DbAuditLogSink (nguon goi insert() nay) chinh la sink dang
- * duoc AppLogger dung - goi lai AppLogger o day co the tao vong lap ghi log
- * vo han neu DB dang loi. Loi o day chi in ra System.err.
- */
 public class AuditLogDAO extends BaseDAO<ActivityLog> {
 
     @Override
@@ -107,9 +96,15 @@ public class AuditLogDAO extends BaseDAO<ActivityLog> {
      * loai doi tuong + khoang thoi gian - moi tham so co the null/rong de
      * bo qua dieu kien tuong ung. Dung chung cho ca tai trang dau (moi tham
      * so null) va tim kiem/loc tren AuditLogPanel.
+     * <p>
+     * {@code actions}/{@code entityTypes} nhan NHIEU gia tri (IN-list) thay
+     * vi 1 gia tri don, vi cung 1 nhan hien thi tieng Viet (vd "Tài khoản")
+     * co the tuong ung voi nhieu gia tri RAW khac nhau trong DB (vd "USER"
+     * ghi tu Java, "Users" ghi truc tiep tu trigger SQL) - xem AuditLogPanel
+     * #setupFilters(). Dung List rong hoac null = khong loc theo dieu kien do.
      */
     public PaginationHelper.PaginationResult<ActivityLog> filter(
-            int page, int pageSize, String keyword, String action, String entityType,
+            int page, int pageSize, String keyword, List<String> actions, List<String> entityTypes,
             Date fromDate, Date toDate) {
 
         List<String> conditions = new ArrayList<>();
@@ -128,13 +123,13 @@ public class AuditLogDAO extends BaseDAO<ActivityLog> {
             params.add(likeValue);
             params.add(likeValue);
         }
-        if (action != null && !action.isBlank()) {
-            conditions.add("a.Action = ?");
-            params.add(action);
+        if (actions != null && !actions.isEmpty()) {
+            conditions.add("a.Action IN (" + placeholders(actions.size()) + ")");
+            params.addAll(actions);
         }
-        if (entityType != null && !entityType.isBlank()) {
-            conditions.add("a.TableName = ?");
-            params.add(entityType);
+        if (entityTypes != null && !entityTypes.isEmpty()) {
+            conditions.add("a.TableName IN (" + placeholders(entityTypes.size()) + ")");
+            params.addAll(entityTypes);
         }
         if (fromDate != null) {
             conditions.add("a.CreatedAt >= ?");
@@ -147,6 +142,15 @@ public class AuditLogDAO extends BaseDAO<ActivityLog> {
 
         String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
         return getPaged(page, pageSize, whereClause, params.toArray());
+    }
+
+    private static String placeholders(int count) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            if (i > 0) sb.append(',');
+            sb.append('?');
+        }
+        return sb.toString();
     }
 
     /** Danh sach cac gia tri Action / TableName da tung xuat hien - dung do dropdown loc tren AuditLogPanel. */

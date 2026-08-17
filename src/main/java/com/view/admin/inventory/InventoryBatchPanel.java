@@ -3,7 +3,6 @@ package com.view.admin.inventory;
 import com.components.AppAlert;
 import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
-import com.components.crud.CrudMode;
 import com.dao.CategoryDAO;
 import com.dao.InventoryBatchDAO;
 import com.model.Category;
@@ -50,7 +49,7 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
         // can cuon ngang: Ma lo, So lo NCC (doi chieu bao bi), San pham, HSD
         // (uu tien FEFO), Con lai, Trang thai. Cac thong tin it dùng hang ngay
         // (NSX, Nha cung cap, SL nhap ban dau, Gia nhap) xem trong dialog chi
-        // tiet (nut Xem) - da co du o InventoryBatchFormDialog VIEW mode.
+        // tiet (nut Xem) - InventoryBatchDetailDialog.
         table.setColumnWidths(150, 130, 220, 130, 90, 130);
         table.setColumnMinWidths(120, 100, 160, 100, 70, 100);
         table.setBadgeColumn(5, this::statusLabel, this::statusColor);
@@ -265,7 +264,10 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
     protected void viewRow(int modelRow) {
         InventoryBatch item = rowToItem(modelRow);
         if (item == null) return;
-        openDialog(CrudMode.VIEW, item);
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        Frame frame = owner instanceof Frame ? (Frame) owner : null;
+        InventoryBatchDetailDialog dialog = new InventoryBatchDetailDialog(frame, item);
+        dialog.setVisible(true);
     }
 
     @Override
@@ -276,15 +278,6 @@ public class InventoryBatchPanel extends BaseCrudPanel<InventoryBatch> {
 
     @Override
     protected boolean deleteItem(InventoryBatch item) { return false; }
-
-    private void openDialog(CrudMode mode, InventoryBatch item) {
-        Window owner = SwingUtilities.getWindowAncestor(this);
-        Frame frame = owner instanceof Frame ? (Frame) owner : null;
-        InventoryBatchFormDialog dialog = new InventoryBatchFormDialog(
-                frame, mode, item, batchDAO);
-        dialog.onSaved(this::handleFormSaved);
-        dialog.setVisible(true);
-    }
 
     @Override
     protected void onDataChanged() {

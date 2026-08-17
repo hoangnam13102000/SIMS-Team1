@@ -80,12 +80,19 @@ public final class AppColor {
     public static Color TABLE_EDIT_ACTION;
     public static Color TABLE_DELETE_ACTION;
 
+    // Mau chu dao (accent) nguoi dung dang chon - mac dinh BLUE (giu nguyen giao dien cu).
+    private static AccentColor currentAccent = AccentColor.BLUE;
+
     static {
         applyTheme(ThemeMode.LIGHT);
     }
 
     public static ThemeMode getCurrentMode() {
         return currentMode;
+    }
+
+    public static AccentColor getCurrentAccent() {
+        return currentAccent;
     }
 
     /** Gan lai toan bo bang mau theo theme duoc chon. Goi tu ThemeManager. */
@@ -110,11 +117,7 @@ public final class AppColor {
         TEXT_MUTED_ALT = dark ? new Color(200, 210, 225) : new Color(148, 163, 184);
         ICON_MUTED = dark ? new Color(190, 198, 212) : new Color(156, 163, 175);
 
-        ACCENT = dark ? new Color(96, 165, 250) : new Color(30, 100, 200);
-        ACCENT_HOVER = dark ? new Color(59, 130, 246) : new Color(21, 78, 163);
-        ACCENT_SOFT = dark ? new Color(96, 165, 250, 50) : new Color(30, 100, 200, 40);
-        ACCENT_SELECTION_BG = dark ? new Color(15, 45, 90) : new Color(219, 234, 254);
-        ACCENT_BG_SOFT = dark ? new Color(12, 35, 68) : new Color(236, 244, 253);
+        recomputeAccentColors(dark);
 
         SUCCESS = dark ? new Color(74, 222, 128) : new Color(21, 128, 61);
         SUCCESS_BG = dark ? new Color(20, 44, 34) : new Color(236, 253, 245);
@@ -147,5 +150,50 @@ public final class AppColor {
         TABLE_VIEW_ACTION = dark ? new Color(176, 188, 206) : new Color(71, 85, 105);
         TABLE_EDIT_ACTION = ACCENT;
         TABLE_DELETE_ACTION = ERROR;
+    }
+
+    /**
+     * Doi mau chu dao (accent) ma khong doi Light/Dark - goi tu ThemeManager
+     * khi nguoi dung chon mau khac trong Cai dat. Tinh lai toan bo cac bien
+     * the ACCENT_* tu 1 mau goc duy nhat (accent.getLight()/getDark()) de
+     * moi mau moi them vao enum AccentColor deu tu dong co du bien the can
+     * thiet, khong phai khai bao thu cong tung mau.
+     */
+    public static void applyAccent(AccentColor accent) {
+        currentAccent = accent;
+        recomputeAccentColors(currentMode == ThemeMode.DARK);
+        TABLE_EDIT_ACTION = ACCENT;
+    }
+
+    /** Tinh ACCENT va cac bien the (hover/soft/selection/bg-soft) tu currentAccent + theme dang bat. */
+    private static void recomputeAccentColors(boolean dark) {
+        Color base = dark ? currentAccent.getDark() : currentAccent.getLight();
+        Color blendTarget = dark ? new Color(15, 17, 21) : Color.WHITE;
+
+        ACCENT = base;
+        ACCENT_HOVER = scale(base, dark ? 0.80 : 0.72);
+        ACCENT_SOFT = new Color(base.getRed(), base.getGreen(), base.getBlue(), dark ? 50 : 40);
+        ACCENT_SELECTION_BG = blend(base, blendTarget, 0.86);
+        ACCENT_BG_SOFT = blend(base, blendTarget, dark ? 0.90 : 0.92);
+    }
+
+    /** Nhan tung kenh mau voi factor (dung tao ban dam/nhat hon, vd mau hover). */
+    private static Color scale(Color c, double factor) {
+        return new Color(
+                clampChannel((int) Math.round(c.getRed() * factor)),
+                clampChannel((int) Math.round(c.getGreen() * factor)),
+                clampChannel((int) Math.round(c.getBlue() * factor)));
+    }
+
+    /** Tron mau c ve phia mau base theo ty le ratio (0 = giu nguyen c, 1 = ra het base). */
+    private static Color blend(Color c, Color base, double ratio) {
+        return new Color(
+                clampChannel((int) Math.round(c.getRed() * (1 - ratio) + base.getRed() * ratio)),
+                clampChannel((int) Math.round(c.getGreen() * (1 - ratio) + base.getGreen() * ratio)),
+                clampChannel((int) Math.round(c.getBlue() * (1 - ratio) + base.getBlue() * ratio)));
+    }
+
+    private static int clampChannel(int v) {
+        return Math.max(0, Math.min(255, v));
     }
 }

@@ -40,18 +40,63 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
 import java.awt.GridLayout;
 import java.io.File;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Random;
 
 public class ProductFormDialog extends BaseFormDialog<Product> {
 
     private static final String[] STATUS_LABELS = {"Đang bán", "Ngừng bán"};
     private static final String[] UNIT_SUGGESTIONS = {"Cái", "Kg", "Hộp", "Chai", "Gói", "Lốc", "Thùng", "Lon"};
     private static final int PREVIEW_SIZE = 140;
+    private static final Random RANDOM = new Random();
+
+    /** Du lieu mau de dien nhanh khi Demo project - khong lien quan logic nghiep vu. */
+    private static final DemoTemplate[] DEMO_TEMPLATES = {
+            new DemoTemplate("Nước ngọt Coca-Cola", "Coca-Cola", "Chai", "330ml",
+                    "Nước giải khát có gas, vị truyền thống, đóng chai tiện lợi.", 10000, "nước"),
+            new DemoTemplate("Sữa tươi Vinamilk không đường", "Vinamilk", "Hộp", "1L",
+                    "Sữa tươi tiệt trùng nguyên chất, không đường, giàu canxi.", 32000, "sữa"),
+            new DemoTemplate("Mì Hảo Hảo tôm chua cay", "Acecook", "Gói", "75g",
+                    "Mì ăn liền vị tôm chua cay đặc trưng, tiện lợi cho bữa ăn nhanh.", 4500, "mì"),
+            new DemoTemplate("Bánh Oreo vị vani", "Oreo", "Gói", "137g",
+                    "Bánh quy kem vani giòn tan, thích hợp làm quà vặt.", 18000, "bánh"),
+            new DemoTemplate("Nước rửa chén Sunlight chanh", "Sunlight", "Chai", "750ml",
+                    "Nước rửa chén hương chanh, đánh bay dầu mỡ hiệu quả.", 25000, "rửa chén"),
+            new DemoTemplate("Dầu gội Clear bạc hà", "Clear", "Chai", "650ml",
+                    "Dầu gội trị gàu hương bạc hà, mát lạnh sảng khoái.", 65000, "dầu gội"),
+            new DemoTemplate("Kẹo Chupa Chups vị trái cây", "Chupa Chups", "Cái", "12g",
+                    "Kẹo mút vị trái cây nhiều màu sắc, được trẻ em yêu thích.", 3000, "kẹo"),
+            new DemoTemplate("Cà phê hòa tan G7 3in1", "Trung Nguyên", "Hộp", "336g",
+                    "Cà phê hòa tan 3 trong 1, hộp 21 gói tiện dùng mỗi sáng.", 45000, "cà phê"),
+    };
+
+    /** Ban ghi don gian chua 1 mau du lieu Demo cho san pham. */
+    private static final class DemoTemplate {
+        final String name;
+        final String brand;
+        final String unit;
+        final String weightVolume;
+        final String description;
+        final long sellPrice;
+        final String categoryKeyword;
+
+        DemoTemplate(String name, String brand, String unit, String weightVolume,
+                     String description, long sellPrice, String categoryKeyword) {
+            this.name = name;
+            this.brand = brand;
+            this.unit = unit;
+            this.weightVolume = weightVolume;
+            this.description = description;
+            this.sellPrice = sellPrice;
+            this.categoryKeyword = categoryKeyword;
+        }
+    }
 
     private final ProductDAO productDAO;
     private final List<Category> categories;
@@ -79,6 +124,7 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
     private JLabel imageHintLabel;
     private File pendingImageFile;
     private String currentImageUrl;
+    private JButton demoButton;
 
     public ProductFormDialog(Frame owner, CrudMode mode, Product editingEntity, ProductDAO productDAO) {
         super(owner, "sản phẩm", mode, editingEntity);
@@ -110,6 +156,11 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
             productCodeField.setEnabled(false);
             panel.add(buildCodeCard());
             panel.add(Box.createVerticalStrut(14));
+        }
+
+        if (mode == CrudMode.ADD) {
+            panel.add(buildDemoBar());
+            panel.add(Box.createVerticalStrut(10));
         }
 
         JPanel columns = new JPanel();
@@ -181,6 +232,66 @@ public class ProductFormDialog extends BaseFormDialog<Product> {
         col.add(imageHintLabel);
 
         return col;
+    }
+
+    // ---------------------------------------------------------------
+    // Nút Demo — chỉ hiện khi Thêm mới, tự động điền dữ liệu mẫu
+    // ---------------------------------------------------------------
+
+    private JPanel buildDemoBar() {
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        bar.setOpaque(false);
+        bar.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+
+        demoButton = new JButton("Điền dữ liệu Demo", FontIcon.of(FontAwesomeSolid.BOLT, 13, Color.WHITE));
+        demoButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        demoButton.setFocusPainted(false);
+        demoButton.setBackground(AppColor.ACCENT);
+        demoButton.setForeground(Color.WHITE);
+        demoButton.setBorder(new EmptyBorder(7, 14, 7, 14));
+        demoButton.setToolTipText("Tự động điền thông tin mẫu để giảm thời gian demo");
+        demoButton.addActionListener(e -> fillDemoData());
+        bar.add(demoButton);
+        return bar;
+    }
+
+    /** Dien nhanh mot bo du lieu mau ngau nhien vao form de phuc vu demo, khong dung cho du lieu thuc te. */
+    private void fillDemoData() {
+        DemoTemplate t = DEMO_TEMPLATES[RANDOM.nextInt(DEMO_TEMPLATES.length)];
+        int suffix = 100 + RANDOM.nextInt(900);
+
+        productNameField.setText(t.name + " " + suffix);
+        selectCategoryByKeyword(t.categoryKeyword);
+        brandField.setText(t.brand);
+        unitCombo.setSelectedItem(t.unit);
+        weightVolumeField.setText(t.weightVolume);
+        descriptionArea.setText(t.description);
+
+        // Bo tich "Tu dong tinh gia ban" de dien thang gia ban mau (Gia nhap luc ADD luon = 0 nen preview tu dong se khong hop ly cho demo).
+        if (autoPriceCheckbox.isSelected()) {
+            autoPriceCheckbox.setSelected(false);
+        }
+        sellPriceField.setText(CurrencyDocumentFilter.format(BigDecimal.valueOf(t.sellPrice)));
+
+        minStockField.setText(String.valueOf(5 + RANDOM.nextInt(20)));
+        statusCombo.setSelectedIndex(0);
+
+        showMessage(null);
+        productNameField.requestFocusInWindow();
+    }
+
+    /** Chon danh muc co ten chua tu khoa lien quan; neu khong tim thay thi chon ngau nhien mot danh muc bat ky (chi de demo nhanh). */
+    private void selectCategoryByKeyword(String keyword) {
+        if (categoryCombo.getItemCount() == 0) return;
+        for (int i = 0; i < categoryCombo.getItemCount(); i++) {
+            Category c = categoryCombo.getItemAt(i);
+            if (c.getCategoryName() != null && c.getCategoryName().toLowerCase().contains(keyword.toLowerCase())) {
+                categoryCombo.setSelectedIndex(i);
+                return;
+            }
+        }
+        categoryCombo.setSelectedIndex(RANDOM.nextInt(categoryCombo.getItemCount()));
     }
 
     private void chooseImage() {

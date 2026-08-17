@@ -7,6 +7,8 @@ import com.service.ai.GeminiService;
 import com.service.ai.voice.AudioRecorder;
 import com.service.ai.voice.SpeechToTextService;
 import com.service.ai.voice.TextToSpeechService;
+import com.security.FileSecurityScanner;
+import com.security.ScanResult;
 import com.theme.AppColor;
 import com.utils.FileDownloadUI;
 import com.utils.ImageUtil;
@@ -514,7 +516,10 @@ public class AiAssistantPanel extends JPanel {
 
         setInputEnabled(false);
         final File[] files = selected;
-        new SwingWorker<List<PendingAttachment>, Void>() {
+        new SwingWorker<List<PendingAttachment>, String>() {
+            /** Thông báo tổng hợp khi có file bị chặn / bỏ qua. */
+            private final StringBuilder notes = new StringBuilder();
+
             @Override
             protected List<PendingAttachment> doInBackground() {
                 List<PendingAttachment> out = new ArrayList<>();
@@ -523,19 +528,68 @@ public class AiAssistantPanel extends JPanel {
                     String lower = file.getName().toLowerCase();
                     boolean spreadsheet = lower.endsWith(".xlsx") || lower.endsWith(".docx")
                             || lower.endsWith(".xls") || lower.endsWith(".doc");
-                    if (!ChatFileUtil.isSupportedFile(file) && !spreadsheet) continue;
-                    if (file.length() > ChatFileUtil.MAX_BYTES) continue;
+                    if (!ChatFileUtil.isSupportedFile(file) && !spreadsheet) {
+                        notes.append("• ").append(file.getName())
+                                .append(": định dạng không hỗ trợ.\n");
+                        continue;
+                    }
+                    if (file.length() > ChatFileUtil.MAX_BYTES) {
+                        notes.append("• ").append(file.getName())
+                                .append(": vượt dung lượng tối đa.\n");
+                        continue;
+                    }
 
+                    // 1) Quét virus / heuristic (Windows Defender nếu có)
+                    ScanResult scan = FileSecurityScanner.getInstance().scan(file);
+                    if (scan.isBlocked()) {
+                        notes.append("• ").append(file.getName()).append(": BỊ CHẶN — ")
+                                .append(scan.getMessage() != null ? scan.getMessage() : scan.getStatus())
+                                .append('\n');
+                        // Vẫn mở preview (nút Đính kèm khóa) để user thấy lý do
+                        final ScanResult scanUi = scan;
+                        final File fileUi = file;
+                        try {
+                            javax.swing.SwingUtilities.invokeAndWait(() ->
+                                    AttachmentPreviewDialog.showPreview(AiAssistantPanel.this, fileUi, scanUi));
+                        } catch (Exception ignored) {
+                        }
+                        continue;
+                    }
+
+                    // 2) Dialog xem trước nội dung — user phải xác nhận mới đính kèm
+                    final ScanResult scanUi = scan;
+                    final File fileUi = file;
+                    boolean[] accepted = {false};
+                    try {
+                        javax.swing.SwingUtilities.invokeAndWait(() ->
+                                accepted[0] = AttachmentPreviewDialog.showPreview(
+                                        AiAssistantPanel.this, fileUi, scanUi));
+                    } catch (Exception e) {
+                        notes.append("• ").append(file.getName())
+                                .append(": không mở được hộp xem trước.\n");
+                        continue;
+                    }
+                    if (!accepted[0]) {
+                        notes.append("• ").append(file.getName()).append(": đã bỏ qua (không xác nhận).\n");
+                        continue;
+                    }
+
+                    // 3) Encode sau khi user đồng ý
                     boolean asImage = ChatFileUtil.isImageExtension(file.getName())
                             && ChatImageUtil.isSupportedImage(file);
                     if (asImage) {
                         ChatImageUtil.EncodedImage img = ChatImageUtil.encodeForChat(file);
                         if (img != null) {
                             out.add(PendingAttachment.image(img.base64, img.mime, file.getName()));
+                        } else {
+                            notes.append("• ").append(file.getName()).append(": không đọc được ảnh.\n");
                         }
                     } else {
                         ChatFileUtil.EncodedFile f = ChatFileUtil.encodeForChat(file);
-                        if (f == null) continue;
+                        if (f == null) {
+                            notes.append("• ").append(file.getName()).append(": không đọc được file.\n");
+                            continue;
+                        }
                         String localPath = null;
                         if (lower.endsWith(".xlsx") || lower.endsWith(".docx")) {
                             try {
@@ -562,9 +616,15 @@ public class AiAssistantPanel extends JPanel {
                 setInputEnabled(true);
                 try {
                     List<PendingAttachment> added = get();
+                    if (notes.length() > 0) {
+                        AppAlert.warning(AiAssistantPanel.this, "Một số file không được đính kèm",
+                                notes.toString().trim());
+                    }
                     if (added == null || added.isEmpty()) {
-                        AppAlert.warning(AiAssistantPanel.this, "Không đọc được",
-                                "Không xử lý được file đã chọn (định dạng/dung lượng).");
+                        if (notes.length() == 0) {
+                            AppAlert.warning(AiAssistantPanel.this, "Không đọc được",
+                                    "Không xử lý được file đã chọn (định dạng/dung lượng).");
+                        }
                         return;
                     }
                     pendingAttachments.addAll(added);
@@ -589,7 +649,10 @@ public class AiAssistantPanel extends JPanel {
         }
     }
 
-    /** Hiện danh sách chip với icon Word / Excel / PDF… đúng như bản cũ. */
+    /**
+     * Danh sách file đang chờ gửi: mỗi dòng [icon loại] tên file [× bỏ đính kèm].
+     * Icon × nằm bên phải tên — click để gỡ file khỏi danh sách đính kèm.
+     */
     private void updatePendingChip() {
         pendingListPanel.removeAll();
         if (pendingAttachments.isEmpty()) {
@@ -602,30 +665,58 @@ public class AiAssistantPanel extends JPanel {
                 FontAwesomeSolid iconType = att.isImage
                         ? FontAwesomeSolid.IMAGE
                         : iconForFile(att.displayName);
-                FontIcon icon = FontIcon.of(iconType, 12);
-                icon.setIconColor(AppColor.ACCENT);
+                FontIcon typeIcon = FontIcon.of(iconType, 13);
+                typeIcon.setIconColor(AppColor.ACCENT);
 
-                JLabel nameLabel = new JLabel(att.displayName, icon, SwingConstants.LEFT);
+                JLabel nameLabel = new JLabel(att.displayName, typeIcon, SwingConstants.LEFT);
                 nameLabel.setIconTextGap(6);
-                nameLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-                nameLabel.setForeground(AppColor.ACCENT);
+                nameLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                nameLabel.setForeground(AppColor.TEXT_PRIMARY);
+                nameLabel.setToolTipText(att.displayName);
 
-                JLabel removeLabel = new JLabel(iconOf(FontAwesomeSolid.TIMES, 10, AppColor.TEXT_MUTED));
-                removeLabel.setBorder(new EmptyBorder(0, 6, 0, 0));
+                // Nút × bỏ đính kèm — rõ, hover đỏ
+                FontIcon removeIcon = FontIcon.of(FontAwesomeSolid.TIMES_CIRCLE, 14);
+                removeIcon.setIconColor(AppColor.TEXT_MUTED);
+                JLabel removeLabel = new JLabel(removeIcon);
+                removeLabel.setBorder(new EmptyBorder(0, 8, 0, 2));
                 removeLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-                removeLabel.setToolTipText("Bỏ file này");
+                removeLabel.setToolTipText("Bỏ đính kèm file này");
                 removeLabel.addMouseListener(new MouseAdapter() {
                     @Override
                     public void mouseClicked(MouseEvent e) {
                         removePendingAt(idx);
                     }
+
+                    @Override
+                    public void mouseEntered(MouseEvent e) {
+                        FontIcon hot = FontIcon.of(FontAwesomeSolid.TIMES_CIRCLE, 14);
+                        hot.setIconColor(AppColor.ERROR);
+                        removeLabel.setIcon(hot);
+                    }
+
+                    @Override
+                    public void mouseExited(MouseEvent e) {
+                        FontIcon normal = FontIcon.of(FontAwesomeSolid.TIMES_CIRCLE, 14);
+                        normal.setIconColor(AppColor.TEXT_MUTED);
+                        removeLabel.setIcon(normal);
+                    }
                 });
 
-                JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-                row.setOpaque(false);
-                row.add(nameLabel);
-                row.add(removeLabel);
-                pendingListPanel.add(row);
+                JPanel row = new JPanel(new BorderLayout(6, 0));
+                row.setOpaque(true);
+                row.setBackground(AppColor.ACCENT_BG_SOFT != null ? AppColor.ACCENT_BG_SOFT : AppColor.CANCEL_BG);
+                row.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                        new EmptyBorder(4, 8, 4, 6)));
+                row.add(nameLabel, BorderLayout.CENTER);
+                row.add(removeLabel, BorderLayout.EAST);
+
+                // Khoảng cách giữa các chip
+                JPanel wrap = new JPanel(new BorderLayout());
+                wrap.setOpaque(false);
+                wrap.setBorder(new EmptyBorder(0, 0, 4, 0));
+                wrap.add(row, BorderLayout.CENTER);
+                pendingListPanel.add(wrap);
             }
             pendingAttachChip.setVisible(true);
         }

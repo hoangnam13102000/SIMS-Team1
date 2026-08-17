@@ -359,6 +359,30 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
      * Phan trang + tim kiem + loc theo khoang ngay lap phieu (CreatedAt).
      * Loc theo [fromDate 00:00:00, toDate+1 00:00:00) de bao gom tron ca ngay toDate.
      */
+    /** Danh sach ma lo/lot number tung xuat hien trong phieu tieu huy. */
+    public List<String> getBatchSearchSuggestions() {
+        String sql = "SELECT DISTINCT b.BatchCode, b.LotNumber "
+                + "FROM StockDisposalDetails sd "
+                + "JOIN InventoryBatch b ON b.BatchID = sd.BatchID "
+                + "WHERE b.BatchCode IS NOT NULL OR b.LotNumber IS NOT NULL "
+                + "ORDER BY b.BatchCode, b.LotNumber";
+        List<String> list = new ArrayList<>();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String batchCode = rs.getString("BatchCode");
+                String lotNumber = rs.getString("LotNumber");
+                if (batchCode != null && !batchCode.isBlank()) list.add(batchCode);
+                if (lotNumber != null && !lotNumber.isBlank()) list.add(lotNumber);
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StockDisposalDAO.getBatchSearchSuggestions", e);
+        }
+        return list;
+    }
+
     public PaginationHelper.PaginationResult<StockDisposal> getPagedFiltered(
             int page, int pageSize, String keyword, LocalDate fromDate, LocalDate toDate) {
         List<String> conditions = new ArrayList<>();
@@ -373,6 +397,18 @@ public class StockDisposalDAO extends BaseDAO<StockDisposal> {
                 keywordCondition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(likeParam);
             }
+
+            // Cho phep tra cuu phieu theo Ma lo/LotNumber cua cac dong chi tiet.
+            // Mot phieu co the co nhieu lo, vi vay dung EXISTS thay vi JOIN de
+            // khong lam nhan ban header va van phan trang dung so phieu.
+            if (columns.length > 0) keywordCondition.append(" OR ");
+            keywordCondition.append("EXISTS (SELECT 1 FROM StockDisposalDetails sd "
+                    + "JOIN InventoryBatch b ON b.BatchID = sd.BatchID "
+                    + "WHERE sd.DisposalID = d.DisposalID "
+                    + "AND (b.BatchCode LIKE ? ESCAPE '!' OR b.LotNumber LIKE ? ESCAPE '!'))");
+            params.add(likeParam);
+            params.add(likeParam);
+
             keywordCondition.append(")");
             conditions.add(keywordCondition.toString());
         }

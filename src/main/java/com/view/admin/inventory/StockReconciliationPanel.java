@@ -3,6 +3,7 @@ package com.view.admin.inventory;
 import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.DatePickerField;
+import com.components.common.SquareCheckIcon;
 import com.components.crud.BaseCrudPanel;
 import com.dao.ProductDAO;
 import com.dao.StockReconciliationDAO;
@@ -30,9 +31,10 @@ import java.util.List;
 import javax.swing.SwingUtilities;
 
 public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation> {
-    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final int COL_ACTUAL = 3;
-    private static final int COL_DIFF = 4;
+    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM HH:mm:ss");
+    private static final int COL_CHECKED = 4;
+    private static final int COL_ACTUAL = 5;
+    private static final int COL_DIFF = 6;
     private static final int DAY_ROLLOVER_CHECK_MS = 30_000;
 
     private final StockReconciliationDAO reconciliationDAO = new StockReconciliationDAO();
@@ -47,9 +49,13 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     public StockReconciliationPanel() {
         super();
         trackedDate = LocalDate.now();
-        table.setColumnWidths(90, 170, 100, 100, 90, 130, 130);
-        table.setColumnMinWidths(70, 130, 80, 80, 70, 100, 110);
+        table.setColumnWidths(90, 170, 130, 90, 90, 100, 90, 130, 130, 130);
+        table.setColumnMinWidths(70, 130, 100, 70, 70, 80, 70, 100, 110, 110);
+        // BaseTable mac dinh khoa tat ca o. Cho phep tick Da kiem ke va sua Ton thuc te
+        // thi JTable moi goi CellEditor.isCellEditable(...); khi do isToday moi duoc kiem tra.
+        table.setEditableColumns(COL_CHECKED, COL_ACTUAL);
         table.setBadgeColumn(COL_DIFF, this::discrepancyLabel, this::discrepancyColor);
+        installCheckedColumn();
         installConditionalActualEditor();
 
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
@@ -69,7 +75,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     c.setIcon(copyIcon);
                     c.setIconTextGap(6);
                     c.setHorizontalTextPosition(SwingConstants.LEFT);
-                    c.setToolTipText("Click de copy ma san pham: " + text);
+                    c.setToolTipText("Click để copy mã sản phẩm: " + text);
                 } else {
                     c.setIcon(null);
                     c.setToolTipText(null);
@@ -88,8 +94,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 c.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
                 int modelRow = tbl.convertRowIndexToModel(row);
                 StockReconciliation item = rowToItem(modelRow);
-                boolean isToday = item != null && item.getCreatedAt() != null
-                        && item.getCreatedAt().toLocalDate().equals(LocalDate.now());
+                boolean isToday = isToday(item);
                 c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG
                         : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 if (isToday) {
@@ -99,7 +104,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     c.setIcon(editIcon);
                     c.setIconTextGap(6);
                     c.setHorizontalTextPosition(SwingConstants.LEFT);
-                    c.setToolTipText("Double-click hoac F2 de sua ton thuc te (phiên hom nay)");
+                    c.setToolTipText("Double-click hoặc F2 để sửa tồn thực tế (phiên hôm nay)");
                     c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 } else {
                     c.setForeground(AppColor.TEXT_MUTED);
@@ -126,7 +131,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     String text = value != null ? value.toString() : "";
                     if (text != null && !text.isBlank()) {
                         copyToClipboard(text);
-                        AppAlert.success(StockReconciliationPanel.this, "Copy thanh cong", "Da copy ma san pham: " + text);
+                        AppAlert.success(StockReconciliationPanel.this, "Copy thành công", "Đã copy mã sản phẩm: " + text);
                     }
                 }
             }
@@ -188,18 +193,115 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         worker.execute();
     }
 
+    private void installCheckedColumn() {
+        JTable jt = table.getTable();
+        jt.getColumnModel().getColumn(COL_CHECKED).setCellRenderer(new DefaultTableCellRenderer() {
+            private final JCheckBox box = new JCheckBox();
+            {
+                box.setHorizontalAlignment(SwingConstants.CENTER);
+                box.setOpaque(false);
+                box.setBorderPainted(false);
+                box.setFocusPainted(false);
+                box.setIcon(new SquareCheckIcon(true));
+            }
+            @Override
+            public Component getTableCellRendererComponent(JTable tbl, Object value, boolean selected, boolean focus, int row, int column) {
+                boolean isToday = isToday(rowToItem(tbl.convertRowIndexToModel(row)));
+                box.setSelected(Boolean.TRUE.equals(value));
+                box.setEnabled(isToday);
+                box.setCursor(isToday ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
+                box.setToolTipText(isToday ? "Tick khi Đã kiểm lô hàng" : "Phiên đã khóa — chỉ xem, không sửa được");
+                box.setBackground(selected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                return box;
+            }
+        });
+        jt.getColumnModel().getColumn(COL_CHECKED).setCellEditor(new DefaultCellEditor(new JCheckBox()) {
+            {
+                JCheckBox cb = (JCheckBox) getComponent();
+                cb.setHorizontalAlignment(SwingConstants.CENTER);
+                cb.setOpaque(false);
+                cb.setBorderPainted(false);
+                cb.setFocusPainted(false);
+                cb.setIcon(new SquareCheckIcon(true));
+                cb.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            }
+            @Override
+            public boolean isCellEditable(EventObject event) {
+                if (!super.isCellEditable(event)) return false;
+                int viewRow = event instanceof MouseEvent
+                        ? jt.rowAtPoint(((MouseEvent) event).getPoint())
+                        : jt.getSelectedRow();
+                if (viewRow < 0) return false;
+                StockReconciliation item = rowToItem(jt.convertRowIndexToModel(viewRow));
+                if (!isToday(item)) {
+                    SwingUtilities.invokeLater(() -> AppAlert.warning(StockReconciliationPanel.this,
+                            "Phiên đã khóa", "Đã qua 00:00 — không thể đánh dấu kiểm kê phiên cũ."));
+                    return false;
+                }
+                return true;
+            }
+        });
+
+        table.getModel().addTableModelListener(e -> {
+            if (suppressActualEdit || e.getType() != TableModelEvent.UPDATE || e.getColumn() != COL_CHECKED) return;
+            int modelRow = e.getFirstRow();
+            if (modelRow < 0) return;
+            StockReconciliation item = rowToItem(modelRow);
+            if (item == null || !isToday(item)) return;
+            Object raw = table.getModel().getValueAt(modelRow, COL_CHECKED);
+            boolean checked = Boolean.TRUE.equals(raw);
+            Integer userId = currentUserId();
+            if (userId == null) return;
+            boolean ok = reconciliationDAO.setChecked(item.getReconciliationId(), checked, userId);
+            if (!ok) {
+                suppressActualEdit = true;
+                try { table.getModel().setValueAt(item.isChecked(), modelRow, COL_CHECKED); }
+                finally { suppressActualEdit = false; }
+                AppAlert.error(this, "Cập nhật thất bại", "Không thể cập nhật trạng thái kiểm kê.");
+                return;
+            }
+            item.setChecked(checked);
+            item.setCheckedBy(checked ? userId : 0);
+            item.setCheckedByName(checked && AuthService.getInstance().getCurrentUser() != null
+                    ? AuthService.getInstance().getCurrentUser().getFullName() : null);
+            item.setCheckedAt(checked ? java.time.LocalDateTime.now() : null);
+            suppressActualEdit = true;
+            try {
+                table.getModel().setValueAt(checked ? item.getCheckedByName() : "-", modelRow, 7);
+                table.getModel().setValueAt(checked && item.getCheckedAt() != null
+                        ? item.getCheckedAt().format(DATE_TIME_FORMAT) : "-", modelRow, 8);
+            } finally { suppressActualEdit = false; }
+            jt.repaint();
+        });
+    }
+
     private void installConditionalActualEditor() {
         JTable jt = table.getTable();
         jt.getColumnModel().getColumn(COL_ACTUAL).setCellEditor(new DefaultCellEditor(new JTextField()) {
+            {
+                // Mặc định DefaultCellEditor của JTextField cần 2 click.
+                // Cho phép 1 click để nhân viên nhập số ngay trên bảng.
+                setClickCountToStart(1);
+            }
+
             @Override
             public boolean isCellEditable(EventObject anEvent) {
                 if (!super.isCellEditable(anEvent)) return false;
-                int row = jt.getEditingRow();
-                if (row < 0) return false;
-                int modelRow = jt.convertRowIndexToModel(row);
+
+                // getEditingRow() không dùng được ở đây vì editor chưa bắt đầu,
+                // nên trước đây luôn có thể trả -1 và chặn việc nhập.
+                int viewRow;
+                if (anEvent instanceof MouseEvent) {
+                    MouseEvent me = (MouseEvent) anEvent;
+                    viewRow = jt.rowAtPoint(me.getPoint());
+                } else {
+                    viewRow = jt.getSelectedRow();
+                }
+                if (viewRow < 0) return false;
+
+                int modelRow = jt.convertRowIndexToModel(viewRow);
                 StockReconciliation item = rowToItem(modelRow);
-                boolean editable = item != null && item.getCreatedAt() != null
-                        && item.getCreatedAt().toLocalDate().equals(LocalDate.now());
+                boolean editable = isToday(item);
                 if (!editable) {
                     SwingUtilities.invokeLater(() ->
                         AppAlert.warning(StockReconciliationPanel.this,
@@ -218,16 +320,15 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             if (modelRow < 0) return;
             StockReconciliation item = rowToItem(modelRow);
             if (item == null) return;
-            if (item.getCreatedAt() == null
-                    || !item.getCreatedAt().toLocalDate().equals(LocalDate.now())) {
+            if (!isToday(item)) {
                 suppressActualEdit = true;
                 try {
                     table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
                 } finally {
                     suppressActualEdit = false;
                 }
-                AppAlert.error(this, "Khong the sua",
-                        "Da qua 00:00 — phien cu da khoa. Chi duoc sua phien hom nay.");
+                AppAlert.error(this, "Không thể sửa",
+                        "Đã qua 00:00 — phiên cũ đã khóa. Chỉ được sửa phiên hôm nay.");
                 return;
             }
             Object raw = table.getModel().getValueAt(modelRow, COL_ACTUAL);
@@ -245,10 +346,39 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 } finally {
                     suppressActualEdit = false;
                 }
-                AppAlert.error(this, "So khong hop le", "Ton thuc te phai la so nguyen ≥ 0.");
+                AppAlert.error(this, "Số không hợp lệ", "Tồn thực tế phải là số nguyên ≥ 0.");
                 return;
             }
-            if (newActual == item.getActualStock()) return;
+            // Chặn chung cho MỌI dòng (kể cả sản phẩm không quản lý theo lô):
+            // tồn thực tế không được lớn hơn tồn còn lại của hệ thống tại thời điểm
+            // lập phiên đối chiếu (cột "Tồn kho" đang hiển thị trên bảng).
+            int systemStock = item.getSystemStock();
+            if (newActual > systemStock) {
+                suppressActualEdit = true;
+                try {
+                    table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                } finally {
+                    suppressActualEdit = false;
+                }
+                AppAlert.warning(this, "Tồn thực tế vượt giới hạn",
+                        "Tồn thực tế không được > tồn còn lại của hệ thống.");
+                return;
+            }
+            if (item.getBatchId() > 0) {
+                int[] batchLimits = reconciliationDAO.getBatchStockLimits(item.getReconciliationId());
+                if (batchLimits == null) {
+                    suppressActualEdit = true;
+                    try {
+                        table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
+                    } finally {
+                        suppressActualEdit = false;
+                    }
+                    AppAlert.error(this, "Không thể kiểm tra tồn lô",
+                            "Không đọc được tồn lô hiện tại. Chưa cập nhật tồn thực tế.");
+                    return;
+                }
+            }
+
             Integer userId = currentUserId();
             if (userId == null) return;
             boolean ok = reconciliationDAO.updateActualStock(
@@ -260,22 +390,30 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 } finally {
                     suppressActualEdit = false;
                 }
-                AppAlert.error(this, "Cap nhat that bai",
-                        "Khong the cap nhat ton thuc te. Vui long thu lai.");
+                AppAlert.error(this, "Cập nhật thất bại",
+                        "Không thể cập nhật tồn thực tế. Kiểm tra số tồn theo lô (không được vượt số lượng nhập của lô) và thử lại.");
                 return;
             }
             item.setActualStock(newActual);
             item.setDiscrepancy(newActual - item.getSystemStock());
+            item.setChecked(true);
+            item.setCheckedBy(userId);
+            item.setCheckedByName(AuthService.getInstance().getCurrentUser() != null
+                    ? AuthService.getInstance().getCurrentUser().getFullName() : null);
+            item.setCheckedAt(java.time.LocalDateTime.now());
             suppressActualEdit = true;
             try {
+                table.getModel().setValueAt(true, modelRow, COL_CHECKED);
                 table.getModel().setValueAt(discrepancyText(item.getDiscrepancy()), modelRow, COL_DIFF);
+                table.getModel().setValueAt(item.getCheckedByName() != null ? item.getCheckedByName() : "-", modelRow, 7);
+                table.getModel().setValueAt(item.getCheckedAt().format(DATE_TIME_FORMAT), modelRow, 8);
             } finally {
                 suppressActualEdit = false;
             }
             table.getTable().repaint();
-            AppAlert.success(this, "Da cap nhat",
-                    "Ton thuc te \"" + item.getProductName() + "\" = " + newActual
-                            + " (chenh lech: " + discrepancyText(item.getDiscrepancy()) + ")");
+            AppAlert.success(this, "Đã cập nhật",
+                    "Tồn thực tế lô \"" + (item.getBatchCode() != null ? item.getBatchCode() : item.getProductName()) + "\" = " + newActual
+                            + " (chênh lệch: " + discrepancyText(item.getDiscrepancy()) + ")");
         });
     }
 
@@ -306,8 +444,8 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 try {
                     int created = get();
                     if (created > 0) {
-                        AppAlert.success(StockReconciliationPanel.this, "Phien doi chieu hom nay",
-                                "Da tao " + created + " san pham de doi chieu kho.");
+                        AppAlert.success(StockReconciliationPanel.this, "Phiên đối chiếu hôm nay",
+                                "Đã tạo " + created + " sản phẩm để đối chiếu kho.");
                     }
                 } catch (Exception ignored) {
                 }
@@ -315,6 +453,12 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             }
         };
         worker.execute();
+    }
+
+    /** Chi phien duoc tao trong ngay hien tai moi duoc phep sua ton thuc te. */
+    private boolean isToday(StockReconciliation item) {
+        if (item == null || item.getCreatedAt() == null) return false;
+        return item.getCreatedAt().toLocalDate().equals(LocalDate.now());
     }
 
     private Integer currentUserId() {
@@ -325,10 +469,10 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     private void buildDateFilterBar() {
         fromDateFilter = new DatePickerField(null, true);
         toDateFilter = new DatePickerField(null, true);
-        JLabel fromLabel = new JLabel("Tu ngay");
+        JLabel fromLabel = new JLabel("Từ ngày");
         fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         fromLabel.setForeground(AppColor.TEXT_MUTED);
-        JLabel toLabel = new JLabel("Den ngay");
+        JLabel toLabel = new JLabel("Đến ngày");
         toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         toLabel.setForeground(AppColor.TEXT_MUTED);
         JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
@@ -345,7 +489,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         clearIcon.setIconColor(AppColor.TEXT_MUTED);
         clearDateFilterLink = new JLabel(clearIcon);
         clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        clearDateFilterLink.setToolTipText("Xoa loc ngay");
+        clearDateFilterLink.setToolTipText("Xóa lọc ngày");
         clearDateFilterLink.setVisible(false);
         clearDateFilterLink.addMouseListener(new MouseAdapter() {
             @Override
@@ -403,20 +547,20 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.BALANCE_SCALE; }
 
     @Override
-    protected String getPageTitle() { return "Doi chieu kho cuoi ngay"; }
+    protected String getPageTitle() { return "Đối chiếu kho cuối ngày"; }
 
     @Override
     protected String getPageSubtitle() {
-        return "00:00 tự động KHÓA phiên cũ + tạo phiên mới hôm nay — sửa tồn thực tế trực tiếp trên bảng";
+        return "00:00 tự động KHÓA phiên cũ + tạo phiên mới hôm nay — mỗi dòng tương ứng 1 lô hàng";
     }
 
     @Override
-    protected String getAddButtonLabel() { return "Dong bo SP hom nay"; }
+    protected String getAddButtonLabel() { return "Đồng bộ SP hôm nay"; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Ma SP", "San pham", "Ton he thong", "Ton thuc te",
-                "Chenh lech", "Nguoi doi chieu", "Thoi gian"};
+        return new String[]{"Mã SP", "Sản phẩm", "Mã lô", "Tồn kho", "Đã kiểm", "Tồn thực tế",
+                "Chênh lệch", "Người đối chiếu", "Thời gian"};
     }
 
     @Override
@@ -424,19 +568,21 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         return new Object[]{
                 item.getProductCode(),
                 item.getProductName(),
+                item.getBatchCode() != null ? item.getBatchCode() : "-",
                 item.getSystemStock(),
+                item.isChecked(),
                 item.getActualStock(),
                 discrepancyText(item.getDiscrepancy()),
-                item.getCreatedByName(),
-                item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-"
+                item.getCheckedByName() != null ? item.getCheckedByName() : "-",
+                item.getCheckedAt() != null ? item.getCheckedAt().format(DATE_TIME_FORMAT) : "-"
         };
     }
 
     @Override
-    protected int[] numericColumns() { return new int[]{2, 3}; }
+    protected int[] numericColumns() { return new int[]{3, 5}; }
 
     @Override
-    protected String getEntityLabel() { return "phien doi chieu kho"; }
+    protected String getEntityLabel() { return "phiên đối chiếu kho"; }
 
     @Override
     protected String getItemDisplayName(StockReconciliation item) {
@@ -460,7 +606,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tim theo ten san pham, ma SP, nguoi doi chieu..."; }
+    protected String getSearchPlaceholder() { return "Tìm theo tên sản phẩm, mã SP, người đối chiếu..."; }
 
     @Override
     protected boolean supportsEdit() { return false; }
@@ -488,22 +634,22 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         rolloverToNewDayIfNeeded();
         List<Product> activeProducts = productDAO.findAllActive();
         if (activeProducts.isEmpty()) {
-            BaseDialog.info(this, "Khong co san pham",
-                    "Chua co san pham dang ban nao de doi chieu. Vui long them san pham truoc.");
+            BaseDialog.info(this, "Không có sản phẩm",
+                    "Chưa có sản phẩm đang bán nào để đối chiếu. Vui lòng thêm sản phẩm trước.");
             return;
         }
         int created = reconciliationDAO.ensureDailySession(LocalDate.now(), userId);
         if (created > 0) {
-            AppAlert.success(this, "Dong bo thanh cong",
-                    "Da them " + created + " san pham vao phien doi chieu hom nay.");
+            AppAlert.success(this, "Đồng bộ thành công",
+                    "Đã thêm " + created + " sản phẩm vào phiên đối chiếu hôm nay.");
             LocalDate today = LocalDate.now();
             fromDateFilter.setValue(today);
             toDateFilter.setValue(today);
             if (clearDateFilterLink != null) clearDateFilterLink.setVisible(true);
             reload();
         } else {
-            AppAlert.success(this, "Da dong bo",
-                    "Phien hom nay da co du " + activeProducts.size() + " san pham dang ban.");
+            AppAlert.success(this, "Đã đồng bộ",
+                    "Phiên hôm nay đã có đủ " + activeProducts.size() + " sản phẩm đang bán.");
             LocalDate today = LocalDate.now();
             fromDateFilter.setValue(today);
             toDateFilter.setValue(today);
@@ -521,7 +667,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     }
 
     private String discrepancyText(int discrepancy) {
-        if (discrepancy == 0) return "Khop";
+        if (discrepancy == 0) return "Khớp";
         return (discrepancy > 0 ? "+" : "") + discrepancy;
     }
 
@@ -531,7 +677,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
 
     private Color discrepancyColor(Object value) {
         String label = String.valueOf(value);
-        if ("Khop".equals(label)) return AppColor.SUCCESS;
+        if ("Khớp".equals(label)) return AppColor.SUCCESS;
         return label.startsWith("+") ? AppColor.WARNING : AppColor.ERROR;
     }
 

@@ -8,6 +8,8 @@ import com.components.crud.TrashConfig;
 import com.components.table.ActionColumn;
 import com.dao.CustomerDAO;
 import com.model.Customer;
+import com.model.permission.AppPermission;
+import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -32,14 +34,19 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     public CustomerPanel() {
         super();
 
-        table.setActionColumn(new ActionColumn()
+        ActionColumn actions = new ActionColumn()
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
-                        this::viewRowPublic)
-                .add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
-                        this::editRowPublic)
-                .add("delete", FontAwesomeSolid.TRASH_ALT, AppColor.ERROR, "Xóa khách hàng",
-                        this::deleteRowPublic));
+                        this::viewRowPublic);
+        if (canEditCustomers()) {
+            actions.add("edit", FontAwesomeSolid.EDIT, AppColor.ACCENT, "Chỉnh sửa",
+                    this::editRowPublic);
+        }
+        if (canManageCustomers()) {
+            actions.add("delete", FontAwesomeSolid.TRASH_ALT, AppColor.ERROR, "Xóa khách hàng",
+                    this::deleteRowPublic);
+        }
+        table.setActionColumn(actions);
 
         // Không STT / Điểm TV / Khóa — nhường chỗ cho Mã KH, Đăng nhập, Họ tên, Email, SĐT
         // để hiện full text (không "CUS_00...", không "gmail..."). Không scroll ngang.
@@ -110,6 +117,17 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
     /** Khach hang tu dang ky qua RegisterFrame - khong tao moi tu trang quan tri nay. */
     @Override
     protected String getAddButtonLabel() { return null; }
+
+    /** Xoá mềm / thùng rác — CUSTOMER_MANAGE. */
+    private boolean canManageCustomers() {
+        return AuthService.getInstance().can(AppPermission.CUSTOMER_MANAGE);
+    }
+
+    /** Sửa — CUSTOMER_MANAGE hoặc CUSTOMER_EDIT. */
+    private boolean canEditCustomers() {
+        return AuthService.getInstance().can(AppPermission.CUSTOMER_MANAGE)
+                || AuthService.getInstance().can(AppPermission.CUSTOMER_EDIT);
+    }
 
     @Override
     protected String[] getColumnNames() {
@@ -186,6 +204,9 @@ public class CustomerPanel extends BaseCrudPanel<Customer> {
      */
     @Override
     protected TrashConfig<Customer> getTrashConfig() {
+        if (!canManageCustomers()) {
+            return null;
+        }
         return new TrashConfig<>(
                 customerDAO::getDeletedItems,
                 item -> customerDAO.restore(item.getCustomerId()));

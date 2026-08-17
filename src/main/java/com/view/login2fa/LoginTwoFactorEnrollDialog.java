@@ -14,11 +14,16 @@ import com.view.forgotpassword.WizardWidgets;
 import com.components.common.PrimaryButton;
 import com.components.common.RoundedField;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
@@ -50,6 +55,7 @@ public class LoginTwoFactorEnrollDialog extends JDialog {
 
     private JLabel qrLabel;
     private JLabel secretLabel;
+    private JLabel copySecretIcon;
     private RoundedField totpCodeField;
     private JLabel totpMessage;
     private PrimaryButton totpVerifyButton;
@@ -231,10 +237,60 @@ public class LoginTwoFactorEnrollDialog extends JDialog {
         panel.add(qrWrapper);
         panel.add(Box.createVerticalStrut(AppSpacing.SM));
 
-        secretLabel = WizardWidgets.createWrappedLabel(" ", AppFont.SMALL_BOLD, AppColor.TEXT_MUTED);
-        secretLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        panel.add(secretLabel);
-        panel.add(Box.createVerticalStrut(AppSpacing.LG));
+        // ---- Khoi "Ma nhap thu cong": KHONG dua vao alignmentX cua BoxLayout
+        // nua (khong dang tin cay voi cac JLabel/JPanel co kich thuoc nho, gay
+        // lech trai nhu truoc). Thay vao do dung DUNG ky thuat wrapper full-
+        // width + FlowLayout.CENTER giong het qrWrapper o tren (da kiem chung
+        // hoat dong dung, QR luon can giua) -> dam bao ca khoi nay can giua
+        // chinh xac ngay duoi QR. Ma bi mat duoc dat trong 1 "chip" bo vien,
+        // nen nhe de nhin ro rang va chuyen nghiep hon la chu tran. ----
+        JLabel secretPrefixLabel = new JLabel(Lang.get("twofa.enroll.totp.secretPrefix"));
+        secretPrefixLabel.setFont(AppFont.SMALL);
+        secretPrefixLabel.setForeground(AppColor.TEXT_MUTED);
+        secretPrefixLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        secretPrefixLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        secretLabel = new JLabel(" ");
+        secretLabel.setFont(new Font("Consolas", Font.BOLD, 14));
+        secretLabel.setForeground(AppColor.TEXT_TITLE);
+
+        FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 14);
+        copyIcon.setIconColor(AppColor.ACCENT);
+        copySecretIcon = new JLabel(copyIcon);
+        copySecretIcon.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        copySecretIcon.setToolTipText(Lang.get("twofa.enroll.totp.copyTooltip"));
+        copySecretIcon.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                copyTotpSecretToClipboard();
+            }
+        });
+
+        JPanel secretChip = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
+        secretChip.setOpaque(true);
+        secretChip.setBackground(AppColor.BG_LIGHTER);
+        secretChip.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(8, 16, 8, 16)));
+        secretChip.add(secretLabel);
+        secretChip.add(copySecretIcon);
+        secretChip.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JPanel secretInner = new JPanel();
+        secretInner.setOpaque(false);
+        secretInner.setLayout(new BoxLayout(secretInner, BoxLayout.Y_AXIS));
+        secretInner.add(secretPrefixLabel);
+        secretInner.add(Box.createVerticalStrut(6));
+        secretInner.add(secretChip);
+
+        JPanel secretWrapper = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        secretWrapper.setOpaque(false);
+        secretWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        secretWrapper.setPreferredSize(new Dimension(Integer.MAX_VALUE, 74));
+        secretWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 74));
+        secretWrapper.add(secretInner);
+        panel.add(secretWrapper);
+        panel.add(Box.createVerticalStrut(AppSpacing.MD));
 
         totpCodeField = WizardWidgets.createTextField(Lang.get("twofa.verify.code.placeholder"));
         totpCodeField.getTextField().setHorizontalAlignment(SwingConstants.CENTER);
@@ -267,12 +323,40 @@ public class LoginTwoFactorEnrollDialog extends JDialog {
 
         BufferedImage qrImage = QrCodeUtil.generate(enrollment.otpAuthUri, 220);
         qrLabel.setIcon(new ImageIcon(qrImage));
-        secretLabel.setText(WizardWidgets.toHtml(Lang.get("twofa.enroll.totp.secretHint", enrollment.secretBase32)));
+        secretLabel.setText(enrollment.secretBase32);
 
         totpCodeField.setText("");
         WizardWidgets.showMessage(totpMessage, " ", AppColor.TEXT_MUTED);
         cardLayout.show(cards, Step.VERIFY_TOTP.name());
         SwingUtilities.invokeLater(() -> totpCodeField.getTextField().requestFocusInWindow());
+    }
+
+    /**
+     * Copy chuoi ma bi mat (Base32) vao clipboard - copy dung chuoi ma
+     * thoi, khong kem chu "Ma nhap thu cong:" phia truoc. Sau khi copy,
+     * doi icon sang dau tick trong 1.2s roi tu dong doi lai icon copy.
+     */
+    private void copyTotpSecretToClipboard() {
+        if (pendingTotpSecret == null || pendingTotpSecret.isBlank()) {
+            return;
+        }
+
+        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        clipboard.setContents(new StringSelection(pendingTotpSecret), null);
+
+        FontIcon checkIcon = FontIcon.of(FontAwesomeSolid.CHECK, 14);
+        checkIcon.setIconColor(AppColor.SUCCESS);
+        copySecretIcon.setIcon(checkIcon);
+        copySecretIcon.setToolTipText(Lang.get("twofa.enroll.totp.copied"));
+
+        Timer resetTimer = new Timer(1200, e -> {
+            FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 14);
+            copyIcon.setIconColor(AppColor.ACCENT);
+            copySecretIcon.setIcon(copyIcon);
+            copySecretIcon.setToolTipText(Lang.get("twofa.enroll.totp.copyTooltip"));
+        });
+        resetTimer.setRepeats(false);
+        resetTimer.start();
     }
 
     private void confirmTotpEnrollment() {
