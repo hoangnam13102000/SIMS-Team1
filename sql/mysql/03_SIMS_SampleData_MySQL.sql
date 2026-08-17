@@ -939,6 +939,7 @@ INSERT INTO StoreConfig (ConfigKey, ConfigValue) VALUES
 ('VAT_RATE', '8'),
 ('STORE_NAME', 'Connect Mart'),
 ('RETURN_POLICY_DAYS', '7'),
+('RETURN_APPROVAL_THRESHOLD', '500000'),
 ('DEFAULT_UNIT', 'cái'),
 ('DEFAULT_MARGIN', '5000'),
 ('POINT_RATE', '100000');

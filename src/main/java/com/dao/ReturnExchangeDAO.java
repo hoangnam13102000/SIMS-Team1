@@ -26,7 +26,6 @@ import java.util.Map;
  * và thu hồi điểm đã tích theo cùng tỷ lệ (không trùng với lần trả trước).
  */
 public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
-    public static final BigDecimal APPROVAL_THRESHOLD = new BigDecimal("0");
     private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
     private static final String BASE_TABLE =
             "ReturnExchanges r "
@@ -369,7 +368,12 @@ public class ReturnExchangeDAO extends BaseDAO<ReturnExchange> {
                 }
                 RefundBreakdown breakdown = computeRefundAmount(con, header.getInvoiceId(), returnedGross);
                 BigDecimal totalValue = breakdown.refund;
-                boolean requiresApproval = totalValue.compareTo(APPROVAL_THRESHOLD) > 0;
+
+                BigDecimal approvalThreshold =
+                        storeConfigDAO.getApprovalThreshold();
+
+                boolean requiresApproval =
+                        totalValue.compareTo(approvalThreshold) > 0;
                 int returnId;
                 try (PreparedStatement ps = con.prepareStatement(insertHeaderSql, Statement.RETURN_GENERATED_KEYS)) {
                     ps.setInt(1, header.getInvoiceId());
