@@ -776,22 +776,171 @@ JOIN (SELECT InvoiceID, SUM(LineTotal) AS SumTotal FROM InvoiceDetails GROUP BY 
 SET i.SubTotal = t.SumTotal, i.TotalAmount = t.SumTotal + (t.SumTotal * i.VATRate / 100)
 WHERE i.InvoiceID = (SELECT InvoiceID FROM (SELECT InvoiceID FROM Invoices ORDER BY InvoiceID DESC LIMIT 1) AS tmp);
 
--- ---- 13. Doi/tra hang mau (co Approval that su) ----
-INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, RequiresApproval, Status, CreatedBy) VALUES
-((SELECT InvoiceID FROM Invoices WHERE InvoiceCode = CONCAT('HD-', DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 2 DAY), '%Y%m%d'), '-C')),
- 'RETURN', 'Khách phản ánh chuối bị dập, xin trả lại 1 nải', 20000, 0, 'PENDING',
- (SELECT UserID FROM Users WHERE Username='staff01'));
+/* ============================================================
+   12b. LUU TONG TIEN HOA DON BAN DAU
 
-INSERT INTO ReturnExchangeDetails (ReturnID, ProductID, Quantity, Direction, UnitPrice) VALUES
-((SELECT ReturnID FROM ReturnExchanges ORDER BY ReturnID DESC LIMIT 1),
- (SELECT ProductID FROM Products WHERE ProductName='Chuối già'), 1, 'IN',
- (SELECT SellPrice FROM Products WHERE ProductName='Chuối già'));
+   Sau khi toan bo hoa don mau da duoc tinh SubTotal/TotalAmount,
+   luu lai TotalAmount ban dau de:
+   - doi soat quy,
+   - xem lich su hoa don,
+   - phan biet tong ban dau va gia tri con lai sau doi/tra.
+
+   OriginalTotalAmount KHONG duoc cap nhat lai khi RETURN/EXCHANGE.
+   ============================================================ */
+
+UPDATE Invoices
+SET OriginalTotalAmount = TotalAmount
+WHERE OriginalTotalAmount = 0;
+
+-- ---- 13. Doi/tra hang mau + refund tracking ----
+
+/*
+ * RETURN mau:
+ * - Khach tra 1 nai chuoi.
+ * - Hoan tien mat.
+ * - Khoan refund duoc gan vao ca OPEN cua staff01.
+ * - Sau khi duyet, refund duoc danh dau COMPLETED.
+ */
+
+INSERT INTO ReturnExchanges (
+    InvoiceID,
+    Type,
+    Reason,
+    TotalValue,
+
+    RefundMethod,
+    RefundShiftID,
+    RefundStatus,
+
+    RequiresApproval,
+    Status,
+    CreatedBy
+)
+VALUES (
+    (
+        SELECT InvoiceID
+        FROM Invoices
+        WHERE InvoiceCode = CONCAT(
+            'HD-',
+            DATE_FORMAT(
+                DATE_SUB(NOW(), INTERVAL 2 DAY),
+                '%Y%m%d'
+            ),
+            '-C'
+        )
+    ),
+
+    'RETURN',
+
+    'Khách phản ánh chuối bị dập, xin trả lại 1 nải',
+
+    20000,
+
+    'CASH',
+
+    (
+        SELECT ShiftID
+        FROM Shifts
+        WHERE UserID = (
+            SELECT UserID
+            FROM Users
+            WHERE Username = 'staff01'
+        )
+          AND Status = 'OPEN'
+        ORDER BY ShiftID DESC
+        LIMIT 1
+    ),
+
+    'PENDING',
+
+    0,
+
+    'PENDING',
+
+    (
+        SELECT UserID
+        FROM Users
+        WHERE Username = 'staff01'
+    )
+);
+
+
+/* Chi tiet san pham tra */
+
+INSERT INTO ReturnExchangeDetails (
+    ReturnID,
+    ProductID,
+    Quantity,
+    Direction,
+    UnitPrice
+)
+VALUES (
+    (
+        SELECT ReturnID
+        FROM ReturnExchanges
+        ORDER BY ReturnID DESC
+        LIMIT 1
+    ),
+
+    (
+        SELECT ProductID
+        FROM Products
+        WHERE ProductName = 'Chuối già'
+    ),
+
+    1,
+
+    'IN',
+
+    (
+        SELECT SellPrice
+        FROM Products
+        WHERE ProductName = 'Chuối già'
+    )
+);
+
+
+/*
+ * Gia lap nghiep vu manager/admin da duyet
+ * va cashier da hoan tien CASH thanh cong.
+ */
 
 UPDATE ReturnExchanges
-SET Status = 'APPROVED',
-    ApprovedBy = (SELECT UserID FROM Users WHERE Username='salesmgr'),
-    ApprovedAt = NOW()
-WHERE ReturnID = (SELECT ReturnID FROM (SELECT ReturnID FROM ReturnExchanges ORDER BY ReturnID DESC LIMIT 1) AS tmp);
+SET
+    Status = 'APPROVED',
+
+    ApprovedBy = (
+        SELECT UserID
+        FROM Users
+        WHERE Username = 'salesmgr'
+    ),
+
+    ApprovedAt = NOW(),
+
+    RefundStatus = 'COMPLETED',
+
+    RefundTransactionID = CONCAT(
+        'SEED-CASH-RET-',
+        ReturnID
+    ),
+
+    RefundedBy = (
+        SELECT UserID
+        FROM Users
+        WHERE Username = 'staff01'
+    ),
+
+    RefundedAt = NOW()
+
+WHERE ReturnID = (
+    SELECT ReturnID
+    FROM (
+        SELECT ReturnID
+        FROM ReturnExchanges
+        ORDER BY ReturnID DESC
+        LIMIT 1
+    ) AS tmp
+);
 
 -- ---- 14. Doi/tra gia tri lon, can duyet (van PENDING) ----
 INSERT INTO ReturnExchanges (InvoiceID, Type, Reason, TotalValue, RequiresApproval, Status, CreatedBy) VALUES

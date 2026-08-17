@@ -204,35 +204,93 @@ CREATE TABLE Invoices (
     CreatedBy               INT NOT NULL,
     CustomerID              INT NULL,
     CreatedAt               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     SubTotal                DECIMAL(18,0) NOT NULL DEFAULT 0,
-    DiscountAmount          DECIMAL(18,0) NOT NULL DEFAULT 0 CHECK (DiscountAmount >= 0),
+
+    DiscountAmount          DECIMAL(18,0) NOT NULL DEFAULT 0
+                                CHECK (DiscountAmount >= 0),
+
     PromotionID             INT NULL,
     PromotionCode           VARCHAR(30) NULL,
+
     VATRate                 DECIMAL(5,2) NOT NULL DEFAULT 8,
+
     VATAmount               DECIMAL(18,4) AS (
-                                CASE WHEN (SubTotal - DiscountAmount) < 0 THEN 0
-                                     ELSE (SubTotal - DiscountAmount) * VATRate / 100
+                                CASE
+                                    WHEN (SubTotal - DiscountAmount) < 0
+                                        THEN 0
+                                    ELSE
+                                        (SubTotal - DiscountAmount)
+                                        * VATRate / 100
                                 END
                             ) STORED,
+
+    /*
+     * Giá trị còn lại của hóa đơn.
+     *
+     * Khi RETURN/EXCHANGE được APPROVED,
+     * trigger hiện tại có thể điều chỉnh cột này.
+     */
     TotalAmount             DECIMAL(18,0) NOT NULL DEFAULT 0,
+
+    /*
+     * Tổng tiền hóa đơn tại thời điểm bán ban đầu.
+     *
+     * Cột này KHÔNG được thay đổi bởi trigger đổi/trả.
+     *
+     * Dùng cho:
+     * - đối soát quỹ,
+     * - lịch sử giao dịch,
+     * - hiển thị "Tổng ban đầu".
+     */
+    OriginalTotalAmount     DECIMAL(18,0) NOT NULL DEFAULT 0,
+
     PaymentMethod           VARCHAR(20) NOT NULL DEFAULT 'CASH'
-                                CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','PAYPAL','CARD')),
+                                CHECK (
+                                    PaymentMethod IN (
+                                        'CASH',
+                                        'BANK_TRANSFER',
+                                        'PAYPAL',
+                                        'CARD'
+                                    )
+                                ),
+
     PayPalOrderID           VARCHAR(50) NULL,
     PayPalCaptureID         VARCHAR(50) NULL,
+
     Status                  VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
-                                CHECK (Status IN ('ACTIVE', 'CANCELLED')),
+                                CHECK (
+                                    Status IN (
+                                        'ACTIVE',
+                                        'CANCELLED'
+                                    )
+                                ),
+
     CancelReason            VARCHAR(255) NULL,
     CancelledAt             DATETIME NULL,
-    PointsUsed              INT NOT NULL DEFAULT 0 CHECK (PointsUsed >= 0),
-    PointsDiscountAmount    DECIMAL(18,0) NOT NULL DEFAULT 0 CHECK (PointsDiscountAmount >= 0),
+
+    PointsUsed              INT NOT NULL DEFAULT 0
+                                CHECK (PointsUsed >= 0),
+
+    PointsDiscountAmount    DECIMAL(18,0) NOT NULL DEFAULT 0
+                                CHECK (PointsDiscountAmount >= 0),
+
     CONSTRAINT FK_Invoices_Shifts
-        FOREIGN KEY (ShiftID) REFERENCES Shifts(ShiftID),
+        FOREIGN KEY (ShiftID)
+        REFERENCES Shifts(ShiftID),
+
     CONSTRAINT FK_Invoices_CreatedBy
-        FOREIGN KEY (CreatedBy) REFERENCES Users(UserID),
+        FOREIGN KEY (CreatedBy)
+        REFERENCES Users(UserID),
+
     CONSTRAINT FK_Invoices_Customers
-        FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID),
+        FOREIGN KEY (CustomerID)
+        REFERENCES Customers(CustomerID),
+
     CONSTRAINT CK_Invoices_DiscountNotExceedSubTotal
-        CHECK (DiscountAmount <= SubTotal)
+        CHECK (
+            DiscountAmount <= SubTotal
+        )
 ) ENGINE=InnoDB;
 
 CREATE TABLE InvoiceDetails (
@@ -253,28 +311,174 @@ CREATE TABLE InvoiceDetails (
    ============================================================ */
 CREATE TABLE ReturnExchanges (
     ReturnID            INT AUTO_INCREMENT PRIMARY KEY,
+
     InvoiceID           INT NOT NULL,
-    Type                VARCHAR(20) NOT NULL CHECK (Type IN ('RETURN', 'EXCHANGE')),
+
+    Type                VARCHAR(20) NOT NULL
+                            CHECK (
+                                Type IN (
+                                    'RETURN',
+                                    'EXCHANGE'
+                                )
+                            ),
+
     Reason              VARCHAR(255) NOT NULL,
+
     RejectionReason     VARCHAR(500) NULL,
+
+    /*
+     * Giá trị tiền được hoàn cho khách.
+     */
     TotalValue          DECIMAL(18,0) NOT NULL DEFAULT 0,
-    DiscountShare       DECIMAL(18,0) NOT NULL DEFAULT 0,   -- phần giá trị KM phân bổ
-    PointsShare         DECIMAL(18,0) NOT NULL DEFAULT 0,   -- phần giá trị điểm KH phân bổ
+
+    /*
+     * Phần giá trị khuyến mãi được phân bổ cho
+     * số lượng sản phẩm đổi/trả.
+     */
+    DiscountShare       DECIMAL(18,0) NOT NULL DEFAULT 0,
+
+    /*
+     * Phần giá trị điểm khách hàng được phân bổ.
+     */
+    PointsShare         DECIMAL(18,0) NOT NULL DEFAULT 0,
+
+
+    /* ========================================================
+       REFUND INFORMATION
+       ======================================================== */
+
+    /*
+     * Phương thức thực tế dùng để hoàn tiền.
+     *
+     * Không được suy luận từ PaymentMethod của hóa đơn gốc.
+     *
+     * NULL:
+     * - EXCHANGE không phát sinh refund;
+     * - hoặc chưa chọn phương thức.
+     */
+    RefundMethod        VARCHAR(20) NULL
+                            CHECK (
+                                RefundMethod IS NULL
+                                OR RefundMethod IN (
+                                    'CASH',
+                                    'BANK_TRANSFER',
+                                    'CARD',
+                                    'PAYPAL'
+                                )
+                            ),
+
+    /*
+     * Ca bán hàng thực tế chi tiền hoàn.
+     *
+     * Chủ yếu dùng khi RefundMethod = CASH.
+     */
+    RefundShiftID       INT NULL,
+
+    /*
+     * Mã giao dịch refund.
+     *
+     * Ví dụ:
+     * CASH-21-RET-8
+     * BANK-REF-123456
+     * PAYPAL-CAPTURE/REFUND-ID
+     */
+    RefundTransactionID VARCHAR(100) NULL UNIQUE,
+
+    /*
+     * NONE:
+     *      Không có refund.
+     *
+     * PENDING:
+     *      Đã xác định cần hoàn nhưng chưa hoàn xong.
+     *
+     * COMPLETED:
+     *      Đã thực sự hoàn tiền.
+     *
+     * FAILED:
+     *      Refund thất bại.
+     */
+    RefundStatus        VARCHAR(20) NOT NULL DEFAULT 'NONE'
+                            CHECK (
+                                RefundStatus IN (
+                                    'NONE',
+                                    'PENDING',
+                                    'COMPLETED',
+                                    'FAILED'
+                                )
+                            ),
+
+    /*
+     * Người thực hiện/xác nhận refund.
+     */
+    RefundedBy          INT NULL,
+
+    /*
+     * Thời điểm tiền thực sự được hoàn.
+     */
+    RefundedAt          DATETIME NULL,
+
+
+    /* ========================================================
+       APPROVAL
+       ======================================================== */
+
     RequiresApproval    TINYINT(1) NOT NULL DEFAULT 0,
+
     Status              VARCHAR(20) NOT NULL DEFAULT 'PENDING'
-                            CHECK (Status IN ('PENDING', 'APPROVED', 'REJECTED')),
+                            CHECK (
+                                Status IN (
+                                    'PENDING',
+                                    'APPROVED',
+                                    'REJECTED'
+                                )
+                            ),
+
     ApprovedBy          INT NULL,
+
     ApprovedAt          DATETIME NULL,
+
     CreatedBy           INT NOT NULL,
+
     CreatedAt           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+
+    /* ========================================================
+       FOREIGN KEYS
+       ======================================================== */
+
     CONSTRAINT FK_ReturnExchanges_Invoices
-        FOREIGN KEY (InvoiceID) REFERENCES Invoices(InvoiceID),
+        FOREIGN KEY (InvoiceID)
+        REFERENCES Invoices(InvoiceID),
+
     CONSTRAINT FK_ReturnExchanges_ApprovedBy
-        FOREIGN KEY (ApprovedBy) REFERENCES Users(UserID),
+        FOREIGN KEY (ApprovedBy)
+        REFERENCES Users(UserID),
+
     CONSTRAINT FK_ReturnExchanges_CreatedBy
-        FOREIGN KEY (CreatedBy) REFERENCES Users(UserID),
+        FOREIGN KEY (CreatedBy)
+        REFERENCES Users(UserID),
+
+    CONSTRAINT FK_ReturnExchanges_RefundShift
+        FOREIGN KEY (RefundShiftID)
+        REFERENCES Shifts(ShiftID),
+
+    CONSTRAINT FK_ReturnExchanges_RefundedBy
+        FOREIGN KEY (RefundedBy)
+        REFERENCES Users(UserID),
+
+
+    /* ========================================================
+       BUSINESS CONSTRAINT
+       ======================================================== */
+
     CONSTRAINT CK_Return_ApprovalRequired
-        CHECK (Status <> 'APPROVED' OR (ApprovedBy IS NOT NULL AND ApprovedAt IS NOT NULL))
+        CHECK (
+            Status <> 'APPROVED'
+            OR (
+                ApprovedBy IS NOT NULL
+                AND ApprovedAt IS NOT NULL
+            )
+        )
 ) ENGINE=InnoDB;
 
 CREATE TABLE ReturnExchangeDetails (
