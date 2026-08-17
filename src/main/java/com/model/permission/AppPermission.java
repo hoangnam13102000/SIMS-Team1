@@ -37,6 +37,13 @@ public enum AppPermission implements Permission {
     STOCK_RECONCILE,
     /** Tao hoa don ban hang. */
     INVOICE_CREATE,
+
+    /** Xem hoa don do chinh nhan vien hien tai tao. */
+    INVOICE_VIEW_OWN,
+
+    /** Xem tat ca hoa don cua he thong. */
+    INVOICE_VIEW_ALL,
+
     /** Mo ca, ghi thu/chi va dong/doi soat ca cua chinh nhan vien. */
     SHIFT_OPERATE,
     /** Xem lich su ca va chenh lech quy cua tat ca nhan vien. */

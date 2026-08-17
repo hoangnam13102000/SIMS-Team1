@@ -122,15 +122,19 @@ VALUES
 
     ('STOCK_RECONCILE',           'Đối chiếu kho cuối ngày'),
 
-    ('INVOICE_CREATE',            'Tạo hoá đơn'),
+    ('INVOICE_CREATE',          'Tạo hoá đơn'),
 
-    ('SHIFT_OPERATE',             'Vận hành ca bán hàng'),
+    ('INVOICE_VIEW_OWN',        'Xem hóa đơn của chính nhân viên'),
+
+    ('INVOICE_VIEW_ALL',        'Xem tất cả hóa đơn'),
+
+    ('SHIFT_OPERATE',           'Vận hành ca bán hàng'),
 
     ('SHIFT_VIEW_ALL',            'Xem tất cả ca bán hàng'),
 
     ('INVOICE_CANCEL',             'Huỷ hoá đơn'),
 
-    ('RETURN_EXCHANGE_CREATE',    'Tạo yêu cầu đổi/trả'),
+    ('RETURN_EXCHANGE_CREATE',		'Tạo yêu cầu đổi/trả'),
 
     ('RETURN_EXCHANGE_APPROVE',   'Duyệt đổi/trả hàng'),
 
@@ -206,6 +210,7 @@ WHERE r.RoleCode = 'SALES_MANAGER'
       'REVENUE_REPORT_VIEW',
       'PROFIT_REPORT_VIEW',
       'INVOICE_CREATE',
+      'INVOICE_VIEW_ALL',
       'INVOICE_CANCEL',
       'ORDER_VIEW',
       'ORDER_MANAGE',
@@ -261,6 +266,7 @@ WHERE r.RoleCode = 'SALES_STAFF'
       'PRODUCT_VIEW',
       'STOCK_ALERT_REPORT',
       'INVOICE_CREATE',
+      'INVOICE_VIEW_OWN',
       'SHIFT_OPERATE',
       'INVOICE_CANCEL',
       'RETURN_EXCHANGE_CREATE',

@@ -593,8 +593,8 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.invoices"),
                 FontAwesomeSolid.RECEIPT,
                 new InvoicePanel(),
-                AppPermission.INVOICE_CREATE,
-                AppPermission.INVOICE_CANCEL
+                AppPermission.INVOICE_VIEW_OWN,
+                AppPermission.INVOICE_VIEW_ALL
         );
 
         /*

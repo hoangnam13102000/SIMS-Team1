@@ -273,7 +273,11 @@ public enum AiTool {
                     + "Trả về tối đa 8 hóa đơn: mã, khách, tổng tiền, PT thanh toán, trạng thái, ngày, NV lập. "
                     + "Nhân viên có INVOICE_CREATE hoặc REVENUE_REPORT_VIEW (hoặc Admin).",
             false,
-            EnumSet.of(AppPermission.INVOICE_CREATE, AppPermission.REVENUE_REPORT_VIEW, AppPermission.INVOICE_CANCEL),
+            EnumSet.of(
+                    AppPermission.INVOICE_VIEW_OWN,
+                    AppPermission.INVOICE_VIEW_ALL,
+                    AppPermission.REVENUE_REPORT_VIEW
+            ),
             """
             {
               "type": "object",
@@ -299,9 +303,13 @@ public enum AiTool {
     GET_INVOICE_DETAIL(
             "get_invoice_detail",
             "Chi tiết 1 hóa đơn POS theo mã (invoice_code): dòng hàng, VAT, tổng, PT thanh toán, trạng thái. "
-                    + "Cần INVOICE_CREATE / INVOICE_CANCEL / REVENUE_REPORT_VIEW.",
+                    + "Cần quyền xem hóa đơn hoặc quyền xem báo cáo doanh thu.",
             false,
-            EnumSet.of(AppPermission.INVOICE_CREATE, AppPermission.REVENUE_REPORT_VIEW, AppPermission.INVOICE_CANCEL),
+            EnumSet.of(
+                    AppPermission.INVOICE_VIEW_OWN,
+                    AppPermission.INVOICE_VIEW_ALL,
+                    AppPermission.REVENUE_REPORT_VIEW
+            ),
             """
             {
               "type": "object",

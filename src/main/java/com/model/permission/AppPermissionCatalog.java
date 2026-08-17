@@ -86,9 +86,20 @@ public final class AppPermissionCatalog {
                 "Xem trả hàng NCC", "Xem lịch sử trả hàng nhà cung cấp và báo cáo công nợ.");
 
         put(AppPermission.INVOICE_CREATE, "Bán hàng",
-                "Tạo hoá đơn", "Lập hoá đơn bán hàng tại quầy (POS).");
+                "Tạo hoá đơn",
+                "Lập hoá đơn bán hàng tại quầy (POS).");
+
+        put(AppPermission.INVOICE_VIEW_OWN, "Bán hàng",
+                "Xem hóa đơn của mình",
+                "Chỉ xem các hóa đơn do chính nhân viên đang đăng nhập tạo.");
+
+        put(AppPermission.INVOICE_VIEW_ALL, "Bán hàng",
+                "Xem tất cả hóa đơn",
+                "Xem hóa đơn của tất cả nhân viên.");
+
         put(AppPermission.INVOICE_CANCEL, "Bán hàng",
-                "Huỷ hoá đơn", "Huỷ hoá đơn đã lập.");
+                "Huỷ hoá đơn",
+                "Huỷ hoá đơn đã lập.");
         put(AppPermission.SHIFT_OPERATE, "Bán hàng",
                 "Vận hành ca bán hàng", "Mở ca, ghi thu/chi và đóng/đối soát ca của chính nhân viên.");
         put(AppPermission.SHIFT_VIEW_ALL, "Bán hàng",
