@@ -245,7 +245,7 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tìm theo mã phiếu, nhà cung cấp, người tạo..."; }
+    protected String getSearchPlaceholder() { return "Tìm mã phiếu, mã sản phẩm, tên sản phẩm, nhà cung cấp..."; }
 
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
@@ -259,6 +259,17 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
             }
             if (r.getCreatedByName() != null && !r.getCreatedByName().isBlank()) {
                 names.add(r.getCreatedByName());
+            }
+            // Gợi ý tìm kiếm theo sản phẩm trong phiếu: mã SP + tên SP.
+            if (r.getReceiptId() > 0) {
+                for (com.model.PurchaseReceiptDetail d : receiptDAO.getDetails(r.getReceiptId())) {
+                    if (d.getProductCode() != null && !d.getProductCode().isBlank()) {
+                        names.add(d.getProductCode());
+                    }
+                    if (d.getProductName() != null && !d.getProductName().isBlank()) {
+                        names.add(d.getProductName());
+                    }
+                }
             }
         }
         return new ArrayList<>(new LinkedHashSet<>(names));

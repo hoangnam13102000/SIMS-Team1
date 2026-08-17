@@ -261,7 +261,7 @@ public class PurchaseReceiptDetailDialog extends JDialog {
     // ---------------------------------------------------------------
 
     private JTable buildDetailTable(List<PurchaseReceiptDetail> details) {
-        String[] columns = {"Sản phẩm", "Mã lô (hệ thống)", "Số lô (NCC)", "NSX", "HSD", "SL", "Giá nhập", "Thành tiền"};
+        String[] columns = {"Mã sản phẩm", "Sản phẩm", "Mã lô (hệ thống)", "Số lô (NCC)", "NSX", "HSD", "SL", "Giá nhập", "Thành tiền"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
@@ -269,6 +269,7 @@ public class PurchaseReceiptDetailDialog extends JDialog {
 
         for (PurchaseReceiptDetail d : details) {
             model.addRow(new Object[]{
+                    emptyDash(d.getProductCode()),
                     d.getProductName(),
                     emptyDash(d.getBatchCode()),
                     emptyDash(d.getLotNumber()),

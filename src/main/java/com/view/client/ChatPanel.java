@@ -9,6 +9,9 @@ import com.utils.FileDownloadUI;
 import com.ws.ChatClient;
 import com.ws.ChatImageUtil;
 import com.ws.ChatFileUtil;
+import com.security.FileSecurityScanner;
+import com.security.ScanResult;
+import com.components.common.AttachmentPreviewDialog;
 import com.model.chat.ChatHistoryMessage;
 import com.service.ChatHistoryService;
 import com.utils.ImageUtil;
@@ -527,6 +530,17 @@ public class ChatPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Định dạng file không được hỗ trợ.",
                     "Không hỗ trợ", JOptionPane.WARNING_MESSAGE);
             return;
+        }
+
+        // Quét virus + xem trước nội dung — giống AI chatbot
+        ScanResult scan = FileSecurityScanner.getInstance().scan(file);
+        if (scan.isBlocked()) {
+            // Dialog hiện banner "ĐÃ CHẶN", nút gửi bị khóa
+            AttachmentPreviewDialog.showPreview(this, file, scan);
+            return;
+        }
+        if (!AttachmentPreviewDialog.showPreview(this, file, scan)) {
+            return; // user hủy
         }
 
         // Kiểm tra xem có phải ảnh không

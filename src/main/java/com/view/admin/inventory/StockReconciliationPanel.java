@@ -3,6 +3,7 @@ package com.view.admin.inventory;
 import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.DatePickerField;
+import com.components.common.SquareCheckIcon;
 import com.components.crud.BaseCrudPanel;
 import com.dao.ProductDAO;
 import com.dao.StockReconciliationDAO;
@@ -196,12 +197,20 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         JTable jt = table.getTable();
         jt.getColumnModel().getColumn(COL_CHECKED).setCellRenderer(new DefaultTableCellRenderer() {
             private final JCheckBox box = new JCheckBox();
-            { box.setHorizontalAlignment(SwingConstants.CENTER); box.setOpaque(false); }
+            {
+                box.setHorizontalAlignment(SwingConstants.CENTER);
+                box.setOpaque(false);
+                box.setBorderPainted(false);
+                box.setFocusPainted(false);
+                box.setIcon(new SquareCheckIcon(true));
+            }
             @Override
             public Component getTableCellRendererComponent(JTable tbl, Object value, boolean selected, boolean focus, int row, int column) {
+                boolean isToday = isToday(rowToItem(tbl.convertRowIndexToModel(row)));
                 box.setSelected(Boolean.TRUE.equals(value));
-                box.setEnabled(isToday(rowToItem(tbl.convertRowIndexToModel(row))));
-                box.setToolTipText(box.isEnabled() ? "Tick khi đã kiểm kê lô hàng" : "Phiên đã khóa");
+                box.setEnabled(isToday);
+                box.setCursor(isToday ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
+                box.setToolTipText(isToday ? "Tick khi Đã kiểm lô hàng" : "Phiên đã khóa — chỉ xem, không sửa được");
                 box.setBackground(selected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 return box;
             }
@@ -210,6 +219,11 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             {
                 JCheckBox cb = (JCheckBox) getComponent();
                 cb.setHorizontalAlignment(SwingConstants.CENTER);
+                cb.setOpaque(false);
+                cb.setBorderPainted(false);
+                cb.setFocusPainted(false);
+                cb.setIcon(new SquareCheckIcon(true));
+                cb.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             }
             @Override
             public boolean isCellEditable(EventObject event) {
@@ -337,7 +351,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             }
             // Chặn chung cho MỌI dòng (kể cả sản phẩm không quản lý theo lô):
             // tồn thực tế không được lớn hơn tồn còn lại của hệ thống tại thời điểm
-            // lập phiên đối chiếu (cột "Tồn lô hàng" đang hiển thị trên bảng).
+            // lập phiên đối chiếu (cột "Tồn kho" đang hiển thị trên bảng).
             int systemStock = item.getSystemStock();
             if (newActual > systemStock) {
                 suppressActualEdit = true;
@@ -347,7 +361,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     suppressActualEdit = false;
                 }
                 AppAlert.warning(this, "Tồn thực tế vượt giới hạn",
-                        "Tồn thực tế không được lớn hơn tồn còn lại của hệ thống (" + systemStock + ").");
+                        "Tồn thực tế không được > tồn còn lại của hệ thống.");
                 return;
             }
             if (item.getBatchId() > 0) {
@@ -361,17 +375,6 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     }
                     AppAlert.error(this, "Không thể kiểm tra tồn lô",
                             "Không đọc được tồn lô hiện tại. Chưa cập nhật tồn thực tế.");
-                    return;
-                }
-                if (newActual > batchLimits[0] || newActual > batchLimits[1]) {
-                    suppressActualEdit = true;
-                    try {
-                        table.getModel().setValueAt(item.getActualStock(), modelRow, COL_ACTUAL);
-                    } finally {
-                        suppressActualEdit = false;
-                    }
-                    AppAlert.warning(this, "Tồn thực tế vượt giới hạn",
-                            "Tồn thực tế không được lớn hơn tồn lô hiện tại.");
                     return;
                 }
             }
@@ -556,7 +559,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Mã SP", "Sản phẩm", "Mã lô", "Tồn lô hàng", "Đã kiểm kê", "Tồn thực tế",
+        return new String[]{"Mã SP", "Sản phẩm", "Mã lô", "Tồn kho", "Đã kiểm", "Tồn thực tế",
                 "Chênh lệch", "Người đối chiếu", "Thời gian"};
     }
 

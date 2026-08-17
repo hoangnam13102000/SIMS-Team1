@@ -383,135 +383,232 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
         }
     }
 
+    /**
+     * Lưu Tồn thực tế của dòng đối chiếu.
+     * QUAN TRỌNG: phương thức này KHÔNG cập nhật Products.Stock hoặc InventoryBatch.
+     * Việc điều chỉnh tồn kho chỉ được thực hiện khi chốt phiên lúc 00:00.
+     */
     public boolean updateActualStock(int reconciliationId, int newActualStock, int userId) {
         if (newActualStock < 0) return false;
-        String selectSql = "SELECT r.ProductID, r.BatchID, r.ActualStock, r.SystemStock, p.Stock AS CurrentStock, r.CreatedAt "
-                + "FROM StockReconciliation r JOIN Products p ON r.ProductID = p.ProductID "
-                + "WHERE r.ReconciliationID = ?";
-        String updateReconSql = "UPDATE StockReconciliation SET ActualStock = ?, Checked = 1, CheckedBy = ?, CheckedAt = CURRENT_TIMESTAMP WHERE ReconciliationID = ?";
+
+        String selectSql = "SELECT CreatedAt FROM StockReconciliation WHERE ReconciliationID = ?";
+        String updateSql = "UPDATE StockReconciliation "
+                + "SET ActualStock = ?, Checked = 1, CheckedBy = ?, CheckedAt = CURRENT_TIMESTAMP "
+                + "WHERE ReconciliationID = ?";
+
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement select = con.prepareStatement(selectSql);
+             PreparedStatement update = con.prepareStatement(updateSql)) {
+
+            select.setInt(1, reconciliationId);
+            try (ResultSet rs = select.executeQuery()) {
+                if (!rs.next()) return false;
+                Timestamp createdAt = rs.getTimestamp("CreatedAt");
+                if (createdAt == null
+                        || !createdAt.toLocalDateTime().toLocalDate().equals(LocalDate.now())) {
+                    return false;
+                }
+            }
+
+            update.setInt(1, newActualStock);
+            update.setInt(2, userId);
+            update.setInt(3, reconciliationId);
+
+            boolean ok = update.executeUpdate() == 1;
+            if (ok) {
+                AppEventBus.getInstance().publish(
+                        new DataChangedEvent(DataChangedEvent.STOCK_RECONCILIATION));
+            }
+            return ok;
+        } catch (Exception e) {
+            AppLogger.getInstance().error(
+                    ErrorCode.DB_UPDATE_FAIL,
+                    "StockReconciliationDAO.updateActualStock id=" + reconciliationId, e);
+            return false;
+        }
+    }
+
+    /**
+     * Chốt toàn bộ phiên của một ngày.
+     * ActualStock chỉ được đưa vào Products/InventoryBatch tại bước này.
+     *
+     * @param sessionDate ngày của phiên cần chốt (ví dụ 2026-08-17 sẽ được chốt lúc 00:00 ngày 18)
+     * @param closedByUserId người thực hiện chốt; 0 nếu chốt tự động
+     */
+    public boolean closeSessionAndApplyAdjustments(LocalDate sessionDate, int closedByUserId) {
+        String selectSql = "SELECT r.ReconciliationID, r.ProductID, r.BatchID, "
+                + "r.SystemStock, r.ActualStock, r.CreatedBy, r.Note "
+                + "FROM StockReconciliation r "
+                + "WHERE DATE(r.CreatedAt) = ? "
+                + "FOR UPDATE";
+
+        String updateBatchSql = "UPDATE InventoryBatch SET RemainingQty = ?, "
+                + "Status = CASE WHEN ? <= 0 THEN 'DEPLETED' ELSE 'ACTIVE' END "
+                + "WHERE BatchID = ? AND ProductID = ?";
+
         String updateProductSql = "UPDATE Products SET Stock = ? WHERE ProductID = ?";
-        String updateBatchSql = "UPDATE InventoryBatch SET RemainingQty = ?, Status = CASE WHEN ? <= 0 THEN 'DEPLETED' ELSE Status END WHERE BatchID = ?";
+
         String insertTxSql = "INSERT INTO InventoryTransactions "
-                + "(ProductID, TransactionType, Direction, Quantity, StockBefore, StockAfter, RefTable, RefID, CreatedBy, Note) "
+                + "(ProductID, TransactionType, Direction, Quantity, StockBefore, StockAfter, "
+                + "RefTable, RefID, CreatedBy, Note) "
                 + "VALUES (?, 'RECONCILE_ADJUST', ?, ?, ?, ?, 'StockReconciliation', ?, ?, ?)";
+
         try (Connection con = DBConnection.getConnection()) {
             con.setAutoCommit(false);
             try {
-                int productId, batchId, oldActual, currentStock;
-                Timestamp createdAt;
+                java.util.List<int[]> productAdjustments = new java.util.ArrayList<>();
+
                 try (PreparedStatement ps = con.prepareStatement(selectSql)) {
-                    ps.setInt(1, reconciliationId);
+                    ps.setDate(1, java.sql.Date.valueOf(sessionDate));
+
                     try (ResultSet rs = ps.executeQuery()) {
-                        if (!rs.next()) { con.rollback(); return false; }
-                        productId = rs.getInt("ProductID");
-                        batchId = rs.getInt("BatchID");
-                        if (rs.wasNull()) batchId = 0;
-                        oldActual = rs.getInt("ActualStock");
-                        currentStock = rs.getInt("CurrentStock");
-                        createdAt = rs.getTimestamp("CreatedAt");
-                    }
-                }
-                if (createdAt == null || !createdAt.toLocalDateTime().toLocalDate().equals(LocalDate.now())) {
-                    con.rollback(); return false;
-                }
-                if (oldActual == newActualStock) {
-                    try (PreparedStatement ps = con.prepareStatement(updateReconSql)) {
-                        ps.setInt(1, newActualStock); ps.setInt(2, userId); ps.setInt(3, reconciliationId); ps.executeUpdate();
-                    }
-                    con.commit();
-                    AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.STOCK_RECONCILIATION));
-                    return true;
-                }
+                        while (rs.next()) {
+                            int reconciliationId = rs.getInt("ReconciliationID");
+                            int productId = rs.getInt("ProductID");
+                            int batchId = rs.getInt("BatchID");
+                            if (rs.wasNull()) batchId = 0;
 
-                int stockBefore = currentStock;
-                int stockAfter;
-                if (batchId > 0) {
-                    int batchStockBefore;
-                    try (PreparedStatement ps = con.prepareStatement(
-                            "SELECT RemainingQty FROM InventoryBatch WHERE BatchID = ? AND ProductID = ? FOR UPDATE")) {
-                        ps.setInt(1, batchId);
-                        ps.setInt(2, productId);
-                        try (ResultSet rs = ps.executeQuery()) {
-                            if (!rs.next()) { con.rollback(); return false; }
-                            rs.getInt("RemainingQty");
+                            int systemStock = rs.getInt("SystemStock");
+                            int actualStock = rs.getInt("ActualStock");
+                            int createdBy = rs.getInt("CreatedBy");
+                            String note = rs.getString("Note");
+
+                            if (actualStock < 0) {
+                                con.rollback();
+                                return false;
+                            }
+
+                            if (batchId > 0) {
+                                try (PreparedStatement psBatch = con.prepareStatement(
+                                        "SELECT Quantity, RemainingQty FROM InventoryBatch "
+                                                + "WHERE BatchID = ? AND ProductID = ? FOR UPDATE")) {
+                                    psBatch.setInt(1, batchId);
+                                    psBatch.setInt(2, productId);
+                                    try (ResultSet rb = psBatch.executeQuery()) {
+                                        if (!rb.next()) {
+                                            con.rollback();
+                                            return false;
+                                        }
+                                        int batchQuantity = rb.getInt("Quantity");
+                                        if (actualStock > batchQuantity) {
+                                            con.rollback();
+                                            return false;
+                                        }
+                                    }
+                                }
+
+                                try (PreparedStatement up = con.prepareStatement(updateBatchSql)) {
+                                    up.setInt(1, actualStock);
+                                    up.setInt(2, actualStock);
+                                    up.setInt(3, batchId);
+                                    up.setInt(4, productId);
+                                    if (up.executeUpdate() != 1) {
+                                        con.rollback();
+                                        return false;
+                                    }
+                                }
+
+                                int beforeProduct;
+                                int afterProduct;
+                                try (PreparedStatement q = con.prepareStatement(
+                                        "SELECT Stock FROM Products WHERE ProductID = ? FOR UPDATE")) {
+                                    q.setInt(1, productId);
+                                    q.setInt(2, productId);
+                                    try (ResultSet rp = q.executeQuery()) {
+                                        if (!rp.next()) {
+                                            con.rollback();
+                                            return false;
+                                        }
+                                        beforeProduct = rp.getInt("Stock");
+                                    }
+                                }
+                                try (PreparedStatement q = con.prepareStatement(
+                                        "SELECT COALESCE(SUM(RemainingQty),0) "
+                                                + "FROM InventoryBatch WHERE ProductID = ?")) {
+                                    q.setInt(1, productId);
+                                    try (ResultSet rp = q.executeQuery()) {
+                                        if (!rp.next()) {
+                                            con.rollback();
+                                            return false;
+                                        }
+                                        afterProduct = rp.getInt(1);
+                                    }
+                                }
+
+                                if (beforeProduct != afterProduct) {
+                                    try (PreparedStatement up = con.prepareStatement(updateProductSql)) {
+                                        up.setInt(1, afterProduct);
+                                        up.setInt(2, productId);
+                                        up.executeUpdate();
+                                    }
+
+                                    int diff = afterProduct - beforeProduct;
+                                    try (PreparedStatement tx = con.prepareStatement(insertTxSql)) {
+                                        tx.setInt(1, productId);
+                                        tx.setString(2, diff > 0 ? "IN" : "OUT");
+                                        tx.setInt(3, Math.abs(diff));
+                                        tx.setInt(4, beforeProduct);
+                                        tx.setInt(5, afterProduct);
+                                        tx.setInt(6, reconciliationId);
+                                        tx.setInt(7, closedByUserId > 0 ? closedByUserId : createdBy);
+                                        tx.setString(8, "Chốt phiên đối chiếu ngày " + sessionDate
+                                                + (note == null ? "" : " - " + note));
+                                        tx.executeUpdate();
+                                    }
+                                }
+                            } else {
+                                int before = systemStock;
+                                try (PreparedStatement q = con.prepareStatement(
+                                        "SELECT Stock FROM Products WHERE ProductID = ? FOR UPDATE")) {
+                                    q.setInt(1, productId);
+                                    try (ResultSet rp = q.executeQuery()) {
+                                        if (!rp.next()) {
+                                            con.rollback();
+                                            return false;
+                                        }
+                                        before = rp.getInt(1);
+                                    }
+                                }
+
+                                if (before != actualStock) {
+                                    try (PreparedStatement up = con.prepareStatement(updateProductSql)) {
+                                        up.setInt(1, actualStock);
+                                        up.setInt(2, productId);
+                                        up.executeUpdate();
+                                    }
+
+                                    int diff = actualStock - before;
+                                    try (PreparedStatement tx = con.prepareStatement(insertTxSql)) {
+                                        tx.setInt(1, productId);
+                                        tx.setString(2, diff > 0 ? "IN" : "OUT");
+                                        tx.setInt(3, Math.abs(diff));
+                                        tx.setInt(4, before);
+                                        tx.setInt(5, actualStock);
+                                        tx.setInt(6, reconciliationId);
+                                        tx.setInt(7, closedByUserId > 0 ? closedByUserId : createdBy);
+                                        tx.setString(8, "Chốt phiên đối chiếu ngày " + sessionDate);
+                                        tx.executeUpdate();
+                                    }
+                                }
+                            }
                         }
                     }
-
-
-                    // Chuan hoa tong ton truoc khi thay doi neu Products.Stock dang bi lech.
-                    try (PreparedStatement ps = con.prepareStatement(
-                            "SELECT COALESCE(SUM(RemainingQty), 0) FROM InventoryBatch WHERE ProductID = ? FOR UPDATE")) {
-                        ps.setInt(1, productId);
-                        try (ResultSet rs = ps.executeQuery()) {
-                            if (!rs.next()) { con.rollback(); return false; }
-                            batchStockBefore = rs.getInt(1);
-                        }
-                    }
-                    stockBefore = batchStockBefore;
-                    if (currentStock != batchStockBefore) {
-                        try (PreparedStatement ps = con.prepareStatement(updateProductSql)) {
-                            ps.setInt(1, batchStockBefore);
-                            ps.setInt(2, productId);
-                            ps.executeUpdate();
-                        }
-                    }
-
-                    try (PreparedStatement ps = con.prepareStatement(updateBatchSql)) {
-                        ps.setInt(1, newActualStock);
-                        ps.setInt(2, newActualStock);
-                        ps.setInt(3, batchId);
-                        int updated = ps.executeUpdate();
-                        if (updated != 1) {
-                            con.rollback();
-                            return false;
-                        }
-                    }
-
-                    // Ton san pham luon duoc tinh lai tu tat ca cac lo sau khi sua.
-                    try (PreparedStatement ps = con.prepareStatement(
-                            "SELECT COALESCE(SUM(RemainingQty), 0) FROM InventoryBatch WHERE ProductID = ?")) {
-                        ps.setInt(1, productId);
-                        try (ResultSet rs = ps.executeQuery()) {
-                            if (!rs.next()) { con.rollback(); return false; }
-                            stockAfter = rs.getInt(1);
-                        }
-                    }
-                    try (PreparedStatement ps = con.prepareStatement(updateProductSql)) {
-                        ps.setInt(1, stockAfter);
-                        ps.setInt(2, productId);
-                        ps.executeUpdate();
-                    }
-                } else {
-                    // San pham khong quan ly theo lo: giu co che cu.
-                    stockAfter = newActualStock;
                 }
 
-                try (PreparedStatement ps = con.prepareStatement(updateReconSql)) {
-                    ps.setInt(1, newActualStock); ps.setInt(2, userId); ps.setInt(3, reconciliationId); ps.executeUpdate();
-                }
-                if (batchId <= 0) {
-                    try (PreparedStatement ps = con.prepareStatement(updateProductSql)) {
-                        ps.setInt(1, stockAfter); ps.setInt(2, productId); ps.executeUpdate();
-                    }
-                }
-                int diff = stockAfter - stockBefore;
-                if (diff != 0) {
-                    try (PreparedStatement ps = con.prepareStatement(insertTxSql)) {
-                        ps.setInt(1, productId); ps.setString(2, diff > 0 ? "IN" : "OUT"); ps.setInt(3, Math.abs(diff));
-                        ps.setInt(4, stockBefore); ps.setInt(5, stockAfter); ps.setInt(6, reconciliationId); ps.setInt(7, userId);
-                        ps.setString(8, batchId > 0 ? "Dieu chinh ton thuc te theo lo hang tren bang doi chieu" : "Dieu chinh ton thuc te tren bang doi chieu");
-                        ps.executeUpdate();
-                    }
-                }
                 con.commit();
-                AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.STOCK_RECONCILIATION));
+                AppEventBus.getInstance().publish(
+                        new DataChangedEvent(DataChangedEvent.STOCK_RECONCILIATION));
                 return true;
             } catch (Exception e) {
-                con.rollback(); throw e;
-            } finally { con.setAutoCommit(true); }
+                con.rollback();
+                throw e;
+            } finally {
+                con.setAutoCommit(true);
+            }
         } catch (Exception e) {
-            AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
-                    "StockReconciliationDAO.updateActualStock id=" + reconciliationId, e);
+            AppLogger.getInstance().error(
+                    ErrorCode.DB_UPDATE_FAIL,
+                    "StockReconciliationDAO.closeSessionAndApplyAdjustments date=" + sessionDate, e);
             return false;
         }
     }
