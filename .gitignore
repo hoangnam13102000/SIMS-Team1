@@ -33,3 +33,4 @@
 /backups/
 *.bak
 *.bak.encmerged.properties
+/incidents/*.jsonl
