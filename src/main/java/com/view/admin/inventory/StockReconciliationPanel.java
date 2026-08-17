@@ -74,7 +74,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     c.setIcon(copyIcon);
                     c.setIconTextGap(6);
                     c.setHorizontalTextPosition(SwingConstants.LEFT);
-                    c.setToolTipText("Click de copy ma san pham: " + text);
+                    c.setToolTipText("Click để copy mã sản phẩm: " + text);
                 } else {
                     c.setIcon(null);
                     c.setToolTipText(null);
@@ -103,7 +103,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     c.setIcon(editIcon);
                     c.setIconTextGap(6);
                     c.setHorizontalTextPosition(SwingConstants.LEFT);
-                    c.setToolTipText("Double-click hoac F2 de sua ton thuc te (phiên hom nay)");
+                    c.setToolTipText("Double-click hoặc F2 để sửa tồn thực tế (phiên hôm nay)");
                     c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 } else {
                     c.setForeground(AppColor.TEXT_MUTED);
@@ -130,7 +130,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     String text = value != null ? value.toString() : "";
                     if (text != null && !text.isBlank()) {
                         copyToClipboard(text);
-                        AppAlert.success(StockReconciliationPanel.this, "Copy thanh cong", "Da copy ma san pham: " + text);
+                        AppAlert.success(StockReconciliationPanel.this, "Copy thành công", "Đã copy mã sản phẩm: " + text);
                     }
                 }
             }
@@ -201,7 +201,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             public Component getTableCellRendererComponent(JTable tbl, Object value, boolean selected, boolean focus, int row, int column) {
                 box.setSelected(Boolean.TRUE.equals(value));
                 box.setEnabled(isToday(rowToItem(tbl.convertRowIndexToModel(row))));
-                box.setToolTipText(box.isEnabled() ? "Tick khi da kiem ke lo hang" : "Phien da khoa");
+                box.setToolTipText(box.isEnabled() ? "Tick khi đã kiểm kê lô hàng" : "Phiên đã khóa");
                 box.setBackground(selected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 return box;
             }
@@ -313,8 +313,8 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 } finally {
                     suppressActualEdit = false;
                 }
-                AppAlert.error(this, "Khong the sua",
-                        "Da qua 00:00 — phien cu da khoa. Chi duoc sua phien hom nay.");
+                AppAlert.error(this, "Không thể sửa",
+                        "Đã qua 00:00 — phiên cũ đã khóa. Chỉ được sửa phiên hôm nay.");
                 return;
             }
             Object raw = table.getModel().getValueAt(modelRow, COL_ACTUAL);
@@ -332,7 +332,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 } finally {
                     suppressActualEdit = false;
                 }
-                AppAlert.error(this, "So khong hop le", "Ton thuc te phai la so nguyen ≥ 0.");
+                AppAlert.error(this, "Số không hợp lệ", "Tồn thực tế phải là số nguyên ≥ 0.");
                 return;
             }
             Integer userId = currentUserId();
@@ -346,8 +346,8 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 } finally {
                     suppressActualEdit = false;
                 }
-                AppAlert.error(this, "Cap nhat that bai",
-                        "Khong the cap nhat ton thuc te. Kiem tra so ton theo lo (khong duoc vuot so luong nhap cua lo) va thu lai.");
+                AppAlert.error(this, "Cập nhật thất bại",
+                        "Không thể cập nhật tồn thực tế. Kiểm tra số tồn theo lô (không được vượt số lượng nhập của lô) và thử lại.");
                 return;
             }
             item.setActualStock(newActual);
@@ -367,9 +367,9 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 suppressActualEdit = false;
             }
             table.getTable().repaint();
-            AppAlert.success(this, "Da cap nhat",
-                    "Ton thuc te lo \"" + (item.getBatchCode() != null ? item.getBatchCode() : item.getProductName()) + "\" = " + newActual
-                            + " (chenh lech: " + discrepancyText(item.getDiscrepancy()) + ")");
+            AppAlert.success(this, "Đã cập nhật",
+                    "Tồn thực tế lô \"" + (item.getBatchCode() != null ? item.getBatchCode() : item.getProductName()) + "\" = " + newActual
+                            + " (chênh lệch: " + discrepancyText(item.getDiscrepancy()) + ")");
         });
     }
 
@@ -400,8 +400,8 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                 try {
                     int created = get();
                     if (created > 0) {
-                        AppAlert.success(StockReconciliationPanel.this, "Phien doi chieu hom nay",
-                                "Da tao " + created + " san pham de doi chieu kho.");
+                        AppAlert.success(StockReconciliationPanel.this, "Phiên đối chiếu hôm nay",
+                                "Đã tạo " + created + " sản phẩm để đối chiếu kho.");
                     }
                 } catch (Exception ignored) {
                 }
@@ -425,10 +425,10 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     private void buildDateFilterBar() {
         fromDateFilter = new DatePickerField(null, true);
         toDateFilter = new DatePickerField(null, true);
-        JLabel fromLabel = new JLabel("Tu ngay");
+        JLabel fromLabel = new JLabel("Từ ngày");
         fromLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         fromLabel.setForeground(AppColor.TEXT_MUTED);
-        JLabel toLabel = new JLabel("Den ngay");
+        JLabel toLabel = new JLabel("Đến ngày");
         toLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         toLabel.setForeground(AppColor.TEXT_MUTED);
         JPanel dateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
@@ -445,7 +445,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         clearIcon.setIconColor(AppColor.TEXT_MUTED);
         clearDateFilterLink = new JLabel(clearIcon);
         clearDateFilterLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        clearDateFilterLink.setToolTipText("Xoa loc ngay");
+        clearDateFilterLink.setToolTipText("Xóa lọc ngày");
         clearDateFilterLink.setVisible(false);
         clearDateFilterLink.addMouseListener(new MouseAdapter() {
             @Override
@@ -503,7 +503,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.BALANCE_SCALE; }
 
     @Override
-    protected String getPageTitle() { return "Doi chieu kho cuoi ngay"; }
+    protected String getPageTitle() { return "Đối chiếu kho cuối ngày"; }
 
     @Override
     protected String getPageSubtitle() {
@@ -511,12 +511,12 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     }
 
     @Override
-    protected String getAddButtonLabel() { return "Dong bo SP hom nay"; }
+    protected String getAddButtonLabel() { return "Đồng bộ SP hôm nay"; }
 
     @Override
     protected String[] getColumnNames() {
-        return new String[]{"Ma SP", "San pham", "Ma lo", "Ton lo hang", "Da kiem ke", "Ton thuc te",
-                "Chenh lech", "Nguoi doi chieu", "Thoi gian"};
+        return new String[]{"Mã SP", "Sản phẩm", "Mã lô", "Tồn lô hàng", "Đã kiểm kê", "Tồn thực tế",
+                "Chênh lệch", "Người đối chiếu", "Thời gian"};
     }
 
     @Override
@@ -538,7 +538,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     protected int[] numericColumns() { return new int[]{3, 5}; }
 
     @Override
-    protected String getEntityLabel() { return "phien doi chieu kho"; }
+    protected String getEntityLabel() { return "phiên đối chiếu kho"; }
 
     @Override
     protected String getItemDisplayName(StockReconciliation item) {
@@ -562,7 +562,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     }
 
     @Override
-    protected String getSearchPlaceholder() { return "Tim theo ten san pham, ma SP, nguoi doi chieu..."; }
+    protected String getSearchPlaceholder() { return "Tìm theo tên sản phẩm, mã SP, người đối chiếu..."; }
 
     @Override
     protected boolean supportsEdit() { return false; }
@@ -590,22 +590,22 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         rolloverToNewDayIfNeeded();
         List<Product> activeProducts = productDAO.findAllActive();
         if (activeProducts.isEmpty()) {
-            BaseDialog.info(this, "Khong co san pham",
-                    "Chua co san pham dang ban nao de doi chieu. Vui long them san pham truoc.");
+            BaseDialog.info(this, "Không có sản phẩm",
+                    "Chưa có sản phẩm đang bán nào để đối chiếu. Vui lòng thêm sản phẩm trước.");
             return;
         }
         int created = reconciliationDAO.ensureDailySession(LocalDate.now(), userId);
         if (created > 0) {
-            AppAlert.success(this, "Dong bo thanh cong",
-                    "Da them " + created + " san pham vao phien doi chieu hom nay.");
+            AppAlert.success(this, "Đồng bộ thành công",
+                    "Đã thêm " + created + " sản phẩm vào phiên đối chiếu hôm nay.");
             LocalDate today = LocalDate.now();
             fromDateFilter.setValue(today);
             toDateFilter.setValue(today);
             if (clearDateFilterLink != null) clearDateFilterLink.setVisible(true);
             reload();
         } else {
-            AppAlert.success(this, "Da dong bo",
-                    "Phien hom nay da co du " + activeProducts.size() + " san pham dang ban.");
+            AppAlert.success(this, "Đã đồng bộ",
+                    "Phiên hôm nay đã có đủ " + activeProducts.size() + " sản phẩm đang bán.");
             LocalDate today = LocalDate.now();
             fromDateFilter.setValue(today);
             toDateFilter.setValue(today);
@@ -623,7 +623,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     }
 
     private String discrepancyText(int discrepancy) {
-        if (discrepancy == 0) return "Khop";
+        if (discrepancy == 0) return "Khớp";
         return (discrepancy > 0 ? "+" : "") + discrepancy;
     }
 
@@ -633,7 +633,7 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
 
     private Color discrepancyColor(Object value) {
         String label = String.valueOf(value);
-        if ("Khop".equals(label)) return AppColor.SUCCESS;
+        if ("Khớp".equals(label)) return AppColor.SUCCESS;
         return label.startsWith("+") ? AppColor.WARNING : AppColor.ERROR;
     }
 

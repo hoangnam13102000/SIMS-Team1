@@ -234,7 +234,7 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
 
     @Override
     protected String getSearchPlaceholder() {
-        return "Tìm mã phiếu, lý do, người lập...";
+        return "Tìm mã phiếu, mã lô, lý do, người lập...";
     }
 
     @Override
@@ -245,6 +245,7 @@ public class StockDisposalPanel extends BaseCrudPanel<StockDisposal> {
             if (d.getReasonLabel() != null) names.add(d.getReasonLabel());
             if (d.getCreatedByName() != null) names.add(d.getCreatedByName());
         }
+        names.addAll(disposalDAO.getBatchSearchSuggestions());
         return new ArrayList<>(new LinkedHashSet<>(names));
     }
 

@@ -89,6 +89,7 @@ public class BaseTable extends JPanel {
 
         table = new JTable(model);
         styleTable();
+        installResizeWidthSync();
 
         // ===== SCROLLPANE KHÔNG CÓ BORDER VÀ BACKGROUND =====
         scrollPane = new JScrollPane(table);
@@ -287,6 +288,53 @@ public class BaseTable extends JPanel {
 
         @Override public int getIconWidth() { return !hint && priority > 0 ? SIZE + 12 : SIZE + 2; }
         @Override public int getIconHeight() { return BOX_HEIGHT; }
+    }
+
+    /**
+     * SUA LOI: keo doi chieu rong cot xong, cot tu "nhay ve" kich thuoc cu.
+     *
+     * Nguyen nhan: JTable.doLayout() - moi khi bang duoc layout lai (vd sau
+     * revalidate()/repaint() trong refresh(), sau khi resize cua so, sau khi
+     * mo/dong sidebar...) - se tinh lai WIDTH thuc te cua TUNG COT dua theo ti
+     * le PREFERRED WIDTH (khong phai width nguoi dung vua keo!), roi ep tong
+     * width khop voi be rong vung nhin (vi autoResizeMode mac dinh KHONG phai
+     * AUTO_RESIZE_OFF nen JTable luon tu keo gian de lap day vung nhin).
+     *
+     * Khi nguoi dung keo bien cot (drag border header), Swing chi doi
+     * TableColumn#width, KHONG doi TableColumn#preferredWidth. Vi vay ngay sau
+     * do, hanh dong layout lai tiep theo (thuong xay ra rat nhanh vd do
+     * table.getTable().revalidate() trong refresh() sau khi load/search/CRUD,
+     * hoac do window/panel resize) se doc lai preferredWidth cu va tinh lai
+     * width - xoa mat thao tac keo dan cua nguoi dung, tao cam giac "khong keo
+     * duoc". Bang Nha cung cap it bi refresh lien tuc nen it khi lo ra loi
+     * nay, cac bang khac refresh thuong xuyen hon nen bi "nhay ve" gan nhu
+     * ngay lap tuc.
+     *
+     * Cach sua: lang nghe su kien columnMarginChanged (ban vao lien tuc trong
+     * luc keo) va dong bo preferredWidth = width hien tai cua dung cot dang
+     * keo (table.getTableHeader().getResizingColumn()) - nho vay lan layout
+     * lai tiep theo se giu nguyen kich thuoc nguoi dung vua chinh thay vi tra
+     * ve gia tri cu.
+     */
+    private void installResizeWidthSync() {
+        table.getColumnModel().addColumnModelListener(new javax.swing.event.TableColumnModelListener() {
+            @Override
+            public void columnMarginChanged(javax.swing.event.ChangeEvent e) {
+                javax.swing.table.TableColumn resizingColumn = table.getTableHeader().getResizingColumn();
+                if (resizingColumn != null) {
+                    resizingColumn.setPreferredWidth(resizingColumn.getWidth());
+                }
+            }
+
+            @Override
+            public void columnAdded(javax.swing.event.TableColumnModelEvent e) {}
+            @Override
+            public void columnRemoved(javax.swing.event.TableColumnModelEvent e) {}
+            @Override
+            public void columnMoved(javax.swing.event.TableColumnModelEvent e) {}
+            @Override
+            public void columnSelectionChanged(javax.swing.event.ListSelectionEvent e) {}
+        });
     }
 
     // ===== STYLE TABLE =====

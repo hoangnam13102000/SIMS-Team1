@@ -18,6 +18,8 @@ import com.event.AutoRefresher;
 import com.event.DataChangedEvent;
 import com.model.ActivityLog;
 import com.model.StockAlert;
+import com.model.permission.AppPermission;
+import com.permission.PermissionManager;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.theme.AppFont;
@@ -36,6 +38,7 @@ import javax.swing.border.MatteBorder;
 import java.awt.*;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -60,6 +63,18 @@ public class DashboardPanel extends JPanel {
     private JPanel lowStockListPanel;
     private JPanel activityListPanel;
     private JPanel stockAlertListPanel;
+
+    /*
+     * Dashboard chung (DASHBOARD_VIEW) được cấp cho cả Sales Manager và
+     * Sales Staff, nhưng dữ liệu tồn kho / cảnh báo tồn là nghiệp vụ của
+     * Kho hàng - chỉ hiện khi user có quyền kho tương ứng (Admin luôn có
+     * toàn quyền nên không bị ảnh hưởng). Tránh lộ "trang tổng quan kho"
+     * lồng trong Dashboard chung cho các role không quản lý kho.
+     */
+    private final boolean canViewStock =
+            PermissionManager.getInstance().can(AppPermission.STOCK_VIEW);
+    private final boolean canViewStockAlerts =
+            PermissionManager.getInstance().can(AppPermission.STOCK_ALERT_VIEW);
 
     public DashboardPanel() {
         setLayout(new BorderLayout());
@@ -107,17 +122,47 @@ public class DashboardPanel extends JPanel {
 
         content.add(buildStatsRow());
         content.add(Box.createVerticalStrut(AppSpacing.LG));
-        content.add(buildTwoColumnRow(buildRevenueChartCard(), 2.0, buildLowStockCard(), 1.0, 340));
+
+        /*
+         * "Sản phẩm sắp hết hàng" là dữ liệu kho - chỉ ghép cột này khi user
+         * có STOCK_VIEW, ngược lại biểu đồ thu/chi/lợi nhuận chiếm trọn hàng.
+         */
+        if (canViewStock) {
+            content.add(buildTwoColumnRow(buildRevenueChartCard(), 2.0, buildLowStockCard(), 1.0, 340));
+        } else {
+            content.add(buildFullWidthRow(buildRevenueChartCard(), 340));
+        }
         content.add(Box.createVerticalStrut(AppSpacing.LG));
-        content.add(buildTwoColumnRow(buildActivityCard(), 1.3, buildStockAlertCard(), 1.0, 320));
+
+        /*
+         * "Báo cáo từ nhân viên bán hàng" (cảnh báo tồn chưa xử lý) là việc
+         * của Quản lý kho - chỉ ghép cột này khi user có STOCK_ALERT_VIEW,
+         * ngược lại "Hoạt động gần đây" chiếm trọn hàng.
+         */
+        if (canViewStockAlerts) {
+            content.add(buildTwoColumnRow(buildActivityCard(), 1.3, buildStockAlertCard(), 1.0, 320));
+        } else {
+            content.add(buildFullWidthRow(buildActivityCard(), 320));
+        }
 
         return content;
     }
 
+    /** 1 hàng full-width dùng khi cột "kho" bên cạnh bị ẩn do thiếu quyền. */
+    private JPanel buildFullWidthRow(JComponent comp, int height) {
+        JPanel row = new JPanel(new BorderLayout());
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
+        row.setPreferredSize(new Dimension(10, height));
+        row.add(comp, BorderLayout.CENTER);
+        return row;
+    }
+
     /**
      * Hàng thống kê responsive — ưu tiên hiện đủ chữ title/footer:
-     * - ≥1320px: 1 hàng × 7
-     * - ≥720px:  2 hàng (4 + 3)  ← mặc định màn hình thường
+     * - ≥1320px: 1 hàng × N (N = số card thực tế)
+     * - ≥720px:  4 cột
      * - ≥480px:  3 cột
      * - hẹp hơn: 2 cột
      */
@@ -125,15 +170,29 @@ public class DashboardPanel extends JPanel {
         revenueCard = new StatCard("Doanh thu hôm nay", "0 đ", FontAwesomeSolid.MONEY_BILL_WAVE, AppColor.ACCENT);
         invoiceCard = new StatCard("Hóa đơn hôm nay", "0", FontAwesomeSolid.RECEIPT, AppColor.INFO);
         productCard = new StatCard("Sản phẩm đang bán", "0", FontAwesomeSolid.BOX_OPEN, AppColor.TEAL);
-        lowStockCard = new StatCard("Sắp / hết hàng", "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE, AppColor.WARNING);
         customerCard = new StatCard("Khách hàng", "0", FontAwesomeSolid.USERS, AppColor.BLUE);
         cancelledInvoiceCard = new StatCard("Hóa đơn bị hủy", "0", FontAwesomeSolid.BAN, AppColor.ERROR);
         returnedProductCard = new StatCard("SP trả lại hôm nay", "0", FontAwesomeSolid.UNDO, AppColor.RED_ALT);
 
-        StatCard[] cards = {
-                revenueCard, invoiceCard, productCard, lowStockCard,
-                customerCard, cancelledInvoiceCard, returnedProductCard
-        };
+        List<StatCard> cardList = new ArrayList<>();
+        cardList.add(revenueCard);
+        cardList.add(invoiceCard);
+        cardList.add(productCard);
+
+        /*
+         * "Sắp / hết hàng" là số liệu tồn kho - chỉ hiện cho role có
+         * STOCK_VIEW (Admin, Quản lý kho...). NV bán hàng / Quản lý bán
+         * hàng chỉ có DASHBOARD_VIEW thì không được thấy số liệu kho này.
+         */
+        if (canViewStock) {
+            lowStockCard = new StatCard("Sắp / hết hàng", "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE, AppColor.WARNING);
+            cardList.add(lowStockCard);
+        }
+
+        cardList.add(cancelledInvoiceCard);
+        cardList.add(returnedProductCard);
+
+        StatCard[] cards = cardList.toArray(new StatCard[0]);
 
         JPanel row = new JPanel() {
             private int lastCols = -1;
@@ -156,13 +215,13 @@ public class DashboardPanel extends JPanel {
             private void relayout() {
                 int w = getWidth();
                 if (w <= 0) return;
-                // Ưu tiên hiện đủ chữ: chỉ 1 hàng 7 khi rất rộng.
-                // Màn hình thường → 4 cột (2 hàng: 4+3) để mỗi card đủ rộng hiện full title/footer.
-                int cols = (w >= 1320) ? 7 : (w >= 720) ? 4 : (w >= 480) ? 3 : 2;
+                // Ưu tiên hiện đủ chữ: chỉ 1 hàng khi rất rộng.
+                // Màn hình thường → 4 cột để mỗi card đủ rộng hiện full title/footer.
+                int cols = (w >= 1320) ? cards.length : (w >= 720) ? 4 : (w >= 480) ? 3 : 2;
                 if (cols == lastCols) return;
                 lastCols = cols;
 
-                int rows = (int) Math.ceil(7.0 / cols);
+                int rows = (int) Math.ceil((double) cards.length / cols);
                 setLayout(new GridLayout(rows, cols, AppSpacing.MD, AppSpacing.MD));
                 removeAll();
                 for (StatCard c : cards) add(c);
@@ -297,11 +356,20 @@ public class DashboardPanel extends JPanel {
                 data.todaySummary = revenueDao.getSummary(today, today);
                 data.weeklyFinance = revenueDao.getDailyFinance(today.minusDays(6), today);
                 data.overview = dashboardDao.getOverview();
-                data.lowStockItems = dashboardDao.getLowStockProducts(8);
                 data.recentActivity = auditLogDao.getPaged(1, 8).getData();
 
-                List<StockAlert> alerts = stockAlertDao.getUnseenForInventoryManager();
-                data.pendingAlerts = alerts.size() > 8 ? alerts.subList(0, 8) : alerts;
+                // Chỉ truy vấn dữ liệu kho khi user thực sự có quyền xem,
+                // tránh vừa lộ nghiệp vụ kho vừa tốn truy vấn thừa.
+                data.lowStockItems = canViewStock
+                        ? dashboardDao.getLowStockProducts(8)
+                        : List.of();
+
+                if (canViewStockAlerts) {
+                    List<StockAlert> alerts = stockAlertDao.getUnseenForInventoryManager();
+                    data.pendingAlerts = alerts.size() > 8 ? alerts.subList(0, 8) : alerts;
+                } else {
+                    data.pendingAlerts = List.of();
+                }
                 return data;
             }
 
@@ -329,11 +397,13 @@ public class DashboardPanel extends JPanel {
         productCard.setValue(NumberUtil.formatThousands(data.overview.totalProducts));
         productCard.setSubtitle("Đang mở bán");
 
-        lowStockCard.setValue(NumberUtil.formatThousands(data.overview.lowStockCount));
-        if (data.overview.lowStockCount == 0) {
-            lowStockCard.setSubtitle("Tồn kho ổn định");
-        } else {
-            lowStockCard.setTrend("Cần nhập thêm hàng", false);
+        if (lowStockCard != null) {
+            lowStockCard.setValue(NumberUtil.formatThousands(data.overview.lowStockCount));
+            if (data.overview.lowStockCount == 0) {
+                lowStockCard.setSubtitle("Tồn kho ổn định");
+            } else {
+                lowStockCard.setTrend("Cần nhập thêm hàng", false);
+            }
         }
 
         customerCard.setValue(NumberUtil.formatThousands(data.overview.totalCustomers));
@@ -351,9 +421,13 @@ public class DashboardPanel extends JPanel {
 
         weeklyChartPanel.setData(data.weeklyFinance);
 
-        renderLowStock(data.lowStockItems);
+        if (lowStockListPanel != null) {
+            renderLowStock(data.lowStockItems);
+        }
         renderActivity(data.recentActivity);
-        renderStockAlerts(data.pendingAlerts);
+        if (stockAlertListPanel != null) {
+            renderStockAlerts(data.pendingAlerts);
+        }
     }
 
     // ---------------------------------------------------------------
