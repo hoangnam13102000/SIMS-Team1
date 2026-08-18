@@ -171,6 +171,9 @@ CREATE TABLE Invoices (
                                 CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','PAYPAL','CARD')),
     PayPalOrderID           VARCHAR(50) NULL,
     PayPalCaptureID         VARCHAR(50) NULL,
+    PayOsOrderCode          BIGINT NULL,
+    PayOsPaymentLinkID      VARCHAR(64) NULL,
+    BankTransferReference   VARCHAR(100) NULL,
     Status                  VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                                 CHECK (Status IN ('ACTIVE', 'CANCELLED')),
     CancelReason            VARCHAR(255) NULL,
@@ -184,7 +187,11 @@ CREATE TABLE Invoices (
     CONSTRAINT FK_Invoices_Customers
         FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID),
     CONSTRAINT CK_Invoices_DiscountNotExceedSubTotal
-        CHECK (DiscountAmount <= SubTotal)
+        CHECK (DiscountAmount <= SubTotal),
+    CONSTRAINT UQ_Invoices_PayOsOrderCode
+        UNIQUE (PayOsOrderCode),
+    CONSTRAINT UQ_Invoices_PayOsPaymentLinkID
+        UNIQUE (PayOsPaymentLinkID)
 ) ENGINE=InnoDB;
 
 CREATE TABLE InvoiceDetails (

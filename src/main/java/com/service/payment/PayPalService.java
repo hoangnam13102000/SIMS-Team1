@@ -22,401 +22,637 @@ import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ExecutionException;
+import java.util.UUID;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 public final class PayPalService {
 
-    private final HttpClient http = HttpClient.newHttpClient();
-    private final String baseUrl;
-    private final String clientId;
-    private final String secret;
-    private final BigDecimal vndToUsdRate;
+	private final HttpClient http = HttpClient.newHttpClient();
+	private final String baseUrl;
+	private final String clientId;
+	private final String secret;
+	private final BigDecimal vndToUsdRate;
 
-    public PayPalService() {
-        AppConfig config = AppConfig.getInstance();
-        this.baseUrl = config.get("PAYPAL_BASE_URL", "https://api-m.sandbox.paypal.com");
-        this.clientId = config.get("PAYPAL_CLIENT_ID");
-        this.secret = config.get("PAYPAL_SECRET");
-        this.vndToUsdRate = new BigDecimal(config.get("VND_TO_USD_RATE", "26000"));
-    }
+	public PayPalService() {
+		AppConfig config = AppConfig.getInstance();
+		this.baseUrl = config.get("PAYPAL_BASE_URL", "https://api-m.sandbox.paypal.com");
+		this.clientId = config.get("PAYPAL_CLIENT_ID");
+		this.secret = config.get("PAYPAL_SECRET");
+		this.vndToUsdRate = new BigDecimal(config.get("VND_TO_USD_RATE", "26000"));
+	}
 
-    /** Kết quả sau khi khách xác nhận (hoặc hủy) trên trang PayPal. */
-    public record ApprovalResult(boolean approved, String payPalOrderId) {}
+	/** Kết quả sau khi khách xác nhận (hoặc hủy) trên trang PayPal. */
+	public record ApprovalResult(boolean approved, String payPalOrderId) {
+	}
 
-    /** Kết quả sau khi capture (chốt) giao dịch. */
-    public record CaptureResult(boolean success, String captureId, String status) {}
+	/** Kết quả sau khi capture (chốt) giao dịch. */
+	public record CaptureResult(boolean success, String captureId, String status) {
+	}
 
-    /** Kết quả tạo đơn PayPal: id đơn + link để mở trình duyệt cho khách approve. */
-    public record CreatedOrder(String payPalOrderId, String approveUrl) {}
+	/**
+	 * Kết quả yêu cầu hoàn lại một PayPal capture.
+	 *
+	 * accepted = PayPal đã chấp nhận yêu cầu refund. status có thể là COMPLETED /
+	 * PENDING / ...
+	 */
+	public record RefundResult(boolean accepted, String refundId, String status) {
+	}
 
-    // ==================== 1) Lấy access token ====================
+	/**
+	 * Kết quả tạo đơn PayPal: id đơn + link để mở trình duyệt cho khách approve.
+	 */
+	public record CreatedOrder(String payPalOrderId, String approveUrl) {
+	}
 
-    private String fetchAccessToken() throws IOException, InterruptedException {
-        String creds = Base64.getEncoder().encodeToString(
-                (clientId + ":" + secret).getBytes(StandardCharsets.UTF_8));
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/v1/oauth2/token"))
-                .header("Authorization", "Basic " + creds)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials"))
-                .timeout(Duration.ofSeconds(15))
-                .build();
+	// ==================== 1) Lấy access token ====================
 
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-        if (res.statusCode() != 200) {
-            throw new IOException("Lấy access token PayPal thất bại (HTTP " + res.statusCode() + "): " + res.body());
-        }
-        JsonObject json = JsonParser.parseString(res.body()).getAsJsonObject();
-        return json.get("access_token").getAsString();
-    }
+	private String fetchAccessToken() throws IOException, InterruptedException {
+		String creds = Base64.getEncoder().encodeToString((clientId + ":" + secret).getBytes(StandardCharsets.UTF_8));
+		HttpRequest req = HttpRequest.newBuilder().uri(URI.create(baseUrl + "/v1/oauth2/token"))
+				.header("Authorization", "Basic " + creds).header("Content-Type", "application/x-www-form-urlencoded")
+				.POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials"))
+				.timeout(Duration.ofSeconds(15)).build();
 
-    // ==================== 2) Tạo đơn PayPal ====================
+		HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+		if (res.statusCode() != 200) {
+			throw new IOException("Lấy access token PayPal thất bại (HTTP " + res.statusCode() + "): " + res.body());
+		}
+		JsonObject json = JsonParser.parseString(res.body()).getAsJsonObject();
+		return json.get("access_token").getAsString();
+	}
 
-    /**
-     * Tạo 1 đơn PayPal ứng với {@code totalVnd} (được quy đổi sang USD theo
-     * VND_TO_USD_RATE, làm tròn 2 chữ số thập phân, tối thiểu 1.00 USD theo
-     * yêu cầu của PayPal). {@code returnUrl}/{@code cancelUrl} trỏ về HTTP
-     * server cục bộ đang chờ redirect (xem {@link #waitForApproval}).
-     */
-    public CreatedOrder createOrder(BigDecimal totalVnd, String referenceCode,
-                                     String returnUrl, String cancelUrl) throws IOException, InterruptedException {
-        String accessToken = fetchAccessToken();
+	// ==================== 2) Tạo đơn PayPal ====================
 
-        BigDecimal usd = totalVnd.divide(vndToUsdRate, 2, RoundingMode.HALF_UP);
-        if (usd.compareTo(new BigDecimal("1.00")) < 0) usd = new BigDecimal("1.00");
+	/**
+	 * Tạo 1 đơn PayPal ứng với {@code totalVnd} (được quy đổi sang USD theo
+	 * VND_TO_USD_RATE, làm tròn 2 chữ số thập phân).
+	 *
+	 * Số tiền sau quy đổi phải tối thiểu 0.01 USD.
+	 */
+	public CreatedOrder createOrder(BigDecimal totalVnd, String referenceCode, String returnUrl, String cancelUrl)
+			throws IOException, InterruptedException {
+		String accessToken = fetchAccessToken();
 
-        String body = "{"
-                + "\"intent\":\"CAPTURE\","
-                + "\"purchase_units\":[{"
-                + "\"reference_id\":\"" + escape(referenceCode) + "\","
-                + "\"amount\":{\"currency_code\":\"USD\",\"value\":\"" + usd + "\"}"
-                + "}],"
-                + "\"application_context\":{"
-                + "\"return_url\":\"" + escape(returnUrl) + "\","
-                + "\"cancel_url\":\"" + escape(cancelUrl) + "\","
-                + "\"user_action\":\"PAY_NOW\","
-                + "\"brand_name\":\"SIMS - Connect Mart\""
-                + "}"
-                + "}";
+		BigDecimal usd = totalVnd.divide(vndToUsdRate, 2, RoundingMode.HALF_UP);
 
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/v2/checkout/orders"))
-                .header("Authorization", "Bearer " + accessToken)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .timeout(Duration.ofSeconds(15))
-                .build();
+		if (usd.compareTo(new BigDecimal("0.01")) < 0) {
+			throw new IllegalArgumentException("Số tiền PayPal sau quy đổi " + "phải tối thiểu 0.01 USD.");
+		}
 
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-        if (res.statusCode() != 201) {
-            throw new IOException("Tạo đơn PayPal thất bại (HTTP " + res.statusCode() + "): " + res.body());
-        }
+		String body = "{" + "\"intent\":\"CAPTURE\"," + "\"purchase_units\":[{" + "\"reference_id\":\""
+				+ escape(referenceCode) + "\"," + "\"amount\":{\"currency_code\":\"USD\",\"value\":\"" + usd + "\"}"
+				+ "}]," + "\"application_context\":{" + "\"return_url\":\"" + escape(returnUrl) + "\","
+				+ "\"cancel_url\":\"" + escape(cancelUrl) + "\"," + "\"user_action\":\"PAY_NOW\","
+				+ "\"brand_name\":\"SIMS - Connect Mart\"" + "}" + "}";
 
-        JsonObject json = JsonParser.parseString(res.body()).getAsJsonObject();
-        String orderId = json.get("id").getAsString();
-        String approveUrl = null;
-        for (var link : json.getAsJsonArray("links")) {
-            JsonObject l = link.getAsJsonObject();
-            if ("approve".equals(l.get("rel").getAsString())) {
-                approveUrl = l.get("href").getAsString();
-                break;
-            }
-        }
-        if (approveUrl == null) throw new IOException("Phản hồi PayPal thiếu link 'approve'.");
-        return new CreatedOrder(orderId, approveUrl);
-    }
+		HttpRequest req = HttpRequest.newBuilder().uri(URI.create(baseUrl + "/v2/checkout/orders"))
+				.header("Authorization", "Bearer " + accessToken).header("Content-Type", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).timeout(Duration.ofSeconds(15))
+				.build();
 
-    // ==================== 3) Mở trình duyệt ====================
+		HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+		if (res.statusCode() != 201) {
+			throw new IOException("Tạo đơn PayPal thất bại (HTTP " + res.statusCode() + "): " + res.body());
+		}
 
-    public void openApprovalPage(String approveUrl) throws IOException {
-        if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-            throw new IOException("Máy này không hỗ trợ tự mở trình duyệt. Vui lòng mở thủ công: " + approveUrl);
-        }
-        try {
-            Desktop.getDesktop().browse(URI.create(approveUrl));
-        } catch (IOException e) {
-            throw new IOException("Không mở được trình duyệt cho PayPal: " + e.getMessage(), e);
-        }
-    }
+		JsonObject json = JsonParser.parseString(res.body()).getAsJsonObject();
+		String orderId = json.get("id").getAsString();
+		String approveUrl = null;
+		for (var link : json.getAsJsonArray("links")) {
+			JsonObject l = link.getAsJsonObject();
+			if ("approve".equals(l.get("rel").getAsString())) {
+				approveUrl = l.get("href").getAsString();
+				break;
+			}
+		}
+		if (approveUrl == null)
+			throw new IOException("Phản hồi PayPal thiếu link 'approve'.");
+		return new CreatedOrder(orderId, approveUrl);
+	}
 
-    // ==================== 4) Server cục bộ chờ redirect ====================
+	// ==================== 3) Mở trình duyệt ====================
 
-    /** 1 server tạm cho 1 lần thanh toán - start() rồi lấy port() để build return/cancel URL, chờ waitForApproval(), rồi stop(). */
-    public static final class LocalCallbackServer {
-    	private final HttpServer server;
+	public void openApprovalPage(String approveUrl) throws IOException {
+		if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+			throw new IOException("Máy này không hỗ trợ tự mở trình duyệt. Vui lòng mở thủ công: " + approveUrl);
+		}
+		try {
+			Desktop.getDesktop().browse(URI.create(approveUrl));
+		} catch (IOException e) {
+			throw new IOException("Không mở được trình duyệt cho PayPal: " + e.getMessage(), e);
+		}
+	}
 
-    	/*
-    	 * Kết quả khách xác nhận hoặc hủy trên PayPal.
-    	 */
-    	private final CompletableFuture<ApprovalResult> resultFuture =
-    	        new CompletableFuture<>();
+	// ==================== 4) Server cục bộ chờ redirect ====================
 
-    	/*
-    	 * Kết quả cuối cùng do ứng dụng SIMS quyết định
-    	 * sau khi kiểm tra ca và gọi capture.
-    	 */
-    	private final CompletableFuture<BrowserResult> browserResultFuture =
-    	        new CompletableFuture<>();
+	/**
+	 * 1 server tạm cho 1 lần thanh toán - start() rồi lấy port() để build
+	 * return/cancel URL, chờ waitForApproval(), rồi stop().
+	 */
+	public static final class LocalCallbackServer {
+		private final HttpServer server;
 
-    	/*
-    	 * Báo cho SwingWorker biết trang kết quả đã được gửi
-    	 * xong tới trình duyệt trước khi dừng callback server.
-    	 */
-    	private final CompletableFuture<Void> responseSentFuture =
-    	        new CompletableFuture<>();
+		/*
+		 * Kết quả khách xác nhận hoặc hủy trên PayPal.
+		 */
+		private final CompletableFuture<ApprovalResult> resultFuture = new CompletableFuture<>();
 
-    	private record BrowserResult(
-    	        boolean success,
-    	        String message
-    	) {
-    	}
+		/*
+		 * Kết quả cuối cùng do ứng dụng SIMS quyết định sau khi kiểm tra ca và gọi
+		 * capture.
+		 */
+		private final CompletableFuture<BrowserResult> browserResultFuture = new CompletableFuture<>();
 
-        LocalCallbackServer() throws IOException {
-            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-            server.createContext("/paypal/return", this::handleReturn);
-            server.createContext("/paypal/cancel", this::handleCancel);
-            server.setExecutor(null);
-        }
+		/*
+		 * Báo cho SwingWorker biết trang kết quả đã được gửi xong tới trình duyệt trước
+		 * khi dừng callback server.
+		 */
+		private final CompletableFuture<Void> responseSentFuture = new CompletableFuture<>();
+		private final CompletableFuture<Void> callbackStartedFuture = new CompletableFuture<>();
 
-        public void start() { server.start(); }
+		private record BrowserResult(boolean success, String message) {
+		}
 
-        public int port() { return server.getAddress().getPort(); }
+		LocalCallbackServer() throws IOException {
+			server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+			server.createContext("/paypal/return", this::handleReturn);
+			server.createContext("/paypal/cancel", this::handleCancel);
+			server.setExecutor(null);
+		}
 
-        public String returnUrl() { return "http://127.0.0.1:" + port() + "/paypal/return"; }
+		public void start() {
 
-        public String cancelUrl() { return "http://127.0.0.1:" + port() + "/paypal/cancel"; }
+			server.start();
 
-        /** Chờ (chặn luồng gọi) đến khi có redirect hoặc hết thời gian chờ. */
-        public ApprovalResult await(Duration timeout) throws TimeoutException {
-            try {
-                return resultFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-            } catch (TimeoutException e) {
-                throw e;
-            } catch (Exception e) {
-                return new ApprovalResult(false, null);
-            }
-        }
+			AppLogger.getInstance().info("SYSTEM", "PayPal callback server START" + " - port=" + port());
+		}
 
-        /**
-         * Báo cho trang callback rằng thanh toán đã hoàn tất.
-         */
-        public void completeBrowserSuccess(String message) {
-            browserResultFuture.complete(
-                    new BrowserResult(
-                            true,
-                            message
-                    )
-            );
-        }
+		public int port() {
+			return server.getAddress().getPort();
+		}
 
-        /**
-         * Báo cho trang callback rằng thanh toán thất bại.
-         */
-        public void completeBrowserFailure(String message) {
-            browserResultFuture.complete(
-                    new BrowserResult(
-                            false,
-                            message
-                    )
-            );
-        }
+		public String returnUrl() {
+			return "http://127.0.0.1:" + port() + "/paypal/return";
+		}
 
-        /**
-         * Chờ trang kết quả được gửi xong trước khi dừng server.
-         */
-        public void awaitBrowserResponse(Duration timeout) {
-            try {
-                responseSentFuture.get(
-                        timeout.toMillis(),
-                        TimeUnit.MILLISECONDS
-                );
-            } catch (Exception ignored) {
-                /*
-                 * Không làm hỏng luồng thanh toán nếu người dùng
-                 * đã đóng trình duyệt hoặc callback mất kết nối.
-                 */
-            }
-        }
+		public String cancelUrl() {
+			return "http://127.0.0.1:" + port() + "/paypal/cancel";
+		}
 
-        public void stop() {
-            server.stop(0);
-        }
+		/** Chờ (chặn luồng gọi) đến khi có redirect hoặc hết thời gian chờ. */
+		public ApprovalResult await(Duration timeout) throws TimeoutException, InterruptedException {
 
-        private void handleReturn(
-                HttpExchange exchange
-        ) throws IOException {
+			try {
 
-            String query =
-                    exchange.getRequestURI().getQuery();
+				return resultFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 
-            String token =
-                    extractParam(query, "token");
+			} catch (TimeoutException e) {
 
-            /*
-             * Đánh thức SwingWorker để ứng dụng kiểm tra ca
-             * và quyết định có capture hay không.
-             */
-            resultFuture.complete(
-                    new ApprovalResult(
-                            true,
-                            token
-                    )
-            );
+				throw e;
 
-            BrowserResult finalResult;
+			} catch (InterruptedException e) {
 
-            try {
-                /*
-                 * Chờ SIMS kiểm tra ca và xử lý capture.
-                 * Thời gian này ngắn hơn thời gian chờ PayPal 5 phút.
-                 */
-                finalResult = browserResultFuture.get(
-                        60,
-                        TimeUnit.SECONDS
-                );
+				Thread.currentThread().interrupt();
 
-            } catch (Exception e) {
-                finalResult = new BrowserResult(
-                        false,
-                        "SIMS không nhận được kết quả thanh toán cuối cùng. "
-                                + "Vui lòng quay lại ứng dụng để kiểm tra."
-                );
-            }
+				throw e;
 
-            String title = finalResult.success()
-                    ? "Thanh toán thành công"
-                    : "Thanh toán thất bại";
+			} catch (ExecutionException e) {
 
-            String color = finalResult.success()
-                    ? "#15803d"
-                    : "#dc2626";
+				return new ApprovalResult(false, null);
+			}
+		}
 
-            String html =
-                    "<html>"
-                  + "<body style='font-family:sans-serif;"
-                  + "text-align:center;padding-top:60px'>"
-                  + "<h2 style='color:" + color + "'>"
-                  + title
-                  + "</h2>"
-                  + "<p>"
-                  + finalResult.message()
-                  + "</p>"
-                  + "<p>Bạn có thể đóng tab này "
-                  + "và quay lại ứng dụng SIMS.</p>"
-                  + "</body>"
-                  + "</html>";
+		/**
+		 * Báo cho trang callback rằng thanh toán đã hoàn tất.
+		 */
+		public void completeBrowserSuccess(String message) {
+			browserResultFuture.complete(new BrowserResult(true, message));
+		}
 
-            try {
-                respond(
-                        exchange,
-                        html
-                );
-            } finally {
-                /*
-                 * Cho SwingWorker biết có thể dừng server.
-                 */
-                responseSentFuture.complete(null);
-            }
-        }
+		/**
+		 * Báo cho trang callback rằng thanh toán thất bại.
+		 */
+		public void completeBrowserFailure(String message) {
+			browserResultFuture.complete(new BrowserResult(false, message));
+		}
 
-        private void handleCancel(
-                HttpExchange exchange
-        ) throws IOException {
+		/**
+		 * Chờ trang kết quả được gửi xong trước khi dừng server.
+		 */
+		public void awaitBrowserResponse(Duration timeout) {
+			try {
+				responseSentFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+			} catch (Exception ignored) {
+				/*
+				 * Không làm hỏng luồng thanh toán nếu người dùng đã đóng trình duyệt hoặc
+				 * callback mất kết nối.
+				 */
+			}
+		}
 
-            /*
-             * Trường hợp khách tự hủy thì kết quả đã rõ,
-             * không cần chờ PosPanel quyết định.
-             */
-            resultFuture.complete(
-                    new ApprovalResult(
-                            false,
-                            null
-                    )
-            );
+		public void awaitCallbackStart(Duration timeout) {
 
-            try {
-                respond(
-                        exchange,
-                        "<html>"
-                      + "<body style='font-family:sans-serif;"
-                      + "text-align:center;padding-top:60px'>"
-                      + "<h2 style='color:#d97706'>"
-                      + "Đã hủy thanh toán"
-                      + "</h2>"
-                      + "<p>Giao dịch chưa được capture "
-                      + "và khách hàng không bị trừ tiền.</p>"
-                      + "<p>Bạn có thể đóng tab này "
-                      + "và quay lại ứng dụng SIMS.</p>"
-                      + "</body>"
-                      + "</html>"
-                );
-            } finally {
-                responseSentFuture.complete(null);
-            }
-        }
+			try {
 
-        private void respond(HttpExchange exchange, String html) throws IOException {
-            byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
-            exchange.sendResponseHeaders(200, bytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(bytes);
-            }
-        }
+				callbackStartedFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 
-        private static String extractParam(String query, String key) {
-            if (query == null) return null;
-            for (String pair : query.split("&")) {
-                String[] kv = pair.split("=", 2);
-                if (kv.length == 2 && kv[0].equals(key)) return kv[1];
-            }
-            return null;
-        }
-    }
+			} catch (Exception ignored) {
+				/*
+				 * Nếu browser không redirect về thì không giữ server vô hạn.
+				 */
+			}
+		}
 
-    public LocalCallbackServer startLocalCallbackServer() throws IOException {
-        LocalCallbackServer server = new LocalCallbackServer();
-        server.start();
-        return server;
-    }
+		public void stop() {
 
-    // ==================== 5) Capture (chốt giao dịch) ====================
+			int currentPort = port();
 
-    public CaptureResult captureOrder(String payPalOrderId) throws IOException, InterruptedException {
-        String accessToken = fetchAccessToken();
+			AppLogger.getInstance().info("SYSTEM", "PayPal callback server STOP" + " - port=" + currentPort);
 
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/v2/checkout/orders/" + payPalOrderId + "/capture"))
-                .header("Authorization", "Bearer " + accessToken)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(""))
-                .timeout(Duration.ofSeconds(15))
-                .build();
+			server.stop(0);
+		}
 
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-        if (res.statusCode() != 201 && res.statusCode() != 200) {
-            AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL,
-                    "PayPalService.captureOrder - HTTP " + res.statusCode() + ": " + res.body(), null);
-            return new CaptureResult(false, null, "FAILED");
-        }
+		private void handleReturn(HttpExchange exchange) throws IOException {
+			callbackStartedFuture.complete(null);
 
-        JsonObject json = JsonParser.parseString(res.body()).getAsJsonObject();
-        String status = json.get("status").getAsString();
-        String captureId = null;
-        try {
-            captureId = json.getAsJsonArray("purchase_units").get(0).getAsJsonObject()
-                    .getAsJsonObject("payments")
-                    .getAsJsonArray("captures").get(0).getAsJsonObject()
-                    .get("id").getAsString();
-        } catch (Exception ignored) {
-            // Cau truc phan hoi khac thuong - van tra ve status de noi goi tu quyet dinh.
-        }
-        return new CaptureResult("COMPLETED".equals(status), captureId, status);
-    }
+			String query = exchange.getRequestURI().getQuery();
 
-    private static String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
+			String token = extractParam(query, "token");
+
+			AppLogger.getInstance().info("SYSTEM",
+					"PayPal callback RETURN" + " - port=" + port() + " - orderId=" + token);
+
+			/*
+			 * Đánh thức SwingWorker để ứng dụng kiểm tra ca và quyết định có capture hay
+			 * không.
+			 */
+			resultFuture.complete(new ApprovalResult(true, token));
+
+			BrowserResult finalResult;
+
+			try {
+				/*
+				 * Chờ SIMS kiểm tra ca và xử lý capture. Thời gian này ngắn hơn thời gian chờ
+				 * PayPal 5 phút.
+				 */
+				finalResult = browserResultFuture.get(60, TimeUnit.SECONDS);
+
+			} catch (Exception e) {
+				finalResult = new BrowserResult(false, "SIMS không nhận được kết quả thanh toán cuối cùng. "
+						+ "Vui lòng quay lại ứng dụng để kiểm tra.");
+			}
+
+			String title = finalResult.success() ? "Thanh toán thành công" : "Thanh toán thất bại";
+
+			String color = finalResult.success() ? "#15803d" : "#dc2626";
+
+			String html = "<html>" + "<body style='font-family:sans-serif;" + "text-align:center;padding-top:60px'>"
+					+ "<h2 style='color:" + color + "'>" + title + "</h2>" + "<p>" + finalResult.message() + "</p>"
+					+ "<p>Bạn có thể đóng tab này " + "và quay lại ứng dụng SIMS.</p>" + "</body>" + "</html>";
+
+			try {
+				respond(exchange, html);
+			} finally {
+				/*
+				 * Cho SwingWorker biết có thể dừng server.
+				 */
+				responseSentFuture.complete(null);
+			}
+		}
+
+		private void handleCancel(HttpExchange exchange) throws IOException {
+			callbackStartedFuture.complete(null);
+
+			/*
+			 * Trường hợp khách tự hủy thì kết quả đã rõ, không cần chờ PosPanel quyết định.
+			 */
+			resultFuture.complete(new ApprovalResult(false, null));
+
+			try {
+				respond(exchange, "<html>" + "<body style='font-family:sans-serif;"
+						+ "text-align:center;padding-top:60px'>" + "<h2 style='color:#d97706'>" + "Đã hủy thanh toán"
+						+ "</h2>" + "<p>Giao dịch chưa được capture " + "và khách hàng không bị trừ tiền.</p>"
+						+ "<p>Bạn có thể đóng tab này " + "và quay lại ứng dụng SIMS.</p>" + "</body>" + "</html>");
+			} finally {
+				responseSentFuture.complete(null);
+			}
+		}
+
+		private void respond(HttpExchange exchange, String html) throws IOException {
+			byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
+			exchange.sendResponseHeaders(200, bytes.length);
+			try (OutputStream os = exchange.getResponseBody()) {
+				os.write(bytes);
+			}
+		}
+
+		private static String extractParam(String query, String key) {
+			if (query == null)
+				return null;
+			for (String pair : query.split("&")) {
+				String[] kv = pair.split("=", 2);
+				if (kv.length == 2 && kv[0].equals(key))
+					return kv[1];
+			}
+			return null;
+		}
+	}
+
+	public LocalCallbackServer startLocalCallbackServer() throws IOException {
+		LocalCallbackServer server = new LocalCallbackServer();
+		server.start();
+		return server;
+	}
+
+	// ==================== 5) Capture (chốt giao dịch) ====================
+
+	public CaptureResult captureOrder(String payPalOrderId) throws IOException, InterruptedException {
+
+		if (payPalOrderId == null || payPalOrderId.isBlank()) {
+			return new CaptureResult(false, null, "INVALID_ORDER_ID");
+		}
+
+		String requestId = buildRequestId("SIMS-CAPTURE", payPalOrderId);
+
+		IOException lastIoException = null;
+
+		/*
+		 * Tối đa 2 lần:
+		 *
+		 * lần 1: request bình thường lần 2: retry bằng CÙNG PayPal-Request-Id
+		 */
+		for (int attempt = 1; attempt <= 2; attempt++) {
+
+			try {
+
+				String accessToken = fetchAccessToken();
+
+				HttpRequest req = HttpRequest.newBuilder()
+						.uri(URI.create(baseUrl + "/v2/checkout/orders/" + payPalOrderId + "/capture"))
+						.header("Authorization", "Bearer " + accessToken).header("Content-Type", "application/json")
+						.header("PayPal-Request-Id", requestId).header("Prefer", "return=representation")
+						.POST(HttpRequest.BodyPublishers.ofString("{}", StandardCharsets.UTF_8))
+						.timeout(Duration.ofSeconds(15)).build();
+
+				HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+
+				/*
+				 * 5xx: có thể retry với cùng idempotency key.
+				 */
+				if (res.statusCode() >= 500 && res.statusCode() <= 599) {
+
+					AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL, "PayPal capture tạm lỗi"
+							+ " - attempt=" + attempt + " - HTTP " + res.statusCode() + " - orderId=" + payPalOrderId,
+							null);
+
+					if (attempt < 2) {
+						continue;
+					}
+
+					/*
+					 * Lần 2 vẫn 5xx: không kết luận thất bại ngay.
+					 *
+					 * Thoát vòng lặp để GET lại PayPal Order và xác định có capture thực tế hay
+					 * chưa.
+					 */
+					break;
+				}
+
+				if (res.statusCode() != 201 && res.statusCode() != 200) {
+
+					AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL,
+							"PayPalService.captureOrder" + " - HTTP " + res.statusCode() + ": " + res.body(), null);
+
+					return new CaptureResult(false, null, "FAILED");
+				}
+
+				return parseCaptureResponse(res.body());
+
+			} catch (IOException e) {
+
+				lastIoException = e;
+
+				AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL,
+						"PayPal capture mất kết nối" + " - attempt=" + attempt + " - orderId=" + payPalOrderId, e);
+
+				if (attempt < 2) {
+					continue;
+				}
+			}
+		}
+
+		/*
+		 * Hai lần capture đều không cho ta kết quả chắc chắn.
+		 *
+		 * Trước khi kết luận thất bại, hỏi lại PayPal Order.
+		 */
+		try {
+
+			CaptureResult recovered = recoverCaptureFromOrder(payPalOrderId);
+
+			if (recovered.success()) {
+
+				return recovered;
+			}
+
+		} catch (IOException | InterruptedException recoveryError) {
+
+			AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL,
+					"Không thể recovery PayPal Order" + " - orderId=" + payPalOrderId, recoveryError);
+
+			if (recoveryError instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+		}
+
+		/*
+		 * Đến đây SIMS vẫn không xác định chắc chắn capture có thành công hay chưa.
+		 *
+		 * Không tạo invoice giả và cũng không tự refund khi không có CaptureID.
+		 */
+		if (lastIoException != null) {
+
+			return new CaptureResult(false, null, "CAPTURE_STATUS_UNKNOWN");
+		}
+
+		return new CaptureResult(false, null, "PAYPAL_TEMPORARY_ERROR");
+	}
+
+	private CaptureResult parseCaptureResponse(String body) {
+
+		if (body == null || body.isBlank()) {
+			return new CaptureResult(false, null, "EMPTY_RESPONSE");
+		}
+
+		JsonObject json = JsonParser.parseString(body).getAsJsonObject();
+
+		String status = json.has("status") ? json.get("status").getAsString() : "UNKNOWN";
+
+		String captureId = null;
+
+		try {
+
+			captureId = json.getAsJsonArray("purchase_units").get(0).getAsJsonObject().getAsJsonObject("payments")
+					.getAsJsonArray("captures").get(0).getAsJsonObject().get("id").getAsString();
+
+		} catch (Exception ignored) {
+			/*
+			 * Response PayPal bất thường: không đoán CaptureID.
+			 */
+		}
+
+		boolean completed = "COMPLETED".equalsIgnoreCase(status) && captureId != null && !captureId.isBlank();
+
+		return new CaptureResult(completed, captureId, status);
+	}
+
+	private CaptureResult recoverCaptureFromOrder(String payPalOrderId) throws IOException, InterruptedException {
+
+		if (payPalOrderId == null || payPalOrderId.isBlank()) {
+			return new CaptureResult(false, null, "INVALID_ORDER_ID");
+		}
+
+		String accessToken = fetchAccessToken();
+
+		HttpRequest req = HttpRequest.newBuilder().uri(URI.create(baseUrl + "/v2/checkout/orders/" + payPalOrderId))
+				.header("Authorization", "Bearer " + accessToken).GET().timeout(Duration.ofSeconds(15)).build();
+
+		HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+
+		if (res.statusCode() != 200) {
+
+			AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL, "Không thể kiểm tra lại PayPal Order"
+					+ " - orderId=" + payPalOrderId + " - HTTP " + res.statusCode(), null);
+
+			return new CaptureResult(false, null, "ORDER_LOOKUP_FAILED");
+		}
+
+		JsonObject json = JsonParser.parseString(res.body()).getAsJsonObject();
+
+		String orderStatus = json.has("status") ? json.get("status").getAsString() : "UNKNOWN";
+
+		/*
+		 * Tìm capture COMPLETED trong Order.
+		 */
+		try {
+
+			var purchaseUnits = json.getAsJsonArray("purchase_units");
+
+			for (int i = 0; i < purchaseUnits.size(); i++) {
+
+				JsonObject purchaseUnit = purchaseUnits.get(i).getAsJsonObject();
+
+				if (!purchaseUnit.has("payments")) {
+					continue;
+				}
+
+				JsonObject payments = purchaseUnit.getAsJsonObject("payments");
+
+				if (!payments.has("captures")) {
+					continue;
+				}
+
+				var captures = payments.getAsJsonArray("captures");
+
+				for (int j = 0; j < captures.size(); j++) {
+
+					JsonObject capture = captures.get(j).getAsJsonObject();
+
+					String captureId = capture.has("id") ? capture.get("id").getAsString() : null;
+
+					String captureStatus = capture.has("status") ? capture.get("status").getAsString() : "UNKNOWN";
+
+					if (captureId != null && !captureId.isBlank() && "COMPLETED".equalsIgnoreCase(captureStatus)) {
+
+						AppLogger.getInstance().info("SYSTEM", "PayPal capture recovered" + " - orderId="
+								+ payPalOrderId + " - captureId=" + captureId);
+
+						return new CaptureResult(true, captureId, "COMPLETED");
+					}
+				}
+			}
+
+		} catch (Exception e) {
+
+			AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL,
+					"Không đọc được capture " + "từ PayPal Order" + " - orderId=" + payPalOrderId, e);
+		}
+
+		return new CaptureResult(false, null, orderStatus);
+	}
+
+	/**
+	 * Full refund một PayPal capture.
+	 *
+	 * Dùng làm compensating transaction khi:
+	 *
+	 * PayPal capture thành công nhưng SIMS không thể tạo hóa đơn.
+	 */
+	public RefundResult refundCapture(String captureId) throws IOException, InterruptedException {
+
+		if (captureId == null || captureId.isBlank()) {
+			return new RefundResult(false, null, "INVALID_CAPTURE_ID");
+		}
+
+		String accessToken = fetchAccessToken();
+
+		String requestId = buildRequestId("SIMS-ROLLBACK", captureId);
+
+		HttpRequest req = HttpRequest.newBuilder()
+				.uri(URI.create(baseUrl + "/v2/payments/captures/" + captureId + "/refund"))
+				.header("Authorization", "Bearer " + accessToken).header("Content-Type", "application/json")
+				.header("PayPal-Request-Id", requestId).POST(HttpRequest.BodyPublishers.ofString(""))
+				.timeout(Duration.ofSeconds(15)).build();
+
+		HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+
+		if (res.statusCode() != 201 && res.statusCode() != 200) {
+
+			AppLogger.getInstance().error(ErrorCode.ORDER_CHECKOUT_FAIL, "PayPalService.refundCapture" + " - captureId="
+					+ captureId + " - HTTP " + res.statusCode() + ": " + res.body(), null);
+
+			return new RefundResult(false, null, "FAILED");
+		}
+
+		JsonObject json = JsonParser.parseString(res.body()).getAsJsonObject();
+
+		String refundId = json.has("id") ? json.get("id").getAsString() : null;
+
+		String status = json.has("status") ? json.get("status").getAsString() : "UNKNOWN";
+
+		boolean accepted = "COMPLETED".equalsIgnoreCase(status) || "PENDING".equalsIgnoreCase(status);
+
+		return new RefundResult(accepted, refundId, status);
+	}
+
+	private static String buildRequestId(String prefix, String externalId) {
+
+		String safePrefix = prefix != null ? prefix.trim() : "SIMS";
+
+		String safeId = externalId != null ? externalId.trim() : "UNKNOWN";
+
+		/*
+		 * UUID tạo từ cùng seed sẽ luôn giống nhau.
+		 *
+		 * Ví dụ:
+		 *
+		 * SIMS-CAPTURE + OrderID
+		 *
+		 * retry lần 1 / lần 2 vẫn sinh đúng cùng PayPal-Request-Id.
+		 *
+		 * CAPTURE và ROLLBACK dùng prefix khác nhau nên không thể dùng chung
+		 * idempotency key.
+		 */
+		String seed = safePrefix + ":" + safeId;
+
+		return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+	}
+
+	private static String escape(String value) {
+		return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
 }

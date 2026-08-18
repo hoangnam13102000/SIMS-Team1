@@ -33,12 +33,14 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.io.File;
 import java.math.BigDecimal;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public class ShiftManagementPanel extends JPanel {
 
@@ -89,8 +91,7 @@ public class ShiftManagementPanel extends JPanel {
 
 	private final JComboBox<String> historyYearFilter = yearFilterCombo();
 
-	private final Pagination historyPagination =
-	        new Pagination();
+	private final Pagination historyPagination = new Pagination();
 
 	private final DefaultTableModel transactionModel = readOnlyModel("Mã giao dịch", "Loại", "Số tiền", "Lý do",
 			"Người tạo", "Thời gian");
@@ -107,8 +108,7 @@ public class ShiftManagementPanel extends JPanel {
 
 	private final JComboBox<String> transactionYearFilter = yearFilterCombo();
 
-	private final Pagination transactionPagination =
-	        new Pagination();
+	private final Pagination transactionPagination = new Pagination();
 
 	private final JLabel transactionTitle = new JLabel("Thu/chi của ca");
 
@@ -146,13 +146,8 @@ public class ShiftManagementPanel extends JPanel {
 			subtitle = "Theo dõi lịch sử ca và " + "chênh lệch quỹ của " + "nhân viên bán hàng";
 		}
 
-		SectionHeader header = new SectionHeader(
-		        FontAwesomeSolid.CLOCK,
-		        AppColor.ACCENT,
-		        "Ca bán hàng & đối soát quỹ",
-		        subtitle
-		);
-
+		SectionHeader header = new SectionHeader(FontAwesomeSolid.CLOCK, AppColor.ACCENT, "Ca bán hàng & đối soát quỹ",
+				subtitle);
 
 		/*
 		 * Tùy chọn giống trang Quản lý hóa đơn.
@@ -163,18 +158,9 @@ public class ShiftManagementPanel extends JPanel {
 		 *
 		 * khi có ít nhất một addOverflowAction().
 		 */
-		header.addOverflowAction(
-		        "Xuất CSV",
-		        FontAwesomeSolid.FILE_CSV,
-		        () -> exportCurrentTab("csv")
-		);
+		header.addOverflowAction("Xuất CSV", FontAwesomeSolid.FILE_CSV, () -> exportCurrentTab("csv"));
 
-		header.addOverflowAction(
-		        "Xuất Excel",
-		        FontAwesomeSolid.FILE_EXCEL,
-		        () -> exportCurrentTab("xlsx")
-		);
-
+		header.addOverflowAction("Xuất Excel", FontAwesomeSolid.FILE_EXCEL, () -> exportCurrentTab("xlsx"));
 
 		add(header, BorderLayout.NORTH);
 
@@ -209,7 +195,7 @@ public class ShiftManagementPanel extends JPanel {
 		closeButton.addActionListener(event -> loadClosePreview());
 
 		refreshButton.addActionListener(event -> loadData());
-		
+
 		historyPagination.setVisiblePages(5);
 
 		transactionPagination.setVisiblePages(5);
@@ -240,7 +226,7 @@ public class ShiftManagementPanel extends JPanel {
 
 		cards.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		cards.setMaximumSize(new Dimension(Integer.MAX_VALUE, 104));
+		cards.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
 
 		cards.add(summaryCard("Trạng thái ca", statusValue));
 
@@ -315,19 +301,9 @@ public class ShiftManagementPanel extends JPanel {
 		transactionTitle.setFont(AppFont.HEADING_MD);
 		transactionTitle.setForeground(AppColor.TEXT_PRIMARY);
 
-		JPanel historyCard =
-		        filterTableCard(
-		                buildHistoryFilterBar(),
-		                historyTable,
-		                historyPagination
-		        );
+		JPanel historyCard = filterTableCard(buildHistoryFilterBar(), historyTable, historyPagination);
 
-		JPanel transactionCard =
-		        filterTableCard(
-		                buildTransactionHeader(),
-		                transactionTable,
-		                transactionPagination
-		        );
+		JPanel transactionCard = filterTableCard(buildTransactionHeader(), transactionTable, transactionPagination);
 
 		/*
 		 * CardLayout: chỉ hiển thị 1 bảng tại một thời điểm.
@@ -412,309 +388,155 @@ public class ShiftManagementPanel extends JPanel {
 
 	private JPanel buildHistoryFilterBar() {
 
-	    return buildFilterBar(
-	            historySearchField,
-	            historyStatusFilter,
-	            "Trạng thái:",
-	            historyDayFilter,
-	            historyMonthFilter,
-	            historyYearFilter
-	    );
+		return buildFilterBar(historySearchField, historyStatusFilter, "Trạng thái:", historyDayFilter,
+				historyMonthFilter, historyYearFilter);
 	}
 
 	private JPanel buildTransactionHeader() {
 
-	    JPanel panel = new JPanel();
+		JPanel panel = new JPanel();
 
-	    panel.setOpaque(false);
+		panel.setOpaque(false);
 
-	    panel.setLayout(
-	            new BoxLayout(
-	                    panel,
-	                    BoxLayout.Y_AXIS
-	            )
-	    );
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
+		/*
+		 * Tiêu đề Thu/Chi vẫn nằm phía trên.
+		 */
+		transactionTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-	    /*
-	     * Tiêu đề Thu/Chi vẫn nằm phía trên.
-	     */
-	    transactionTitle.setAlignmentX(
-	            Component.LEFT_ALIGNMENT
-	    );
+		panel.add(transactionTitle);
 
-	    panel.add(transactionTitle);
+		panel.add(Box.createVerticalStrut(10));
 
-	    panel.add(
-	            Box.createVerticalStrut(10)
-	    );
+		/*
+		 * Tìm kiếm + loại + ngày/tháng/năm nằm chung một dòng.
+		 */
+		JPanel filters = buildFilterBar(transactionSearchField, transactionTypeFilter, "Loại:", transactionDayFilter,
+				transactionMonthFilter, transactionYearFilter);
 
+		filters.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-	    /*
-	     * Tìm kiếm + loại + ngày/tháng/năm
-	     * nằm chung một dòng.
-	     */
-	    JPanel filters =
-	            buildFilterBar(
-	                    transactionSearchField,
-	                    transactionTypeFilter,
-	                    "Loại:",
-	                    transactionDayFilter,
-	                    transactionMonthFilter,
-	                    transactionYearFilter
-	            );
+		panel.add(filters);
 
-	    filters.setAlignmentX(
-	            Component.LEFT_ALIGNMENT
-	    );
-
-	    panel.add(filters);
-
-	    return panel;
+		return panel;
 	}
 
-	private JPanel buildFilterBar(
-	        JTextField searchField,
-	        JComboBox<String> comboBox,
-	        String labelText,
-	        JComboBox<String> dayBox,
-	        JComboBox<String> monthBox,
-	        JComboBox<String> yearBox
-	) {
+	private JPanel buildFilterBar(JTextField searchField, JComboBox<String> comboBox, String labelText,
+			JComboBox<String> dayBox, JComboBox<String> monthBox, JComboBox<String> yearBox) {
 
-	    JPanel bar =
-	            new JPanel(
-	                    new BorderLayout(
-	                            AppSpacing.MD,
-	                            0
-	                    )
-	            );
+		JPanel bar = new JPanel(new BorderLayout(AppSpacing.MD, 0));
 
-	    bar.setOpaque(false);
+		bar.setOpaque(false);
 
+		/*
+		 * ========================== BÊN TRÁI: TÌM KIẾM ==========================
+		 */
+		JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 
-	    /*
-	     * ==========================
-	     * BÊN TRÁI: TÌM KIẾM
-	     * ==========================
-	     */
+		left.setOpaque(false);
 
-	    JPanel left =
-	            new JPanel(
-	                    new FlowLayout(
-	                            FlowLayout.LEFT,
-	                            0,
-	                            0
-	                    )
-	            );
+		left.add(searchField);
 
-	    left.setOpaque(false);
+		/*
+		 * Tạo khoảng cách giữa thanh tìm kiếm và nhóm bộ lọc bên phải.
+		 */
+		left.add(Box.createHorizontalStrut(AppSpacing.LG));
 
-	    left.add(searchField);
+		/*
+		 * ========================== BÊN PHẢI: CÁC BỘ LỌC ==========================
+		 */
+		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, AppSpacing.SM, 0));
 
+		right.setOpaque(false);
 
-	    /*
-	     * ==========================
-	     * BÊN PHẢI: CÁC BỘ LỌC
-	     * ==========================
-	     */
+		/*
+		 * Trạng thái / Loại
+		 */
+		JLabel comboLabel = new JLabel(labelText);
 
-	    JPanel right =
-	            new JPanel(
-	                    new FlowLayout(
-	                            FlowLayout.RIGHT,
-	                            AppSpacing.SM,
-	                            0
-	                    )
-	            );
+		comboLabel.setFont(AppFont.BODY);
 
-	    right.setOpaque(false);
+		comboLabel.setForeground(AppColor.TEXT_SECONDARY);
 
+		right.add(comboLabel);
 
-	    /*
-	     * Trạng thái / Loại
-	     */
-	    JLabel comboLabel =
-	            new JLabel(labelText);
+		right.add(comboBox);
 
-	    comboLabel.setFont(AppFont.BODY);
+		/*
+		 * Ngày / Tháng / Năm
+		 *
+		 * Không cần label "Lọc thời gian:"
+		 */
+		right.add(dayBox);
 
-	    comboLabel.setForeground(
-	            AppColor.TEXT_SECONDARY
-	    );
+		right.add(monthBox);
 
-	    right.add(comboLabel);
+		right.add(yearBox);
 
-	    right.add(comboBox);
+		/*
+		 * Đưa tìm kiếm và bộ lọc lên cùng một dòng.
+		 */
+		bar.add(left, BorderLayout.WEST);
 
+		bar.add(right, BorderLayout.EAST);
 
-	    /*
-	     * Lọc thời gian
-	     */
-	    JLabel dateLabel =
-	            new JLabel("Lọc thời gian:");
-
-	    dateLabel.setFont(AppFont.BODY);
-
-	    dateLabel.setForeground(
-	            AppColor.TEXT_SECONDARY
-	    );
-
-	    right.add(dateLabel);
-
-	    right.add(dayBox);
-
-	    right.add(monthBox);
-
-	    right.add(yearBox);
-
-
-	    /*
-	     * Đưa 2 nhóm vào cùng một dòng.
-	     */
-	    bar.add(
-	            left,
-	            BorderLayout.WEST
-	    );
-
-	    bar.add(
-	            right,
-	            BorderLayout.EAST
-	    );
-
-	    return bar;
+		return bar;
 	}
 
-	private JPanel filterTableCard(
-	        JComponent header,
-	        JTable table,
-	        JComponent pagination
-	) {
+	private JPanel filterTableCard(JComponent header, JTable table, JComponent pagination) {
 
-	    JPanel card =
-	            new JPanel(
-	                    new BorderLayout()
-	            );
+		JPanel card = new JPanel(new BorderLayout());
 
-	    card.setBackground(
-	            AppColor.WHITE
-	    );
+		card.setBackground(AppColor.WHITE);
 
-	    card.setBorder(
-	            new LineBorder(
-	                    AppColor.BORDER,
-	                    1,
-	                    true
-	            )
-	    );
+		card.setBorder(new LineBorder(AppColor.BORDER, 1, true));
 
+		/*
+		 * ======================== Thanh tìm kiếm + lọc ========================
+		 */
 
-	    /*
-	     * ========================
-	     * Thanh tìm kiếm + lọc
-	     * ========================
-	     */
+		JPanel toolbarWrapper = new JPanel(new BorderLayout());
 
-	    JPanel toolbarWrapper =
-	            new JPanel(
-	                    new BorderLayout()
-	            );
+		toolbarWrapper.setBackground(AppColor.WHITE);
 
-	    toolbarWrapper.setBackground(
-	            AppColor.WHITE
-	    );
+		toolbarWrapper.setBorder(BorderFactory.createCompoundBorder(
 
-	    toolbarWrapper.setBorder(
-	            BorderFactory.createCompoundBorder(
+				BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
 
-	                    BorderFactory.createMatteBorder(
-	                            0,
-	                            0,
-	                            1,
-	                            0,
-	                            AppColor.BORDER
-	                    ),
+				new EmptyBorder(14, 16, 14, 16)));
 
-	                    new EmptyBorder(
-	                            14,
-	                            16,
-	                            14,
-	                            16
-	                    )
-	            )
-	    );
+		toolbarWrapper.add(header, BorderLayout.CENTER);
 
-	    toolbarWrapper.add(
-	            header,
-	            BorderLayout.CENTER
-	    );
+		/*
+		 * ======================== Bảng ========================
+		 */
 
+		JScrollPane scroll = new JScrollPane(table);
 
-	    /*
-	     * ========================
-	     * Bảng
-	     * ========================
-	     */
+		scroll.setBorder(null);
 
-	    JScrollPane scroll =
-	            new JScrollPane(table);
+		scroll.getViewport().setBackground(AppColor.WHITE);
 
-	    scroll.setBorder(null);
+		/*
+		 * ======================== Pagination ========================
+		 */
 
-	    scroll.getViewport()
-	            .setBackground(
-	                    AppColor.WHITE
-	            );
+		JPanel paginationWrapper = new JPanel(new BorderLayout());
 
+		paginationWrapper.setBackground(AppColor.WHITE);
 
-	    /*
-	     * ========================
-	     * Pagination
-	     * ========================
-	     */
+		paginationWrapper.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER));
 
-	    JPanel paginationWrapper =
-	            new JPanel(
-	                    new BorderLayout()
-	            );
+		paginationWrapper.add(pagination, BorderLayout.CENTER);
 
-	    paginationWrapper.setBackground(
-	            AppColor.WHITE
-	    );
+		card.add(toolbarWrapper, BorderLayout.NORTH);
 
-	    paginationWrapper.setBorder(
-	            BorderFactory.createMatteBorder(
-	                    1,
-	                    0,
-	                    0,
-	                    0,
-	                    AppColor.BORDER
-	            )
-	    );
+		card.add(scroll, BorderLayout.CENTER);
 
-	    paginationWrapper.add(
-	            pagination,
-	            BorderLayout.CENTER
-	    );
+		card.add(paginationWrapper, BorderLayout.SOUTH);
 
-
-	    card.add(
-	            toolbarWrapper,
-	            BorderLayout.NORTH
-	    );
-
-	    card.add(
-	            scroll,
-	            BorderLayout.CENTER
-	    );
-
-	    card.add(
-	            paginationWrapper,
-	            BorderLayout.SOUTH
-	    );
-
-
-	    return card;
+		return card;
 	}
 
 	private JPanel tableCard(JTable table) {
@@ -777,8 +599,7 @@ public class ShiftManagementPanel extends JPanel {
 			protected DashboardData doInBackground() {
 				Shift openShift = shiftService.getMyOpenShift();
 
-				List<Shift> history =
-				        shiftService.getVisibleHistory(200);
+				List<Shift> history = shiftService.getVisibleHistory(200);
 
 				return new DashboardData(openShift, history);
 			}
@@ -820,7 +641,8 @@ public class ShiftManagementPanel extends JPanel {
 
 			salesValue.setText(money(shift.getCashSales()));
 
-			movementsValue.setText("+" + money(shift.getCashIn()) + " / -" + money(shift.getCashOut()));
+			movementsValue.setText(
+					"<html>Thu: +" + money(shift.getCashIn()) + "<br>Chi: -" + money(shift.getCashOut()) + "</html>");
 
 			expectedValue.setText(money(expectedOf(shift)));
 
@@ -831,7 +653,7 @@ public class ShiftManagementPanel extends JPanel {
 
 			openingValue.setText("—");
 			salesValue.setText("—");
-			movementsValue.setText("—");
+			movementsValue.setText("<html>Thu: —<br>Chi: —</html>");
 			expectedValue.setText("—");
 		}
 
@@ -846,228 +668,136 @@ public class ShiftManagementPanel extends JPanel {
 
 	private void renderHistory() {
 
-	    updatingHistory = true;
+		updatingHistory = true;
 
+		/*
+		 * ==================================== 1. Lọc dữ liệu trước
+		 * ====================================
+		 */
 
-	    /*
-	     * ====================================
-	     * 1. Lọc dữ liệu trước
-	     * ====================================
-	     */
+		List<Shift> filtered = getFilteredShifts();
 
-	    List<Shift> filtered =
-	            getFilteredShifts();
+		int totalItems = filtered.size();
 
-	    int totalItems =
-	            filtered.size();
+		/*
+		 * ==================================== 2. Cập nhật Pagination
+		 * ====================================
+		 */
 
+		historyPagination.setTotalItems(totalItems);
 
-	    /*
-	     * ====================================
-	     * 2. Cập nhật Pagination
-	     * ====================================
-	     */
+		int pageSize = historyPagination.getPageSize();
 
-	    historyPagination.setTotalItems(
-	            totalItems
-	    );
+		int currentPage = historyPagination.getCurrentPage();
 
+		/*
+		 * ==================================== 3. Tính vị trí dữ liệu trang hiện tại
+		 * ====================================
+		 */
 
-	    int pageSize =
-	            historyPagination.getPageSize();
+		int from = totalItems == 0 ? 0 : (currentPage - 1) * pageSize;
 
-	    int currentPage =
-	            historyPagination.getCurrentPage();
+		/*
+		 * Trường hợp sau khi lọc, trang hiện tại vượt quá dữ liệu.
+		 */
+		if (from >= totalItems && totalItems > 0) {
 
+			historyPagination.setCurrentPage(1);
 
-	    /*
-	     * ====================================
-	     * 3. Tính vị trí dữ liệu trang hiện tại
-	     * ====================================
-	     */
+			currentPage = 1;
 
-	    int from =
-	            totalItems == 0
-	                    ? 0
-	                    : (
-	                        currentPage - 1
-	                      ) * pageSize;
+			from = 0;
+		}
 
+		int to = Math.min(from + pageSize, totalItems);
 
-	    /*
-	     * Trường hợp sau khi lọc,
-	     * trang hiện tại vượt quá dữ liệu.
-	     */
-	    if (from >= totalItems && totalItems > 0) {
+		/*
+		 * ==================================== 4. Lấy dữ liệu trang
+		 * ====================================
+		 */
 
-	        historyPagination.setCurrentPage(1);
+		pagedShifts = totalItems == 0 ? new ArrayList<>() : new ArrayList<>(filtered.subList(from, to));
 
-	        currentPage = 1;
+		/*
+		 * ==================================== 5. Render JTable
+		 * ====================================
+		 */
 
-	        from = 0;
-	    }
+		historyModel.setRowCount(0);
 
+		int openRow = -1;
 
-	    int to =
-	            Math.min(
-	                    from + pageSize,
-	                    totalItems
-	            );
+		for (int index = 0; index < pagedShifts.size(); index++) {
 
+			Shift shift = pagedShifts.get(index);
 
-	    /*
-	     * ====================================
-	     * 4. Lấy dữ liệu trang
-	     * ====================================
-	     */
+			if (currentOpenShift != null && shift.getShiftId() == currentOpenShift.getShiftId()) {
 
-	    pagedShifts =
-	            totalItems == 0
-	                    ? new ArrayList<>()
-	                    : new ArrayList<>(
-	                            filtered.subList(
-	                                    from,
-	                                    to
-	                            )
-	                    );
+				openRow = index;
+			}
 
+			BigDecimal expected = shift.isOpen() ? expectedOf(shift) : shift.getExpectedCash();
 
-	    /*
-	     * ====================================
-	     * 5. Render JTable
-	     * ====================================
-	     */
+			historyModel.addRow(new Object[] {
 
-	    historyModel.setRowCount(0);
+					"#" + shift.getShiftId(),
 
-	    int openRow = -1;
+					shift.getUserName(),
 
+					dateTime(shift.getStartTime()),
 
-	    for (
-	            int index = 0;
-	            index < pagedShifts.size();
-	            index++
-	    ) {
+					dateTime(shift.getEndTime()),
 
-	        Shift shift =
-	                pagedShifts.get(index);
+					shift.isOpen() ? "Đang mở" : "Đã đóng",
 
+					shift.getInvoiceCount(),
 
-	        if (
-	                currentOpenShift != null
-	                && shift.getShiftId()
-	                    == currentOpenShift.getShiftId()
-	        ) {
+					money(expected),
 
-	            openRow = index;
-	        }
+					moneyOrDash(shift.getCountedCash()),
 
+					signedMoneyOrDash(shift.getCashDifference()) });
+		}
 
-	        BigDecimal expected =
-	                shift.isOpen()
-	                        ? expectedOf(shift)
-	                        : shift.getExpectedCash();
+		/*
+		 * ==================================== 6. Chọn dòng
+		 * ====================================
+		 */
 
+		if (!pagedShifts.isEmpty()) {
 
-	        historyModel.addRow(
-	                new Object[] {
+			int selectedModelRow = openRow >= 0 ? openRow : 0;
 
-	                    "#" + shift.getShiftId(),
+			int selectedViewRow = historyTable.convertRowIndexToView(selectedModelRow);
 
-	                    shift.getUserName(),
+			if (selectedViewRow >= 0) {
 
-	                    dateTime(
-	                            shift.getStartTime()
-	                    ),
+				historyTable.setRowSelectionInterval(selectedViewRow, selectedViewRow);
 
-	                    dateTime(
-	                            shift.getEndTime()
-	                    ),
+			} else if (historyTable.getRowCount() > 0) {
 
-	                    shift.isOpen()
-	                            ? "Đang mở"
-	                            : "Đã đóng",
+				historyTable.setRowSelectionInterval(0, 0);
+			}
 
-	                    shift.getInvoiceCount(),
+		} else {
 
-	                    money(expected),
+			historyTable.clearSelection();
 
-	                    moneyOrDash(
-	                            shift.getCountedCash()
-	                    ),
+			allTransactions = new ArrayList<>();
 
-	                    signedMoneyOrDash(
-	                            shift.getCashDifference()
-	                    )
-	                }
-	        );
-	    }
+			transactionTitle.setText("Thu/chi của ca");
 
+			transactionPagination.setCurrentPage(1);
 
-	    /*
-	     * ====================================
-	     * 6. Chọn dòng
-	     * ====================================
-	     */
+			renderTransactionPage();
+		}
 
-	    if (!pagedShifts.isEmpty()) {
+		updatingHistory = false;
 
-	        int selectedModelRow =
-	                openRow >= 0
-	                        ? openRow
-	                        : 0;
-
-
-	        int selectedViewRow =
-	                historyTable
-	                        .convertRowIndexToView(
-	                                selectedModelRow
-	                        );
-
-
-	        if (selectedViewRow >= 0) {
-
-	            historyTable
-	                    .setRowSelectionInterval(
-	                            selectedViewRow,
-	                            selectedViewRow
-	                    );
-
-	        } else if (
-	                historyTable.getRowCount() > 0
-	        ) {
-
-	            historyTable
-	                    .setRowSelectionInterval(
-	                            0,
-	                            0
-	                    );
-	        }
-
-	    } else {
-
-	        historyTable.clearSelection();
-
-	        allTransactions =
-	                new ArrayList<>();
-
-	        transactionTitle.setText(
-	                "Thu/chi của ca"
-	        );
-
-	        transactionPagination.setCurrentPage(1);
-
-	        renderTransactionPage();
-	    }
-
-
-	    updatingHistory = false;
-
-
-	    /*
-	     * Load bảng Thu / Chi theo ca được chọn.
-	     */
-	    loadSelectedTransactions();
+		/*
+		 * Load bảng Thu / Chi theo ca được chọn.
+		 */
+		loadSelectedTransactions();
 	}
 
 	private void loadSelectedTransactions() {
@@ -1075,31 +805,24 @@ public class ShiftManagementPanel extends JPanel {
 
 		if (viewRow < 0) {
 
-		    allTransactions =
-		            new ArrayList<>();
+			allTransactions = new ArrayList<>();
 
-		    transactionTitle.setText(
-		            "Thu/chi của ca"
-		    );
+			transactionTitle.setText("Thu/chi của ca");
 
-		    transactionPagination.setCurrentPage(1);
+			transactionPagination.setCurrentPage(1);
 
-		    renderTransactionPage();
+			renderTransactionPage();
 
-		    return;
+			return;
 		}
 
 		int modelRow = historyTable.convertRowIndexToModel(viewRow);
 
-		if (
-		        modelRow < 0
-		        || modelRow >= pagedShifts.size()
-		) {
-		    return;
+		if (modelRow < 0 || modelRow >= pagedShifts.size()) {
+			return;
 		}
 
-		Shift selectedShift =
-		        pagedShifts.get(modelRow);
+		Shift selectedShift = pagedShifts.get(modelRow);
 
 		transactionTitle.setText("Thu/chi của ca #" + selectedShift.getShiftId() + " — " + selectedShift.getUserName());
 
@@ -1125,559 +848,328 @@ public class ShiftManagementPanel extends JPanel {
 		worker.execute();
 	}
 
-	private void renderTransactions(
-	        List<ShiftCashTransaction> transactions
-	) {
+	private void renderTransactions(List<ShiftCashTransaction> transactions) {
 
-	    allTransactions =
-	            transactions == null
+		allTransactions = transactions == null
 
-	            ? new ArrayList<>()
+				? new ArrayList<>()
 
-	            : new ArrayList<>(
-	                    transactions
-	            );
+				: new ArrayList<>(transactions);
 
+		/*
+		 * Mỗi khi đổi ca, Thu/Chi quay về trang 1.
+		 */
+		transactionPagination.setCurrentPage(1);
 
-	    /*
-	     * Mỗi khi đổi ca,
-	     * Thu/Chi quay về trang 1.
-	     */
-	    transactionPagination.setCurrentPage(1);
-
-
-	    renderTransactionPage();
+		renderTransactionPage();
 	}
-	
+
 	private void renderTransactionPage() {
 
-	    /*
-	     * ====================================
-	     * 1. Lọc
-	     * ====================================
-	     */
+		/*
+		 * ==================================== 1. Lọc
+		 * ====================================
+		 */
 
-	    List<ShiftCashTransaction> filtered =
-	            getFilteredTransactions();
+		List<ShiftCashTransaction> filtered = getFilteredTransactions();
 
-	    int totalItems =
-	            filtered.size();
+		int totalItems = filtered.size();
 
+		/*
+		 * ==================================== 2. Pagination
+		 * ====================================
+		 */
 
-	    /*
-	     * ====================================
-	     * 2. Pagination
-	     * ====================================
-	     */
+		transactionPagination.setTotalItems(totalItems);
 
-	    transactionPagination.setTotalItems(
-	            totalItems
-	    );
+		int pageSize = transactionPagination.getPageSize();
 
+		int currentPage = transactionPagination.getCurrentPage();
 
-	    int pageSize =
-	            transactionPagination.getPageSize();
+		/*
+		 * ==================================== 3. Tính khoảng dữ liệu
+		 * ====================================
+		 */
 
-	    int currentPage =
-	            transactionPagination.getCurrentPage();
+		int from = totalItems == 0 ? 0 : (currentPage - 1) * pageSize;
 
+		if (from >= totalItems && totalItems > 0) {
 
-	    /*
-	     * ====================================
-	     * 3. Tính khoảng dữ liệu
-	     * ====================================
-	     */
+			transactionPagination.setCurrentPage(1);
 
-	    int from =
-	            totalItems == 0
-	                    ? 0
-	                    : (
-	                        currentPage - 1
-	                      ) * pageSize;
+			currentPage = 1;
 
+			from = 0;
+		}
 
-	    if (
-	            from >= totalItems
-	            && totalItems > 0
-	    ) {
+		int to = Math.min(from + pageSize, totalItems);
 
-	        transactionPagination
-	                .setCurrentPage(1);
+		/*
+		 * ==================================== 4. Render JTable
+		 * ====================================
+		 */
 
-	        currentPage = 1;
+		transactionModel.setRowCount(0);
 
-	        from = 0;
-	    }
+		if (totalItems > 0) {
 
+			for (ShiftCashTransaction transaction : filtered.subList(from, to)) {
 
-	    int to =
-	            Math.min(
-	                    from + pageSize,
-	                    totalItems
-	            );
+				String typeLabel = transaction.isCashIn() ? "Thu tiền" : "Chi tiền";
 
+				transactionModel.addRow(new Object[] {
 
-	    /*
-	     * ====================================
-	     * 4. Render JTable
-	     * ====================================
-	     */
+						transaction.getTransactionCode(),
 
-	    transactionModel.setRowCount(0);
+						typeLabel,
 
+						money(transaction.getAmount()),
 
-	    if (totalItems > 0) {
+						transaction.getReason(),
 
-	        for (
-	                ShiftCashTransaction transaction
-	                : filtered.subList(
-	                        from,
-	                        to
-	                )
-	        ) {
+						transaction.getCreatedByName(),
 
-	            String typeLabel =
-	                    transaction.isCashIn()
-	                            ? "Thu tiền"
-	                            : "Chi tiền";
-
-
-	            transactionModel.addRow(
-	                    new Object[] {
-
-	                        transaction
-	                                .getTransactionCode(),
-
-	                        typeLabel,
-
-	                        money(
-	                                transaction
-	                                        .getAmount()
-	                        ),
-
-	                        transaction.getReason(),
-
-	                        transaction
-	                                .getCreatedByName(),
-
-	                        dateTime(
-	                                transaction
-	                                        .getCreatedAt()
-	                        )
-	                    }
-	            );
-	        }
-	    }
+						dateTime(transaction.getCreatedAt()) });
+			}
+		}
 	}
-	
+
 	/**
 	 * Xuất dữ liệu của tab đang được mở.
 	 *
-	 * - Tab Lịch sử ca:
-	 *      xuất toàn bộ ca sau tìm kiếm/lọc.
+	 * - Tab Lịch sử ca: xuất toàn bộ ca sau tìm kiếm/lọc.
 	 *
-	 * - Tab Thu/Chi:
-	 *      xuất toàn bộ giao dịch của ca đang chọn
-	 *      sau tìm kiếm/lọc.
+	 * - Tab Thu/Chi: xuất toàn bộ giao dịch của ca đang chọn sau tìm kiếm/lọc.
 	 *
 	 * Không chỉ xuất dữ liệu của trang pagination hiện tại.
 	 */
 	private void exportCurrentTab(String format) {
 
-	    if (historyTabButton.isSelected()) {
+		if (historyTabButton.isSelected()) {
 
-	        exportShiftHistory(format);
+			exportShiftHistory(format);
 
-	    } else {
+		} else {
 
-	        exportShiftTransactions(format);
-	    }
+			exportShiftTransactions(format);
+		}
 	}
-	
+
 	private void exportShiftHistory(String format) {
 
-	    /*
-	     * Lấy dữ liệu SAU khi đã áp dụng:
-	     *
-	     * - tìm kiếm
-	     * - trạng thái
-	     * - ngày
-	     * - tháng
-	     * - năm
-	     *
-	     * Không lấy pagedShifts vì pagedShifts
-	     * chỉ chứa 10/20/... dòng của trang hiện tại.
-	     */
-	    List<Shift> shifts =
-	            getFilteredShifts();
+		/*
+		 * Lấy dữ liệu SAU khi đã áp dụng:
+		 *
+		 * - tìm kiếm - trạng thái - ngày - tháng - năm
+		 *
+		 * Không lấy pagedShifts vì pagedShifts chỉ chứa 10/20/... dòng của trang hiện
+		 * tại.
+		 */
+		List<Shift> shifts = getFilteredShifts();
 
+		if (shifts.isEmpty()) {
 
-	    if (shifts.isEmpty()) {
+			AppAlert.warning(this, "Không có dữ liệu", "Không có ca bán hàng nào phù hợp để xuất.");
 
-	        AppAlert.warning(
-	                this,
-	                "Không có dữ liệu",
-	                "Không có ca bán hàng nào phù hợp để xuất."
-	        );
+			return;
+		}
 
-	        return;
-	    }
+		/*
+		 * Tiêu đề các cột trong file.
+		 */
+		String[] headers = { "Mã ca", "Nhân viên", "Bắt đầu", "Kết thúc", "Trạng thái", "Hóa đơn", "Tiền hệ thống",
+				"Tiền thực tế", "Chênh lệch" };
 
+		/*
+		 * Chuyển List<Shift> thành List<Object[]> mà TableExportUtil cần.
+		 */
+		List<Object[]> rows = new ArrayList<>();
 
-	    /*
-	     * Tiêu đề các cột trong file.
-	     */
-	    String[] headers = {
-	            "Mã ca",
-	            "Nhân viên",
-	            "Bắt đầu",
-	            "Kết thúc",
-	            "Trạng thái",
-	            "Hóa đơn",
-	            "Tiền hệ thống",
-	            "Tiền thực tế",
-	            "Chênh lệch"
-	    };
+		for (Shift shift : shifts) {
 
+			BigDecimal expected = shift.isOpen() ? expectedOf(shift) : shift.getExpectedCash();
 
-	    /*
-	     * Chuyển List<Shift>
-	     * thành List<Object[]> mà TableExportUtil cần.
-	     */
-	    List<Object[]> rows =
-	            new ArrayList<>();
+			rows.add(new Object[] {
 
+					"#" + shift.getShiftId(),
 
-	    for (Shift shift : shifts) {
+					shift.getUserName(),
 
-	        BigDecimal expected =
-	                shift.isOpen()
-	                        ? expectedOf(shift)
-	                        : shift.getExpectedCash();
+					dateTime(shift.getStartTime()),
 
+					dateTime(shift.getEndTime()),
 
-	        rows.add(
-	                new Object[] {
+					shift.isOpen() ? "Đang mở" : "Đã đóng",
 
-	                        "#" + shift.getShiftId(),
+					shift.getInvoiceCount(),
 
-	                        shift.getUserName(),
+					money(expected),
 
-	                        dateTime(
-	                                shift.getStartTime()
-	                        ),
+					moneyOrDash(shift.getCountedCash()),
 
-	                        dateTime(
-	                                shift.getEndTime()
-	                        ),
+					signedMoneyOrDash(shift.getCashDifference()) });
+		}
 
-	                        shift.isOpen()
-	                                ? "Đang mở"
-	                                : "Đã đóng",
-
-	                        shift.getInvoiceCount(),
-
-	                        money(expected),
-
-	                        moneyOrDash(
-	                                shift.getCountedCash()
-	                        ),
-
-	                        signedMoneyOrDash(
-	                                shift.getCashDifference()
-	                        )
-	                }
-	        );
-	    }
-
-
-	    /*
-	     * Gọi hàm xuất chung.
-	     */
-	    exportRows(
-	            format,
-	            "lich_su_ca",
-	            "Lịch sử ca",
-	            headers,
-	            rows
-	    );
+		/*
+		 * Gọi hàm xuất chung.
+		 */
+		exportRows(format, "lich_su_ca", "Lịch sử ca", headers, rows);
 	}
-	
+
 	private void exportShiftTransactions(String format) {
 
-	    /*
-	     * allTransactions chứa toàn bộ Thu/Chi
-	     * của ca đang chọn.
-	     *
-	     * getFilteredTransactions() tiếp tục áp dụng
-	     * tìm kiếm + loại + ngày/tháng/năm.
-	     */
-	    List<ShiftCashTransaction> transactions =
-	            getFilteredTransactions();
+		/*
+		 * allTransactions chứa toàn bộ Thu/Chi của ca đang chọn.
+		 *
+		 * getFilteredTransactions() tiếp tục áp dụng tìm kiếm + loại + ngày/tháng/năm.
+		 */
+		List<ShiftCashTransaction> transactions = getFilteredTransactions();
 
+		if (transactions.isEmpty()) {
 
-	    if (transactions.isEmpty()) {
+			AppAlert.warning(this, "Không có dữ liệu", "Ca đang chọn không có giao dịch Thu/Chi phù hợp để xuất.");
 
-	        AppAlert.warning(
-	                this,
-	                "Không có dữ liệu",
-	                "Ca đang chọn không có giao dịch Thu/Chi phù hợp để xuất."
-	        );
+			return;
+		}
 
-	        return;
-	    }
+		String[] headers = { "Mã giao dịch", "Loại", "Số tiền", "Lý do", "Người tạo", "Thời gian" };
 
+		List<Object[]> rows = new ArrayList<>();
 
-	    String[] headers = {
-	            "Mã giao dịch",
-	            "Loại",
-	            "Số tiền",
-	            "Lý do",
-	            "Người tạo",
-	            "Thời gian"
-	    };
+		for (ShiftCashTransaction transaction : transactions) {
 
+			String typeLabel = transaction.isCashIn() ? "Thu tiền" : "Chi tiền";
 
-	    List<Object[]> rows =
-	            new ArrayList<>();
+			rows.add(new Object[] {
 
+					transaction.getTransactionCode(),
 
-	    for (
-	            ShiftCashTransaction transaction
-	            : transactions
-	    ) {
+					typeLabel,
 
-	        String typeLabel =
-	                transaction.isCashIn()
-	                        ? "Thu tiền"
-	                        : "Chi tiền";
+					money(transaction.getAmount()),
 
+					transaction.getReason(),
 
-	        rows.add(
-	                new Object[] {
+					transaction.getCreatedByName(),
 
-	                        transaction
-	                                .getTransactionCode(),
+					dateTime(transaction.getCreatedAt()) });
+		}
 
-	                        typeLabel,
-
-	                        money(
-	                                transaction.getAmount()
-	                        ),
-
-	                        transaction.getReason(),
-
-	                        transaction
-	                                .getCreatedByName(),
-
-	                        dateTime(
-	                                transaction.getCreatedAt()
-	                        )
-	                }
-	        );
-	    }
-
-
-	    exportRows(
-	            format,
-	            "thu_chi_ca",
-	            "Thu chi ca",
-	            headers,
-	            rows
-	    );
+		exportRows(format, "thu_chi_ca", "Thu chi ca", headers, rows);
 	}
-	
-	private void exportRows(
-	        String format,
-	        String filePrefix,
-	        String sheetName,
-	        String[] headers,
-	        List<Object[]> rows
-	) {
 
-	    /*
-	     * VD:
-	     *
-	     * lich_su_ca_20260817_213500.csv
-	     *
-	     * hoặc:
-	     *
-	     * thu_chi_ca_20260817_213500.xlsx
-	     */
-	    String defaultFileName =
-	            filePrefix
-	            + "_"
-	            + exportTimestamp()
-	            + "."
-	            + format;
+	private void exportRows(String format, String filePrefix, String sheetName, String[] headers, List<Object[]> rows) {
 
+		/*
+		 * VD:
+		 *
+		 * lich_su_ca_20260817_213500.csv
+		 *
+		 * hoặc:
+		 *
+		 * thu_chi_ca_20260817_213500.xlsx
+		 */
+		String defaultFileName = filePrefix + "_" + exportTimestamp() + "." + format;
 
-	    /*
-	     * Hiện hộp thoại Save As
-	     * giống chức năng xuất của các màn quản lý.
-	     */
-	    File chosen =
-	            FileUtil.chooseSaveLocation(
-	                    this,
-	                    defaultFileName
-	            );
+		/*
+		 * Hiện hộp thoại Save As giống chức năng xuất của các màn quản lý.
+		 */
+		File chosen = FileUtil.chooseSaveLocation(this, defaultFileName);
 
+		/*
+		 * Người dùng bấm Cancel.
+		 */
+		if (chosen == null) {
+			return;
+		}
 
-	    /*
-	     * Người dùng bấm Cancel.
-	     */
-	    if (chosen == null) {
-	        return;
-	    }
+		/*
+		 * Đảm bảo đúng đuôi file.
+		 */
+		File file = ensureExportExtension(chosen, format);
 
+		/*
+		 * Chạy xuất file ở background thread.
+		 *
+		 * Tránh giao diện bị đứng nếu dữ liệu lớn.
+		 */
+		setBusy(true);
 
-	    /*
-	     * Đảm bảo đúng đuôi file.
-	     */
-	    File file =
-	            ensureExportExtension(
-	                    chosen,
-	                    format
-	            );
+		SwingWorker<Integer, Void> worker = new SwingWorker<>() {
 
+			@Override
+			protected Integer doInBackground() throws Exception {
 
-	    /*
-	     * Chạy xuất file ở background thread.
-	     *
-	     * Tránh giao diện bị đứng nếu dữ liệu lớn.
-	     */
-	    setBusy(true);
+				if ("csv".equalsIgnoreCase(format)) {
 
+					TableExportUtil.exportCsv(file, headers, rows);
 
-	    SwingWorker<Integer, Void> worker =
-	            new SwingWorker<>() {
+				} else {
 
-	        @Override
-	        protected Integer doInBackground()
-	                throws Exception {
+					TableExportUtil.exportExcel(file, sheetName, headers, rows);
+				}
 
-	            if ("csv".equalsIgnoreCase(format)) {
+				return rows.size();
+			}
 
-	                TableExportUtil.exportCsv(
-	                        file,
-	                        headers,
-	                        rows
-	                );
+			@Override
+			protected void done() {
 
-	            } else {
+				setBusy(false);
 
-	                TableExportUtil.exportExcel(
-	                        file,
-	                        sheetName,
-	                        headers,
-	                        rows
-	                );
-	            }
+				try {
 
+					int count = get();
 
-	            return rows.size();
-	        }
+					AppAlert.success(ShiftManagementPanel.this, "Xuất file thành công",
+							"Đã xuất " + count + " dòng vào file " + file.getName());
 
+				} catch (Exception e) {
 
-	        @Override
-	        protected void done() {
+					e.printStackTrace();
 
-	            setBusy(false);
+					AppAlert.error(ShiftManagementPanel.this, "Xuất file thất bại",
+							e.getMessage() != null ? e.getMessage() : "Không thể tạo file.");
+				}
+			}
+		};
 
-
-	            try {
-
-	                int count = get();
-
-
-	                AppAlert.success(
-	                        ShiftManagementPanel.this,
-	                        "Xuất file thành công",
-	                        "Đã xuất "
-	                        + count
-	                        + " dòng vào file "
-	                        + file.getName()
-	                );
-
-
-	            } catch (Exception e) {
-
-	                e.printStackTrace();
-
-
-	                AppAlert.error(
-	                        ShiftManagementPanel.this,
-	                        "Xuất file thất bại",
-	                        e.getMessage() != null
-	                                ? e.getMessage()
-	                                : "Không thể tạo file."
-	                );
-	            }
-	        }
-	    };
-
-
-	    worker.execute();
+		worker.execute();
 	}
-	
-	private static File ensureExportExtension(
-	        File file,
-	        String extension
-	) {
 
-	    String name =
-	            file.getName();
+	private static File ensureExportExtension(File file, String extension) {
 
+		String name = file.getName();
 
-	    /*
-	     * Người dùng đã nhập đúng đuôi:
-	     *
-	     * abc.xlsx
-	     */
-	    if (
-	            name.toLowerCase()
-	                    .endsWith(
-	                            "." + extension.toLowerCase()
-	                    )
-	    ) {
+		/*
+		 * Người dùng đã nhập đúng đuôi:
+		 *
+		 * abc.xlsx
+		 */
+		if (name.toLowerCase().endsWith("." + extension.toLowerCase())) {
 
-	        return file;
-	    }
+			return file;
+		}
 
+		/*
+		 * Nếu người dùng nhập:
+		 *
+		 * abc
+		 *
+		 * thì tự thành:
+		 *
+		 * abc.xlsx
+		 */
+		int dot = name.lastIndexOf('.');
 
-	    /*
-	     * Nếu người dùng nhập:
-	     *
-	     * abc
-	     *
-	     * thì tự thành:
-	     *
-	     * abc.xlsx
-	     */
-	    int dot =
-	            name.lastIndexOf('.');
+		String baseName = dot > 0 ? name.substring(0, dot) : name;
 
-
-	    String baseName =
-	            dot > 0
-	                    ? name.substring(0, dot)
-	                    : name;
-
-
-	    return new File(
-	            file.getParentFile(),
-	            baseName + "." + extension
-	    );
+		return new File(file.getParentFile(), baseName + "." + extension);
 	}
-	
+
 	private static String exportTimestamp() {
 
-	    return LocalDateTime.now()
-	            .format(
-	                    DateTimeFormatter.ofPattern(
-	                            "yyyyMMdd_HHmmss"
-	                    )
-	            );
+		return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
 	}
 
 	/**
@@ -1979,6 +1471,8 @@ public class ShiftManagementPanel extends JPanel {
 		label.setFont(AppFont.HEADING_MD);
 
 		label.setForeground(AppColor.TEXT_PRIMARY);
+
+		label.setVerticalAlignment(SwingConstants.TOP);
 
 		return label;
 	}
@@ -2293,70 +1787,53 @@ public class ShiftManagementPanel extends JPanel {
 
 	private void bindPagination() {
 
-	    /*
-	     * =====================================
-	     * LỊCH SỬ CA
-	     * =====================================
-	     */
+		/*
+		 * ===================================== LỊCH SỬ CA
+		 * =====================================
+		 */
 
-	    historyPagination.addPropertyChangeListener(
-	            "pageChanged",
-	            event -> {
+		historyPagination.addPropertyChangeListener("pageChanged", event -> {
 
-	                renderHistory();
-	            }
-	    );
+			renderHistory();
+		});
 
+		historyPagination.addPropertyChangeListener("pageSizeChanged", event -> {
 
-	    historyPagination.addPropertyChangeListener(
-	            "pageSizeChanged",
-	            event -> {
+			historyPagination.setCurrentPage(1);
 
-	                historyPagination.setCurrentPage(1);
+			renderHistory();
+		});
 
-	                renderHistory();
-	            }
-	    );
+		/*
+		 * ===================================== THU / CHI
+		 * =====================================
+		 */
 
+		transactionPagination.addPropertyChangeListener("pageChanged", event -> {
 
-	    /*
-	     * =====================================
-	     * THU / CHI
-	     * =====================================
-	     */
+			renderTransactionPage();
+		});
 
-	    transactionPagination.addPropertyChangeListener(
-	            "pageChanged",
-	            event -> {
+		transactionPagination.addPropertyChangeListener("pageSizeChanged", event -> {
 
-	                renderTransactionPage();
-	            }
-	    );
+			transactionPagination.setCurrentPage(1);
 
-
-	    transactionPagination.addPropertyChangeListener(
-	            "pageSizeChanged",
-	            event -> {
-
-	                transactionPagination.setCurrentPage(1);
-
-	                renderTransactionPage();
-	            }
-	    );
+			renderTransactionPage();
+		});
 	}
 
 	private void applyHistoryFilter() {
 
-	    historyPagination.setCurrentPage(1);
+		historyPagination.setCurrentPage(1);
 
-	    renderHistory();
+		renderHistory();
 	}
 
 	private void applyTransactionFilter() {
 
-	    transactionPagination.setCurrentPage(1);
+		transactionPagination.setCurrentPage(1);
 
-	    renderTransactionPage();
+		renderTransactionPage();
 	}
 
 	private List<Shift> getFilteredShifts() {
@@ -2460,84 +1937,102 @@ public class ShiftManagementPanel extends JPanel {
 
 		return result;
 	}
-	
-	private static boolean matchesSelectedDate(
-	        LocalDateTime dateTime,
-	        JComboBox<String> dayBox,
-	        JComboBox<String> monthBox,
-	        JComboBox<String> yearBox
-	) {
 
-	    if (dateTime == null) {
-	        return false;
-	    }
+	private static boolean matchesSelectedDate(LocalDateTime dateTime, JComboBox<String> dayBox,
+			JComboBox<String> monthBox, JComboBox<String> yearBox) {
 
-	    Integer day =
-	            selectedNumber(dayBox);
+		if (dateTime == null) {
+			return false;
+		}
 
-	    Integer month =
-	            selectedNumber(monthBox);
+		Integer day = selectedNumber(dayBox);
 
-	    Integer year =
-	            selectedNumber(yearBox);
+		Integer month = selectedNumber(monthBox);
 
+		Integer year = selectedNumber(yearBox);
 
-	    return (
-	            day == null
-	            || dateTime.getDayOfMonth() == day
-	    )
-	    &&
-	    (
-	            month == null
-	            || dateTime.getMonthValue() == month
-	    )
-	    &&
-	    (
-	            year == null
-	            || dateTime.getYear() == year
-	    );
+		return (day == null || dateTime.getDayOfMonth() == day) && (month == null || dateTime.getMonthValue() == month)
+				&& (year == null || dateTime.getYear() == year);
 	}
 
-	private static Integer selectedNumber(
-	        JComboBox<String> combo
-	) {
+	private static Integer selectedNumber(JComboBox<String> combo) {
 
-	    Object selected =
-	            combo.getSelectedItem();
+		Object selected = combo.getSelectedItem();
 
-	    if (selected == null) {
-	        return null;
+		if (selected == null) {
+			return null;
+		}
+
+		String value = selected.toString();
+
+		/*
+		 * "Tất cả ngày" "Tất cả tháng" "Tất cả năm"
+		 */
+		if (value.startsWith("Tất cả")) {
+			return null;
+		}
+
+		try {
+
+			return Integer.parseInt(value);
+
+		} catch (NumberFormatException e) {
+
+			return null;
+		}
+	}
+
+	private static String lower(String value) {
+
+	    if (value == null) {
+	        return "";
 	    }
-
-	    String value =
-	            selected.toString();
 
 	    /*
-	     * "Tất cả ngày"
-	     * "Tất cả tháng"
-	     * "Tất cả năm"
+	     * Chuyển chữ có dấu thành dạng ký tự + dấu.
+	     *
+	     * Ví dụ:
+	     * "Vũ" -> "Vũ"
+	     * "Hòa" -> "Hòa"
 	     */
-	    if (value.startsWith("Tất cả")) {
-	        return null;
-	    }
+	    String normalized =
+	            Normalizer.normalize(
+	                    value,
+	                    Normalizer.Form.NFD
+	            );
 
-	    try {
+	    /*
+	     * Xóa toàn bộ dấu tiếng Việt.
+	     *
+	     * Ví dụ:
+	     * "Hòa" -> "Hoa"
+	     * "Vũ"  -> "Vu"
+	     */
+	    normalized =
+	            normalized.replaceAll(
+	                    "\\p{M}+",
+	                    ""
+	            );
 
-	        return Integer.parseInt(value);
+	    /*
+	     * Java Normalizer không tự chuyển:
+	     *
+	     * đ -> d
+	     * Đ -> D
+	     *
+	     * nên phải xử lý riêng.
+	     */
+	    normalized =
+	            normalized
+	                    .replace('đ', 'd')
+	                    .replace('Đ', 'D');
 
-	    } catch (NumberFormatException e) {
-
-	        return null;
-	    }
-	}
-
-	private static String lower(
-	        String value
-	) {
-
-	    return value == null
-	            ? ""
-	            : value.toLowerCase();
+	    /*
+	     * Không phân biệt chữ hoa / chữ thường.
+	     */
+	    return normalized
+	            .toLowerCase(Locale.ROOT)
+	            .trim();
 	}
 
 	private static JTextField inputField(String value) {

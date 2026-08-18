@@ -258,6 +258,11 @@ CREATE TABLE Invoices (
     PayPalOrderID           VARCHAR(50) NULL,
     PayPalCaptureID         VARCHAR(50) NULL,
 
+    /* VietQR/payOS metadata - dùng để chống ghi nhận trùng và đối soát. */
+    PayOsOrderCode          BIGINT NULL,
+    PayOsPaymentLinkID      VARCHAR(64) NULL,
+    BankTransferReference   VARCHAR(100) NULL,
+
     Status                  VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                                 CHECK (
                                     Status IN (
@@ -287,11 +292,23 @@ CREATE TABLE Invoices (
         FOREIGN KEY (CustomerID)
         REFERENCES Customers(CustomerID),
 
-    CONSTRAINT CK_Invoices_DiscountNotExceedSubTotal
-        CHECK (
-            DiscountAmount <= SubTotal
-        )
-) ENGINE=InnoDB;
+	CONSTRAINT CK_Invoices_DiscountNotExceedSubTotal
+    CHECK (
+        DiscountAmount <= SubTotal
+    ),
+
+	CONSTRAINT UQ_Invoices_PayPalOrderID
+	    UNIQUE (PayPalOrderID),
+
+	CONSTRAINT UQ_Invoices_PayPalCaptureID
+	    UNIQUE (PayPalCaptureID),
+
+	CONSTRAINT UQ_Invoices_PayOsOrderCode
+	    UNIQUE (PayOsOrderCode),
+
+	CONSTRAINT UQ_Invoices_PayOsPaymentLinkID
+	    UNIQUE (PayOsPaymentLinkID)
+	) ENGINE=InnoDB;
 
 CREATE TABLE InvoiceDetails (
     InvoiceDetailID INT AUTO_INCREMENT PRIMARY KEY,
@@ -734,8 +751,14 @@ CREATE TABLE Orders (
         FOREIGN KEY (InvoiceID) REFERENCES Invoices(InvoiceID),
     CONSTRAINT CK_Orders_DiscountNotExceedSubTotal
         CHECK (DiscountAmount <= SubTotal),
-    UNIQUE KEY UX_Orders_InvoiceID (InvoiceID)
-) ENGINE=InnoDB;
+	UNIQUE KEY UX_Orders_InvoiceID (InvoiceID),
+
+	CONSTRAINT UQ_Orders_PayPalOrderID
+	    UNIQUE (PayPalOrderID),
+
+	CONSTRAINT UQ_Orders_PayPalCaptureID
+	    UNIQUE (PayPalCaptureID)
+	) ENGINE=InnoDB;
 
 CREATE TABLE OrderDetails (
     OrderDetailID   INT AUTO_INCREMENT PRIMARY KEY,

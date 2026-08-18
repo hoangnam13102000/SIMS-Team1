@@ -40,6 +40,11 @@ public class Invoice {
 	private String payPalOrderId;
 	private String payPalCaptureId;
 
+	// VietQR/payOS metadata for POS bank-transfer idempotency/recovery.
+	private Long payOsOrderCode;
+	private String payOsPaymentLinkId;
+	private String bankTransferReference;
+
 	private int itemCount;
 
 	private int pointsUsed;
@@ -226,6 +231,30 @@ public class Invoice {
 
 	public void setPayPalCaptureId(String payPalCaptureId) {
 		this.payPalCaptureId = payPalCaptureId;
+	}
+
+	public Long getPayOsOrderCode() {
+		return payOsOrderCode;
+	}
+
+	public void setPayOsOrderCode(Long payOsOrderCode) {
+		this.payOsOrderCode = payOsOrderCode;
+	}
+
+	public String getPayOsPaymentLinkId() {
+		return payOsPaymentLinkId;
+	}
+
+	public void setPayOsPaymentLinkId(String payOsPaymentLinkId) {
+		this.payOsPaymentLinkId = payOsPaymentLinkId;
+	}
+
+	public String getBankTransferReference() {
+		return bankTransferReference;
+	}
+
+	public void setBankTransferReference(String bankTransferReference) {
+		this.bankTransferReference = bankTransferReference;
 	}
 
 	public String getStatus() {

@@ -13,6 +13,7 @@ import com.model.ShiftCashSummary;
 import com.model.ShiftCashTransaction;
 import com.model.User;
 import com.model.permission.AppPermission;
+import com.service.payment.ElectronicPaymentGuard;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -128,17 +129,17 @@ public class ShiftService {
 		String moneyError = validateMoney(openingCash, true);
 
 		if (moneyError != null) {
-			return OperationResult.failure("Tien dau ca: " + moneyError);
+			return OperationResult.failure("Tiền đầu ca: " + moneyError);
 		}
 
 		if (openingNote != null && openingNote.trim().length() > 500) {
-			return OperationResult.failure("Ghi chu dau ca khong duoc " + "vuot qua 500 ky tu.");
+			return OperationResult.failure("Ghi chú đầu ca không được vượt quá 500 ký tự.");
 		}
 
 		Shift currentOpenShift = shiftDAO.findOpenShiftByUserId(user.getUserId());
 
 		if (currentOpenShift != null) {
-			return OperationResult.failure("Ban dang co mot ca mo. " + "Hay dong ca hien tai truoc.");
+			return OperationResult.failure("Bạn đang có một ca mở. Hãy đóng ca hiện tại trước.");
 		}
 
 		try {
@@ -149,12 +150,12 @@ public class ShiftService {
 
 			publishChanged();
 
-			return OperationResult.success("Mo ca thanh cong.", shift);
+			return OperationResult.success("Mở ca thành công.", shift);
 
 		} catch (SQLException e) {
 			logMutationError("ShiftService.openMyShift", e);
 
-			return OperationResult.failure(friendlySqlMessage(e, "Khong the mo ca. " + "Vui long thu lai."));
+			return OperationResult.failure(friendlySqlMessage(e, "Không thể mở ca. Vui lòng thử lại."));
 		}
 	}
 
@@ -174,29 +175,29 @@ public class ShiftService {
 		boolean validType = ShiftCashTransaction.CASH_IN.equals(type) || ShiftCashTransaction.CASH_OUT.equals(type);
 
 		if (!validType) {
-			return OperationResult.failure("Loai giao dich quy khong hop le.");
+			return OperationResult.failure("Loại giao dịch quỹ không hợp lệ.");
 		}
 
 		String moneyError = validateMoney(amount, false);
 
 		if (moneyError != null) {
-			return OperationResult.failure("So tien: " + moneyError);
+			return OperationResult.failure("Số tiền: " + moneyError);
 		}
 
 		if (reason == null || reason.isBlank()) {
-			return OperationResult.failure("Phai nhap ly do thu/chi " + "de co the doi soat.");
+			return OperationResult.failure("Phải nhập lý do thu/chi để có thể đối soát.");
 		}
 
 		String normalizedReason = reason.trim();
 
 		if (normalizedReason.length() > 255) {
-			return OperationResult.failure("Ly do khong duoc vuot qua 255 ky tu.");
+			return OperationResult.failure("Lý do không được vượt quá 255 ký tự.");
 		}
 
 		Shift openShift = shiftDAO.findOpenShiftByUserId(user.getUserId());
 
 		if (openShift == null) {
-			return OperationResult.failure("Ban chua mo ca ban hang.");
+			return OperationResult.failure("Bạn chưa mở ca bán hàng.");
 		}
 
 		if (returnExchangeDAO.hasPendingCashRefundForShift(openShift.getShiftId())) {
@@ -216,19 +217,19 @@ public class ShiftService {
 				action = ActivityLog.ACTION_CASH_OUT;
 			}
 
-			String actionLabel = transaction.isCashIn() ? "Thu tien" : "Chi tien";
+			String actionLabel = transaction.isCashIn() ? "Thu tiền" : "Chi tiền";
 
 			ActivityLogHelper.record("giao dịch quỹ", action, actionLabel + " trong ca #" + openShift.getShiftId()
 					+ ": " + amount.toPlainString() + " - " + normalizedReason, null, transaction);
 
 			publishChanged();
 
-			return OperationResult.success("Da ghi nhan giao dich quy.", transaction);
+			return OperationResult.success("Đã ghi nhận giao dịch quỹ.", transaction);
 
 		} catch (SQLException e) {
 			logMutationError("ShiftService.addCashMovement", e);
 
-			return OperationResult.failure(friendlySqlMessage(e, "Khong the ghi nhan thu/chi."));
+			return OperationResult.failure(friendlySqlMessage(e, "Không thể ghi nhận thu/chi."));
 		}
 	}
 
@@ -248,18 +249,23 @@ public class ShiftService {
 		Shift openShift = shiftDAO.findOpenShiftByUserId(user.getUserId());
 
 		if (openShift == null) {
-			return OperationResult.failure("Ban chua co ca dang mo.");
+			return OperationResult.failure("Bạn chưa có ca đang mở.");
+		}
+
+		if (ElectronicPaymentGuard.hasPending(openShift.getShiftId())) {
+			return OperationResult.failure("Ca đang có giao dịch VietQR/chuyển khoản chờ xác nhận. "
+					+ "Hãy hoàn tất hoặc hủy giao dịch tại POS trước khi đóng ca.");
 		}
 
 		try {
 			ShiftCashSummary summary = shiftDAO.calculateCashSummary(openShift.getShiftId());
 
-			return OperationResult.success("Da tinh so tien he thong.", summary);
+			return OperationResult.success("Đã tính số tiền hệ thống.", summary);
 
 		} catch (SQLException e) {
 			logMutationError("ShiftService.previewClose", e);
 
-			return OperationResult.failure("Khong the tinh so tien he thong.");
+			return OperationResult.failure("Không thể tính số tiền hệ thống.");
 		}
 	}
 
@@ -278,17 +284,22 @@ public class ShiftService {
 		String moneyError = validateMoney(countedCash, true);
 
 		if (moneyError != null) {
-			return OperationResult.failure("Tien kiem thuc te: " + moneyError);
+			return OperationResult.failure("Tiền kiểm thực tế: " + moneyError);
 		}
 
 		if (closingNote != null && closingNote.trim().length() > 500) {
-			return OperationResult.failure("Ghi chu dong ca khong duoc " + "vuot qua 500 ky tu.");
+			return OperationResult.failure("Ghi chú đóng ca không được vượt quá 500 ký tự.");
 		}
 
 		Shift openShift = shiftDAO.findOpenShiftByUserId(user.getUserId());
 
 		if (openShift == null) {
 			return OperationResult.failure("Ban chua co ca dang mo.");
+		}
+
+		if (ElectronicPaymentGuard.hasPending(openShift.getShiftId())) {
+			return OperationResult.failure("Ca đang có giao dịch VietQR/chuyển khoản chờ xác nhận. "
+					+ "Hãy hoàn tất hoặc hủy giao dịch tại POS trước khi đóng ca.");
 		}
 
 		if (returnExchangeDAO.hasPendingCashRefundForShift(openShift.getShiftId())) {
@@ -303,7 +314,7 @@ public class ShiftService {
 
 			if (difference.signum() != 0 && (closingNote == null || closingNote.isBlank())) {
 				return OperationResult
-						.failure("Tien thuc te dang chenh lech. " + "Ban phai nhap giai trinh " + "truoc khi dong ca.");
+						.failure("Tiền thực tế đang chênh lệch. " + "Bạn phải nhập giải trình trước khi đóng ca.");
 			}
 
 			Shift closedShift = shiftDAO.closeShift(openShift.getShiftId(), user.getUserId(), countedCash, closingNote);
@@ -315,22 +326,22 @@ public class ShiftService {
 
 			publishChanged();
 
-			return OperationResult.success("Dong ca va doi soat quy thanh cong.", closedShift);
+			return OperationResult.success("Đóng ca và đối soát quỹ thành công.", closedShift);
 
 		} catch (SQLException e) {
 			logMutationError("ShiftService.closeMyShift", e);
 
-			return OperationResult.failure(friendlySqlMessage(e, "Khong the dong ca. " + "Vui long thu lai."));
+			return OperationResult.failure(friendlySqlMessage(e, "Không thể đóng ca. Vui lòng thử lại."));
 		}
 	}
 
 	private String validateOperator(User user) {
 		if (user == null) {
-			return "Phien dang nhap da het han.";
+			return "Phiên đăng nhập đã hết hạn.";
 		}
 
 		if (!authService.can(AppPermission.SHIFT_OPERATE)) {
-			return "Tai khoan khong co quyen " + "thao tac ca ban hang.";
+			return "Tài khoản không có quyền thao tác ca bán hàng.";
 		}
 
 		return null;
@@ -338,26 +349,26 @@ public class ShiftService {
 
 	private String validateMoney(BigDecimal amount, boolean allowZero) {
 		if (amount == null) {
-			return "khong duoc de trong.";
+			return "không được để trống.";
 		}
 
 		if (amount.signum() < 0) {
-			return "phai lon hon hoac bang 0.";
+			return "phải lớn hơn hoặc bằng 0.";
 		}
 
 		if (!allowZero && amount.signum() == 0) {
-			return "phai lon hon 0.";
+			return "phải lớn hơn 0.";
 		}
 
 		/*
 		 * VND trong project khong su dung phan thap phan.
 		 */
 		if (amount.remainder(BigDecimal.ONE).signum() != 0) {
-			return "phai la so nguyen VND, " + "khong nhap phan thap phan.";
+			return "phải là số nguyên VND, không nhập phần thập phân.";
 		}
 
 		if (amount.compareTo(MAX_MONEY) > 0) {
-			return "vuot qua gioi han cho phep.";
+			return "vượt quá giới hạn cho phép.";
 		}
 
 		return null;
@@ -375,7 +386,7 @@ public class ShiftService {
 		 * MySQL error 1062: trung unique key, vi du mo hai ca cung user.
 		 */
 		if (e.getErrorCode() == 1062) {
-			return "Ban da co mot ca dang mo.";
+			return "Bạn đã có một ca đang mở.";
 		}
 
 		return fallback;
