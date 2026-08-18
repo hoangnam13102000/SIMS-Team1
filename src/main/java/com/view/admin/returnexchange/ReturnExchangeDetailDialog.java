@@ -49,459 +49,703 @@ import java.util.List;
 
 public class ReturnExchangeDetailDialog extends JDialog {
 
-    private static final DateTimeFormatter DATE_TIME_FORMAT =
-            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+	private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-    private final ReturnExchangeDAO returnExchangeDAO;
-    private final ReturnExchange item;
+	private final ReturnExchangeDAO returnExchangeDAO;
+	private final ReturnExchange item;
 
-    public ReturnExchangeDetailDialog(Frame owner, ReturnExchange item, ReturnExchangeDAO returnExchangeDAO) {
-        super(owner, Lang.get("returnExchange.detail.title"), Dialog.ModalityType.APPLICATION_MODAL);
-        this.item = item;
-        this.returnExchangeDAO = returnExchangeDAO;
-        List<ReturnExchangeDetail> details = returnExchangeDAO.getDetails(item.getReturnId());
+	public ReturnExchangeDetailDialog(Frame owner, ReturnExchange item, ReturnExchangeDAO returnExchangeDAO) {
+		super(owner, Lang.get("returnExchange.detail.title"), Dialog.ModalityType.APPLICATION_MODAL);
+		this.item = item;
+		this.returnExchangeDAO = returnExchangeDAO;
+		List<ReturnExchangeDetail> details = returnExchangeDAO.getDetails(item.getReturnId());
 
-        setSize(760, 660);
-        setMinimumSize(new Dimension(620, 500));
-        setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-        setLayout(new BorderLayout());
-        getContentPane().setBackground(AppColor.WHITE);
+		setSize(820, 730);
+		setMinimumSize(new Dimension(680, 560));
+		setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+		setLayout(new BorderLayout());
+		getContentPane().setBackground(AppColor.WHITE);
 
-        add(buildHeader(), BorderLayout.NORTH);
-        add(buildBody(details), BorderLayout.CENTER);
-        add(buildFooter(), BorderLayout.SOUTH);
+		add(buildHeader(), BorderLayout.NORTH);
+		add(buildBody(details), BorderLayout.CENTER);
+		add(buildFooter(), BorderLayout.SOUTH);
 
-        getRootPane().registerKeyboardAction(e -> dispose(),
-                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
-                JComponent.WHEN_IN_FOCUSED_WINDOW);
+		getRootPane().registerKeyboardAction(e -> dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+				JComponent.WHEN_IN_FOCUSED_WINDOW);
 
-        setLocationRelativeTo(owner);
-    }
+		setLocationRelativeTo(owner);
+	}
 
-    // ---------------------------------------------------------------
-    // Header
-    // ---------------------------------------------------------------
+	// ---------------------------------------------------------------
+	// Header
+	// ---------------------------------------------------------------
 
-    private JPanel buildHeader() {
-        JPanel header = new JPanel(new BorderLayout(14, 0));
-        header.setBackground(AppColor.WHITE);
-        header.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
-                new EmptyBorder(18, 24, 18, 24)));
+	private JPanel buildHeader() {
+		JPanel header = new JPanel(new BorderLayout(14, 0));
+		header.setBackground(AppColor.WHITE);
+		header.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER), new EmptyBorder(18, 24, 18, 24)));
 
-        Color statusIconColor = statusColor();
-        Color statusIconBg = statusBgColor();
-        FontIcon icon = FontIcon.of(FontAwesomeSolid.EXCHANGE_ALT, 18);
-        icon.setIconColor(statusIconColor);
-        JLabel iconBadge = new JLabel(icon, SwingConstants.CENTER) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(statusIconBg);
-                g2.fillOval(0, 0, getWidth(), getHeight());
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        iconBadge.setPreferredSize(new Dimension(44, 44));
+		Color statusIconColor = statusColor();
+		Color statusIconBg = statusBgColor();
+		FontIcon icon = FontIcon.of(FontAwesomeSolid.EXCHANGE_ALT, 18);
+		icon.setIconColor(statusIconColor);
+		JLabel iconBadge = new JLabel(icon, SwingConstants.CENTER) {
+			@Override
+			protected void paintComponent(Graphics g) {
+				Graphics2D g2 = (Graphics2D) g.create();
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				g2.setColor(statusIconBg);
+				g2.fillOval(0, 0, getWidth(), getHeight());
+				g2.dispose();
+				super.paintComponent(g);
+			}
+		};
+		iconBadge.setPreferredSize(new Dimension(44, 44));
 
-        JPanel titleBox = new JPanel();
-        titleBox.setOpaque(false);
-        titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
+		JPanel titleBox = new JPanel();
+		titleBox.setOpaque(false);
+		titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
 
-        JLabel titleLabel = new JLabel(Lang.get(
-                item.isExchange() ? "returnExchange.detail.titleExchange" : "returnExchange.detail.titleReturn",
-                item.getInvoiceCode()));
-        titleLabel.setFont(AppFont.DIALOG_TITLE);
-        titleLabel.setForeground(AppColor.TEXT_PRIMARY);
-        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel titleLabel = new JLabel(Lang.get(
+				item.isExchange() ? "returnExchange.detail.titleExchange" : "returnExchange.detail.titleReturn",
+				item.getInvoiceCode()));
+		titleLabel.setFont(AppFont.DIALOG_TITLE);
+		titleLabel.setForeground(AppColor.TEXT_PRIMARY);
+		titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel subtitleLabel = new JLabel(statusLabel());
-        subtitleLabel.setFont(AppFont.BODY);
-        subtitleLabel.setForeground(statusIconColor);
-        subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel subtitleLabel = new JLabel(statusLabel());
+		subtitleLabel.setFont(AppFont.BODY);
+		subtitleLabel.setForeground(statusIconColor);
+		subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        titleBox.add(titleLabel);
-        titleBox.add(Box.createVerticalStrut(4));
-        titleBox.add(subtitleLabel);
+		titleBox.add(titleLabel);
+		titleBox.add(Box.createVerticalStrut(4));
+		titleBox.add(subtitleLabel);
 
-        header.add(iconBadge, BorderLayout.WEST);
-        header.add(titleBox, BorderLayout.CENTER);
-        return header;
-    }
+		header.add(iconBadge, BorderLayout.WEST);
+		header.add(titleBox, BorderLayout.CENTER);
+		return header;
+	}
 
-    // ---------------------------------------------------------------
-    // Body: card thông tin 2 cột + bảng SP
-    // ---------------------------------------------------------------
+	// ---------------------------------------------------------------
+	// Body: card thông tin 2 cột + bảng SP
+	// ---------------------------------------------------------------
 
-    private JScrollPane buildBody(List<ReturnExchangeDetail> details) {
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setBackground(AppColor.WHITE);
-        content.setBorder(new EmptyBorder(18, 24, 18, 24));
+	private JScrollPane buildBody(List<ReturnExchangeDetail> details) {
+		JPanel content = new JPanel();
+		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+		content.setBackground(AppColor.WHITE);
+		content.setBorder(new EmptyBorder(18, 24, 18, 24));
 
-        JPanel infoCard = new JPanel(new BorderLayout());
-        infoCard.setOpaque(true);
-        infoCard.setBackground(AppColor.BG_LIGHT);
-        infoCard.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(16, 16, 16, 16)));
-        infoCard.setAlignmentX(Component.LEFT_ALIGNMENT);
-        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 360));
+		JPanel infoCard = new JPanel(new BorderLayout());
+		infoCard.setOpaque(true);
+		infoCard.setBackground(AppColor.BG_LIGHT);
+		infoCard.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+				new EmptyBorder(16, 16, 16, 16)));
+		infoCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+		infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 520));
 
-        JPanel cardInner = new JPanel();
-        cardInner.setOpaque(false);
-        cardInner.setLayout(new BoxLayout(cardInner, BoxLayout.Y_AXIS));
+		JPanel cardInner = new JPanel();
+		cardInner.setOpaque(false);
+		cardInner.setLayout(new BoxLayout(cardInner, BoxLayout.Y_AXIS));
 
-        JPanel infoGrid = new JPanel(new GridLayout(0, 2, 28, 14));
-        infoGrid.setOpaque(false);
-        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.invoice"), item.getInvoiceCode()));
-        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.type"),
-                item.isExchange() ? Lang.get("returnExchange.type.exchange") : Lang.get("returnExchange.type.return")));
-        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.createdBy"),
-                item.getCreatedByName() != null ? item.getCreatedByName() : "-"));
-        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.createdAt"),
-                item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
-        infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.requiresApproval"),
-                item.isRequiresApproval() ? Lang.get("returnExchange.detail.info.requiresApprovalYes") : Lang.get("returnExchange.bool.no")));
-        infoGrid.add(infoCellTotal(Lang.get("returnExchange.detail.info.value"),
-                NumberUtil.formatThousands(item.getTotalValue() != null ? item.getTotalValue().longValue() : 0) + " đ"));
-        cardInner.add(infoGrid);
+		JPanel infoGrid = new JPanel(new GridLayout(0, 2, 28, 14));
+		infoGrid.setOpaque(false);
+		infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.invoice"), item.getInvoiceCode()));
+		infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.type"),
+				item.isExchange() ? Lang.get("returnExchange.type.exchange") : Lang.get("returnExchange.type.return")));
+		infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.createdBy"),
+				item.getCreatedByName() != null ? item.getCreatedByName() : "-"));
+		infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.createdAt"),
+				item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
+		infoGrid.add(infoCell(Lang.get("returnExchange.detail.info.requiresApproval"),
+				item.isRequiresApproval() ? Lang.get("returnExchange.detail.info.requiresApprovalYes")
+						: Lang.get("returnExchange.bool.no")));
+		infoGrid.add(infoCellTotal(Lang.get("returnExchange.detail.info.value"),
+				NumberUtil.formatThousands(item.getTotalValue() != null ? item.getTotalValue().longValue() : 0)
+						+ " đ"));
+		cardInner.add(infoGrid);
 
-        boolean hasDiscountShare = item.getDiscountShare() != null && item.getDiscountShare().signum() > 0;
-        boolean hasPointsShare = item.getPointsShare() != null && item.getPointsShare().signum() > 0;
-        if (hasDiscountShare || hasPointsShare) {
-            JPanel shareRow = new JPanel(new GridLayout(0, 2, 28, 14));
-            shareRow.setOpaque(false);
-            shareRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-            if (hasDiscountShare) {
-                shareRow.add(infoCell(Lang.get("returnExchange.detail.info.discountShare"),
-                        "-" + NumberUtil.formatThousands(item.getDiscountShare().longValue()) + " đ"));
-            }
-            if (hasPointsShare) {
-                shareRow.add(infoCell(Lang.get("returnExchange.detail.info.pointsShare"),
-                        "-" + NumberUtil.formatThousands(item.getPointsShare().longValue()) + " đ"));
-            }
-            cardInner.add(shareRow);
-        }
+		boolean hasDiscountShare = item.getDiscountShare() != null && item.getDiscountShare().signum() > 0;
+		boolean hasPointsShare = item.getPointsShare() != null && item.getPointsShare().signum() > 0;
+		if (hasDiscountShare || hasPointsShare) {
+			JPanel shareRow = new JPanel(new GridLayout(0, 2, 28, 14));
+			shareRow.setOpaque(false);
+			shareRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+			if (hasDiscountShare) {
+				shareRow.add(infoCell(Lang.get("returnExchange.detail.info.discountShare"),
+						"-" + NumberUtil.formatThousands(item.getDiscountShare().longValue()) + " đ"));
+			}
+			if (hasPointsShare) {
+				shareRow.add(infoCell(Lang.get("returnExchange.detail.info.pointsShare"),
+						"-" + NumberUtil.formatThousands(item.getPointsShare().longValue()) + " đ"));
+			}
+			cardInner.add(shareRow);
+		}
 
-        JPanel reasonRow = new JPanel(new GridLayout(0, 1, 0, 4));
-        reasonRow.setOpaque(false);
-        reasonRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-        reasonRow.add(infoCell(Lang.get("returnExchange.detail.info.reason"), item.getReason()));
-        cardInner.add(reasonRow);
+		JPanel reasonRow = new JPanel(new GridLayout(0, 1, 0, 4));
+		reasonRow.setOpaque(false);
+		reasonRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+		reasonRow.add(infoCell(Lang.get("returnExchange.detail.info.reason"), item.getReason()));
+		cardInner.add(reasonRow);
 
-        if (!item.isPending()) {
-            JPanel approveRow = new JPanel(new GridLayout(0, 2, 28, 14));
-            approveRow.setOpaque(false);
-            approveRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-            approveRow.add(infoCell(item.isApproved()
-                    ? Lang.get("returnExchange.detail.info.approvedBy") : Lang.get("returnExchange.detail.info.rejectedBy"),
-                    item.getApprovedByName() != null ? item.getApprovedByName() : "-"));
-            approveRow.add(infoCell(Lang.get("returnExchange.detail.info.processedAt"),
-                    item.getApprovedAt() != null ? item.getApprovedAt().format(DATE_TIME_FORMAT) : "-"));
-            cardInner.add(approveRow);
+		/*
+		 * ============================================================ THONG TIN HOAN
+		 * TIEN ============================================================
+		 */
+		if (item.isReturn()) {
 
-            if (item.isRejected()) {
-                JPanel rejectionRow = new JPanel(new GridLayout(0, 1, 0, 4));
-                rejectionRow.setOpaque(false);
-                rejectionRow.setBorder(new EmptyBorder(12, 0, 0, 0));
-                rejectionRow.add(infoCell("Lý do từ chối",
-                        item.getRejectionReason() != null && !item.getRejectionReason().isBlank()
-                                ? item.getRejectionReason() : "Chưa có lý do từ chối"));
-                cardInner.add(rejectionRow);
-            }
-        }
+			JPanel refundGrid = new JPanel(new GridLayout(0, 2, 28, 14));
 
-        infoCard.add(cardInner, BorderLayout.CENTER);
-        content.add(infoCard);
-        content.add(Box.createVerticalStrut(20));
+			refundGrid.setOpaque(false);
 
-        JLabel sectionLabel = new JLabel(Lang.get("returnExchange.detail.products", details.size()));
-        sectionLabel.setFont(AppFont.BODY_BOLD);
-        sectionLabel.setForeground(AppColor.TEXT_PRIMARY);
-        sectionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        content.add(sectionLabel);
-        content.add(Box.createVerticalStrut(10));
+			refundGrid.setBorder(new EmptyBorder(12, 0, 0, 0));
 
-        JTable table = buildDetailTable(details);
-        JScrollPane tableScroll = new JScrollPane(table);
-        tableScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        int tableH = Math.max(100, Math.min(240, 44 + details.size() * 44));
-        tableScroll.setPreferredSize(new Dimension(700, tableH));
-        tableScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, tableH + 20));
-        tableScroll.getViewport().setBackground(AppColor.WHITE);
-        tableScroll.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-                BorderFactory.createEmptyBorder(0, 0, 0, 0)));
-        tableScroll.setOpaque(false);
-        content.add(tableScroll);
+			refundGrid.add(infoCell("Phương thức hoàn tiền", refundMethodLabel()));
 
-        JScrollPane scroll = new JScrollPane(content);
-        scroll.setBorder(null);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        scroll.getViewport().setBackground(AppColor.WHITE);
-        return scroll;
-    }
+			refundGrid.add(infoCell("Trạng thái hoàn tiền", refundStatusLabel()));
 
-    private JPanel infoCell(String label, String value) {
-        JPanel cell = new JPanel();
-        cell.setOpaque(false);
-        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+			refundGrid.add(
+					infoCell("Ca hoàn tiền", item.getRefundShiftId() != null ? "#" + item.getRefundShiftId() : "-"));
 
-        JLabel labelComp = new JLabel(label);
-        labelComp.setFont(AppFont.SMALL_BOLD);
-        labelComp.setForeground(AppColor.TEXT_MUTED);
-        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+			refundGrid.add(infoCell("Mã giao dịch",
+					item.getRefundTransactionId() != null && !item.getRefundTransactionId().isBlank()
+							? item.getRefundTransactionId()
+							: "-"));
 
-        JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
-        valueComp.setFont(AppFont.BODY);
-        valueComp.setForeground(AppColor.TEXT_PRIMARY);
-        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+			cardInner.add(refundGrid);
 
-        cell.add(labelComp);
-        cell.add(Box.createVerticalStrut(2));
-        cell.add(valueComp);
-        return cell;
-    }
+			if (item.getRefundedAt() != null) {
 
-    private JPanel infoCellTotal(String label, String value) {
-        JPanel cell = new JPanel();
-        cell.setOpaque(false);
-        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+				JPanel refundedAtRow = new JPanel(new GridLayout(0, 1, 0, 4));
 
-        JLabel labelComp = new JLabel(label);
-        labelComp.setFont(AppFont.SMALL_BOLD);
-        labelComp.setForeground(AppColor.TEXT_MUTED);
-        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+				refundedAtRow.setOpaque(false);
 
-        JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
-        valueComp.setFont(AppFont.BODY_BOLD);
-        valueComp.setForeground(AppColor.ACCENT);
-        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+				refundedAtRow.setBorder(new EmptyBorder(12, 0, 0, 0));
 
-        cell.add(labelComp);
-        cell.add(Box.createVerticalStrut(2));
-        cell.add(valueComp);
-        return cell;
-    }
+				refundedAtRow.add(infoCell("Thời gian hoàn tiền", item.getRefundedAt().format(DATE_TIME_FORMAT)));
 
-    private JTable buildDetailTable(List<ReturnExchangeDetail> details) {
-        String[] columns = {
-                Lang.get("returnExchange.detail.col.direction"), Lang.get("returnExchange.detail.col.product"),
-                Lang.get("returnExchange.detail.col.qty"), Lang.get("returnExchange.detail.col.unitPrice"),
-                Lang.get("returnExchange.detail.col.lineTotal")
-        };
-        DefaultTableModel model = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) { return false; }
-        };
+				cardInner.add(refundedAtRow);
+			}
+		}
 
-        for (ReturnExchangeDetail d : details) {
-            model.addRow(new Object[]{
-                    d.isIn() ? Lang.get("returnExchange.detail.direction.in") : Lang.get("returnExchange.detail.direction.out"),
-                    d.getProductName(),
-                    d.getQuantity(),
-                    NumberUtil.formatThousands(d.getUnitPrice().longValue()),
-                    NumberUtil.formatThousands(d.getLineTotal().longValue())
-            });
-        }
+		if (!item.isPending()) {
+			JPanel approveRow = new JPanel(new GridLayout(0, 2, 28, 14));
+			approveRow.setOpaque(false);
+			approveRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+			approveRow.add(infoCell(
+					item.isApproved() ? Lang.get("returnExchange.detail.info.approvedBy")
+							: Lang.get("returnExchange.detail.info.rejectedBy"),
+					item.getApprovedByName() != null ? item.getApprovedByName() : "-"));
+			approveRow.add(infoCell(Lang.get("returnExchange.detail.info.processedAt"),
+					item.getApprovedAt() != null ? item.getApprovedAt().format(DATE_TIME_FORMAT) : "-"));
+			cardInner.add(approveRow);
 
-        JTable table = new JTable(model);
-        table.setFont(AppFont.BODY);
-        table.setRowHeight(40);
-        table.setBackground(AppColor.WHITE);
-        table.setForeground(AppColor.TEXT_PRIMARY);
-        table.setSelectionBackground(AppColor.ACCENT_BG_SOFT);
-        table.getTableHeader().setFont(AppFont.SMALL_BOLD);
-        table.getTableHeader().setBackground(AppColor.BG_LIGHT);
-        table.getTableHeader().setForeground(AppColor.TEXT_PRIMARY);
-        table.getTableHeader().setPreferredSize(new Dimension(0, 38));
-        table.getTableHeader().setReorderingAllowed(false);
-        table.setGridColor(AppColor.BORDER);
-        table.setShowVerticalLines(false);
-        table.setShowHorizontalLines(true);
-        table.setRowSelectionAllowed(false);
-        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
-        table.setIntercellSpacing(new Dimension(0, 0));
+			if (item.isRejected()) {
+				JPanel rejectionRow = new JPanel(new GridLayout(0, 1, 0, 4));
+				rejectionRow.setOpaque(false);
+				rejectionRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+				rejectionRow.add(infoCell("Lý do từ chối",
+						item.getRejectionReason() != null && !item.getRejectionReason().isBlank()
+								? item.getRejectionReason()
+								: "Chưa có lý do từ chối"));
+				cardInner.add(rejectionRow);
+			}
+		}
 
-        table.getColumnModel().getColumn(0).setPreferredWidth(90);
-        table.getColumnModel().getColumn(0).setMaxWidth(100);
-        table.getColumnModel().getColumn(1).setPreferredWidth(240);
-        table.getColumnModel().getColumn(2).setPreferredWidth(50);
-        table.getColumnModel().getColumn(2).setMaxWidth(60);
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);
-        table.getColumnModel().getColumn(4).setPreferredWidth(120);
+		infoCard.add(cardInner, BorderLayout.CENTER);
+		content.add(infoCard);
+		content.add(Box.createVerticalStrut(20));
 
-        DefaultTableCellRenderer directionRenderer = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                          boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setFont(AppFont.SMALL_BOLD);
-                setForeground(Lang.get("returnExchange.detail.direction.in").equals(value) ? AppColor.INFO : AppColor.ACCENT);
-                setBackground(AppColor.WHITE);
-                setBorder(new EmptyBorder(0, 8, 0, 4));
-                return c;
-            }
-        };
-        table.getColumnModel().getColumn(0).setCellRenderer(directionRenderer);
+		JLabel sectionLabel = new JLabel(Lang.get("returnExchange.detail.products", details.size()));
+		sectionLabel.setFont(AppFont.BODY_BOLD);
+		sectionLabel.setForeground(AppColor.TEXT_PRIMARY);
+		sectionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		content.add(sectionLabel);
+		content.add(Box.createVerticalStrut(10));
 
-        DefaultTableCellRenderer nameRenderer = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                          boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setFont(AppFont.BODY_BOLD);
-                setForeground(AppColor.TEXT_PRIMARY);
-                setBackground(AppColor.WHITE);
-                setBorder(new EmptyBorder(0, 8, 0, 4));
-                return c;
-            }
-        };
-        table.getColumnModel().getColumn(1).setCellRenderer(nameRenderer);
+		JTable table = buildDetailTable(details);
+		JScrollPane tableScroll = new JScrollPane(table);
+		tableScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+		int tableH = Math.max(100, Math.min(240, 44 + details.size() * 44));
+		tableScroll.setPreferredSize(new Dimension(700, tableH));
+		tableScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, tableH + 20));
+		tableScroll.getViewport().setBackground(AppColor.WHITE);
+		tableScroll.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(AppColor.BORDER, 1, true), BorderFactory.createEmptyBorder(0, 0, 0, 0)));
+		tableScroll.setOpaque(false);
+		content.add(tableScroll);
 
-        DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                          boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setHorizontalAlignment(SwingConstants.CENTER);
-                setBackground(AppColor.WHITE);
-                setForeground(AppColor.TEXT_PRIMARY);
-                return c;
-            }
-        };
-        table.getColumnModel().getColumn(2).setCellRenderer(center);
+		JScrollPane scroll = new JScrollPane(content);
+		scroll.setBorder(null);
+		scroll.getVerticalScrollBar().setUnitIncrement(16);
+		scroll.getViewport().setBackground(AppColor.WHITE);
+		return scroll;
+	}
 
-        DefaultTableCellRenderer money = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                          boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setHorizontalAlignment(SwingConstants.RIGHT);
-                setBackground(AppColor.WHITE);
-                setForeground(column == 4 ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
-                setFont(column == 4 ? AppFont.BODY_BOLD : AppFont.BODY);
-                setBorder(new EmptyBorder(0, 4, 0, 12));
-                return c;
-            }
-        };
-        table.getColumnModel().getColumn(3).setCellRenderer(money);
-        table.getColumnModel().getColumn(4).setCellRenderer(money);
+	private JPanel infoCell(String label, String value) {
+		JPanel cell = new JPanel();
+		cell.setOpaque(false);
+		cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
 
-        return table;
-    }
+		JLabel labelComp = new JLabel(label);
+		labelComp.setFont(AppFont.SMALL_BOLD);
+		labelComp.setForeground(AppColor.TEXT_MUTED);
+		labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-    // ---------------------------------------------------------------
-    // Footer
-    // ---------------------------------------------------------------
+		JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
+		valueComp.setFont(AppFont.BODY);
+		valueComp.setForeground(AppColor.TEXT_PRIMARY);
+		valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-    private JPanel buildFooter() {
-        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        footer.setBackground(AppColor.BG_LIGHT);
-        footer.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
-                new EmptyBorder(12, 24, 12, 24)));
+		cell.add(labelComp);
+		cell.add(Box.createVerticalStrut(2));
+		cell.add(valueComp);
+		return cell;
+	}
 
-        boolean canApprove = item.isPending()
-                && PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_APPROVE);
+	private JPanel infoCellTotal(String label, String value) {
+		JPanel cell = new JPanel();
+		cell.setOpaque(false);
+		cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
 
-        if (canApprove) {
-            JButton rejectButton = new JButton(Lang.get("returnExchange.detail.btn.reject"));
-            rejectButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            rejectButton.setFocusPainted(false);
-            rejectButton.setBackground(AppColor.ERROR_BG);
-            rejectButton.setForeground(AppColor.ERROR);
-            rejectButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-            rejectButton.addActionListener(e -> handleReject());
-            footer.add(rejectButton);
+		JLabel labelComp = new JLabel(label);
+		labelComp.setFont(AppFont.SMALL_BOLD);
+		labelComp.setForeground(AppColor.TEXT_MUTED);
+		labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-            JButton approveButton = new JButton(Lang.get("returnExchange.detail.btn.approve"));
-            approveButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            approveButton.setFocusPainted(false);
-            approveButton.setBackground(AppColor.SUCCESS_BG);
-            approveButton.setForeground(AppColor.SUCCESS);
-            approveButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-            approveButton.addActionListener(e -> handleApprove());
-            footer.add(approveButton);
-        }
+		JLabel valueComp = new JLabel(value == null || value.isBlank() ? "-" : value);
+		valueComp.setFont(AppFont.BODY_BOLD);
+		valueComp.setForeground(AppColor.ACCENT);
+		valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JButton closeButton = new JButton(Lang.get("returnExchange.detail.btn.close"));
-        closeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        closeButton.setFocusPainted(false);
-        closeButton.setBackground(AppColor.BORDER);
-        closeButton.setForeground(AppColor.TEXT_PRIMARY);
-        closeButton.setBorder(new EmptyBorder(8, 18, 8, 18));
-        closeButton.addActionListener(e -> dispose());
-        footer.add(closeButton);
+		cell.add(labelComp);
+		cell.add(Box.createVerticalStrut(2));
+		cell.add(valueComp);
+		return cell;
+	}
 
-        getRootPane().setDefaultButton(closeButton);
-        return footer;
-    }
+	private JTable buildDetailTable(List<ReturnExchangeDetail> details) {
+		String[] columns = { Lang.get("returnExchange.detail.col.direction"),
+				Lang.get("returnExchange.detail.col.product"), Lang.get("returnExchange.detail.col.qty"),
+				Lang.get("returnExchange.detail.col.unitPrice"), Lang.get("returnExchange.detail.col.lineTotal") };
+		DefaultTableModel model = new DefaultTableModel(columns, 0) {
+			@Override
+			public boolean isCellEditable(int row, int column) {
+				return false;
+			}
+		};
 
-    private void handleApprove() {
-        boolean confirmed = BaseDialog.confirm(this, Lang.get("returnExchange.detail.confirm.approve.title"),
-                Lang.get("returnExchange.detail.confirm.approve.message", item.getInvoiceCode()),
-                Lang.get("returnExchange.detail.confirm.approve.button"), AppColor.SUCCESS, AppColor.SUCCESS, FontAwesomeSolid.CHECK_CIRCLE);
-        if (!confirmed) return;
+		for (ReturnExchangeDetail d : details) {
+			model.addRow(new Object[] {
+					d.isIn() ? Lang.get("returnExchange.detail.direction.in")
+							: Lang.get("returnExchange.detail.direction.out"),
+					d.getProductName(), d.getQuantity(), NumberUtil.formatThousands(d.getUnitPrice().longValue()),
+					NumberUtil.formatThousands(d.getLineTotal().longValue()) });
+		}
 
-        int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
-        String error = returnExchangeDAO.approve(item.getReturnId(), currentUserId);
-        if (error != null) {
-            BaseDialog.error(this, Lang.get("returnExchange.detail.error.approveTitle"), error);
-            return;
-        }
-        BaseDialog.success(this, Lang.get("returnExchange.detail.success.title"),
-                Lang.get("returnExchange.detail.success.approved", item.getInvoiceCode()));
-        dispose();
-    }
+		JTable table = new JTable(model);
+		table.setFont(AppFont.BODY);
+		table.setRowHeight(40);
+		table.setBackground(AppColor.WHITE);
+		table.setForeground(AppColor.TEXT_PRIMARY);
+		table.setSelectionBackground(AppColor.ACCENT_BG_SOFT);
+		table.getTableHeader().setFont(AppFont.SMALL_BOLD);
+		table.getTableHeader().setBackground(AppColor.BG_LIGHT);
+		table.getTableHeader().setForeground(AppColor.TEXT_PRIMARY);
+		table.getTableHeader().setPreferredSize(new Dimension(0, 38));
+		table.getTableHeader().setReorderingAllowed(false);
+		table.setGridColor(AppColor.BORDER);
+		table.setShowVerticalLines(false);
+		table.setShowHorizontalLines(true);
+		table.setRowSelectionAllowed(false);
+		table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+		table.setIntercellSpacing(new Dimension(0, 0));
 
-    private void handleReject() {
-        boolean confirmed = BaseDialog.confirm(this, Lang.get("returnExchange.detail.confirm.reject.title"),
-                Lang.get("returnExchange.detail.confirm.reject.message", item.getInvoiceCode()),
-                Lang.get("returnExchange.detail.confirm.reject.button"), AppColor.ERROR, AppColor.ERROR, FontAwesomeSolid.TIMES_CIRCLE);
-        if (!confirmed) return;
+		table.getColumnModel().getColumn(0).setPreferredWidth(90);
+		table.getColumnModel().getColumn(0).setMaxWidth(100);
+		table.getColumnModel().getColumn(1).setPreferredWidth(240);
+		table.getColumnModel().getColumn(2).setPreferredWidth(50);
+		table.getColumnModel().getColumn(2).setMaxWidth(60);
+		table.getColumnModel().getColumn(3).setPreferredWidth(110);
+		table.getColumnModel().getColumn(4).setPreferredWidth(120);
 
-        String rejectionReason = BaseDialog.inputText(this,
-                "Lý do từ chối trả hàng",
-                "Vui lòng nhập lý do từ chối để khách hàng có thể xem.",
-                "",
-                "Từ chối");
-        if (rejectionReason == null) return;
-        rejectionReason = rejectionReason.trim();
-        if (rejectionReason.isEmpty()) {
-            BaseDialog.error(this, "Thiếu lý do từ chối", "Bạn phải nhập lý do từ chối.");
-            return;
-        }
+		DefaultTableCellRenderer directionRenderer = new DefaultTableCellRenderer() {
+			@Override
+			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus,
+					int row, int column) {
+				Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+				setFont(AppFont.SMALL_BOLD);
+				setForeground(
+						Lang.get("returnExchange.detail.direction.in").equals(value) ? AppColor.INFO : AppColor.ACCENT);
+				setBackground(AppColor.WHITE);
+				setBorder(new EmptyBorder(0, 8, 0, 4));
+				return c;
+			}
+		};
+		table.getColumnModel().getColumn(0).setCellRenderer(directionRenderer);
 
-        int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
-        String error = returnExchangeDAO.reject(item.getReturnId(), currentUserId, rejectionReason);
-        if (error != null) {
-            BaseDialog.error(this, Lang.get("returnExchange.detail.error.rejectTitle"), error);
-            return;
-        }
-        BaseDialog.success(this, Lang.get("returnExchange.detail.success.title"),
-                Lang.get("returnExchange.detail.success.rejected", item.getInvoiceCode()));
-        dispose();
-    }
+		DefaultTableCellRenderer nameRenderer = new DefaultTableCellRenderer() {
+			@Override
+			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus,
+					int row, int column) {
+				Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+				setFont(AppFont.BODY_BOLD);
+				setForeground(AppColor.TEXT_PRIMARY);
+				setBackground(AppColor.WHITE);
+				setBorder(new EmptyBorder(0, 8, 0, 4));
+				return c;
+			}
+		};
+		table.getColumnModel().getColumn(1).setCellRenderer(nameRenderer);
 
-    private String statusLabel() {
-        if (item.isApproved()) return Lang.get("returnExchange.status.approved");
-        if (item.isRejected()) return Lang.get("returnExchange.status.rejected");
-        return Lang.get("returnExchange.status.pending");
-    }
+		DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
+			@Override
+			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus,
+					int row, int column) {
+				Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+				setHorizontalAlignment(SwingConstants.CENTER);
+				setBackground(AppColor.WHITE);
+				setForeground(AppColor.TEXT_PRIMARY);
+				return c;
+			}
+		};
+		table.getColumnModel().getColumn(2).setCellRenderer(center);
 
-    private Color statusColor() {
-        if (item.isApproved()) return AppColor.SUCCESS;
-        if (item.isRejected()) return AppColor.ERROR;
-        return AppColor.WARNING;
-    }
+		DefaultTableCellRenderer money = new DefaultTableCellRenderer() {
+			@Override
+			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus,
+					int row, int column) {
+				Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+				setHorizontalAlignment(SwingConstants.RIGHT);
+				setBackground(AppColor.WHITE);
+				setForeground(column == 4 ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
+				setFont(column == 4 ? AppFont.BODY_BOLD : AppFont.BODY);
+				setBorder(new EmptyBorder(0, 4, 0, 12));
+				return c;
+			}
+		};
+		table.getColumnModel().getColumn(3).setCellRenderer(money);
+		table.getColumnModel().getColumn(4).setCellRenderer(money);
 
-    private Color statusBgColor() {
-        if (item.isApproved()) return AppColor.SUCCESS_BG;
-        if (item.isRejected()) return AppColor.ERROR_BG;
-        return AppColor.WARNING_BG;
-    }
+		return table;
+	}
+
+	// ---------------------------------------------------------------
+	// Footer
+	// ---------------------------------------------------------------
+
+	private JPanel buildFooter() {
+		JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+		footer.setBackground(AppColor.BG_LIGHT);
+		footer.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER), new EmptyBorder(12, 24, 12, 24)));
+
+		boolean canAssignRefundMethod = item.isReturn() && item.isPending()
+				&& (item.getRefundMethod() == null || item.getRefundMethod().isBlank())
+				&& (PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_CREATE)
+
+						|| PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_APPROVE));
+
+		if (canAssignRefundMethod) {
+
+			JButton assignRefundButton = new JButton("Chọn phương thức hoàn tiền");
+
+			assignRefundButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+
+			assignRefundButton.setFocusPainted(false);
+
+			assignRefundButton.setBackground(AppColor.INFO_BG);
+
+			assignRefundButton.setForeground(AppColor.INFO);
+
+			assignRefundButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+
+			assignRefundButton.addActionListener(e -> handleAssignRefundMethod());
+
+			footer.add(assignRefundButton);
+		}
+
+		boolean canApprove = item.isPending()
+
+				&& (!item.isReturn() || (item.getRefundMethod() != null && !item.getRefundMethod().isBlank()))
+
+				&& PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_APPROVE);
+
+		if (canApprove) {
+			JButton rejectButton = new JButton(Lang.get("returnExchange.detail.btn.reject"));
+			rejectButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+			rejectButton.setFocusPainted(false);
+			rejectButton.setBackground(AppColor.ERROR_BG);
+			rejectButton.setForeground(AppColor.ERROR);
+			rejectButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+			rejectButton.addActionListener(e -> handleReject());
+			footer.add(rejectButton);
+
+			JButton approveButton = new JButton(Lang.get("returnExchange.detail.btn.approve"));
+			approveButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+			approveButton.setFocusPainted(false);
+			approveButton.setBackground(AppColor.SUCCESS_BG);
+			approveButton.setForeground(AppColor.SUCCESS);
+			approveButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+			approveButton.addActionListener(e -> handleApprove());
+			footer.add(approveButton);
+		}
+
+		boolean canCompleteElectronicRefund = item.isReturn() && item.isApproved() && item.isRefundPending()
+				&& item.getRefundMethod() != null && !item.isCashRefund()
+				&& PermissionManager.getInstance().can(AppPermission.RETURN_EXCHANGE_APPROVE);
+
+		if (canCompleteElectronicRefund) {
+
+			JButton completeRefundButton = new JButton("Xác nhận đã hoàn tiền");
+
+			completeRefundButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+
+			completeRefundButton.setFocusPainted(false);
+
+			completeRefundButton.setBackground(AppColor.INFO_BG);
+
+			completeRefundButton.setForeground(AppColor.INFO);
+
+			completeRefundButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+
+			completeRefundButton.addActionListener(e -> handleCompleteElectronicRefund());
+
+			footer.add(completeRefundButton);
+		}
+
+		JButton closeButton = new JButton(Lang.get("returnExchange.detail.btn.close"));
+		closeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+		closeButton.setFocusPainted(false);
+		closeButton.setBackground(AppColor.BORDER);
+		closeButton.setForeground(AppColor.TEXT_PRIMARY);
+		closeButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+		closeButton.addActionListener(e -> dispose());
+		footer.add(closeButton);
+
+		getRootPane().setDefaultButton(closeButton);
+		return footer;
+	}
+
+	private void handleAssignRefundMethod() {
+
+		String selected = BaseDialog.select(this, "Phương thức hoàn tiền",
+				"Chọn phương thức cửa hàng " + "sẽ hoàn tiền cho khách:",
+				new String[] { "Tiền mặt", "Chuyển khoản", "Thẻ", "PayPal" }, "Tiền mặt");
+
+		if (selected == null) {
+			return;
+		}
+
+		String refundMethod;
+
+		switch (selected) {
+
+		case "Chuyển khoản":
+			refundMethod = ReturnExchange.REFUND_BANK_TRANSFER;
+			break;
+
+		case "Thẻ":
+			refundMethod = ReturnExchange.REFUND_CARD;
+			break;
+
+		case "PayPal":
+			refundMethod = ReturnExchange.REFUND_PAYPAL;
+			break;
+
+		default:
+			refundMethod = ReturnExchange.REFUND_CASH;
+			break;
+		}
+
+		int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+
+		String error = returnExchangeDAO.assignRefundMethod(item.getReturnId(), currentUserId, refundMethod);
+
+		if (error != null) {
+
+			BaseDialog.error(this, "Không thể tiếp nhận", error);
+
+			return;
+		}
+
+		BaseDialog.success(this, "Đã tiếp nhận", "Đã chọn phương thức hoàn tiền: " + selected + ".");
+
+		/*
+		 * Đóng rồi mở lại từ bảng để lấy object mới từ DB.
+		 */
+		dispose();
+	}
+
+	private void handleCompleteElectronicRefund() {
+
+		String transactionId = BaseDialog.inputText(this, "Xác nhận hoàn tiền", "Nhập mã giao dịch hoàn tiền:", "",
+				"Xác nhận");
+
+		if (transactionId == null) {
+			return;
+		}
+
+		transactionId = transactionId.trim();
+
+		if (transactionId.isEmpty()) {
+
+			BaseDialog.error(this, "Thiếu mã giao dịch", "Bạn phải nhập mã giao dịch hoàn tiền.");
+
+			return;
+		}
+
+		boolean confirmed = BaseDialog.confirm(this, "Xác nhận hoàn tiền",
+				"Xác nhận khoản hoàn qua " + refundMethodLabel() + " đã được thực hiện thành công?\n\n"
+						+ "Mã giao dịch: " + transactionId,
+				"Xác nhận", AppColor.SUCCESS, AppColor.SUCCESS, FontAwesomeSolid.CHECK_CIRCLE);
+
+		if (!confirmed) {
+			return;
+		}
+
+		int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+
+		String error = returnExchangeDAO.completeElectronicRefund(item.getReturnId(), currentUserId, transactionId);
+
+		if (error != null) {
+
+			BaseDialog.error(this, "Không thể hoàn tiền", error);
+
+			return;
+		}
+
+		BaseDialog.success(this, "Hoàn tiền thành công",
+				"Đã xác nhận hoàn tiền qua " + refundMethodLabel() + " cho hóa đơn " + item.getInvoiceCode() + ".");
+
+		dispose();
+	}
+
+	private void handleApprove() {
+		boolean confirmed = BaseDialog.confirm(this, Lang.get("returnExchange.detail.confirm.approve.title"),
+				Lang.get("returnExchange.detail.confirm.approve.message", item.getInvoiceCode()),
+				Lang.get("returnExchange.detail.confirm.approve.button"), AppColor.SUCCESS, AppColor.SUCCESS,
+				FontAwesomeSolid.CHECK_CIRCLE);
+		if (!confirmed)
+			return;
+
+		int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+		String error = returnExchangeDAO.approve(item.getReturnId(), currentUserId);
+		if (error != null) {
+			BaseDialog.error(this, Lang.get("returnExchange.detail.error.approveTitle"), error);
+			return;
+		}
+		BaseDialog.success(this, Lang.get("returnExchange.detail.success.title"),
+				Lang.get("returnExchange.detail.success.approved", item.getInvoiceCode()));
+		dispose();
+	}
+
+	private void handleReject() {
+		boolean confirmed = BaseDialog.confirm(this, Lang.get("returnExchange.detail.confirm.reject.title"),
+				Lang.get("returnExchange.detail.confirm.reject.message", item.getInvoiceCode()),
+				Lang.get("returnExchange.detail.confirm.reject.button"), AppColor.ERROR, AppColor.ERROR,
+				FontAwesomeSolid.TIMES_CIRCLE);
+		if (!confirmed)
+			return;
+
+		String rejectionReason = BaseDialog.inputText(this, "Lý do từ chối trả hàng",
+				"Vui lòng nhập lý do từ chối để khách hàng có thể xem.", "", "Từ chối");
+		if (rejectionReason == null)
+			return;
+		rejectionReason = rejectionReason.trim();
+		if (rejectionReason.isEmpty()) {
+			BaseDialog.error(this, "Thiếu lý do từ chối", "Bạn phải nhập lý do từ chối.");
+			return;
+		}
+
+		int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+		String error = returnExchangeDAO.reject(item.getReturnId(), currentUserId, rejectionReason);
+		if (error != null) {
+			BaseDialog.error(this, Lang.get("returnExchange.detail.error.rejectTitle"), error);
+			return;
+		}
+		BaseDialog.success(this, Lang.get("returnExchange.detail.success.title"),
+				Lang.get("returnExchange.detail.success.rejected", item.getInvoiceCode()));
+		dispose();
+	}
+
+	private String refundMethodLabel() {
+
+		String method = item.getRefundMethod();
+
+		if (method == null || method.isBlank()) {
+			return "Chưa thiết lập";
+		}
+
+		switch (method) {
+
+		case ReturnExchange.REFUND_CASH:
+			return "Tiền mặt";
+
+		case ReturnExchange.REFUND_BANK_TRANSFER:
+			return "Chuyển khoản";
+
+		case ReturnExchange.REFUND_CARD:
+			return "Thẻ";
+
+		case ReturnExchange.REFUND_PAYPAL:
+			return "PayPal";
+
+		default:
+			return method;
+		}
+	}
+
+	private String refundStatusLabel() {
+
+		String status = item.getRefundStatus();
+
+		if (status == null || status.isBlank()) {
+			return "-";
+		}
+
+		switch (status) {
+
+		case ReturnExchange.REFUND_STATUS_NONE:
+			return "Không có hoàn tiền";
+
+		case ReturnExchange.REFUND_STATUS_PENDING:
+			return "Chờ hoàn tiền";
+
+		case ReturnExchange.REFUND_STATUS_COMPLETED:
+			return "Đã hoàn tiền";
+
+		case ReturnExchange.REFUND_STATUS_FAILED:
+			return "Hoàn tiền thất bại";
+
+		default:
+			return status;
+		}
+	}
+
+	private String statusLabel() {
+		if (item.isApproved())
+			return Lang.get("returnExchange.status.approved");
+		if (item.isRejected())
+			return Lang.get("returnExchange.status.rejected");
+		return Lang.get("returnExchange.status.pending");
+	}
+
+	private Color statusColor() {
+		if (item.isApproved())
+			return AppColor.SUCCESS;
+		if (item.isRejected())
+			return AppColor.ERROR;
+		return AppColor.WARNING;
+	}
+
+	private Color statusBgColor() {
+		if (item.isApproved())
+			return AppColor.SUCCESS_BG;
+		if (item.isRejected())
+			return AppColor.ERROR_BG;
+		return AppColor.WARNING_BG;
+	}
 }
