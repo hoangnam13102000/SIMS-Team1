@@ -13,6 +13,7 @@ import com.utils.ImageUtil;
 import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 import com.utils.pdf.InvoicePdfExporter;
+import com.service.AuthService;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -417,6 +418,11 @@ public class InvoiceDetailDialog extends JDialog {
 		}
 
 		boolean canCancelInvoice = !invoice.isCancelled()
+
+				&& "CASH".equalsIgnoreCase(invoice.getPaymentMethod())
+
+				&& !invoice.hasReturns()
+
 				&& PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL);
 
 		if (canCancelInvoice) {
@@ -486,14 +492,6 @@ public class InvoiceDetailDialog extends JDialog {
 			AppAlert.error(this, "Không có quyền", "Bạn không có quyền hủy hóa đơn.");
 			return;
 		}
-		if (invoice.hasReturns()) {
-			int ok = JOptionPane.showConfirmDialog(this,
-					"Hóa đơn đã có phiếu đổi/trả. Vẫn hủy toàn bộ hóa đơn?\n"
-							+ "(Nên cân nhắc chỉ dùng đổi/trả thay vì hủy.)",
-					"Xác nhận hủy", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-			if (ok != JOptionPane.YES_OPTION)
-				return;
-		}
 
 		String reason = JOptionPane.showInputDialog(this, "Lý do hủy hóa đơn:", "Hủy hóa đơn",
 				JOptionPane.QUESTION_MESSAGE);
@@ -504,7 +502,16 @@ public class InvoiceDetailDialog extends JDialog {
 			return;
 		}
 
-		String err = invoiceDAO.cancelInvoice(invoice.getInvoiceId(), reason.trim());
+		/*
+		 * INVOICE_VIEW_ALL: Manager/Admin không bị giới hạn CreatedBy.
+		 *
+		 * SALES_STAFF: truyền UserID để DAO bắt buộc invoice.CreatedBy phải là chính
+		 * nhân viên đang đăng nhập.
+		 */
+		Integer cancelScopeUserId = PermissionManager.getInstance().can(AppPermission.INVOICE_VIEW_ALL) ? null
+				: AuthService.getInstance().getCurrentUser().getUserId();
+
+		String err = invoiceDAO.cancelInvoice(invoice.getInvoiceId(), reason.trim(), cancelScopeUserId);
 		if (err != null) {
 			AppAlert.error(this, "Không hủy được", err);
 			return;

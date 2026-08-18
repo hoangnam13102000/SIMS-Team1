@@ -556,106 +556,271 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 	 * Huy hoa don ACTIVE + hoan diem da dung, thu hoi diem da tich, giam UsedCount
 	 * KM. Tra ve null neu OK, message loi neu that bai.
 	 */
-	public String cancelInvoice(int invoiceId, String reason) {
-		String lockSql = "SELECT InvoiceID, Status, CustomerID, SubTotal, DiscountAmount, "
-				+ "PromotionID, PointsUsed, PointsDiscountAmount, TotalAmount "
-				+ "FROM Invoices WHERE InvoiceID = ? FOR UPDATE";
-		String cancelSql = "UPDATE Invoices SET Status = 'CANCELLED', CancelReason = ?, CancelledAt = CURRENT_TIMESTAMP "
-				+ "WHERE InvoiceID = ? AND Status = 'ACTIVE'";
+	public String cancelInvoice(int invoiceId, String reason, Integer createdByUserId) {
+
+		if (reason == null || reason.isBlank()) {
+			return "Vui lòng nhập lý do hủy hóa đơn.";
+		}
+
+		/*
+		 * createdByUserId:
+		 *
+		 * != null: SALES_STAFF chỉ được thao tác hóa đơn của chính mình.
+		 *
+		 * == null: Manager/Admin được thao tác trong phạm vi rộng hơn.
+		 */
+		String lockSql = "SELECT " + "inv.InvoiceID, " + "inv.Status, " + "inv.CustomerID, " + "inv.PromotionID, "
+				+ "inv.PointsUsed, " + "inv.TotalAmount, " + "inv.DiscountAmount, " + "inv.PaymentMethod, "
+				+ "inv.CreatedBy, " + "EXISTS (" + "   SELECT 1 " + "   FROM Orders o "
+				+ "   WHERE o.InvoiceID = inv.InvoiceID" + ") AS IsOnline " + "FROM Invoices inv "
+				+ "WHERE inv.InvoiceID = ? " + (createdByUserId != null ? "AND inv.CreatedBy = ? " : "") + "FOR UPDATE";
+
+		String activeReturnSql = "SELECT ReturnID, Status " + "FROM ReturnExchanges " + "WHERE InvoiceID = ? "
+				+ "AND Status IN ('PENDING', 'APPROVED') " + "ORDER BY ReturnID DESC " + "LIMIT 1 " + "FOR UPDATE";
+
+		String cancelSql = "UPDATE Invoices SET " + "Status = 'CANCELLED', " + "CancelReason = ?, "
+				+ "CancelledAt = CURRENT_TIMESTAMP " + "WHERE InvoiceID = ? " + "AND Status = 'ACTIVE'";
 
 		try (Connection con = DBConnection.getConnection()) {
+
 			con.setAutoCommit(false);
+
 			try {
+
 				Integer customerId = null;
-				int pointsUsed = 0;
-				BigDecimal totalAmount = BigDecimal.ZERO;
 				Integer promotionId = null;
+
+				int pointsUsed = 0;
+
+				BigDecimal totalAmount = BigDecimal.ZERO;
+
 				BigDecimal discountAmount = BigDecimal.ZERO;
+
+				String paymentMethod;
 				String status;
 
+				boolean onlineInvoice;
+
+				/*
+				 * ========================================================= 1. Khóa hóa đơn +
+				 * áp dụng ownership =========================================================
+				 */
 				try (PreparedStatement ps = con.prepareStatement(lockSql)) {
-					ps.setInt(1, invoiceId);
+
+					int index = 1;
+
+					ps.setInt(index++, invoiceId);
+
+					if (createdByUserId != null) {
+
+						ps.setInt(index, createdByUserId);
+					}
+
 					try (ResultSet rs = ps.executeQuery()) {
+
 						if (!rs.next()) {
+
 							con.rollback();
-							return "Hóa đơn không tồn tại.";
+
+							return createdByUserId != null
+									? "Không tìm thấy hóa đơn " + "hoặc bạn chỉ được hủy "
+											+ "hóa đơn do chính mình lập."
+									: "Không tìm thấy hóa đơn.";
 						}
+
 						status = rs.getString("Status");
+
 						if (!"ACTIVE".equalsIgnoreCase(status)) {
+
 							con.rollback();
-							return "Hóa đơn đã được hủy trước đó hoặc không còn tồn tại.";
+
+							return "Hóa đơn đã được hủy " + "hoặc không còn hoạt động.";
 						}
+
 						int cid = rs.getInt("CustomerID");
+
 						customerId = rs.wasNull() ? null : cid;
-						pointsUsed = Math.max(0, rs.getInt("PointsUsed"));
-						totalAmount = rs.getBigDecimal("TotalAmount");
-						if (totalAmount == null)
-							totalAmount = BigDecimal.ZERO;
+
 						int pid = rs.getInt("PromotionID");
+
 						promotionId = rs.wasNull() ? null : pid;
+
+						pointsUsed = Math.max(0, rs.getInt("PointsUsed"));
+
+						totalAmount = rs.getBigDecimal("TotalAmount");
+
+						if (totalAmount == null) {
+							totalAmount = BigDecimal.ZERO;
+						}
+
 						discountAmount = rs.getBigDecimal("DiscountAmount");
-						if (discountAmount == null)
+
+						if (discountAmount == null) {
 							discountAmount = BigDecimal.ZERO;
+						}
+
+						paymentMethod = rs.getString("PaymentMethod");
+
+						onlineInvoice = rs.getBoolean("IsOnline");
 					}
 				}
 
+				/*
+				 * ========================================================= 2. Hóa đơn online
+				 * phải đi qua OrderDAO
+				 * =========================================================
+				 */
+				if (onlineInvoice) {
+
+					con.rollback();
+
+					return "Hóa đơn này thuộc đơn hàng online. " + "Vui lòng hủy từ trang " + "Quản lý đơn hàng.";
+				}
+
+				/*
+				 * ========================================================= 3. Không hủy trực
+				 * tiếp thanh toán điện tử
+				 * =========================================================
+				 *
+				 * Vì đánh dấu CANCELLED trong DB không đồng nghĩa PayPal/Card/Bank đã hoàn tiền
+				 * thật cho khách.
+				 */
+				if (!"CASH".equalsIgnoreCase(paymentMethod)) {
+
+					con.rollback();
+
+					return "Hóa đơn thanh toán bằng " + paymentMethod + " không thể hủy trực tiếp. "
+							+ "Vui lòng dùng chức năng " + "Đổi / Trả hàng để ghi nhận "
+							+ "hoàn tiền đúng phương thức.";
+				}
+
+				/*
+				 * ========================================================= 4. Không hủy nếu đã
+				 * có đổi/trả đang xử lý
+				 * =========================================================
+				 *
+				 * Nếu đã RETURN rồi mà trigger CANCEL lại hoàn toàn bộ InvoiceDetailBatches thì
+				 * có nguy cơ cộng tồn hai lần.
+				 */
+				try (PreparedStatement ps = con.prepareStatement(activeReturnSql)) {
+
+					ps.setInt(1, invoiceId);
+
+					try (ResultSet rs = ps.executeQuery()) {
+
+						if (rs.next()) {
+
+							String returnStatus = rs.getString("Status");
+
+							con.rollback();
+
+							return "Hóa đơn đã có phiếu đổi/trả " + returnStatus + ". Không thể hủy toàn bộ hóa đơn. "
+									+ "Hãy tiếp tục xử lý bằng " + "chức năng Đổi / Trả hàng.";
+						}
+					}
+				}
+
+				/*
+				 * ========================================================= 5. Hủy hóa đơn
+				 * =========================================================
+				 *
+				 * Trigger MySQL tiếp tục chịu trách nhiệm: - cùng ngày; - ca đang OPEN; - hoàn
+				 * InventoryBatch; - đồng bộ Products.Stock.
+				 */
 				try (PreparedStatement ps = con.prepareStatement(cancelSql)) {
-					if (reason == null || reason.isBlank()) {
-						ps.setNull(1, Types.VARCHAR);
-					} else {
-						ps.setString(1, reason.trim());
-					}
+
+					ps.setString(1, reason.trim());
+
 					ps.setInt(2, invoiceId);
+
 					int affected = ps.executeUpdate();
-					if (affected == 0) {
+
+					if (affected != 1) {
+
 						con.rollback();
-						return "Hóa đơn đã được hủy trước đó hoặc không còn tồn tại.";
+
+						return "Hóa đơn đã được hủy " + "hoặc không còn hoạt động.";
 					}
 				}
 
+				/*
+				 * ========================================================= 6. Hoàn / thu hồi
+				 * điểm =========================================================
+				 */
 				if (customerId != null) {
+
 					int pointsEarned = 0;
+
 					if (totalAmount.signum() > 0) {
+
 						BigDecimal pointRate = storeConfigDAO.getPointRate();
+
 						if (pointRate != null && pointRate.signum() > 0) {
+
 							pointsEarned = totalAmount.divide(pointRate, 0, java.math.RoundingMode.DOWN).intValue();
 						}
 					}
+
 					int delta = pointsUsed - pointsEarned;
+
 					if (delta != 0) {
-						try (PreparedStatement ps = con.prepareStatement("UPDATE Customers SET MemberPoint = CASE "
-								+ "WHEN MemberPoint + ? < 0 THEN 0 ELSE MemberPoint + ? END "
-								+ "WHERE CustomerID = ?")) {
+
+						String pointSql = "UPDATE Customers SET " + "MemberPoint = CASE " + "WHEN MemberPoint + ? < 0 "
+								+ "THEN 0 " + "ELSE MemberPoint + ? END " + "WHERE CustomerID = ?";
+
+						try (PreparedStatement ps = con.prepareStatement(pointSql)) {
+
 							ps.setInt(1, delta);
+
 							ps.setInt(2, delta);
+
 							ps.setInt(3, customerId);
+
 							ps.executeUpdate();
 						}
 					}
 				}
 
+				/*
+				 * ========================================================= 7. Trả UsedCount
+				 * promotion =========================================================
+				 */
 				if (promotionId != null && discountAmount.signum() > 0) {
-					try (PreparedStatement ps = con.prepareStatement(
-							"UPDATE Promotions SET UsedCount = CASE WHEN UsedCount > 0 THEN UsedCount - 1 ELSE 0 END "
-									+ "WHERE PromotionID = ?")) {
+
+					String promotionSql = "UPDATE Promotions SET " + "UsedCount = CASE " + "WHEN UsedCount > 0 "
+							+ "THEN UsedCount - 1 " + "ELSE 0 END " + "WHERE PromotionID = ?";
+
+					try (PreparedStatement ps = con.prepareStatement(promotionSql)) {
+
 						ps.setInt(1, promotionId);
+
 						ps.executeUpdate();
 					}
 				}
 
 				con.commit();
+
 				AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.INVOICE));
+
 				return null;
+
 			} catch (SQLException e) {
+
 				con.rollback();
+
 				throw e;
+
 			} finally {
+
 				con.setAutoCommit(true);
 			}
+
 		} catch (SQLException e) {
-			AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "InvoiceDAO.cancelInvoice - invoiceId=" + invoiceId,
-					e);
-			return e.getMessage();
+
+			AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL,
+					"InvoiceDAO.cancelInvoice" + " - invoiceId=" + invoiceId, e);
+
+			return e.getMessage() != null ? e.getMessage() : "Hủy hóa đơn thất bại.";
 		}
 	}
 
