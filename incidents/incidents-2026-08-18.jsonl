@@ -1,1 +1,2 @@
 {"timestamp":"2026-08-17T17:25:33.793421300Z","type":"BACKUP_SUCCEEDED","severity":"LOW","source":"BackupManager","message":"Backup thanh cong bang jdbc-sql-dump -> backup_20260818_jdbc-sql-dump.sql.enc (441216 bytes, PT5.5637S)","stackTrace":""}
+{"timestamp":"2026-08-18T16:37:09.201371200Z","type":"BACKUP_SUCCEEDED","severity":"LOW","source":"BackupManager","message":"Backup thanh cong bang jdbc-sql-dump -> backup_20260818_jdbc-sql-dump.sql.enc (612250 bytes, PT4.8045172S)","stackTrace":""}

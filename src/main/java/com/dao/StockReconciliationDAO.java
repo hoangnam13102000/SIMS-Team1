@@ -161,6 +161,24 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             return 0;
         }
     }
+    /** Đếm số phiếu đối chiếu của hôm nay chưa được đánh dấu đã kiểm kê. */
+    public int countUncheckedToday() {
+        String sql = "SELECT COUNT(*) FROM StockReconciliation "
+                + "WHERE CreatedAt >= ? AND CreatedAt < ? AND Checked = 0 AND BatchID IS NOT NULL";
+        LocalDate today = LocalDate.now();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.valueOf(today.atStartOfDay()));
+            ps.setTimestamp(2, Timestamp.valueOf(today.plusDays(1).atStartOfDay()));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StockReconciliationDAO.countUncheckedToday", e);
+            return 0;
+        }
+    }
     /**
      * Tim kiem + loc doi chieu kho theo tu khoa (ten SP / ma SP / nguoi doi chieu)
      * va/hoac khoang ngay tao phien doi chieu.
@@ -388,6 +406,42 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
      * QUAN TRỌNG: phương thức này KHÔNG cập nhật Products.Stock hoặc InventoryBatch.
      * Việc điều chỉnh tồn kho chỉ được thực hiện khi chốt phiên lúc 00:00.
      */
+    /**
+     * Đồng bộ phiên đối chiếu hôm nay với tồn lô hiện tại.
+     *
+     * Khi RemainingQty của một lô thay đổi bởi bất kỳ nghiệp vụ nào (bán hàng,
+     * hủy đơn, trả hàng, đổi hàng, nhập hàng, trả NCC, tiêu hủy, ...), các DAO
+     * tương ứng đều phát DataChangedEvent sau khi transaction commit. Panel
+     * gọi hàm này trước khi reload để reset đúng dòng bị thay đổi.
+     *
+     * Không ghi Discrepancy vì đây là generated/computed column.
+     * Chỉ reset khi RemainingQty thực sự khác SystemStock/ActualStock.
+     */
+    public int syncTodayRowsWithBatchStock() {
+        String sql = "UPDATE StockReconciliation r "
+                + "JOIN InventoryBatch b ON b.BatchID = r.BatchID AND b.ProductID = r.ProductID "
+                + "SET r.SystemStock = b.RemainingQty, "
+                + "    r.ActualStock = b.RemainingQty, "
+                + "    r.Checked = 0, "
+                + "    r.CheckedBy = NULL, "
+                + "    r.CheckedAt = NULL "
+                + "WHERE r.BatchID IS NOT NULL "
+                + "  AND r.CreatedAt >= ? AND r.CreatedAt < ? "
+                + "  AND r.SystemStock <> b.RemainingQty";
+        LocalDate today = LocalDate.now();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.valueOf(today.atStartOfDay()));
+            ps.setTimestamp(2, Timestamp.valueOf(today.plusDays(1).atStartOfDay()));
+            return ps.executeUpdate();
+        } catch (Exception e) {
+            AppLogger.getInstance().error(
+                    ErrorCode.DB_UPDATE_FAIL,
+                    "StockReconciliationDAO.syncTodayRowsWithBatchStock date=" + today, e);
+            return 0;
+        }
+    }
+
     public boolean updateActualStock(int reconciliationId, int newActualStock, int userId) {
         if (newActualStock < 0) return false;
 

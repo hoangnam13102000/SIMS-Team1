@@ -46,6 +46,17 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     private LocalDate trackedDate;
     private Timer rolloverTimer;
 
+    /**
+     * BaseCrudPanel đã dùng AutoRefresher lắng nghe DataChangedEvent toàn app.
+     * Trước khi render lại bảng, đồng bộ các dòng phiên hôm nay với
+     * InventoryBatch.RemainingQty để dòng lô vừa thay đổi được reset ngay.
+     */
+    @Override
+    public void reload() {
+        reconciliationDAO.syncTodayRowsWithBatchStock();
+        super.reload();
+    }
+
     public StockReconciliationPanel() {
         super();
         trackedDate = LocalDate.now();
