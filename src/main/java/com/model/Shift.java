@@ -4,10 +4,16 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Mot ca lam viec tai quay. Cac so lieu doi soat da dong duoc luu lai de
- * lich su khong bi thay doi khi du lieu giao dich phat sinh sau nay.
+ * Một ca làm việc tại quầy.
+ * Luồng: OPEN → PENDING_APPROVAL (NV đóng) → CLOSED (QL duyệt)
+ *                              ↘ REJECTED (QL từ chối)
  */
 public class Shift {
+
+    public static final String STATUS_OPEN = "OPEN";
+    public static final String STATUS_PENDING_APPROVAL = "PENDING_APPROVAL";
+    public static final String STATUS_CLOSED = "CLOSED";
+    public static final String STATUS_REJECTED = "REJECTED";
 
     private int shiftId;
     private int userId;
@@ -23,6 +29,10 @@ public class Shift {
     private String closingNote;
     private Integer closedBy;
     private String closedByName;
+    private Integer approvedBy;
+    private String approvedByName;
+    private LocalDateTime approvedAt;
+    private String approvalNote;
     private int invoiceCount;
     private BigDecimal cashSales = BigDecimal.ZERO;
     private BigDecimal cashIn = BigDecimal.ZERO;
@@ -59,6 +69,14 @@ public class Shift {
     public void setClosedBy(Integer closedBy) { this.closedBy = closedBy; }
     public String getClosedByName() { return closedByName; }
     public void setClosedByName(String closedByName) { this.closedByName = closedByName; }
+    public Integer getApprovedBy() { return approvedBy; }
+    public void setApprovedBy(Integer approvedBy) { this.approvedBy = approvedBy; }
+    public String getApprovedByName() { return approvedByName; }
+    public void setApprovedByName(String approvedByName) { this.approvedByName = approvedByName; }
+    public LocalDateTime getApprovedAt() { return approvedAt; }
+    public void setApprovedAt(LocalDateTime approvedAt) { this.approvedAt = approvedAt; }
+    public String getApprovalNote() { return approvalNote; }
+    public void setApprovalNote(String approvalNote) { this.approvalNote = approvalNote; }
     public int getInvoiceCount() { return invoiceCount; }
     public void setInvoiceCount(int invoiceCount) { this.invoiceCount = invoiceCount; }
     public BigDecimal getCashSales() { return cashSales; }
@@ -71,7 +89,27 @@ public class Shift {
     public void setCashRefunds(BigDecimal cashRefunds) { this.cashRefunds = valueOrZero(cashRefunds); }
 
     public boolean isOpen() {
-        return "OPEN".equalsIgnoreCase(status);
+        return STATUS_OPEN.equalsIgnoreCase(status);
+    }
+
+    public boolean isPendingApproval() {
+        return STATUS_PENDING_APPROVAL.equalsIgnoreCase(status);
+    }
+
+    public boolean isClosed() {
+        return STATUS_CLOSED.equalsIgnoreCase(status);
+    }
+
+    public boolean isRejected() {
+        return STATUS_REJECTED.equalsIgnoreCase(status);
+    }
+
+    public String getStatusLabel() {
+        if (isOpen()) return "Đang mở";
+        if (isPendingApproval()) return "Chờ duyệt";
+        if (isClosed()) return "Đã duyệt";
+        if (isRejected()) return "Từ chối";
+        return status != null ? status : "—";
     }
 
     private BigDecimal valueOrZero(BigDecimal value) {

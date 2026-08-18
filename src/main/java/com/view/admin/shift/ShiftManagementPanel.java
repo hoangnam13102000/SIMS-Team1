@@ -8,6 +8,7 @@ import com.components.DatePickerField;
 import com.components.FilterDropdown;
 import com.components.SectionHeader;
 import com.components.StatCard;
+import com.components.table.ActionColumn;
 import com.components.table.RowColorProvider;
 import com.event.AutoRefresher;
 import com.event.DataChangedEvent;
@@ -21,6 +22,7 @@ import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppSpacing;
 import com.utils.NumberUtil;
+import com.utils.CurrencyDocumentFilter;
 import com.utils.FileUtil;
 import com.utils.TableExportUtil;
 
@@ -111,7 +113,7 @@ public class ShiftManagementPanel extends JPanel {
 	private final BaseSearch historySearchField = new BaseSearch("Tìm mã ca, nhân viên...");
 
 	private final FilterDropdown<String> historyStatusFilter =
-			new FilterDropdown<>(FontAwesomeSolid.FILTER, new String[] { "Tất cả trạng thái", "Đang mở", "Đã đóng" });
+			new FilterDropdown<>(FontAwesomeSolid.FILTER, new String[] { "Tất cả trạng thái", "Đang mở", "Chờ duyệt", "Đã duyệt", "Từ chối" });
 
 	private DatePickerField historyDateFrom;
 	private DatePickerField historyDateTo;
@@ -170,7 +172,7 @@ public class ShiftManagementPanel extends JPanel {
 		String subtitle;
 
 		if (canOperate) {
-			subtitle = "Mở ca trước khi bán hàng, " + "ghi nhận mọi khoản thu/chi " + "và đối soát khi đóng ca";
+			subtitle = "Mở ca trước khi bán hàng, " + "ghi nhận mọi khoản thu/chi " + "và gửi đối soát khi đóng ca";
 		} else {
 			subtitle = "Theo dõi lịch sử ca và " + "chênh lệch quỹ của " + "nhân viên bán hàng";
 		}
@@ -258,6 +260,16 @@ public class ShiftManagementPanel extends JPanel {
 				loadSelectedTransactions();
 			}
 		});
+
+		/*
+		 * Nut "Xem chi tiet" o bang Lich su ca: chon dong chi doi tab Thu/Chi
+		 * ben duoi (thong tin tom tat), con nut nay mo hop thoai day du - gio
+		 * mo/dong, ghi chu mo/dong ca, nguoi duyet + ghi chu duyet/tu choi va
+		 * toan bo giao dich thu/chi cua ca do - khong phai doi/lam moi tab.
+		 */
+		historyTable.setActionColumn(new ActionColumn()
+				.add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
+						this::viewShiftDetail));
 
 		/*
 		 * Khi service phat DataChangedEvent.SHIFT, panel tu tai lai sau 300 ms.
@@ -779,7 +791,7 @@ public class ShiftManagementPanel extends JPanel {
 			openButton.setToolTipText("Ca #" + shift.getShiftId() + " đang mở - đóng ca hiện tại trước khi mở ca mới");
 			cashInButton.setToolTipText("Ghi nhận khoản tiền được thu thêm vào quỹ ca");
 			cashOutButton.setToolTipText("Ghi nhận khoản tiền chi ra khỏi quỹ ca");
-			closeButton.setToolTipText("Đối soát và đóng ca hiện tại");
+			closeButton.setToolTipText("Đóng ca và gửi đối soát cho quản lý duyệt");
 
 		} else {
 			String needOpen = "Mở ca trước khi thực hiện thao tác này";
@@ -933,9 +945,7 @@ public class ShiftManagementPanel extends JPanel {
 	                            shift.getEndTime()
 	                    ),
 
-	                    shift.isOpen()
-	                            ? "Đang mở"
-	                            : "Đã đóng",
+	                    shift.getStatusLabel(),
 
 	                    shift.getInvoiceCount(),
 
@@ -1017,6 +1027,18 @@ public class ShiftManagementPanel extends JPanel {
 	     * Load bảng Thu / Chi theo ca được chọn.
 	     */
 	    loadSelectedTransactions();
+	}
+
+	/**
+	 * Nut "Xem chi tiết" tren cot Thao tac cua bang Lich su ca. modelRow ung
+	 * voi vi tri trong pagedShifts (danh sach dung de addRow theo dung thu tu,
+	 * xem renderHistory()) - KHONG dung view row vi ActionColumn da tu quy doi
+	 * ve model row truoc khi goi callback nay.
+	 */
+	private void viewShiftDetail(int modelRow) {
+		if (modelRow < 0 || modelRow >= pagedShifts.size()) return;
+		Shift shift = pagedShifts.get(modelRow);
+		ShiftDetailDialog.show(SwingUtilities.getWindowAncestor(this), shift, shiftService);
 	}
 
 	private void loadSelectedTransactions() {
@@ -1322,9 +1344,7 @@ public class ShiftManagementPanel extends JPanel {
 	                                shift.getEndTime()
 	                        ),
 
-	                        shift.isOpen()
-	                                ? "Đang mở"
-	                                : "Đã đóng",
+	                        shift.getStatusLabel(),
 
 	                        shift.getInvoiceCount(),
 
@@ -1631,93 +1651,113 @@ public class ShiftManagementPanel extends JPanel {
 	            );
 	}
 
+
 	/**
-	 * Hien hop thoai nhap tien dau ca.
+	 * Dialog mở ca — UI app, ô tiền format 1,200,000.
 	 */
 	private void showOpenDialog() {
-		JTextField moneyField = inputField("0");
+		JTextField moneyField = moneyInputField(BigDecimal.ZERO);
+		JTextArea noteArea = styledNoteArea("");
 
-		JTextArea noteArea = noteArea();
+		boolean[] confirmed = {false};
+		JDialog dialog = buildShiftDialog("Mở ca bán hàng");
 
-		JPanel form = formPanel();
+		JPanel body = dialogBody();
+		body.add(dialogHeader(FontAwesomeSolid.PLAY_CIRCLE, AppColor.ACCENT,
+				"Mở ca bán hàng",
+				"Nhập số tiền mặt đầu ca trước khi bán hàng."));
+		body.add(Box.createVerticalStrut(16));
+		body.add(fieldLabel("Tiền mặt đầu ca *"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(moneyFieldWithSuffix(moneyField));
+		body.add(Box.createVerticalStrut(4));
+		body.add(hintLabel("Nhập số nguyên VND, tự format: 1200000 → 1,200,000"));
+		body.add(Box.createVerticalStrut(14));
+		body.add(fieldLabel("Ghi chú"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(wrapNote(noteArea));
 
-		addField(form, "Tiền mặt đầu ca (VND) *", moneyField);
+		JButton cancel = dialogSecondaryButton("Hủy");
+		JButton ok = dialogPrimaryButton("Mở ca", AppColor.ACCENT, AppColor.ACCENT_HOVER);
+		cancel.addActionListener(e -> dialog.dispose());
+		ok.addActionListener(e -> {
+			BigDecimal openingCash = CurrencyDocumentFilter.parse(moneyField.getText());
+			if (openingCash == null) {
+				AppAlert.warning(dialog, "Tiền đầu ca phải là số nguyên VND không âm.");
+				return;
+			}
+			confirmed[0] = true;
+			dialog.dispose();
+			runOperation(() -> shiftService.openMyShift(openingCash, noteArea.getText()));
+		});
 
-		addField(form, "Ghi chú", new JScrollPane(noteArea));
-
-		int option = JOptionPane.showConfirmDialog(this, form, "Mở ca bán hàng", JOptionPane.OK_CANCEL_OPTION,
-				JOptionPane.PLAIN_MESSAGE);
-
-		/*
-		 * Nguoi dung bam Cancel hoac dong cua so.
-		 */
-		if (option != JOptionPane.OK_OPTION) {
-			return;
-		}
-
-		BigDecimal openingCash = parseMoney(moneyField.getText());
-
-		if (openingCash == null) {
-			AppAlert.warning(this, "Tiền đầu ca phải là " + "số nguyên VND không âm.");
-
-			return;
-		}
-
-		runOperation(() -> shiftService.openMyShift(openingCash, noteArea.getText()));
+		dialog.add(body, BorderLayout.CENTER);
+		dialog.add(dialogFooter(cancel, ok), BorderLayout.SOUTH);
+		dialog.getRootPane().setDefaultButton(ok);
+		showShiftDialog(dialog);
 	}
 
 	/**
-	 * Hien hop thoai ghi nhan thu hoac chi tien.
+	 * Dialog thu / chi tiền trong ca.
 	 */
 	private void showCashMovementDialog(String type) {
 		boolean cashIn = ShiftCashTransaction.CASH_IN.equals(type);
+		JTextField moneyField = moneyInputField(null);
+		JTextArea reasonArea = styledNoteArea("");
 
-		JTextField moneyField = inputField("");
+		JDialog dialog = buildShiftDialog(cashIn ? "Ghi nhận thu tiền" : "Ghi nhận chi tiền");
 
-		JTextArea reasonArea = noteArea();
+		JPanel body = dialogBody();
+		Color accent = cashIn ? AppColor.SUCCESS : AppColor.WARNING;
+		body.add(dialogHeader(
+				cashIn ? FontAwesomeSolid.ARROW_DOWN : FontAwesomeSolid.ARROW_UP,
+				accent,
+				cashIn ? "Thu tiền vào quỹ ca" : "Chi tiền từ quỹ ca",
+				cashIn
+						? "Ghi nhận khoản tiền được bổ sung vào quỹ trong ca."
+						: "Ghi nhận khoản tiền lấy ra khỏi quỹ trong ca."
+		));
+		body.add(Box.createVerticalStrut(16));
+		body.add(fieldLabel("Số tiền *"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(moneyFieldWithSuffix(moneyField));
+		body.add(Box.createVerticalStrut(4));
+		body.add(hintLabel("Nhập số nguyên VND > 0, ví dụ 50000 → 50,000"));
+		body.add(Box.createVerticalStrut(14));
+		body.add(fieldLabel(cashIn ? "Lý do thu *" : "Lý do chi *"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(wrapNote(reasonArea));
 
-		JPanel form = formPanel();
+		JButton cancel = dialogSecondaryButton("Hủy");
+		JButton ok = dialogPrimaryButton(
+				cashIn ? "Ghi nhận thu" : "Ghi nhận chi",
+				accent,
+				cashIn ? AppColor.SUCCESS : AppColor.WARNING
+		);
+		cancel.addActionListener(e -> dialog.dispose());
+		ok.addActionListener(e -> {
+			BigDecimal amount = CurrencyDocumentFilter.parse(moneyField.getText());
+			if (amount == null || amount.signum() <= 0) {
+				AppAlert.warning(dialog, "Số tiền phải là số nguyên VND lớn hơn 0.");
+				return;
+			}
+			String reason = reasonArea.getText() != null ? reasonArea.getText().trim() : "";
+			if (reason.isEmpty()) {
+				AppAlert.warning(dialog, "Vui lòng nhập lý do.");
+				return;
+			}
+			dialog.dispose();
+			runOperation(() -> shiftService.addCashMovement(type, amount, reason));
+		});
 
-		addField(form, "Số tiền (VND) *", moneyField);
-
-		String reasonLabel;
-
-		if (cashIn) {
-			reasonLabel = "Lý do thu *";
-		} else {
-			reasonLabel = "Lý do chi *";
-		}
-
-		addField(form, reasonLabel, new JScrollPane(reasonArea));
-
-		String dialogTitle;
-
-		if (cashIn) {
-			dialogTitle = "Ghi nhận thu tiền";
-		} else {
-			dialogTitle = "Ghi nhận chi tiền";
-		}
-
-		int option = JOptionPane.showConfirmDialog(this, form, dialogTitle, JOptionPane.OK_CANCEL_OPTION,
-				JOptionPane.PLAIN_MESSAGE);
-
-		if (option != JOptionPane.OK_OPTION) {
-			return;
-		}
-
-		BigDecimal amount = parseMoney(moneyField.getText());
-
-		if (amount == null) {
-			AppAlert.warning(this, "Số tiền phải là số nguyên " + "VND lớn hơn 0.");
-
-			return;
-		}
-
-		runOperation(() -> shiftService.addCashMovement(type, amount, reasonArea.getText()));
+		dialog.add(body, BorderLayout.CENTER);
+		dialog.add(dialogFooter(cancel, ok), BorderLayout.SOUTH);
+		dialog.getRootPane().setDefaultButton(ok);
+		showShiftDialog(dialog);
 	}
 
 	/**
-	 * Tinh tien he thong tren background thread truoc khi hien hop thoai dong ca.
+	 * Tính tiền hệ thống trên background trước khi hiện dialog đóng ca.
 	 */
 	private void loadClosePreview() {
 		setBusy(true);
@@ -1726,93 +1766,279 @@ public class ShiftManagementPanel extends JPanel {
 
 			@Override
 			protected ShiftService.OperationResult<ShiftCashSummary> doInBackground() {
-
 				return shiftService.previewClose();
 			}
 
 			@Override
 			protected void done() {
 				setBusy(false);
-
 				try {
 					ShiftService.OperationResult<ShiftCashSummary> result = get();
-
 					if (!result.isSuccess()) {
 						AppAlert.warning(ShiftManagementPanel.this, result.getMessage());
-
 						return;
 					}
-
+					if (result.getData() == null) {
+						AppAlert.error(ShiftManagementPanel.this, "Không thể tính số tiền đóng ca.");
+						return;
+					}
 					showCloseDialog(result.getData());
-
 				} catch (Exception e) {
 					AppAlert.error(ShiftManagementPanel.this, "Không thể tính số tiền đóng ca.");
 				}
 			}
 		};
-
 		worker.execute();
 	}
 
 	/**
-	 * Hien cong thuc doi soat va cho nhan vien nhap tien dem thuc te.
+	 * Dialog đóng ca — hiển thị công thức quỹ + nhập tiền đếm (format 1,200,000).
 	 */
 	private void showCloseDialog(ShiftCashSummary summary) {
-		/*
-		 * Mac dinh dien tien he thong. Nhan vien phai sua lai theo tien dem thuc te.
-		 */
-		JTextField countedField = inputField(summary.getExpectedCash().toPlainString());
+		JTextField countedField = moneyInputField(summary.getExpectedCash());
+		JTextArea noteArea = styledNoteArea("");
 
-		JTextArea noteArea = noteArea();
+		JDialog dialog = buildShiftDialog("Đóng ca — gửi đối soát");
 
-		JPanel form = formPanel();
+		JPanel body = dialogBody();
+		body.add(dialogHeader(FontAwesomeSolid.LOCK, AppColor.ERROR,
+				"Đóng ca bán hàng",
+				"Nhập số tiền đếm thực tế. Hệ thống sẽ gửi ca cho quản lý đối soát duyệt."));
+		body.add(Box.createVerticalStrut(14));
 
-		String formulaText = "<html>" + "Tiền hệ thống: <b>" + money(summary.getExpectedCash()) + "</b><br>" + "="
-				+ money(summary.getOpeningCash()) + " đầu ca + " + money(summary.getCashSales()) + " bán tiền mặt + "
-				+ money(summary.getCashIn()) + " thu - " + money(summary.getCashOut()) + " chi - "
-				+ money(summary.getCashRefunds()) + " hoàn tiền" + "</html>";
+		// Card tóm tắt quỹ hệ thống
+		JPanel fundCard = new JPanel();
+		fundCard.setLayout(new BoxLayout(fundCard, BoxLayout.Y_AXIS));
+		fundCard.setOpaque(true);
+		fundCard.setBackground(AppColor.BG_LIGHTER != null ? AppColor.BG_LIGHTER : new Color(248, 250, 252));
+		fundCard.setBorder(BorderFactory.createCompoundBorder(
+				new LineBorder(AppColor.BORDER, 1, true),
+				new EmptyBorder(12, 14, 12, 14)
+		));
+		fundCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+		fundCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
 
-		JLabel formula = new JLabel(formulaText);
+		JLabel fundTitle = new JLabel("Quỹ hệ thống (dự kiến)");
+		fundTitle.setFont(AppFont.SMALL_BOLD);
+		fundTitle.setForeground(AppColor.TEXT_MUTED);
+		fundTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+		fundCard.add(fundTitle);
+		fundCard.add(Box.createVerticalStrut(6));
 
-		formula.setFont(AppFont.BODY);
+		JLabel fundValue = new JLabel(money(summary.getExpectedCash()));
+		fundValue.setFont(AppFont.HEADING_MD != null ? AppFont.HEADING_MD : AppFont.BODY.deriveFont(Font.BOLD, 18f));
+		fundValue.setForeground(AppColor.ACCENT);
+		fundValue.setAlignmentX(Component.LEFT_ALIGNMENT);
+		fundCard.add(fundValue);
+		fundCard.add(Box.createVerticalStrut(8));
 
-		formula.setForeground(AppColor.TEXT_SECONDARY);
-
-		formula.setBorder(new EmptyBorder(0, 0, 8, 0));
-
+		JLabel formula = new JLabel("<html><div style='width:380px;color:#64748b;font-size:11px'>"
+				+ money(summary.getOpeningCash()) + " đầu ca"
+				+ " + " + money(summary.getCashSales()) + " DT tiền mặt"
+				+ " + " + money(summary.getCashIn()) + " thu"
+				+ " − " + money(summary.getCashOut()) + " chi"
+				+ " − " + money(summary.getCashRefunds()) + " hoàn"
+				+ "</div></html>");
 		formula.setAlignmentX(Component.LEFT_ALIGNMENT);
+		fundCard.add(formula);
 
-		form.add(formula);
+		body.add(fundCard);
+		body.add(Box.createVerticalStrut(14));
+		body.add(fieldLabel("Tiền đếm thực tế *"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(moneyFieldWithSuffix(countedField));
+		body.add(Box.createVerticalStrut(4));
+		body.add(hintLabel("Mặc định = quỹ hệ thống. Sửa theo số tiền bạn đếm được."));
+		body.add(Box.createVerticalStrut(14));
+		body.add(fieldLabel("Giải trình (bắt buộc nếu có chênh lệch)"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(wrapNote(noteArea));
 
-		addField(form, "Tiền kiểm thực tế (VND) *", countedField);
+		JButton cancel = dialogSecondaryButton("Hủy");
+		JButton ok = dialogPrimaryButton("Đóng ca & gửi duyệt", AppColor.ERROR, AppColor.ERROR_HOVER);
+		cancel.addActionListener(e -> dialog.dispose());
+		ok.addActionListener(e -> {
+			BigDecimal countedCash = CurrencyDocumentFilter.parse(countedField.getText());
+			if (countedCash == null) {
+				AppAlert.warning(dialog, "Tiền đếm thực tế phải là số nguyên VND không âm.");
+				return;
+			}
+			BigDecimal difference = summary.differenceFrom(countedCash);
+			if (difference.signum() != 0 && (noteArea.getText() == null || noteArea.getText().isBlank())) {
+				AppAlert.warning(dialog,
+						"Chênh lệch " + signedMoneyOrDash(difference)
+								+ ". Bạn phải nhập giải trình trước khi đóng ca.");
+				return;
+			}
+			dialog.dispose();
+			runOperation(() -> shiftService.closeMyShift(countedCash, noteArea.getText()));
+		});
 
-		addField(form, "Giải trình " + "(bắt buộc nếu có chênh lệch)", new JScrollPane(noteArea));
+		dialog.add(body, BorderLayout.CENTER);
+		dialog.add(dialogFooter(cancel, ok), BorderLayout.SOUTH);
+		dialog.getRootPane().setDefaultButton(ok);
+		showShiftDialog(dialog);
+	}
 
-		int option = JOptionPane.showConfirmDialog(this, form, "Đóng ca và đối soát", JOptionPane.OK_CANCEL_OPTION,
-				JOptionPane.WARNING_MESSAGE);
+	// ── Helpers dialog ca bán hàng ──────────────────────────────────────
 
-		if (option != JOptionPane.OK_OPTION) {
-			return;
+	private JDialog buildShiftDialog(String title) {
+		Window owner = SwingUtilities.getWindowAncestor(this);
+		JDialog dialog = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
+		dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+		dialog.setLayout(new BorderLayout());
+		dialog.getContentPane().setBackground(AppColor.WHITE);
+		return dialog;
+	}
+
+	private void showShiftDialog(JDialog dialog) {
+		dialog.pack();
+		dialog.setMinimumSize(new Dimension(440, dialog.getHeight()));
+		dialog.setLocationRelativeTo(this);
+		dialog.setVisible(true);
+	}
+
+	private static JPanel dialogBody() {
+		JPanel body = new JPanel();
+		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+		body.setBackground(AppColor.WHITE);
+		body.setBorder(new EmptyBorder(22, 24, 8, 24));
+		return body;
+	}
+
+	private static JPanel dialogHeader(FontAwesomeSolid icon, Color iconColor,
+	                                   String title, String subtitle) {
+		JPanel header = new JPanel();
+		header.setOpaque(false);
+		header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+		header.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+		row.setOpaque(false);
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
+		FontIcon fi = FontIcon.of(icon, 24);
+		fi.setIconColor(iconColor);
+		row.add(new JLabel(fi));
+		JLabel t = new JLabel(title);
+		t.setFont(AppFont.DIALOG_TITLE);
+		t.setForeground(AppColor.TEXT_PRIMARY);
+		row.add(t);
+		header.add(row);
+
+		if (subtitle != null && !subtitle.isBlank()) {
+			header.add(Box.createVerticalStrut(8));
+			JLabel s = new JLabel("<html><div style='width:380px'>" + subtitle + "</div></html>");
+			s.setFont(AppFont.BODY);
+			s.setForeground(AppColor.TEXT_MUTED);
+			s.setAlignmentX(Component.LEFT_ALIGNMENT);
+			header.add(s);
 		}
+		return header;
+	}
 
-		BigDecimal countedCash = parseMoney(countedField.getText());
+	private static JPanel dialogFooter(JButton... buttons) {
+		JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+		footer.setBackground(AppColor.WHITE);
+		footer.setBorder(new EmptyBorder(8, 16, 16, 16));
+		for (JButton b : buttons) footer.add(b);
+		return footer;
+	}
 
-		if (countedCash == null) {
-			AppAlert.warning(this, "Tiền kiểm thực tế phải là " + "số nguyên VND không âm.");
+	private static JLabel fieldLabel(String text) {
+		JLabel l = new JLabel(text);
+		l.setFont(AppFont.BODY_BOLD);
+		l.setForeground(AppColor.TEXT_PRIMARY);
+		l.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return l;
+	}
 
-			return;
+	private static JLabel hintLabel(String text) {
+		JLabel l = new JLabel(text);
+		l.setFont(AppFont.SMALL);
+		l.setForeground(AppColor.TEXT_MUTED);
+		l.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return l;
+	}
+
+	private static JTextField moneyInputField(BigDecimal initial) {
+		JTextField field = new JTextField(18);
+		field.setFont(AppFont.FIELD);
+		field.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(AppColor.FIELD_BORDER != null ? AppColor.FIELD_BORDER : AppColor.BORDER, 1, true),
+				new EmptyBorder(8, 12, 8, 12)
+		));
+		CurrencyDocumentFilter.install(field);
+		if (initial != null) {
+			field.setText(CurrencyDocumentFilter.format(initial));
 		}
+		field.setAlignmentX(Component.LEFT_ALIGNMENT);
+		field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+		return field;
+	}
 
-		BigDecimal difference = summary.differenceFrom(countedCash);
+	private static JPanel moneyFieldWithSuffix(JTextField field) {
+		JPanel wrap = new JPanel(new BorderLayout(8, 0));
+		wrap.setOpaque(false);
+		wrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+		wrap.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+		wrap.add(field, BorderLayout.CENTER);
+		JLabel suffix = new JLabel("VNĐ");
+		suffix.setFont(AppFont.BODY_BOLD);
+		suffix.setForeground(AppColor.TEXT_MUTED);
+		wrap.add(suffix, BorderLayout.EAST);
+		return wrap;
+	}
 
-		if (difference.signum() != 0 && noteArea.getText().isBlank()) {
-			AppAlert.warning(this, "Chênh lệch " + signedMoneyOrDash(difference) + ". Bạn phải nhập giải trình "
-					+ "trước khi đóng ca.");
+	private static JTextArea styledNoteArea(String initial) {
+		JTextArea area = new JTextArea(initial != null ? initial : "", 3, 24);
+		area.setFont(AppFont.FIELD);
+		area.setLineWrap(true);
+		area.setWrapStyleWord(true);
+		area.setBorder(new EmptyBorder(8, 10, 8, 10));
+		return area;
+	}
 
-			return;
-		}
+	private static JScrollPane wrapNote(JTextArea area) {
+		JScrollPane sp = new JScrollPane(area);
+		sp.setAlignmentX(Component.LEFT_ALIGNMENT);
+		sp.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
+		sp.setBorder(BorderFactory.createLineBorder(
+				AppColor.FIELD_BORDER != null ? AppColor.FIELD_BORDER : AppColor.BORDER, 1, true));
+		return sp;
+	}
 
-		runOperation(() -> shiftService.closeMyShift(countedCash, noteArea.getText()));
+	private static JButton dialogPrimaryButton(String text, Color bg, Color hover) {
+		JButton button = new JButton(text);
+		button.setFont(AppFont.BODY_BOLD);
+		button.setForeground(Color.WHITE);
+		button.setBackground(bg != null ? bg : AppColor.ACCENT);
+		button.setFocusPainted(false);
+		button.setBorder(new EmptyBorder(10, 20, 10, 20));
+		button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		button.setOpaque(true);
+		Color base = button.getBackground();
+		Color hv = hover != null ? hover : base;
+		button.addMouseListener(new java.awt.event.MouseAdapter() {
+			@Override public void mouseEntered(java.awt.event.MouseEvent e) {
+				button.setBackground(hv);
+			}
+			@Override public void mouseExited(java.awt.event.MouseEvent e) {
+				button.setBackground(base);
+			}
+		});
+		return button;
+	}
+
+	private static JButton dialogSecondaryButton(String text) {
+		JButton button = new JButton(text);
+		button.setFont(AppFont.BODY_BOLD);
+		button.setForeground(AppColor.TEXT_PRIMARY);
+		button.setBackground(AppColor.CANCEL_BG != null ? AppColor.CANCEL_BG : new Color(241, 245, 249));
+		button.setFocusPainted(false);
+		button.setBorder(new EmptyBorder(10, 18, 10, 18));
+		button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		button.setOpaque(true);
+		return button;
 	}
 
 	/**
@@ -1910,7 +2136,12 @@ public class ShiftManagementPanel extends JPanel {
 		table.setBadgeColumn(
 				4,
 				value -> String.valueOf(value),
-				value -> "Đang mở".equals(value) ? AppColor.SUCCESS : AppColor.TEXT_MUTED);
+				value -> {
+					if ("Đang mở".equals(value)) return AppColor.SUCCESS;
+					if ("Chờ duyệt".equals(value)) return AppColor.WARNING;
+					if ("Từ chối".equals(value)) return AppColor.ERROR;
+					return AppColor.TEXT_MUTED;
+				});
 
 		/*
 		 * Cột "Chênh lệch" -> tô màu theo dấu (dương = xanh lá, âm = đỏ, "—" =
@@ -2422,7 +2653,7 @@ public class ShiftManagementPanel extends JPanel {
 
 		for (Shift shift : visibleShifts) {
 
-			String statusLabel = shift.isOpen() ? "Đang mở" : "Đã đóng";
+			String statusLabel = shift.getStatusLabel();
 
 			/*
 			 * Tìm kiếm.
@@ -2546,10 +2777,17 @@ public class ShiftManagementPanel extends JPanel {
 	}
 
 	private static JTextField inputField(String value) {
-		JTextField field = new JTextField(value, 24);
-
+		JTextField field = new JTextField(24);
 		field.setFont(AppFont.FIELD);
-
+		CurrencyDocumentFilter.install(field);
+		if (value != null && !value.isBlank()) {
+			BigDecimal parsed = CurrencyDocumentFilter.parse(value.replace(",", ""));
+			if (parsed != null) {
+				field.setText(CurrencyDocumentFilter.format(parsed));
+			} else {
+				field.setText(value);
+			}
+		}
 		return field;
 	}
 
@@ -2603,25 +2841,7 @@ public class ShiftManagementPanel extends JPanel {
 	 * -1000 1000.5 abc
 	 */
 	private static BigDecimal parseMoney(String raw) {
-		if (raw == null) {
-			return null;
-		}
-
-		String normalized = raw.trim().replace(".", "").replace(" ", "");
-
-		/*
-		 * Chi chap nhan chu so tu 0 den 9.
-		 */
-		if (!normalized.matches("\\d+")) {
-			return null;
-		}
-
-		try {
-			return new BigDecimal(normalized);
-
-		} catch (NumberFormatException e) {
-			return null;
-		}
+		return CurrencyDocumentFilter.parse(raw);
 	}
 
 	private static BigDecimal expectedOf(Shift shift) {

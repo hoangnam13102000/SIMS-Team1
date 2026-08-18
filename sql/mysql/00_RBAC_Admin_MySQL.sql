@@ -404,3 +404,13 @@ SELECT r.RoleID, p.PermissionID
 FROM Roles r, Permissions p
 WHERE r.RoleCode IN ('ADMIN', 'SALES_MANAGER')
   AND p.PermissionCode = 'SHIFT_MONITOR';
+
+INSERT IGNORE INTO Permissions (PermissionCode, Description) VALUES
+('SHIFT_APPROVE', 'Duyệt đối soát ca bán hàng');
+
+INSERT IGNORE INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r
+CROSS JOIN Permissions p
+WHERE r.RoleCode IN ('ADMIN', 'SALES_MANAGER')
+  AND p.PermissionCode = 'SHIFT_APPROVE';

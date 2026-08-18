@@ -191,7 +191,7 @@ public class ShiftService {
 
 	    if (moneyError != null) {
 	        return OperationResult.failure(
-	                "Tien dau ca: " + moneyError
+	                "Tiền đầu ca: " + moneyError
 	        );
 	    }
 
@@ -200,8 +200,7 @@ public class ShiftService {
 	        && openingNote.trim().length() > 500
 	    ) {
 	        return OperationResult.failure(
-	                "Ghi chu dau ca khong duoc "
-	              + "vuot qua 500 ky tu."
+	                "Ghi chú đầu ca không được vượt quá 500 ký tự."
 	        );
 	    }
 
@@ -212,8 +211,7 @@ public class ShiftService {
 
 	    if (currentOpenShift != null) {
 	        return OperationResult.failure(
-	                "Ban dang co mot ca mo. "
-	              + "Hay dong ca hien tai truoc."
+	                "Bạn đang có một ca mở. Hãy đóng ca hiện tại trước."
 	        );
 	    }
 
@@ -227,9 +225,9 @@ public class ShiftService {
 	        ActivityLogHelper.record(
 	                "ca bán hàng",
 	                ActivityLog.ACTION_SHIFT_OPEN,
-	                "Mo ca #"
+	                "Mở ca #"
 	                    + shift.getShiftId()
-	                    + " voi tien dau ca "
+	                    + " với tiền đầu ca "
 	                    + openingCash.toPlainString(),
 	                null,
 	                shift
@@ -238,7 +236,7 @@ public class ShiftService {
 	        publishChanged();
 
 	        return OperationResult.success(
-	                "Mo ca thanh cong.",
+	                "Mở ca thành công.",
 	                shift
 	        );
 
@@ -251,8 +249,7 @@ public class ShiftService {
 	        return OperationResult.failure(
 	                friendlySqlMessage(
 	                        e,
-	                        "Khong the mo ca. "
-	                      + "Vui long thu lai."
+	                        "Không thể mở ca. Vui lòng thử lại."
 	                )
 	        );
 	    }
@@ -286,7 +283,7 @@ public class ShiftService {
 
 	    if (!validType) {
 	        return OperationResult.failure(
-	                "Loai giao dich quy khong hop le."
+	                "Loại giao dịch quỹ không hợp lệ."
 	        );
 	    }
 
@@ -298,14 +295,13 @@ public class ShiftService {
 
 	    if (moneyError != null) {
 	        return OperationResult.failure(
-	                "So tien: " + moneyError
+	                "Số tiền: " + moneyError
 	        );
 	    }
 
 	    if (reason == null || reason.isBlank()) {
 	        return OperationResult.failure(
-	                "Phai nhap ly do thu/chi "
-	              + "de co the doi soat."
+	                "Phải nhập lý do thu/chi để có thể đối soát."
 	        );
 	    }
 
@@ -313,7 +309,7 @@ public class ShiftService {
 
 	    if (normalizedReason.length() > 255) {
 	        return OperationResult.failure(
-	                "Ly do khong duoc vuot qua 255 ky tu."
+	                "Lý do không được vượt quá 255 ký tự."
 	        );
 	    }
 
@@ -324,7 +320,7 @@ public class ShiftService {
 
 	    if (openShift == null) {
 	        return OperationResult.failure(
-	                "Ban chua mo ca ban hang."
+	                "Bạn chưa mở ca bán hàng."
 	        );
 	    }
 
@@ -348,8 +344,8 @@ public class ShiftService {
 
 	        String actionLabel =
 	                transaction.isCashIn()
-	                ? "Thu tien"
-	                : "Chi tien";
+	                ? "Thu tiền"
+	                : "Chi tiền";
 
 	        ActivityLogHelper.record(
 	                "giao dịch quỹ",
@@ -368,7 +364,7 @@ public class ShiftService {
 	        publishChanged();
 
 	        return OperationResult.success(
-	                "Da ghi nhan giao dich quy.",
+	                "Đã ghi nhận giao dịch quỹ.",
 	                transaction
 	        );
 
@@ -381,7 +377,7 @@ public class ShiftService {
 	        return OperationResult.failure(
 	                friendlySqlMessage(
 	                        e,
-	                        "Khong the ghi nhan thu/chi."
+	                        "Không thể ghi nhận thu/chi."
 	                )
 	        );
 	    }
@@ -411,7 +407,7 @@ public class ShiftService {
 
 	    if (openShift == null) {
 	        return OperationResult.failure(
-	                "Ban chua co ca dang mo."
+	                "Bạn chưa có ca đang mở."
 	        );
 	    }
 
@@ -422,7 +418,7 @@ public class ShiftService {
 	                );
 
 	        return OperationResult.success(
-	                "Da tinh so tien he thong.",
+	                "Đã tính số tiền hệ thống.",
 	                summary
 	        );
 
@@ -433,7 +429,7 @@ public class ShiftService {
 	        );
 
 	        return OperationResult.failure(
-	                "Khong the tinh so tien he thong."
+	                "Không thể tính số tiền hệ thống."
 	        );
 	    }
 	}
@@ -464,7 +460,7 @@ public class ShiftService {
 
 	    if (moneyError != null) {
 	        return OperationResult.failure(
-	                "Tien kiem thuc te: " + moneyError
+	                "Tiền kiểm thực tế: " + moneyError
 	        );
 	    }
 
@@ -473,8 +469,7 @@ public class ShiftService {
 	        && closingNote.trim().length() > 500
 	    ) {
 	        return OperationResult.failure(
-	                "Ghi chu dong ca khong duoc "
-	              + "vuot qua 500 ky tu."
+	                "Ghi chú đóng ca không được vượt quá 500 ký tự."
 	        );
 	    }
 
@@ -485,7 +480,7 @@ public class ShiftService {
 
 	    if (openShift == null) {
 	        return OperationResult.failure(
-	                "Ban chua co ca dang mo."
+	                "Bạn chưa có ca đang mở."
 	        );
 	    }
 
@@ -508,9 +503,7 @@ public class ShiftService {
 	            )
 	        ) {
 	            return OperationResult.failure(
-	                    "Tien thuc te dang chenh lech. "
-	                  + "Ban phai nhap giai trinh "
-	                  + "truoc khi dong ca."
+	                    "Tiền thực tế đang chênh lệch. Bạn phải nhập giải trình trước khi đóng ca."
 	            );
 	        }
 
@@ -525,9 +518,9 @@ public class ShiftService {
 	        ActivityLogHelper.record(
 	                "ca bán hàng",
 	                ActivityLog.ACTION_SHIFT_CLOSE,
-	                "Dong ca #"
+	                "Đóng ca #"
 	                    + closedShift.getShiftId()
-	                    + ", chenh lech "
+	                    + ", chênh lệch "
 	                    + closedShift
 	                        .getCashDifference()
 	                        .toPlainString(),
@@ -538,7 +531,7 @@ public class ShiftService {
 	        publishChanged();
 
 	        return OperationResult.success(
-	                "Dong ca va doi soat quy thanh cong.",
+	                "Đóng ca thành công. Ca đang chờ quản lý đối soát duyệt.",
 	                closedShift
 	        );
 
@@ -551,16 +544,143 @@ public class ShiftService {
 	        return OperationResult.failure(
 	                friendlySqlMessage(
 	                        e,
-	                        "Khong the dong ca. "
-	                      + "Vui long thu lai."
+	                        "Không thể đóng ca. Vui lòng thử lại."
 	                )
 	        );
 	    }
 	}
 	
+	
+	/**
+	 * Danh sach ca cho doi soat (PENDING_APPROVAL).
+	 * Yeu cau SHIFT_APPROVE hoac SHIFT_MONITOR.
+	 */
+	public java.util.List<Shift> getPendingApprovalShifts() {
+	    if (!canApprove()) {
+	        return java.util.Collections.emptyList();
+	    }
+	    return shiftDAO.findPendingApprovalShifts();
+	}
+
+	/**
+	 * Quan ly duyet doi soat ca.
+	 */
+	public OperationResult<Shift> approveShift(
+	        int shiftId,
+	        String approvalNote
+	) {
+	    User user = authService.getCurrentUser();
+	    if (user == null) {
+	        return OperationResult.failure("Bạn chưa đăng nhập.");
+	    }
+	    if (!canApprove()) {
+	        return OperationResult.failure(
+	                "Bạn không có quyền đối soát / duyệt ca."
+	        );
+	    }
+	    if (approvalNote != null && approvalNote.trim().length() > 500) {
+	        return OperationResult.failure(
+	                "Ghi chú duyệt không được vượt quá 500 ký tự."
+	        );
+	    }
+
+	    try {
+	        Shift shift = shiftDAO.approveShift(
+	                shiftId,
+	                user.getUserId(),
+	                approvalNote
+	        );
+
+	        ActivityLogHelper.record(
+	                "ca bán hàng",
+	                ActivityLog.ACTION_SHIFT_APPROVE,
+	                "Duyệt đối soát ca #"
+	                    + shift.getShiftId()
+	                    + ", chênh lệch "
+	                    + (shift.getCashDifference() != null
+	                        ? shift.getCashDifference().toPlainString()
+	                        : "0"),
+	                null,
+	                shift
+	        );
+	        publishChanged();
+	        return OperationResult.success(
+	                "Đã duyệt đối soát ca #" + shiftId + ".",
+	                shift
+	        );
+	    } catch (SQLException e) {
+	        logMutationError("ShiftService.approveShift", e);
+	        return OperationResult.failure(
+	                friendlySqlMessage(e, "Không thể duyệt ca.")
+	        );
+	    }
+	}
+
+	/**
+	 * Quan ly tu choi doi soat ca (bat buoc ly do).
+	 */
+	public OperationResult<Shift> rejectShift(
+	        int shiftId,
+	        String approvalNote
+	) {
+	    User user = authService.getCurrentUser();
+	    if (user == null) {
+	        return OperationResult.failure("Bạn chưa đăng nhập.");
+	    }
+	    if (!canApprove()) {
+	        return OperationResult.failure(
+	                "Bạn không có quyền đối soát / duyệt ca."
+	        );
+	    }
+	    if (approvalNote == null || approvalNote.isBlank()) {
+	        return OperationResult.failure(
+	                "Phải nhập lý do từ chối đối soát."
+	        );
+	    }
+	    if (approvalNote.trim().length() > 500) {
+	        return OperationResult.failure(
+	                "Lý do từ chối không được vượt quá 500 ký tự."
+	        );
+	    }
+
+	    try {
+	        Shift shift = shiftDAO.rejectShift(
+	                shiftId,
+	                user.getUserId(),
+	                approvalNote.trim()
+	        );
+
+	        ActivityLogHelper.record(
+	                "ca bán hàng",
+	                ActivityLog.ACTION_SHIFT_REJECT,
+	                "Từ chối đối soát ca #"
+	                    + shift.getShiftId()
+	                    + ": "
+	                    + approvalNote.trim(),
+	                null,
+	                shift
+	        );
+	        publishChanged();
+	        return OperationResult.success(
+	                "Đã từ chối đối soát ca #" + shiftId + ".",
+	                shift
+	        );
+	    } catch (SQLException e) {
+	        logMutationError("ShiftService.rejectShift", e);
+	        return OperationResult.failure(
+	                friendlySqlMessage(e, "Không thể từ chối ca.")
+	        );
+	    }
+	}
+
+	private boolean canApprove() {
+	    return authService.can(AppPermission.SHIFT_APPROVE)
+	            || authService.can(AppPermission.SHIFT_MONITOR);
+	}
+
 	private String validateOperator(User user) {
 	    if (user == null) {
-	        return "Phien dang nhap da het han.";
+	        return "Phiên đăng nhập đã hết hạn.";
 	    }
 
 	    if (
@@ -568,8 +688,7 @@ public class ShiftService {
 	                AppPermission.SHIFT_OPERATE
 	        )
 	    ) {
-	        return "Tai khoan khong co quyen "
-	             + "thao tac ca ban hang.";
+	        return "Tài khoản không có quyền thao tác ca bán hàng.";
 	    }
 
 	    return null;
@@ -580,18 +699,18 @@ public class ShiftService {
 	        boolean allowZero
 	) {
 	    if (amount == null) {
-	        return "khong duoc de trong.";
+	        return "không được để trống.";
 	    }
 
 	    if (amount.signum() < 0) {
-	        return "phai lon hon hoac bang 0.";
+	        return "phải lớn hơn hoặc bằng 0.";
 	    }
 
 	    if (
 	        !allowZero
 	        && amount.signum() == 0
 	    ) {
-	        return "phai lon hon 0.";
+	        return "phải lớn hơn 0.";
 	    }
 
 	    /*
@@ -602,12 +721,11 @@ public class ShiftService {
 	            .remainder(BigDecimal.ONE)
 	            .signum() != 0
 	    ) {
-	        return "phai la so nguyen VND, "
-	             + "khong nhap phan thap phan.";
+	        return "phải là số nguyên VND, không nhập phần thập phân.";
 	    }
 
 	    if (amount.compareTo(MAX_MONEY) > 0) {
-	        return "vuot qua gioi han cho phep.";
+	        return "vượt quá giới hạn cho phép.";
 	    }
 
 	    return null;
@@ -632,7 +750,7 @@ public class ShiftService {
 	     * trung unique key, vi du mo hai ca cung user.
 	     */
 	    if (e.getErrorCode() == 1062) {
-	        return "Ban da co mot ca dang mo.";
+	        return "Bạn đã có một ca đang mở.";
 	    }
 
 	    return fallback;

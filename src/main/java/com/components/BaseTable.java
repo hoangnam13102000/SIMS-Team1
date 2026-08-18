@@ -55,6 +55,12 @@ public class BaseTable extends JPanel {
     private int actionColumnIndex = -1;
     private boolean actionClickHandlerInstalled = false;
 
+    /** (viewRow, slotIndex trong cot Thao tac) dang duoc chuot tro toi - -1 nghia la khong hover nut nao. */
+    private int hoveredActionRow = -1;
+    private int hoveredActionSlot = -1;
+    private final ActionColumn.HoverState actionHoverState =
+            (viewRow, slotIndex) -> viewRow == hoveredActionRow && slotIndex == hoveredActionSlot;
+
     /** Cac cot khong nen cho sort (action, anh, STT...) - tu dong gom lai khi cau hinh. */
     private final Set<Integer> autoNonSortableColumns = new LinkedHashSet<>();
     /** Ghi nho renderer da gan cho tung cot de co the re-apply sau khi them cot moi vao model. */
@@ -563,22 +569,64 @@ public class BaseTable extends JPanel {
                 int modelRow = table.convertRowIndexToModel(viewRow);
                 actionColumn.handleClick(modelRow, relativeX, cellRect.width);
             }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                clearActionHover();
+            }
         });
 
         table.addMouseMotionListener(new MouseMotionAdapter() {
             @Override
             public void mouseMoved(MouseEvent e) {
                 int viewCol = table.columnAtPoint(e.getPoint());
-                boolean overActions = viewCol == actionColumnIndex && table.rowAtPoint(e.getPoint()) >= 0;
+                int viewRow = table.rowAtPoint(e.getPoint());
+                boolean overActions = viewCol == actionColumnIndex && viewRow >= 0
+                        && actionColumn != null && !actionColumn.isEmpty();
                 table.setCursor(overActions ? new Cursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
+
+                if (!overActions) {
+                    clearActionHover();
+                    return;
+                }
+
+                Rectangle cellRect = table.getCellRect(viewRow, viewCol, false);
+                int relativeX = e.getX() - cellRect.x;
+                int itemCount = actionColumn.getItems().size();
+                int slotWidth = Math.max(1, cellRect.width / itemCount);
+                int slot = Math.min(itemCount - 1, Math.max(0, relativeX / slotWidth));
+                setActionHover(viewRow, slot);
             }
         });
+    }
+
+    /** Cap nhat o (viewRow, slot) dang hover trong cot Thao tac va chi repaint vung anh huong. */
+    private void setActionHover(int viewRow, int slot) {
+        if (viewRow == hoveredActionRow && slot == hoveredActionSlot) return;
+        int oldRow = hoveredActionRow;
+        hoveredActionRow = viewRow;
+        hoveredActionSlot = slot;
+        if (oldRow >= 0 && oldRow < table.getRowCount()) {
+            table.repaint(table.getCellRect(oldRow, actionColumnIndex, false));
+        }
+        table.repaint(table.getCellRect(viewRow, actionColumnIndex, false));
+    }
+
+    /** Bo trang thai hover (khi chuot roi khoi cot Thao tac hoac roi khoi bang). */
+    private void clearActionHover() {
+        if (hoveredActionRow < 0) return;
+        int oldRow = hoveredActionRow;
+        hoveredActionRow = -1;
+        hoveredActionSlot = -1;
+        if (oldRow >= 0 && oldRow < table.getRowCount()) {
+            table.repaint(table.getCellRect(oldRow, actionColumnIndex, false));
+        }
     }
 
     private void applyActionColumnRenderer() {
         int width = actionColumnWidth();
         var col = table.getColumnModel().getColumn(actionColumnIndex);
-        col.setCellRenderer(actionColumn.renderer(rowColorProvider));
+        col.setCellRenderer(actionColumn.renderer(rowColorProvider, actionHoverState));
         // Min = preferred de AUTO_RESIZE khong co cot Thao tac xuong duoi muc
         // can de hien du icon + header "Thao tác" (tranh bi cat "Tha...").
         col.setMinWidth(width);
@@ -799,6 +847,8 @@ public class BaseTable extends JPanel {
     }
 
     public void clear() {
+        hoveredActionRow = -1;
+        hoveredActionSlot = -1;
         model.setRowCount(0);
     }
 

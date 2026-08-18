@@ -24,7 +24,8 @@ import java.awt.event.MouseEvent;
 public class AdminAiAssistantWidget extends JPanel {
 
     private static final int MARGIN = 24;
-    private static final int BUBBLE_SIZE = 60;
+    /** Bang voi SettingsButton.SIZE de 2 nut noi (Cai dat / Tro ly AI) dong bo kich thuoc. */
+    private static final int BUBBLE_SIZE = 52;
     private static final int WINDOW_WIDTH = 400;
     private static final int WINDOW_HEIGHT = 560;
     private static final int GAP = 12;
@@ -141,9 +142,10 @@ public class AdminAiAssistantWidget extends JPanel {
         BubbleButton() {
             setOpaque(false);
             setCursor(new Cursor(Cursor.HAND_CURSOR));
-            robotIcon = FontIcon.of(FontAwesomeSolid.ROBOT, 22);
+            // Icon giam tu 22 -> 20 cho dong bo ty le voi SettingsButton (icon COG 20 trong bubble 52).
+            robotIcon = FontIcon.of(FontAwesomeSolid.ROBOT, 20);
             robotIcon.setIconColor(Color.WHITE);
-            closeIcon = FontIcon.of(FontAwesomeSolid.TIMES, 20);
+            closeIcon = FontIcon.of(FontAwesomeSolid.TIMES, 18);
             closeIcon.setIconColor(Color.WHITE);
         }
 

@@ -150,7 +150,7 @@ public class AdminMainFrame extends JFrame {
          * Lui Settings sang trái để không đè bong bóng AI
          * 60px + khe 16px.
          */
-        SettingsButton.attach(this, 60 + 16, true);
+        SettingsButton.attach(this, 52 + 16, true);
 
         /*
          * ============================================================

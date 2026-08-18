@@ -51,6 +51,10 @@ public class ShiftDAO {
 	        + "s.OpeningNote, s.ClosingNote, "
 	        + "s.ClosedBy, "
 	        + "closer.FullName AS ClosedByName, "
+	        + "s.ApprovedBy, "
+	        + "approver.FullName AS ApprovedByName, "
+	        + "s.ApprovedAt, "
+	        + "s.ApprovalNote, "
 + "(SELECT COUNT(*) "
 	        + " FROM Invoices inv "
 	        + " WHERE inv.ShiftID = s.ShiftID "
@@ -98,7 +102,9 @@ public class ShiftDAO {
 	        + "FROM Shifts s "
 	        + "JOIN Users u ON u.UserID = s.UserID "
 	        + "LEFT JOIN Users closer "
-	        + "  ON closer.UserID = s.ClosedBy ";
+	        + "  ON closer.UserID = s.ClosedBy "
+	        + "LEFT JOIN Users approver "
+	        + "  ON approver.UserID = s.ApprovedBy ";
 	
 	/**
 	 * Ham tam thoi de PosPanel cu van bien dich.
@@ -454,7 +460,7 @@ public class ShiftDAO {
 
 	            if (shift == null) {
 	                throw new SQLException(
-	                        "Tao ca thanh cong nhung khong doc lai duoc ca"
+	                        "Tao ca thanh cong nhung không đọc lại được ca"
 	                );
 	            }
 
@@ -483,7 +489,7 @@ public class ShiftDAO {
 	/**
 	 * Ghi mot khoan thu hoac chi tien mat trong ca.
 	 *
-	 * Chi nhan vien so huu ca dang OPEN moi duoc thao tac.
+	 * Chỉ nhân viên sở hữu ca dang OPEN mới được thao tác.
 	 */
 	public ShiftCashTransaction addCashTransaction(
 	        int shiftId,
@@ -644,7 +650,7 @@ public class ShiftDAO {
 	        try (ResultSet rs = ps.executeQuery()) {
 	            if (!rs.next()) {
 	                throw new SQLException(
-	                        "Khong tim thay ca #" + shiftId,
+	                        "Không tìm thấy ca #" + shiftId,
 	                        "45000"
 	                );
 	            }
@@ -657,15 +663,15 @@ public class ShiftDAO {
 
 	            if (ownerUserId != actorUserId) {
 	                throw new SQLException(
-	                        "Chi nhan vien so huu ca "
-	                      + "moi duoc thao tac",
+	                        "Chỉ nhân viên sở hữu ca "
+	                      + "mới được thao tác",
 	                        "45000"
 	                );
 	            }
 
 	            if (!"OPEN".equals(status)) {
 	                throw new SQLException(
-	                        "Ca da dong, khong the thao tac",
+	                        "Ca đã đóng, không thể thao tác",
 	                        "45000"
 	                );
 	            }
@@ -686,7 +692,7 @@ public class ShiftDAO {
 	    String updateSql =
 	            "UPDATE Shifts SET "
 	          + "EndTime = CURRENT_TIMESTAMP, "
-	          + "Status = 'CLOSED', "
+	          + "Status = 'PENDING_APPROVAL', "
 	          + "ExpectedCash = ?, "
 	          + "CountedCash = ?, "
 	          + "CashDifference = ?, "
@@ -739,8 +745,8 @@ public class ShiftDAO {
 	                )
 	            ) {
 	                throw new SQLException(
-	                        "Phai nhap giai trinh khi tien "
-	                      + "kiem thuc te bi chenh lech",
+	                        "Phải nhập giải trình khi tiền "
+	                      + "kiểm thực tế bị chênh lệch",
 	                        "45000"
 	                );
 	            }
@@ -784,7 +790,7 @@ public class ShiftDAO {
 
 	                if (updatedRows != 1) {
 	                    throw new SQLException(
-	                            "Ca da duoc dong boi tien trinh khac"
+	                            "Ca đã được đóng bởi tiến trình khác"
 	                    );
 	                }
 	            }
@@ -797,8 +803,8 @@ public class ShiftDAO {
 
 	            if (closedShift == null) {
 	                throw new SQLException(
-	                        "Dong ca thanh cong nhung "
-	                      + "khong doc lai duoc ca"
+	                        "Đóng ca thành công nhưng "
+	                      + "không đọc lại được ca"
 	                );
 	            }
 
@@ -814,7 +820,7 @@ public class ShiftDAO {
 	            }
 
 	            throw new SQLException(
-	                    "Khong the dong ca",
+	                    "Không thể đóng ca",
 	                    e
 	            );
 
@@ -824,6 +830,171 @@ public class ShiftDAO {
 	    }
 	}
 	
+
+	/**
+	 * QL duyệt đối soát ca đang PENDING_APPROVAL → CLOSED.
+	 */
+	public Shift approveShift(
+	        int shiftId,
+	        int managerUserId,
+	        String approvalNote
+	) throws SQLException {
+
+	    String updateSql =
+	            "UPDATE Shifts SET "
+	          + "Status = 'CLOSED', "
+	          + "ApprovedBy = ?, "
+	          + "ApprovedAt = CURRENT_TIMESTAMP, "
+	          + "ApprovalNote = ? "
+	          + "WHERE ShiftID = ? "
+	          + "  AND Status = 'PENDING_APPROVAL'";
+
+	    try (Connection con = DBConnection.getConnection()) {
+	        con.setAutoCommit(false);
+	        try {
+	            lockPendingShift(con, shiftId);
+
+	            try (PreparedStatement ps = con.prepareStatement(updateSql)) {
+	                ps.setInt(1, managerUserId);
+	                setNullableString(ps, 2, approvalNote);
+	                ps.setInt(3, shiftId);
+	                int updated = ps.executeUpdate();
+	                if (updated != 1) {
+	                    throw new SQLException(
+	                            "Ca không ở trạng thái chờ duyệt hoặc đã được xử lý",
+	                            "45000"
+	                    );
+	                }
+	            }
+
+	            Shift shift = findById(con, shiftId);
+	            if (shift == null) {
+	                throw new SQLException("Duyet ca thanh cong nhung không đọc lại được ca");
+	            }
+	            con.commit();
+	            return shift;
+
+	        } catch (Exception e) {
+	            con.rollback();
+	            if (e instanceof SQLException sqlException) {
+	                throw sqlException;
+	            }
+	            throw new SQLException("Không thể duyệt ca", e);
+	        } finally {
+	            con.setAutoCommit(true);
+	        }
+	    }
+	}
+
+	/**
+	 * QL từ chối đối soát ca PENDING_APPROVAL → REJECTED.
+	 */
+	public Shift rejectShift(
+	        int shiftId,
+	        int managerUserId,
+	        String approvalNote
+	) throws SQLException {
+
+	    if (approvalNote == null || approvalNote.isBlank()) {
+	        throw new SQLException(
+	                "Phải nhập lý do từ chối đối soát",
+	                "45000"
+	        );
+	    }
+
+	    String updateSql =
+	            "UPDATE Shifts SET "
+	          + "Status = 'REJECTED', "
+	          + "ApprovedBy = ?, "
+	          + "ApprovedAt = CURRENT_TIMESTAMP, "
+	          + "ApprovalNote = ? "
+	          + "WHERE ShiftID = ? "
+	          + "  AND Status = 'PENDING_APPROVAL'";
+
+	    try (Connection con = DBConnection.getConnection()) {
+	        con.setAutoCommit(false);
+	        try {
+	            lockPendingShift(con, shiftId);
+
+	            try (PreparedStatement ps = con.prepareStatement(updateSql)) {
+	                ps.setInt(1, managerUserId);
+	                setNullableString(ps, 2, approvalNote);
+	                ps.setInt(3, shiftId);
+	                int updated = ps.executeUpdate();
+	                if (updated != 1) {
+	                    throw new SQLException(
+	                            "Ca không ở trạng thái chờ duyệt hoặc đã được xử lý",
+	                            "45000"
+	                    );
+	                }
+	            }
+
+	            Shift shift = findById(con, shiftId);
+	            if (shift == null) {
+	                throw new SQLException("Tu choi ca thanh cong nhung không đọc lại được ca");
+	            }
+	            con.commit();
+	            return shift;
+
+	        } catch (Exception e) {
+	            con.rollback();
+	            if (e instanceof SQLException sqlException) {
+	                throw sqlException;
+	            }
+	            throw new SQLException("Không thể từ chối ca", e);
+	        } finally {
+	            con.setAutoCommit(true);
+	        }
+	    }
+	}
+
+	/**
+	 * Khoa ca dang cho duyet de tranh 2 QL xu ly dong thoi.
+	 */
+	void lockPendingShift(Connection con, int shiftId) throws SQLException {
+	    String sql =
+	            "SELECT Status FROM Shifts WHERE ShiftID = ? FOR UPDATE";
+	    try (PreparedStatement ps = con.prepareStatement(sql)) {
+	        ps.setInt(1, shiftId);
+	        try (ResultSet rs = ps.executeQuery()) {
+	            if (!rs.next()) {
+	                throw new SQLException("Không tìm thấy ca #" + shiftId, "45000");
+	            }
+	            String status = rs.getString("Status");
+	            if (!"PENDING_APPROVAL".equals(status)) {
+	                throw new SQLException(
+	                        "Chỉ được đối soát ca đang chờ duyệt (PENDING_APPROVAL)",
+	                        "45000"
+	                );
+	            }
+	        }
+	    }
+	}
+
+	/**
+	 * Danh sach ca cho QL doi soat (PENDING_APPROVAL).
+	 */
+	public java.util.List<Shift> findPendingApprovalShifts() {
+	    String sql = SHIFT_SELECT
+	            + "WHERE s.Status = 'PENDING_APPROVAL' "
+	            + "ORDER BY s.EndTime ASC";
+	    java.util.List<Shift> list = new java.util.ArrayList<>();
+	    try (Connection con = DBConnection.getConnection();
+	         PreparedStatement ps = con.prepareStatement(sql);
+	         ResultSet rs = ps.executeQuery()) {
+	        while (rs.next()) {
+	            list.add(mapShift(rs));
+	        }
+	    } catch (SQLException e) {
+	        AppLogger.getInstance().error(
+	                ErrorCode.DB_QUERY_FAIL,
+	                "ShiftDAO.findPendingApprovalShifts",
+	                e
+	        );
+	    }
+	    return list;
+	}
+
 	private ShiftCashSummary calculateCashSummary(
 	        Connection con,
 	        int shiftId
@@ -888,7 +1059,7 @@ public class ShiftDAO {
 	        try (ResultSet rs = ps.executeQuery()) {
 	            if (!rs.next()) {
 	                throw new SQLException(
-	                        "Khong tim thay ca #" + shiftId
+	                        "Không tìm thấy ca #" + shiftId
 	                );
 	            }
 
@@ -1032,6 +1203,22 @@ public class ShiftDAO {
 
 	    shift.setClosedByName(
 	            rs.getString("ClosedByName")
+	    );
+
+	    int approvedBy = rs.getInt("ApprovedBy");
+	    if (!rs.wasNull()) {
+	        shift.setApprovedBy(approvedBy);
+	    }
+	    shift.setApprovedByName(
+	            rs.getString("ApprovedByName")
+	    );
+	    shift.setApprovedAt(
+	            toLocalDateTime(
+	                    rs.getTimestamp("ApprovedAt")
+	            )
+	    );
+	    shift.setApprovalNote(
+	            rs.getString("ApprovalNote")
 	    );
 
 	    shift.setInvoiceCount(

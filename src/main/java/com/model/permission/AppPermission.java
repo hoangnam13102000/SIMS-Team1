@@ -43,6 +43,8 @@ public enum AppPermission implements Permission {
     SHIFT_VIEW_ALL,
     /** Xem trang Giám sát ca đang mở (theo dõi realtime quỹ / NV theo ngày). */
     SHIFT_MONITOR,
+    /** Đối soát và duyệt/từ chối ca khi NV đã đóng ca. */
+    SHIFT_APPROVE,
     /** Huy hoa don. */
     INVOICE_CANCEL,      
     /** Tao yeu cau doi/tra hang cho 1 hoa don (R4: bat buoc ghi ro ly do). */
@@ -89,6 +91,8 @@ public enum AppPermission implements Permission {
     SUPPLIER_RETURN_VIEW,
     /** Quan ly khuyen mai / ma giam gia (tao, sua, bat-tat, xoa). */
     PROMOTION_MANAGE,
+    
     /** Xem/chinh sua trang "Phan quyen vai tro" - bat/tat quyen cua tung Role. Mac dinh chi ADMIN co (xem RolePermissions). */
     RBAC_MANAGE,
+    
 }

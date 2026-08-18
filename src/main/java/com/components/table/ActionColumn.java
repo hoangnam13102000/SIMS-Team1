@@ -16,6 +16,22 @@ import java.util.function.IntPredicate;
 
 public class ActionColumn {
 
+    /** Bao cho renderer biet hien tai chuot dang hover o (viewRow, slotIndex) nao trong cot Thao tac. */
+    public interface HoverState {
+        boolean isHovered(int viewRow, int slotIndex);
+    }
+
+    /** Icon phinh to them bao nhieu px khi hover, de nguoi dung nhan biet nut co the bam. */
+    private static final int HOVER_SIZE_DELTA = 4;
+
+    /** Lam toi mau icon mot chut khi hover (giong hieu ung "pressed/active" cua nut). */
+    private static Color darken(Color c, float factor) {
+        int r = Math.max(0, Math.round(c.getRed() * (1 - factor)));
+        int g = Math.max(0, Math.round(c.getGreen() * (1 - factor)));
+        int b = Math.max(0, Math.round(c.getBlue() * (1 - factor)));
+        return new Color(r, g, b, c.getAlpha());
+    }
+
     /** 1 nut hanh dong trong cot. */
     public static final class Item {
         final String id;
@@ -81,21 +97,43 @@ public class ActionColumn {
         return 36 + Math.max(1, items.size()) * 42;
     }
 
-    /** Renderer ve cac icon canh nhau, mau nen striped-row lay tu colorProvider. */
+    /** Renderer ve cac icon canh nhau, mau nen striped-row lay tu colorProvider - khong co hieu ung hover. */
     public TableCellRenderer renderer(RowColorProvider colorProvider) {
+        return renderer(colorProvider, (viewRow, slotIndex) -> false);
+    }
+
+    /**
+     * Renderer ve cac icon canh nhau, mau nen striped-row lay tu rowColor; hoverState cho biet
+     * o (viewRow, slotIndex) nao dang duoc chuot tro toi de phong to + doi mau icon do, giup
+     * nguoi dung nhan biet nut co the bam duoc. Slot moi nut luon giu kich thuoc co dinh
+     * (iconSize + HOVER_SIZE_DELTA) de icon phinh to khong lam xe cac nut ben canh.
+     */
+    public TableCellRenderer renderer(RowColorProvider rowColor, HoverState hoverState) {
         return (t, value, isSelected, hasFocus, row, column) -> {
             JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, AppSpacing.SM, AppSpacing.SM));
             panel.setOpaque(true);
-            panel.setBackground(colorProvider.colorFor(row, isSelected));
+            panel.setBackground(rowColor.colorFor(row, isSelected));
 
             int modelRow = t.convertRowIndexToModel(row);
-            for (Item item : items) {
+            int slotBox = iconSize + HOVER_SIZE_DELTA;
+            for (int slot = 0; slot < items.size(); slot++) {
+                Item item = items.get(slot);
                 boolean enabled = item.enabledPredicate.test(modelRow);
-                FontIcon icon = FontIcon.of(item.iconProvider.apply(modelRow), iconSize);
-                icon.setIconColor(enabled ? item.colorProvider.apply(modelRow) : AppColor.TEXT_DISABLED);
+                boolean hovered = enabled && hoverState.isHovered(row, slot);
+
+                int renderSize = hovered ? slotBox : iconSize;
+                FontIcon icon = FontIcon.of(item.iconProvider.apply(modelRow), renderSize);
+                Color baseColor = item.colorProvider.apply(modelRow);
+                icon.setIconColor(!enabled ? AppColor.TEXT_DISABLED : (hovered ? darken(baseColor, 0.18f) : baseColor));
 
                 JLabel label = new JLabel(icon);
                 label.setHorizontalAlignment(SwingConstants.CENTER);
+                label.setVerticalAlignment(SwingConstants.CENTER);
+                // Kich thuoc co dinh cho slot (du cho trang thai hover) - icon lon hon van nam
+                // giua slot, khong day lech vi tri cac nut ben canh khi hover.
+                Dimension fixedSlot = new Dimension(slotBox, slotBox);
+                label.setPreferredSize(fixedSlot);
+                label.setMinimumSize(fixedSlot);
                 label.setCursor(new Cursor(enabled ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
                 label.setToolTipText(item.tooltipProvider.apply(modelRow));
                 panel.add(label);

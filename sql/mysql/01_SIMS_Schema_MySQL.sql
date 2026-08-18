@@ -152,6 +152,9 @@ CREATE TABLE Shifts (
     OpeningNote     VARCHAR(500) NULL,
     ClosingNote     VARCHAR(500) NULL,
     ClosedBy        INT NULL,
+    ApprovedBy      INT NULL,
+    ApprovedAt      DATETIME NULL,
+    ApprovalNote    VARCHAR(500) NULL,
     LastUpdatedAt   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                         ON UPDATE CURRENT_TIMESTAMP,
 
