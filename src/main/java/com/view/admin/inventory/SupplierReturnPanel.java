@@ -18,7 +18,6 @@ import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
@@ -54,39 +53,6 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
         table.setColumnWidths(110, 160, 110, 80, 120, 130, 130, 100);
         table.setColumnMinWidths(90, 120, 90, 60, 100, 100, 110, 80);
         table.setBadgeColumn(7, this::statusLabel, this::statusColor);
-        // Width ở trên chỉ là giá trị khởi tạo trước khi có data; sau mỗi lần load,
-        // autoFitColumnsToContent() (gọi trong afterRender) sẽ tính lại theo nội dung thật.
-
-        // ====== THANH CUỘN NGANG ======
-        // Tắt auto-resize để bảng giữ nguyên độ rộng cột đã set, cho phép cuộn ngang
-        // khi tổng độ rộng cột vượt quá khung nhìn (thay vì Swing tự ép co cột lại).
-        table.getTable().setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        if (table.getTable().getParent() instanceof JViewport) {
-            JViewport viewport = (JViewport) table.getTable().getParent();
-            if (viewport.getParent() instanceof JScrollPane) {
-                JScrollPane scrollPane = (JScrollPane) viewport.getParent();
-                scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-            }
-        }
-        // ===============================
-
-        // ====== CĂN GIỮA CÁC CỘT (trừ cột 0 - có icon copy, và cột 7 - badge trạng thái) ======
-        DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable table, Object value,
-                    boolean isSelected, boolean hasFocus, int row, int column) {
-                JLabel c = (JLabel) super.getTableCellRendererComponent(
-                    table, value, isSelected, hasFocus, row, column);
-                c.setHorizontalAlignment(SwingConstants.CENTER);
-                c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
-                return c;
-            }
-        };
-        for (int col = 1; col <= 6; col++) {
-            table.getTable().getColumnModel().getColumn(col).setCellRenderer(centerRenderer);
-        }
-        // ==========================================================================================
 
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
@@ -184,7 +150,7 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
         // 3) Nút "Xóa lọc" CHUẨN
         FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
         clearIcon.setIconColor(AppColor.TEXT_MUTED);
-        clearFiltersLink = new JLabel("", clearIcon, SwingConstants.LEFT);
+        clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
         clearFiltersLink.setIconTextGap(6);
         clearFiltersLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
         clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
@@ -288,46 +254,7 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<SupplierReturn> result) {
         table.getTable().repaint();
-        SwingUtilities.invokeLater(this::autoFitColumnsToContent);
     }
-
-    // ====== TỰ GIÃN CỘT THEO NỘI DUNG ======
-    // Đo độ rộng thực tế của header + từng ô dữ liệu (dùng renderer đang gán cho cột đó,
-    // kể cả renderer căn giữa/badge/icon copy) rồi set preferredWidth = max, có padding.
-    // Kết hợp với AUTO_RESIZE_OFF: cột nào nội dung dài sẽ giãn ra, tổng bảng vượt khung
-    // thì thanh cuộn ngang tự xuất hiện.
-    private void autoFitColumnsToContent() {
-        JTable jTable = table.getTable();
-        int columnCount = jTable.getColumnCount();
-        int rowCount = jTable.getRowCount();
-        int[] minWidths = {90, 120, 90, 60, 100, 100, 110, 80};
-
-        for (int col = 0; col < columnCount; col++) {
-            javax.swing.table.TableColumn column = jTable.getColumnModel().getColumn(col);
-            int maxWidth = col < minWidths.length ? minWidths[col] : 80;
-
-            // Đo header
-            TableCellRenderer headerRenderer = jTable.getTableHeader() != null
-                    ? jTable.getTableHeader().getDefaultRenderer() : null;
-            if (headerRenderer != null) {
-                Component headerComp = headerRenderer.getTableCellRendererComponent(
-                        jTable, column.getHeaderValue(), false, false, -1, col);
-                maxWidth = Math.max(maxWidth, headerComp.getPreferredSize().width + 20);
-            }
-
-            // Đo từng ô dữ liệu đang hiển thị (trang hiện tại)
-            for (int row = 0; row < rowCount; row++) {
-                TableCellRenderer cellRenderer = jTable.getCellRenderer(row, col);
-                Component cellComp = jTable.prepareRenderer(cellRenderer, row, col);
-                maxWidth = Math.max(maxWidth, cellComp.getPreferredSize().width + 24);
-            }
-
-            column.setPreferredWidth(maxWidth);
-        }
-        jTable.revalidate();
-        jTable.repaint();
-    }
-    // ==========================================
 
     // ====== 3 OVERRIDE ======
     @Override
@@ -351,7 +278,7 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
 
     @Override
     protected String getSearchPlaceholder() {
-        return "Tìm mã phiếu, NCC, tên SP, mã SP, mã lô, lý do, người lập...";
+        return "Tìm mã phiếu, NCC, lý do, người lập...";
     }
 
     @Override

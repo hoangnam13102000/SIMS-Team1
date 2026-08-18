@@ -437,7 +437,7 @@ public class SettingsPanel extends JPanel {
         vatRateField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_VAT_RATE), new BigDecimal("8")));
         defaultMarginField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_DEFAULT_MARGIN), new BigDecimal("5000")));
         returnPolicyDaysField.setValue(parseOrDefault(config.get("RETURN_POLICY_DAYS"), 7));
-        approvalThresholdField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_APPROVAL_THRESHOLD), new BigDecimal("0")));
+        approvalThresholdField.setValue(parseOrDefault(config.get(StoreConfigDAO.KEY_APPROVAL_THRESHOLD), new BigDecimal("500000")));
         storeNameField.setText(config.getOrDefault("STORE_NAME", ""));
         defaultUnitField.setText(config.getOrDefault("DEFAULT_UNIT", ""));
     }

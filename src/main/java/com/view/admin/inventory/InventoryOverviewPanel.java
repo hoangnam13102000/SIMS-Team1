@@ -143,9 +143,9 @@ public class InventoryOverviewPanel extends JPanel {
 
         content.add(buildStatsRow());
         content.add(Box.createVerticalStrut(AppSpacing.LG));
-        content.add(buildTwoColumnRow(buildMovementCard(), 1.3, buildStockAlertCard(), 1.0, 320));        
-        content.add(Box.createVerticalStrut(AppSpacing.LG));
         content.add(buildTwoColumnRow(buildTrendChartCard(), 2.0, buildLowStockCard(), 1.0, 340));
+        content.add(Box.createVerticalStrut(AppSpacing.LG));
+        content.add(buildTwoColumnRow(buildMovementCard(), 1.3, buildStockAlertCard(), 1.0, 320));
         content.add(Box.createVerticalStrut(AppSpacing.LG));
         content.add(buildInventoryProductCard());
         // Chừa khoảng đệm cuối trang để các nút nổi góc phải dưới (Cài đặt/AI)
@@ -271,11 +271,11 @@ public class InventoryOverviewPanel extends JPanel {
         content.add(metricTile("Cảnh báo đang xử lý", "0", AppColor.ERROR));
         content.add(metricTile("Lô sắp hết hạn", "0", AppColor.WARNING));
         content.add(metricTile("Lô đã hết hạn", "0", AppColor.ERROR));
-        content.add(metricTile("Phiếu chưa kiểm kê", "0", AppColor.ERROR));
-        content.add(metricTile("Nhập hôm nay", "0", AppColor.SUCCESS));
-        content.add(metricTile("Xuất hôm nay", "0", AppColor.ACCENT));
-        content.add(metricTile("Tiêu hủy hôm nay", "0", AppColor.ERROR));
-        content.add(metricTile("Giao dịch hôm nay", "0", AppColor.INFO));
+        content.add(metricTile("Lệch kiểm kê 7 ngày", "0", AppColor.INFO));
+        content.add(metricTile("Nhập 7 ngày", "0", AppColor.SUCCESS));
+        content.add(metricTile("Xuất 7 ngày", "0", AppColor.ACCENT));
+        content.add(metricTile("Tiêu hủy 7 ngày", "0", AppColor.ERROR));
+        content.add(metricTile("Giao dịch 7 ngày", "0", AppColor.INFO));
         card.getContentPanel().add(content, BorderLayout.CENTER);
         return card;
     }
@@ -306,11 +306,11 @@ public class InventoryOverviewPanel extends JPanel {
         if ("Cảnh báo đang xử lý".equals(label)) activeAlertValue = value;
         else if ("Lô sắp hết hạn".equals(label)) expiringValue = value;
         else if ("Lô đã hết hạn".equals(label)) expiredValue = value;
-        else if ("Phiếu chưa kiểm kê".equals(label)) discrepancyValue = value;
-        else if ("Nhập hôm nay".equals(label)) inboundValue = value;
-        else if ("Xuất hôm nay".equals(label)) outboundValue = value;
-        else if ("Tiêu hủy hôm nay".equals(label)) disposalValue = value;
-        else if ("Giao dịch hôm nay".equals(label)) transactionValue = value;
+        else if ("Lệch kiểm kê 7 ngày".equals(label)) discrepancyValue = value;
+        else if ("Nhập 7 ngày".equals(label)) inboundValue = value;
+        else if ("Xuất 7 ngày".equals(label)) outboundValue = value;
+        else if ("Tiêu hủy 7 ngày".equals(label)) disposalValue = value;
+        else if ("Giao dịch 7 ngày".equals(label)) transactionValue = value;
         return tile;
     }
 
@@ -329,7 +329,7 @@ public class InventoryOverviewPanel extends JPanel {
 
     private DashboardCard buildInventoryProductCard() {
         DashboardCard card = new DashboardCard(
-                "Danh sách sản phẩm & lô",
+                "Danh sách sản phẩm & lô FEFO",
                 "Lô còn hàng được sắp theo hạn sử dụng gần nhất (FEFO) · tìm kiếm, phân trang và xuất Excel",
                 FontAwesomeSolid.CLIPBOARD_LIST, AppColor.ACCENT);
 
@@ -370,26 +370,18 @@ public class InventoryOverviewPanel extends JPanel {
         content.add(toolbar, BorderLayout.NORTH);
 
         inventoryProductTable = new BaseTable(new String[]{
-                "Mã SP", "Tên sản phẩm", "Danh mục", "Tồn kho", "Mã lô", "HSD ", "SL lô", "Trạng thái"
+                "STT", "Mã SP", "Tên sản phẩm", "Tồn kho", "Lô FEFO", "HSD FEFO", "SL lô FEFO", "Trạng thái"
         });
         inventoryProductTable.setRowHeight(50);
-
-        // Căn giữa nội dung toàn bộ danh sách sản phẩm.
-        // Căn giữa renderer của từng cột (BaseTable có thể dùng renderer riêng,
-        // nên set default renderer Object.class chưa đủ).
-        for (int col = 0; col < inventoryProductTable.getTable().getColumnCount(); col++) {
-            javax.swing.table.DefaultTableCellRenderer renderer =
-                    new javax.swing.table.DefaultTableCellRenderer();
-            renderer.setHorizontalAlignment(SwingConstants.CENTER);
-            inventoryProductTable.getTable().getColumnModel()
-                    .getColumn(col).setCellRenderer(renderer);
-        }
-
         // Cho phép bảng tự co giãn theo chiều rộng; khi màn hình hẹp hơn tổng
         // chiều rộng cột thì dùng thanh cuộn ngang thay vì ép chữ/cột quá chật.
         inventoryProductTable.enableHorizontalScroll();
-        inventoryProductTable.setColumnWidths(95, 230, 150, 90, 150, 105, 90, 110);
-        inventoryProductTable.setColumnMinWidths(80, 150, 110, 70, 120, 90, 75, 90);
+        inventoryProductTable.setColumnWidths(50, 95, 230, 90, 150, 105, 90, 110);
+        inventoryProductTable.setColumnMinWidths(45, 80, 150, 70, 120, 90, 75, 90);
+        inventoryProductTable.getTable().getColumnModel().getColumn(0).setResizable(false);
+        inventoryProductTable.getTable().getColumnModel().getColumn(0).setPreferredWidth(50);
+        inventoryProductTable.getTable().getColumnModel().getColumn(0).setMinWidth(45);
+        inventoryProductTable.getTable().getColumnModel().getColumn(0).setMaxWidth(60);
         inventoryProductTable.getTable().getColumnModel().getColumn(3).setPreferredWidth(90);
         inventoryProductTable.getTable().getColumnModel().getColumn(6).setPreferredWidth(90);
         inventoryProductTable.getTable().getColumnModel().getColumn(7).setPreferredWidth(110);
@@ -458,8 +450,8 @@ public class InventoryOverviewPanel extends JPanel {
             InventoryBatch fefo = batches.isEmpty() ? null : batches.get(0);
             String batchCode = fefo == null
                     ? "Chưa có lô còn hàng"
-                    : (fefo.getBatchCode() == null || fefo.getBatchCode().isBlank()
-                        ? "—" : fefo.getBatchCode());
+                    : (fefo.getLotNumber() == null || fefo.getLotNumber().isBlank()
+                        ? fefo.getBatchCode() : fefo.getLotNumber());
             String expiry = fefo == null || fefo.getExpiryDate() == null
                     ? "—" : formatLocalDate(fefo.getExpiryDate());
             String fefoQty = fefo == null ? "0" : NumberUtil.formatThousands(fefo.getRemainingQty());
@@ -468,10 +460,9 @@ public class InventoryOverviewPanel extends JPanel {
                     : fefoStatus(fefo);
 
             inventoryProductTable.addRow(new Object[]{
+                    sttOffset + i + 1,
                     product.getProductCode(),
                     product.getProductName(),
-                    product.getCategoryName() == null || product.getCategoryName().isBlank()
-                            ? "—" : product.getCategoryName(),
                     NumberUtil.formatThousands(product.getStock()),
                     batchCode,
                     expiry,
@@ -516,19 +507,15 @@ public class InventoryOverviewPanel extends JPanel {
                 Map<Integer, List<InventoryBatch>> batchesByProduct =
                         inventoryBatchDao.getActiveBatchesByProductIds(ids);
 
-                String[] headers = {"Mã SP", "Tên sản phẩm", "Danh mục", "Tồn kho", "Mã Lô", "HSD", "SL lô", "Trạng thái"};
+                String[] headers = {"Mã SP", "Tên sản phẩm", "Tồn kho", "Lô FEFO", "HSD FEFO", "SL lô FEFO", "Trạng thái"};
                 List<Object[]> rows = new ArrayList<>();
                 for (Product product : products) {
                     List<InventoryBatch> batches = batchesByProduct.getOrDefault(product.getProductId(), List.of());
                     InventoryBatch fefo = batches.isEmpty() ? null : batches.get(0);
                     rows.add(new Object[]{
-                            product.getProductCode(),
-                            product.getProductName(),
-                            product.getCategoryName() == null || product.getCategoryName().isBlank()
-                                    ? "—" : product.getCategoryName(),
-                            product.getStock(),
+                            product.getProductCode(), product.getProductName(), product.getStock(),
                             fefo == null ? "Chưa có lô còn hàng" :
-                                    (fefo.getBatchCode() == null || fefo.getBatchCode().isBlank() ? "—" : fefo.getBatchCode()),
+                                    (fefo.getLotNumber() == null || fefo.getLotNumber().isBlank() ? fefo.getBatchCode() : fefo.getLotNumber()),
                             fefo == null || fefo.getExpiryDate() == null ? "" : formatLocalDate(fefo.getExpiryDate()),
                             fefo == null ? 0 : fefo.getRemainingQty(),
                             fefo == null ? (product.getStock() <= 0 ? "Hết hàng" : "Không có lô") : fefoStatus(fefo)
@@ -607,11 +594,11 @@ public class InventoryOverviewPanel extends JPanel {
 
                 data.trend = inventoryReportDao.getMonthlyCategoryStockTrend(
                         LocalDate.now().minusMonths(5).withDayOfMonth(1), LocalDate.now());
-                data.movement = inventoryReportDao.getMovementSummary(1);
+                data.movement = inventoryReportDao.getMovementSummary(7);
                 data.activeAlerts = stockAlertDao.countActive();
-                data.expiringSoon = inventoryBatchDao.countExpiringSoon(7);
+                data.expiringSoon = inventoryBatchDao.countExpiringSoon(30);
                 data.expiredWithStock = inventoryBatchDao.countExpiredWithStock();
-                data.discrepancies = reconciliationDao.countUncheckedToday();
+                data.discrepancies = reconciliationDao.countDiscrepanciesSince(LocalDateTime.now().minusDays(7));
                 return data;
             }
 

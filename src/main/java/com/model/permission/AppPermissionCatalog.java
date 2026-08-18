@@ -86,17 +86,26 @@ public final class AppPermissionCatalog {
                 "Xem trả hàng NCC", "Xem lịch sử trả hàng nhà cung cấp và báo cáo công nợ.");
 
         put(AppPermission.INVOICE_CREATE, "Bán hàng",
-                "Tạo hoá đơn", "Lập hoá đơn bán hàng tại quầy (POS).");
+                "Tạo hoá đơn",
+                "Lập hoá đơn bán hàng tại quầy (POS).");
+
+        put(AppPermission.INVOICE_VIEW_OWN, "Bán hàng",
+                "Xem hóa đơn của mình",
+                "Chỉ xem các hóa đơn do chính nhân viên đang đăng nhập tạo.");
+
+        put(AppPermission.INVOICE_VIEW_ALL, "Bán hàng",
+                "Xem tất cả hóa đơn",
+                "Xem hóa đơn của tất cả nhân viên.");
+
         put(AppPermission.INVOICE_CANCEL, "Bán hàng",
-                "Huỷ hoá đơn", "Huỷ hoá đơn đã lập.");
+                "Huỷ hoá đơn",
+                "Huỷ hoá đơn đã lập.");
         put(AppPermission.SHIFT_OPERATE, "Bán hàng",
                 "Vận hành ca bán hàng", "Mở ca, ghi thu/chi và đóng/đối soát ca của chính nhân viên.");
         put(AppPermission.SHIFT_VIEW_ALL, "Bán hàng",
                 "Xem tất cả ca bán hàng", "Xem lịch sử ca và chênh lệch quỹ của tất cả nhân viên.");
-        put(AppPermission.SHIFT_MONITOR, "Bán hàng",
-                "Giám sát ca bán hàng", "Xem trang giám sát ca đang mở: số ca, nhân viên, tổng quỹ theo ngày.");
         put(AppPermission.SHIFT_APPROVE, "Bán hàng",
-                "Duyệt đối soát ca", "Đối soát quỹ và duyệt/từ chối ca khi nhân viên đã đóng ca.");
+                "Duyệt đối soát ca", "Duyệt hoặc từ chối kết quả đối soát quỹ khi nhân viên đóng ca.");
         put(AppPermission.RETURN_EXCHANGE_CREATE, "Bán hàng",
                 "Tạo yêu cầu đổi/trả", "Tạo yêu cầu đổi/trả hàng cho 1 hoá đơn (bắt buộc ghi rõ lý do).");
         put(AppPermission.RETURN_EXCHANGE_APPROVE, "Bán hàng",

@@ -16,8 +16,6 @@ public class ActivityLog {
     public static final String ACTION_PERMANENT_DELETE = "PERMANENT_DELETE";
     /** Nhan vien mo ca ban hang. */
     public static final String ACTION_SHIFT_OPEN = "SHIFT_OPEN";
-    public static final String ACTION_SHIFT_APPROVE = "SHIFT_APPROVE";
-    public static final String ACTION_SHIFT_REJECT = "SHIFT_REJECT";
 
     /** Thu them tien mat vao quy. */
     public static final String ACTION_CASH_IN = "CASH_IN";

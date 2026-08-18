@@ -37,20 +37,18 @@ public enum AppPermission implements Permission {
     STOCK_RECONCILE,
     /** Tao hoa don ban hang. */
     INVOICE_CREATE,
-    
+
     /** Xem hoa don do chinh nhan vien hien tai tao. */
     INVOICE_VIEW_OWN,
 
     /** Xem tat ca hoa don cua he thong. */
     INVOICE_VIEW_ALL,
-    
+
     /** Mo ca, ghi thu/chi va dong/doi soat ca cua chinh nhan vien. */
     SHIFT_OPERATE,
     /** Xem lich su ca va chenh lech quy cua tat ca nhan vien. */
     SHIFT_VIEW_ALL,
-    /** Xem trang Giám sát ca đang mở (theo dõi realtime quỹ / NV theo ngày). */
-    SHIFT_MONITOR,
-    /** Đối soát và duyệt/từ chối ca khi NV đã đóng ca. */
+    /** Duyet / tu choi doi soat ca (man hinh giam sat ca). */
     SHIFT_APPROVE,
     /** Huy hoa don. */
     INVOICE_CANCEL,      
@@ -98,8 +96,6 @@ public enum AppPermission implements Permission {
     SUPPLIER_RETURN_VIEW,
     /** Quan ly khuyen mai / ma giam gia (tao, sua, bat-tat, xoa). */
     PROMOTION_MANAGE,
-    
     /** Xem/chinh sua trang "Phan quyen vai tro" - bat/tat quyen cua tung Role. Mac dinh chi ADMIN co (xem RolePermissions). */
     RBAC_MANAGE,
-    
 }

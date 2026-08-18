@@ -18,17 +18,14 @@ public final class AppAlert {
 
     public enum Type { SUCCESS, ERROR, WARNING, INFO }
 
-    // === KICH THUOC MOI ===
-    // Chieu rong toi thieu + toi da: alert se tu dong co gian trong khoang nay
-    private static final int MIN_WIDTH = 400;
-    private static final int MAX_WIDTH = 560;
-    // Chieu cao toi da: neu vuot qua se hien thi thanh cuon
-    private static final int MAX_HEIGHT = 280;
-    private static final int TEXT_SAFETY_MARGIN = 16;
+    private static final int WIDTH = 380;
+    // Khoang đem an toan (px) tru vao chieu rong text de tranh bi cat chu khi
+    // icon/font render rong hon uoc tinh (dau tieng Viet, dau nhay kep, v.v.)
+    private static final int TEXT_SAFETY_MARGIN = 12;
     private static final int MARGIN_TOP = 20;
     private static final int MARGIN_RIGHT = 20;
     private static final int SPACING = 10;
-    private static final int DEFAULT_DURATION_MS = 4000; // Tang them thoi gian hien thi
+    private static final int DEFAULT_DURATION_MS = 3200;
     private static final int FADE_STEP_MS = 25;
     private static final float FADE_IN_STEP = 0.15f;
     private static final float FADE_OUT_STEP = 0.18f;
@@ -37,80 +34,56 @@ public final class AppAlert {
 
     private AppAlert() {}
 
-    public static void success(Component anchor, String message) {
-        show(anchor, Type.SUCCESS, "Thành công", message);
-    }
+    public static void success(Component anchor, String message) { show(anchor, Type.SUCCESS, "Thành công", message); }
+    public static void success(Component anchor, String title, String message) { show(anchor, Type.SUCCESS, title, message); }
 
-    public static void success(Component anchor, String title, String message) {
-        show(anchor, Type.SUCCESS, title, message);
-    }
+    public static void error(Component anchor, String message) { show(anchor, Type.ERROR, "Có lỗi xảy ra", message); }
+    public static void error(Component anchor, String title, String message) { show(anchor, Type.ERROR, title, message); }
 
-    public static void error(Component anchor, String message) {
-        show(anchor, Type.ERROR, "Có lỗi xảy ra", message);
-    }
+    public static void warning(Component anchor, String message) { show(anchor, Type.WARNING, "Cảnh báo", message); }
+    public static void warning(Component anchor, String title, String message) { show(anchor, Type.WARNING, title, message); }
 
-    public static void error(Component anchor, String title, String message) {
-        show(anchor, Type.ERROR, title, message);
-    }
-
-    public static void warning(Component anchor, String message) {
-        show(anchor, Type.WARNING, "Cảnh báo", message);
-    }
-
-    public static void warning(Component anchor, String title, String message) {
-        show(anchor, Type.WARNING, title, message);
-    }
-
-    public static void info(Component anchor, String message) {
-        show(anchor, Type.INFO, "Thông báo", message);
-    }
-
-    public static void info(Component anchor, String title, String message) {
-        show(anchor, Type.INFO, title, message);
-    }
+    public static void info(Component anchor, String message) { show(anchor, Type.INFO, "Thông báo", message); }
+    public static void info(Component anchor, String title, String message) { show(anchor, Type.INFO, title, message); }
 
     public static void show(Component anchor, Type type, String title, String message) {
         show(anchor, type, title, message, DEFAULT_DURATION_MS);
     }
 
+    /** Ban day du: tu chon thoi gian hien thi (ms) truoc khi tu dong bien mat. */
     public static void show(Component anchor, Type type, String title, String message, int durationMs) {
         Window owner = SwingUtilities.getWindowAncestor(anchor);
         if (owner == null) return;
+
         Style style = styleFor(type);
         JWindow toast = buildToastWindow(owner, style, title, message);
+
         List<JWindow> siblings = ACTIVE.computeIfAbsent(owner, w -> new ArrayList<>());
         Runnable dismiss = () -> dismiss(owner, toast, siblings);
+
         installDismissTriggers(toast, dismiss);
         positionAndFadeIn(owner, toast, siblings);
         siblings.add(toast);
+
         Timer lifeTimer = new Timer(durationMs, e -> dismiss.run());
         lifeTimer.setRepeats(false);
         lifeTimer.start();
     }
 
     /**
-     * Tinh chieu rong vung text dua tren chieu rong alert hien tai (MIN_WIDTH).
-     * Neu noi dung qua dai, alert se tu tang chieu rong den MAX_WIDTH.
+     * Tinh chieu rong con lai danh cho vung text, dua tren kich thuoc THAT cua
+     * iconLabel/closeLabel (thay vi mot con so hard-code gia dinh truoc), tru
+     * them insets cua card, hgap cua BorderLayout va mot khoang dem an toan.
+     * Nho vay du icon/padding co thay doi sau nay thi vung text van tu dieu
+     * chinh theo, khong bi cat chu nhu truoc.
      */
-    private static int computeTextWidth(int alertWidth, JLabel iconLabel, JLabel closeLabel) {
-        int cardHorizontalInsets = 2 * (1 + 16);
-        int hgap = 12 * 2;
+    private static int computeTextWidth(JLabel iconLabel, JLabel closeLabel) {
+        int cardHorizontalInsets = 2 * (1 + 16); // LineBorder(1) + EmptyBorder(...,16,...,16)
+        int hgap = 12 * 2; // BorderLayout(12, 0) giua WEST-CENTER va CENTER-EAST
         int iconColumnWidth = iconLabel.getPreferredSize().width;
         int closeColumnWidth = closeLabel.getPreferredSize().width;
         int reserved = cardHorizontalInsets + hgap + iconColumnWidth + closeColumnWidth;
-        return alertWidth - reserved - TEXT_SAFETY_MARGIN;
-    }
-
-    /**
-     * Tinh kich thuoc alert dua tren noi dung that:
-     * - Chieu rong: trong khoang [MIN_WIDTH, MAX_WIDTH]
-     * - Chieu cao: tu dong theo noi dung, toi da MAX_HEIGHT (vuot qua se cuon)
-     */
-    private static Dimension computeAlertSize(JPanel card, JComponent content) {
-        Dimension pref = content.getPreferredSize();
-        int width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, pref.width + 60)); // +60 cho padding/icon
-        int height = Math.min(MAX_HEIGHT, pref.height + 40); // +40 cho padding
-        return new Dimension(width, height);
+        return WIDTH - reserved - TEXT_SAFETY_MARGIN;
     }
 
     private static JWindow buildToastWindow(Window owner, Style style, String title, String message) {
@@ -123,14 +96,12 @@ public final class AppAlert {
                 new LineBorder(style.accent, 1, true),
                 new EmptyBorder(14, 16, 14, 16)));
 
-        // Icon ben trai
         FontIcon fontIcon = FontIcon.of(style.icon, 20);
         fontIcon.setIconColor(style.accent);
         JLabel iconLabel = new JLabel(fontIcon);
         iconLabel.setVerticalAlignment(SwingConstants.TOP);
         iconLabel.setBorder(new EmptyBorder(2, 8, 0, 0));
 
-        // Nut dong ben phai
         FontIcon closeIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
         closeIcon.setIconColor(AppColor.TEXT_SECONDARY);
         JLabel closeLabel = new JLabel(closeIcon);
@@ -138,7 +109,6 @@ public final class AppAlert {
         closeLabel.setBorder(new EmptyBorder(2, 8, 0, 0));
         closeLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
-        // === VUNG NOI DUNG TEXT: co the cuon neu qua dai ===
         JPanel textPanel = new JPanel();
         textPanel.setOpaque(false);
         textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
@@ -150,62 +120,46 @@ public final class AppAlert {
         textPanel.add(titleLabel);
 
         if (message != null && !message.isBlank()) {
-            int textWidth = computeTextWidth(MIN_WIDTH, iconLabel, closeLabel);
-            // Dung JEditorPane thay JLabel de ho tro HTML va tu dong xuong dong tot hon
-            JEditorPane messagePane = new JEditorPane("text/html", "");
-            messagePane.setEditable(false);
-            messagePane.setOpaque(false);
-            messagePane.setFont(AppFont.SMALL);
-            messagePane.setForeground(AppColor.TEXT_SECONDARY);
-            messagePane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-            messagePane.setText("<html><body style='width:" + textWidth + "px; font-family:"
-                    + AppFont.SMALL.getFamily() + "; font-size:" + AppFont.SMALL.getSize() + "pt; color:"
-                    + colorToHex(AppColor.TEXT_SECONDARY) + "'>"
-                    + message.replace("\n", "<br>") + "</body></html>");
-            messagePane.setAlignmentX(Component.LEFT_ALIGNMENT);
-            messagePane.setBorder(new EmptyBorder(3, 0, 0, 0));
-
-            // Dat kich thuoc toi da cho vung text
-            messagePane.setMaximumSize(new Dimension(textWidth, MAX_HEIGHT - 60));
-
-            // Neu chieu cao vuot qua MAX_HEIGHT, bo trong JScrollPane
-            int msgHeight = messagePane.getPreferredSize().height;
-            if (msgHeight > MAX_HEIGHT - 80) {
-                JScrollPane scrollPane = new JScrollPane(messagePane);
-                scrollPane.setOpaque(false);
-                scrollPane.getViewport().setOpaque(false);
-                scrollPane.setBorder(null);
-                scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-                scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-                scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
-                scrollPane.setMaximumSize(new Dimension(textWidth, MAX_HEIGHT - 80));
-                scrollPane.getVerticalScrollBar().setUnitIncrement(12);
-                textPanel.add(scrollPane);
-            } else {
-                textPanel.add(messagePane);
-            }
+            // Truoc day chieu rong noi dung bi hard-code "225px", chi vua khit voi
+            // chieu rong con lai thuc te (~234px o WIDTH=340) -> khong co le, chi
+            // can icon/font render rong hon uoc tinh mot chut (dau tieng Viet, dau
+            // nhay kep...) la chu bi CAT NGANG ben phai. Tinh dong tu kich thuoc
+            // that cua icon/close/padding + them bien an toan de khong con phu
+            // thuoc vao mot con so "vua khit" nhu vay.
+            int textWidth = computeTextWidth(iconLabel, closeLabel);
+            JLabel messageLabel = new JLabel("<html><div style='width:" + textWidth + "px'>"
+                    + message.replace("\n", "<br>") + "</div></html>");
+            messageLabel.setFont(AppFont.SMALL);
+            messageLabel.setForeground(AppColor.TEXT_SECONDARY);
+            messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            messageLabel.setBorder(new EmptyBorder(3, 0, 0, 0));
+            textPanel.add(messageLabel);
         }
 
         card.add(iconLabel, BorderLayout.WEST);
         card.add(textPanel, BorderLayout.CENTER);
         card.add(closeLabel, BorderLayout.EAST);
 
-        // === Tinh kich thuoc cuoi cung ===
-        Dimension finalSize = computeAlertSize(card, textPanel);
-        card.setPreferredSize(finalSize);
+        
+        int preferredHeight = card.getPreferredSize().height;
+        card.setPreferredSize(new Dimension(WIDTH, preferredHeight));
 
         toast.add(card, BorderLayout.CENTER);
         toast.pack();
 
-        try { toast.setAlwaysOnTop(true); } catch (Exception ignored) {}
+        // Chi lam "con" cua owner (JWindow(owner)) khong dam bao toast luon noi
+        // tren TAT CA cua so khac trong app - no chi dam bao noi tren rieng
+        // owner cua no. Neu co dialog modal khac (vd ReturnExchangeDialog) mo
+        // sau va cung la "anh em" (sibling, cung 1 owner) voi cua so anchor cua
+        // toast, dialog do van co the ve de len toast (nhu bao cao cua nguoi
+        // dung). setAlwaysOnTop() ep he dieu hanh giu toast o lop tren cung,
+        // bat ke thu tu z-order/dialog modal nao khac dang mo.
+        try { toast.setAlwaysOnTop(true); } catch (Exception ignored) {} // 1 so he thong khong ho tro - bo qua, khong anh huong chuc nang
 
         return toast;
     }
 
-    private static String colorToHex(Color color) {
-        return String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
-    }
-
+    /** Bam vao bat ky dau tren toast (ke ca chu tieu de/noi dung) deu dong som duoc, khong can doi het thoi gian. */
     private static void installDismissTriggers(JWindow toast, Runnable dismiss) {
         java.awt.event.MouseAdapter clickToClose = new java.awt.event.MouseAdapter() {
             @Override public void mouseClicked(java.awt.event.MouseEvent e) { dismiss.run(); }
@@ -238,6 +192,10 @@ public final class AppAlert {
         int x = ownerLoc.x + owner.getWidth() - toast.getWidth() - MARGIN_RIGHT;
         toast.setLocation(x, y);
 
+        // setOpacity() co the nem UnsupportedOperationException/IllegalArgumentException tren
+        // he thong khong ho tro per-pixel translucency (vd 1 so config Linux/X11) - im lang bo
+        // qua la CO CHU DICH: toast van hien thi binh thuong (chi mat hieu ung fade), khong anh
+        // huong chuc nang, va day la hieu ung tham my chay lien tuc nen khong dang ghi log.
         try { toast.setOpacity(0f); } catch (Exception ignored) {}
         toast.setVisible(true);
         toast.toFront();
@@ -250,13 +208,14 @@ public final class AppAlert {
                 opacity[0] = 1f;
                 timer.stop();
             }
-            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {}
+            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {} // xem ghi chu o tren
         });
         timer.start();
     }
 
     private static void dismiss(Window owner, JWindow toast, List<JWindow> siblings) {
         if (!toast.isDisplayable()) return;
+
         float[] opacity = {1f};
         Timer timer = new Timer(FADE_STEP_MS, null);
         timer.addActionListener(e -> {
@@ -268,11 +227,12 @@ public final class AppAlert {
                 reflow(owner, siblings);
                 return;
             }
-            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {}
+            try { toast.setOpacity(opacity[0]); } catch (Exception ignored) {} // xem ghi chu o positionAndFadeIn()
         });
         timer.start();
     }
 
+    /** Sau khi 1 toast bien mat, day cac toast con lai len tren de khong con khoang trong. */
     private static void reflow(Window owner, List<JWindow> siblings) {
         Point ownerLoc;
         try {
@@ -298,7 +258,6 @@ public final class AppAlert {
         final Color accent;
         final Color background;
         final FontAwesomeSolid icon;
-
         Style(Color accent, Color background, FontAwesomeSolid icon) {
             this.accent = accent;
             this.background = background;

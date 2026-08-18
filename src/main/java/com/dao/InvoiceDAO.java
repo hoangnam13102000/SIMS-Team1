@@ -54,6 +54,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				+ "inv.SubTotal, inv.DiscountAmount, inv.PromotionID, inv.PromotionCode, "
 				+ "inv.PointsUsed, inv.PointsDiscountAmount, " + "inv.VATRate, inv.VATAmount, inv.TotalAmount, "
 				+ "inv.OriginalTotalAmount, " + "inv.PaymentMethod, inv.PayPalOrderID, inv.PayPalCaptureID, "
+				+ "inv.PayOsOrderCode, inv.PayOsPaymentLinkID, inv.BankTransferReference, "
 				+ "inv.Status, inv.CancelReason, inv.CancelledAt, "
 				+ "(SELECT COUNT(*) FROM InvoiceDetails d WHERE d.InvoiceID = inv.InvoiceID) AS ItemCount";
 	}
@@ -107,6 +108,10 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 		invoice.setPaymentMethod(rs.getString("PaymentMethod"));
 		invoice.setPayPalOrderId(rs.getString("PayPalOrderID"));
 		invoice.setPayPalCaptureId(rs.getString("PayPalCaptureID"));
+		long payOsOrderCode = rs.getLong("PayOsOrderCode");
+		invoice.setPayOsOrderCode(rs.wasNull() ? null : payOsOrderCode);
+		invoice.setPayOsPaymentLinkId(rs.getString("PayOsPaymentLinkID"));
+		invoice.setBankTransferReference(rs.getString("BankTransferReference"));
 		invoice.setStatus(rs.getString("Status"));
 		invoice.setCancelReason(rs.getString("CancelReason"));
 
@@ -268,6 +273,10 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 	}
 
 	public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
+		return createInvoice(invoice, items, null);
+	}
+
+	public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items, BigDecimal expectedTotalAmount) {
 		if (invoice == null || items == null || items.isEmpty()) {
 			return false;
 		}
@@ -278,8 +287,10 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 
 		String insertInvoiceSql = "INSERT INTO Invoices "
 				+ "(InvoiceCode, ShiftID, CreatedBy, CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
+				+ "PayOsOrderCode, PayOsPaymentLinkID, BankTransferReference, "
 				+ "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode, "
-				+ "PointsUsed, PointsDiscountAmount) " + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 0, 0)";
+				+ "PointsUsed, PointsDiscountAmount) "
+				+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 0, 0)";
 		String insertDetailSql = "INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES (?, ?, ?, ?)";
 		String sumLineTotalSql = "SELECT COALESCE(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
 		String updateTotalsSql = "UPDATE Invoices SET " + "InvoiceCode = ?, " + "SubTotal = ?, " + "TotalAmount = ?, "
@@ -334,16 +345,31 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 					} else {
 						ps.setNull(7, Types.VARCHAR);
 					}
-					ps.setBigDecimal(8, invoice.getVatRate());
-					if (invoice.getPromotionId() != null) {
-						ps.setInt(9, invoice.getPromotionId());
+					if (invoice.getPayOsOrderCode() != null) {
+						ps.setLong(8, invoice.getPayOsOrderCode());
 					} else {
-						ps.setNull(9, Types.INTEGER);
+						ps.setNull(8, Types.BIGINT);
 					}
-					if (invoice.getPromotionCode() != null) {
-						ps.setString(10, invoice.getPromotionCode());
+					if (invoice.getPayOsPaymentLinkId() != null) {
+						ps.setString(9, invoice.getPayOsPaymentLinkId());
+					} else {
+						ps.setNull(9, Types.VARCHAR);
+					}
+					if (invoice.getBankTransferReference() != null) {
+						ps.setString(10, invoice.getBankTransferReference());
 					} else {
 						ps.setNull(10, Types.VARCHAR);
+					}
+					ps.setBigDecimal(11, invoice.getVatRate());
+					if (invoice.getPromotionId() != null) {
+						ps.setInt(12, invoice.getPromotionId());
+					} else {
+						ps.setNull(12, Types.INTEGER);
+					}
+					if (invoice.getPromotionCode() != null) {
+						ps.setString(13, invoice.getPromotionCode());
+					} else {
+						ps.setNull(13, Types.VARCHAR);
 					}
 					ps.executeUpdate();
 
@@ -429,8 +455,28 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				}
 
 				BigDecimal totalAmount = totalBeforePoints.subtract(pointsDiscount);
-				if (totalAmount.signum() < 0)
+				if (totalAmount.signum() < 0) {
 					totalAmount = BigDecimal.ZERO;
+				}
+
+				/*
+				 * Với payment gateway như PayPal/VietQR:
+				 *
+				 * số tiền hóa đơn được tính lại trong transaction phải đúng bằng số tiền đã gửi
+				 * sang gateway.
+				 *
+				 * Nếu trong thời gian khách thanh toán có thay đổi điểm, giảm giá hoặc dữ liệu
+				 * khác thì rollback.
+				 */
+				if (expectedTotalAmount != null && totalAmount.compareTo(expectedTotalAmount) != 0) {
+
+					con.rollback();
+
+					AppLogger.getInstance().error(ErrorCode.INVOICE_CREATE_FAIL, "Invoice total mismatch"
+							+ " - expected=" + expectedTotalAmount + " - actual=" + totalAmount, null);
+
+					return false;
+				}
 
 				String invoiceCode = "HD-"
 						+ java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))
@@ -948,6 +994,65 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 			}
 		} catch (Exception e) {
 			AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "InvoiceDAO.findById - invoiceId=" + invoiceId, e);
+		}
+		return null;
+	}
+
+	public Invoice findByPayPalCaptureId(String payPalCaptureId) {
+
+		if (payPalCaptureId == null || payPalCaptureId.isBlank()) {
+			return null;
+		}
+
+		String sql = "SELECT " + getColumns() + " FROM " + getTableName() + " WHERE inv.PayPalCaptureID = ? "
+				+ "LIMIT 1";
+
+		try (Connection con = DBConnection.getConnection();
+
+				PreparedStatement ps = con.prepareStatement(sql)) {
+
+			ps.setString(1, payPalCaptureId.trim());
+
+			try (ResultSet rs = ps.executeQuery()) {
+
+				if (rs.next()) {
+
+					Invoice invoice = mapResultSet(rs);
+
+					attachReturnSummary(invoice);
+
+					return invoice;
+				}
+			}
+
+		} catch (Exception e) {
+
+			AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+					"InvoiceDAO.findByPayPalCaptureId" + " - captureId=" + payPalCaptureId, e);
+		}
+
+		return null;
+	}
+
+	public Invoice findByPayOsOrderCode(long orderCode) {
+		if (orderCode <= 0) {
+			return null;
+		}
+
+		String sql = "SELECT " + getColumns() + " FROM " + getTableName() + " WHERE inv.PayOsOrderCode = ? LIMIT 1";
+
+		try (Connection con = DBConnection.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
+			ps.setLong(1, orderCode);
+			try (ResultSet rs = ps.executeQuery()) {
+				if (rs.next()) {
+					Invoice invoice = mapResultSet(rs);
+					attachReturnSummary(invoice);
+					return invoice;
+				}
+			}
+		} catch (Exception e) {
+			AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+					"InvoiceDAO.findByPayOsOrderCode - orderCode=" + orderCode, e);
 		}
 		return null;
 	}

@@ -3,6 +3,7 @@ package com.view.admin.inventory;
 import com.components.AppAlert;
 import com.components.BaseDialog;
 import com.components.DatePickerField;
+import com.components.common.SquareCheckIcon;
 import com.components.crud.BaseCrudPanel;
 import com.dao.ProductDAO;
 import com.dao.StockReconciliationDAO;
@@ -196,12 +197,20 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
         JTable jt = table.getTable();
         jt.getColumnModel().getColumn(COL_CHECKED).setCellRenderer(new DefaultTableCellRenderer() {
             private final JCheckBox box = new JCheckBox();
-            { box.setHorizontalAlignment(SwingConstants.CENTER); box.setOpaque(false); }
+            {
+                box.setHorizontalAlignment(SwingConstants.CENTER);
+                box.setOpaque(false);
+                box.setBorderPainted(false);
+                box.setFocusPainted(false);
+                box.setIcon(new SquareCheckIcon(true));
+            }
             @Override
             public Component getTableCellRendererComponent(JTable tbl, Object value, boolean selected, boolean focus, int row, int column) {
+                boolean isToday = isToday(rowToItem(tbl.convertRowIndexToModel(row)));
                 box.setSelected(Boolean.TRUE.equals(value));
-                box.setEnabled(isToday(rowToItem(tbl.convertRowIndexToModel(row))));
-                box.setToolTipText(box.isEnabled() ? "Tick khi Đã kiểm lô hàng" : "Phiên đã khóa");
+                box.setEnabled(isToday);
+                box.setCursor(isToday ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
+                box.setToolTipText(isToday ? "Tick khi Đã kiểm lô hàng" : "Phiên đã khóa — chỉ xem, không sửa được");
                 box.setBackground(selected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 return box;
             }
@@ -210,6 +219,11 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
             {
                 JCheckBox cb = (JCheckBox) getComponent();
                 cb.setHorizontalAlignment(SwingConstants.CENTER);
+                cb.setOpaque(false);
+                cb.setBorderPainted(false);
+                cb.setFocusPainted(false);
+                cb.setIcon(new SquareCheckIcon(true));
+                cb.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             }
             @Override
             public boolean isCellEditable(EventObject event) {
@@ -617,16 +631,6 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
     protected void openForm(StockReconciliation item) {
         Integer userId = currentUserId();
         if (userId == null) return;
-
-        int option = JOptionPane.showConfirmDialog(
-                this,
-                "Khi đồng bộ sẽ làm mới lại toàn bộ phiếu.\nBạn có muốn đồng bộ không?",
-                "Xác nhận đồng bộ",
-                JOptionPane.YES_OPTION,
-                JOptionPane.WARNING_MESSAGE,
-                null);
-        if (option != JOptionPane.YES_OPTION) return;
-
         rolloverToNewDayIfNeeded();
         List<Product> activeProducts = productDAO.findAllActive();
         if (activeProducts.isEmpty()) {
@@ -634,21 +638,24 @@ public class StockReconciliationPanel extends BaseCrudPanel<StockReconciliation>
                     "Chưa có sản phẩm đang bán nào để đối chiếu. Vui lòng thêm sản phẩm trước.");
             return;
         }
-        int created = reconciliationDAO.refreshDailySession(LocalDate.now(), userId);
-        if (created < 0) {
-            AppAlert.error(this, "Đồng bộ thất bại",
-                    "Không thể làm mới phiên đối chiếu. Vui lòng thử lại.");
-            return;
+        int created = reconciliationDAO.ensureDailySession(LocalDate.now(), userId);
+        if (created > 0) {
+            AppAlert.success(this, "Đồng bộ thành công",
+                    "Đã thêm " + created + " sản phẩm vào phiên đối chiếu hôm nay.");
+            LocalDate today = LocalDate.now();
+            fromDateFilter.setValue(today);
+            toDateFilter.setValue(today);
+            if (clearDateFilterLink != null) clearDateFilterLink.setVisible(true);
+            reload();
+        } else {
+            AppAlert.success(this, "Đã đồng bộ",
+                    "Phiên hôm nay đã có đủ " + activeProducts.size() + " sản phẩm đang bán.");
+            LocalDate today = LocalDate.now();
+            fromDateFilter.setValue(today);
+            toDateFilter.setValue(today);
+            if (clearDateFilterLink != null) clearDateFilterLink.setVisible(true);
+            applyFilters();
         }
-
-        LocalDate today = LocalDate.now();
-        fromDateFilter.setValue(today);
-        toDateFilter.setValue(today);
-        if (clearDateFilterLink != null) clearDateFilterLink.setVisible(true);
-        reload();
-        AppAlert.success(this, "Đồng bộ thành công",
-                "Đã làm mới toàn bộ phiếu hôm nay, bỏ tích các phiếu đã kiểm kê " +
-                "và cập nhật tồn kho theo số lượng còn lại của từng lô.");
     }
 
     @Override

@@ -33,7 +33,8 @@ public class StoreConfigDAO {
     private static final BigDecimal DEFAULT_POINT_RATE = new BigDecimal("10000");
     private static final BigDecimal DEFAULT_POINT_REDEEM_RATE = new BigDecimal("1000");
     private static final BigDecimal DEFAULT_MARGIN = new BigDecimal("5000");
-    private static final BigDecimal DEFAULT_APPROVAL_THRESHOLD = new BigDecimal("0");
+    private static final BigDecimal DEFAULT_APPROVAL_THRESHOLD =
+            new BigDecimal("500000");
 
     public BigDecimal getVatRate() {
         String raw = getValue(KEY_VAT_RATE, null);

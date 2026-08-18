@@ -150,7 +150,7 @@ public class AdminMainFrame extends JFrame {
          * Lui Settings sang trái để không đè bong bóng AI
          * 60px + khe 16px.
          */
-        SettingsButton.attach(this, 52 + 16, true);
+        SettingsButton.attach(this, 60 + 16, true);
 
         /*
          * ============================================================
@@ -559,7 +559,7 @@ public class AdminMainFrame extends JFrame {
         );
 
         /*
-         * Ca làm việc (mở/đóng ca + lịch sử).
+         * Ca làm việc.
          */
         layout.addPage(
                 "shifts",
@@ -571,15 +571,15 @@ public class AdminMainFrame extends JFrame {
         );
 
         /*
-         * Giám sát ca đang mở — phân quyền SHIFT_MONITOR
-         * (mặc định: Admin + Quản lý bán hàng).
+         * Giám sát / duyệt đối soát ca (QL + Admin).
          */
         layout.addPage(
                 "shiftMonitor",
-                "Giám sát ca đang mở",
-                FontAwesomeSolid.DESKTOP,
+                Lang.get("sidebar.shiftMonitor"),
+                FontAwesomeSolid.USER_CHECK,
                 new ShiftMonitorPanel(),
-                AppPermission.SHIFT_MONITOR
+                AppPermission.SHIFT_VIEW_ALL,
+                AppPermission.SHIFT_APPROVE
         );
 
         /*
@@ -606,8 +606,8 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.invoices"),
                 FontAwesomeSolid.RECEIPT,
                 new InvoicePanel(),
-                AppPermission.INVOICE_CREATE,
-                AppPermission.INVOICE_CANCEL
+                AppPermission.INVOICE_VIEW_OWN,
+                AppPermission.INVOICE_VIEW_ALL
         );
 
         /*
