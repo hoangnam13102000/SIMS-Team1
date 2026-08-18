@@ -53,7 +53,8 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				+ "inv.CustomerID, cu.FullName AS CustomerName, inv.CreatedAt, "
 				+ "inv.SubTotal, inv.DiscountAmount, inv.PromotionID, inv.PromotionCode, "
 				+ "inv.PointsUsed, inv.PointsDiscountAmount, " + "inv.VATRate, inv.VATAmount, inv.TotalAmount, "
-				+ "inv.PaymentMethod, inv.PayPalOrderID, inv.PayPalCaptureID, inv.Status, inv.CancelReason, inv.CancelledAt, "
+				+ "inv.OriginalTotalAmount, " + "inv.PaymentMethod, inv.PayPalOrderID, inv.PayPalCaptureID, "
+				+ "inv.Status, inv.CancelReason, inv.CancelledAt, "
 				+ "(SELECT COUNT(*) FROM InvoiceDetails d WHERE d.InvoiceID = inv.InvoiceID) AS ItemCount";
 	}
 
@@ -96,8 +97,13 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 			// DB chua migration diem
 		}
 		invoice.setVatRate(rs.getBigDecimal("VATRate"));
+
 		invoice.setVatAmount(rs.getBigDecimal("VATAmount"));
+
 		invoice.setTotalAmount(rs.getBigDecimal("TotalAmount"));
+
+		invoice.setOriginalTotalAmount(rs.getBigDecimal("OriginalTotalAmount"));
+
 		invoice.setPaymentMethod(rs.getString("PaymentMethod"));
 		invoice.setPayPalOrderId(rs.getString("PayPalOrderID"));
 		invoice.setPayPalCaptureId(rs.getString("PayPalCaptureID"));
@@ -276,8 +282,9 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				+ "PointsUsed, PointsDiscountAmount) " + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 0, 0)";
 		String insertDetailSql = "INSERT INTO InvoiceDetails (InvoiceID, ProductID, Quantity, UnitPrice) VALUES (?, ?, ?, ?)";
 		String sumLineTotalSql = "SELECT COALESCE(SUM(LineTotal), 0) FROM InvoiceDetails WHERE InvoiceID = ?";
-		String updateTotalsSql = "UPDATE Invoices SET InvoiceCode = ?, SubTotal = ?, "
-				+ "TotalAmount = ?, DiscountAmount = ?, PointsUsed = ?, PointsDiscountAmount = ? WHERE InvoiceID = ?";
+		String updateTotalsSql = "UPDATE Invoices SET " + "InvoiceCode = ?, " + "SubTotal = ?, " + "TotalAmount = ?, "
+				+ "OriginalTotalAmount = ?, " + "DiscountAmount = ?, " + "PointsUsed = ?, "
+				+ "PointsDiscountAmount = ? " + "WHERE InvoiceID = ?";
 
 		try (Connection con = DBConnection.getConnection()) {
 			con.setAutoCommit(false);
@@ -430,13 +437,31 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 						+ "-" + String.format("%04d", invoiceId);
 
 				try (PreparedStatement ps = con.prepareStatement(updateTotalsSql)) {
+
 					ps.setString(1, invoiceCode);
+
 					ps.setBigDecimal(2, subTotal);
+
+					/*
+					 * Giá trị hiện tại của hóa đơn. Sau RETURN có thể bị trigger giảm.
+					 */
 					ps.setBigDecimal(3, totalAmount);
-					ps.setBigDecimal(4, discount);
-					ps.setInt(5, pointsUsed);
-					ps.setBigDecimal(6, pointsDiscount);
-					ps.setInt(7, invoiceId);
+
+					/*
+					 * Tổng tiền lúc bán ban đầu.
+					 *
+					 * Chỉ ghi khi tạo hóa đơn. Trigger RETURN/EXCHANGE không được thay đổi cột này.
+					 */
+					ps.setBigDecimal(4, totalAmount);
+
+					ps.setBigDecimal(5, discount);
+
+					ps.setInt(6, pointsUsed);
+
+					ps.setBigDecimal(7, pointsDiscount);
+
+					ps.setInt(8, invoiceId);
+
 					ps.executeUpdate();
 				}
 
@@ -468,6 +493,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				invoice.setSubTotal(subTotal);
 				invoice.setDiscountAmount(discount);
 				invoice.setTotalAmount(totalAmount);
+				invoice.setOriginalTotalAmount(totalAmount);
 				invoice.setPointsUsed(pointsUsed);
 				invoice.setPointsDiscountAmount(pointsDiscount);
 				invoice.setPointsEarned(pointsEarned);
@@ -673,9 +699,17 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 
 	private void fillReturnSummary(Invoice inv) {
 		String sqlRefund = "SELECT "
-				+ "COALESCE(SUM(CASE WHEN Status = 'APPROVED' THEN TotalValue ELSE 0 END), 0) AS Refunded, "
-				+ "SUM(CASE WHEN Status = 'APPROVED' THEN 1 ELSE 0 END) AS Cnt "
-				+ "FROM ReturnExchanges WHERE InvoiceID = ?";
+
+				+ "COALESCE(SUM(" + " CASE " + "   WHEN Status = 'APPROVED' " + "   THEN TotalValue " + "   ELSE 0 "
+				+ " END" + "), 0) AS ApprovedRefund, "
+
+				+ "COALESCE(SUM(" + " CASE " + "   WHEN Status = 'APPROVED' " + "    AND RefundStatus = 'COMPLETED' "
+				+ "   THEN TotalValue " + "   ELSE 0 " + " END" + "), 0) AS CompletedRefund, "
+
+				+ "SUM(" + " CASE " + "   WHEN Status = 'APPROVED' " + "   THEN 1 " + "   ELSE 0 " + " END"
+				+ ") AS Cnt "
+
+				+ "FROM ReturnExchanges " + "WHERE InvoiceID = ?";
 
 		String sqlOriginal = "SELECT COALESCE(SUM(Quantity * UnitPrice), 0) AS OriginalSub "
 				+ "FROM InvoiceDetails WHERE InvoiceID = ?";
@@ -691,8 +725,15 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				ps.setInt(1, inv.getInvoiceId());
 				try (ResultSet rs = ps.executeQuery()) {
 					if (rs.next()) {
-						BigDecimal refunded = rs.getBigDecimal("Refunded");
-						inv.setRefundedAmount(refunded != null ? refunded : BigDecimal.ZERO);
+
+						BigDecimal approvedRefund = rs.getBigDecimal("ApprovedRefund");
+
+						inv.setRefundedAmount(approvedRefund != null ? approvedRefund : BigDecimal.ZERO);
+
+						BigDecimal completedRefund = rs.getBigDecimal("CompletedRefund");
+
+						inv.setCompletedRefundAmount(completedRefund != null ? completedRefund : BigDecimal.ZERO);
+
 						inv.setApprovedReturnCount(rs.getInt("Cnt"));
 					}
 				}
