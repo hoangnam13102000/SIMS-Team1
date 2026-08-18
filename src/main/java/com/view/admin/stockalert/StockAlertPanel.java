@@ -56,6 +56,7 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
         table.setBadgeColumn(2, this::alertTypeLabel, this::alertTypeColor);
         table.setBadgeColumn(5, this::statusLabel, this::statusColor);
 
+        // Cột 0 (Mã SP): căn giữa + icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -65,14 +66,14 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 String text = value != null ? value.toString() : "";
                 c.setText(text);
                 c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setHorizontalAlignment(SwingConstants.CENTER);
                 c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 if (text != null && !text.isBlank()) {
                     FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
                     copyIcon.setIconColor(AppColor.ACCENT);
                     c.setIcon(copyIcon);
                     c.setIconTextGap(6);
-                    c.setHorizontalTextPosition(SwingConstants.LEFT);
+                    c.setHorizontalTextPosition(SwingConstants.RIGHT);
                     c.setToolTipText("Click để copy mã sản phẩm: " + text);
                 } else {
                     c.setIcon(null);
@@ -103,7 +104,26 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
         buildFilterBar();
         initialLoad();
         applyColumnWidths();
+        centerColumns(1, 3, 4); // Tên sản phẩm, Người báo cáo, Thời gian
         stockAlertDAO.markAllSeen();
+    }
+
+    // Renderer căn giữa dùng chung, vẫn giữ màu xen kẽ dòng + màu chọn
+    private void centerColumns(int... columnIndexes) {
+        DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column);
+                c.setHorizontalAlignment(SwingConstants.CENTER);
+                c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
+                return c;
+            }
+        };
+        for (int idx : columnIndexes) {
+            table.getTable().getColumnModel().getColumn(idx).setCellRenderer(centerRenderer);
+        }
     }
 
     // ================================================================

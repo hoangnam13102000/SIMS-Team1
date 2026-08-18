@@ -26,6 +26,7 @@ import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -50,6 +51,10 @@ public class SupplierReturnDetailDialog extends JDialog {
 
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter D = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    // Width tối thiểu cho từng cột (sàn dưới) — width thực tế sẽ do autoFitDetailColumns()
+    // tính theo nội dung, nhưng không nhỏ hơn các giá trị này để tránh cột quá chật.
+    private static final int[] DETAIL_MIN_COLUMN_WIDTHS = {80, 80, 140, 90, 90, 70, 90, 100};
 
     public SupplierReturnDetailDialog(Frame owner, SupplierReturn ret, SupplierReturnDAO dao) {
         super(owner, "Chi tiết phiếu trả hàng NCC", Dialog.ModalityType.APPLICATION_MODAL);
@@ -126,21 +131,17 @@ public class SupplierReturnDetailDialog extends JDialog {
     }
 
     private JComponent buildBody(SupplierReturn r, List<SupplierReturnDetail> details) {
-        JPanel content = new JPanel();
+        // BorderLayout thay vì BoxLayout trong JScrollPane: infoCard cố định chiều cao ở
+        // NORTH, tableCard chiếm CENTER — CENTER luôn được cấp phát toàn bộ không gian còn
+        // lại của dialog, nên khi resize dialog to/nhỏ, khu vực danh sách lô trả hàng sẽ tự
+        // giãn/co theo, thay vì giữ chiều cao cố định như trước.
+        JPanel content = new JPanel(new BorderLayout(0, 14));
         content.setOpaque(false);
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(new EmptyBorder(16, 20, 12, 20));
 
-        content.add(infoCard(r));
-        content.add(Box.createVerticalStrut(14));
-        content.add(tableCard(details));
-
-        JScrollPane scroll = new JScrollPane(content);
-        scroll.setBorder(null);
-        scroll.getViewport().setOpaque(false);
-        scroll.setOpaque(false);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        return scroll;
+        content.add(infoCard(r), BorderLayout.NORTH);
+        content.add(tableCard(details), BorderLayout.CENTER);
+        return content;
     }
 
     private JPanel infoCard(SupplierReturn r) {
@@ -198,7 +199,23 @@ public class SupplierReturnDetailDialog extends JDialog {
         JScrollPane scroll = new JScrollPane(table);
         scroll.setBorder(BorderFactory.createLineBorder(softBorder(), 1));
         scroll.getViewport().setBackground(AppColor.WHITE);
-        scroll.setPreferredSize(new Dimension(0, Math.min(280, 40 + details.size() * 36)));
+        // ====== THANH CUỘN NGANG cho bảng chi tiết ======
+        // AUTO_RESIZE_OFF (set trong buildTable) + width cột tự tính theo nội dung
+        // (autoFitDetailColumns) — khi tổng width vượt khung nhìn dialog, JScrollPane tự
+        // hiện scrollbar ngang; khi không vượt, scrollbar tự ẩn.
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+
+        int totalColumnWidth = 0;
+        for (int col = 0; col < table.getColumnCount(); col++) {
+            totalColumnWidth += table.getColumnModel().getColumn(col).getPreferredWidth();
+        }
+        // Chiều cao không còn set cứng — tableCard giờ nằm ở CENTER của content (BorderLayout),
+        // nên sẽ tự nhận toàn bộ chiều cao còn lại của dialog và co giãn khi resize.
+        // preferredSize width vẫn giữ để layout cha tính preferred-size hợp lý (không dùng
+        // cho việc giới hạn kích thước thực tế lúc runtime).
+        scroll.setPreferredSize(new Dimension(totalColumnWidth, 240));
+        // ==================================================
 
         card.add(top, BorderLayout.NORTH);
         card.add(scroll, BorderLayout.CENTER);
@@ -233,6 +250,14 @@ public class SupplierReturnDetailDialog extends JDialog {
                 }
                 return c;
             }
+
+            // Quan trọng cho cuộn ngang: KHÔNG cho bảng tự co giãn để lấp đầy viewport theo
+            // chiều ngang. Nếu để mặc định (true khi autoResize != OFF), JTable sẽ ép các
+            // cột co lại vừa khung thay vì để JScrollPane hiện thanh cuộn ngang.
+            @Override
+            public boolean getScrollableTracksViewportWidth() {
+                return getPreferredSize().width < getParent().getWidth();
+            }
         };
         table.setFont(AppFont.BODY != null ? AppFont.BODY : new Font("Segoe UI", Font.PLAIN, 13));
         table.setRowHeight(34);
@@ -246,30 +271,97 @@ public class SupplierReturnDetailDialog extends JDialog {
         table.setFillsViewportHeight(true);
         table.setRowSelectionAllowed(false);
         table.setFocusable(false);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 
-        int[] widths = {90, 100, 170, 90, 60, 90, 110};
+        // Width khởi tạo tạm — sẽ được autoFitDetailColumns() tính lại chính xác theo nội
+        // dung thật ngay bên dưới, sau khi renderer của từng cột đã được gán đầy đủ.
+        int[] widths = DETAIL_MIN_COLUMN_WIDTHS;
         for (int i = 0; i < widths.length && i < table.getColumnCount(); i++) {
             table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         }
 
-        DefaultTableCellRenderer right = new DefaultTableCellRenderer();
-        right.setHorizontalAlignment(SwingConstants.RIGHT);
-        table.getColumnModel().getColumn(4).setCellRenderer(right);
-        table.getColumnModel().getColumn(5).setCellRenderer(right);
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                           boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(
+                        t, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                setBorder(new EmptyBorder(0, 8, 0, 8));
+                if (!isSelected) {
+                    setBackground(row % 2 == 0 ? AppColor.WHITE
+                            : (AppColor.BG_LIGHTER != null ? AppColor.BG_LIGHTER : new Color(248, 250, 252)));
+                    setForeground(AppColor.TEXT_PRIMARY);
+                }
+                return c;
+            }
+        };
 
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(center);
+        }
+
+        // Riêng cột Hoàn tiền: vẫn màu xanh + in đậm nhưng căn giữa.
         DefaultTableCellRenderer refundRenderer = new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
                                                            boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setHorizontalAlignment(SwingConstants.RIGHT);
+                Component c = super.getTableCellRendererComponent(
+                        t, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.CENTER);
                 setForeground(AppColor.SUCCESS);
                 setFont(getFont().deriveFont(Font.BOLD));
+                setBorder(new EmptyBorder(0, 8, 0, 8));
+                if (!isSelected) {
+                    setBackground(row % 2 == 0 ? AppColor.WHITE
+                            : (AppColor.BG_LIGHTER != null ? AppColor.BG_LIGHTER : new Color(248, 250, 252)));
+                }
                 return c;
             }
         };
-        table.getColumnModel().getColumn(6).setCellRenderer(refundRenderer);
+        table.getColumnModel().getColumn(7).setCellRenderer(refundRenderer);
+
+        // Header cũng căn giữa.
+        table.getTableHeader().setDefaultRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel label = (JLabel) super.getTableCellRendererComponent(
+                        t, value, isSelected, hasFocus, row, column);
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                label.setBorder(new EmptyBorder(0, 8, 0, 8));
+                return label;
+            }
+        });
+
+        // ====== TỰ GIÃN CỘT VỪA THEO NỘI DUNG (thay cho width cố định cứng trước đây) ======
+        // Đo width thật của header + từng ô dữ liệu (dùng đúng renderer đã gán ở trên, kể cả
+        // renderer refund/center), rồi set preferredWidth = max tìm được, có padding.
+        autoFitDetailColumns(table);
+        // =====================================================================================
+
         return table;
+    }
+
+    private void autoFitDetailColumns(JTable table) {
+        int columnCount = table.getColumnCount();
+        int rowCount = table.getRowCount();
+        for (int col = 0; col < columnCount; col++) {
+            javax.swing.table.TableColumn column = table.getColumnModel().getColumn(col);
+            int maxWidth = col < DETAIL_MIN_COLUMN_WIDTHS.length ? DETAIL_MIN_COLUMN_WIDTHS[col] : 70;
+
+            TableCellRenderer headerRenderer = table.getTableHeader().getDefaultRenderer();
+            Component headerComp = headerRenderer.getTableCellRendererComponent(
+                    table, column.getHeaderValue(), false, false, -1, col);
+            maxWidth = Math.max(maxWidth, headerComp.getPreferredSize().width + 16);
+
+            for (int row = 0; row < rowCount; row++) {
+                TableCellRenderer cellRenderer = table.getCellRenderer(row, col);
+                Component cellComp = table.prepareRenderer(cellRenderer, row, col);
+                maxWidth = Math.max(maxWidth, cellComp.getPreferredSize().width + 16);
+            }
+            column.setPreferredWidth(maxWidth);
+        }
     }
 
     private JPanel buildFooter(SupplierReturn r) {

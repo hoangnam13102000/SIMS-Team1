@@ -89,6 +89,10 @@ public class ProductDAO extends BaseDAO<Product> {
                 condition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(like);
             }
+            // Cho phép tìm sản phẩm theo Mã lô hệ thống (InventoryBatch.BatchCode).
+            condition.append(" OR EXISTS (SELECT 1 FROM InventoryBatch b "
+                    + "WHERE b.ProductID = p.ProductID AND b.BatchCode LIKE ? ESCAPE '!')");
+            params.add(like);
             condition.append(")");
             conditions.add(condition.toString());
         }
@@ -114,6 +118,10 @@ public class ProductDAO extends BaseDAO<Product> {
                 condition.append(columns[i]).append(" LIKE ? ESCAPE '!'");
                 params.add(like);
             }
+            // Đồng bộ điều kiện tìm kiếm với phân trang: tìm được theo Mã lô hệ thống.
+            condition.append(" OR EXISTS (SELECT 1 FROM InventoryBatch b "
+                    + "WHERE b.ProductID = p.ProductID AND b.BatchCode LIKE ? ESCAPE '!')");
+            params.add(like);
             condition.append(")");
             sql.append(condition);
         }
@@ -292,6 +300,30 @@ public class ProductDAO extends BaseDAO<Product> {
 
     public List<Product> findAllActive() {
         return findActive(null, null);
+    }
+
+    /**
+     * Danh sach san pham ACTIVE dung cho lap phieu nhap kho.
+     *
+     * Khong loc Status cua Categories: san pham dang ACTIVE van phai duoc
+     * chon khi nhap kho, ke ca category cua no dang tam DISABLED.
+     */
+    public List<Product> findAllActiveForImport() {
+        String sql = BASE_SELECT
+                + "WHERE p.Status = 'ACTIVE' "
+                + "ORDER BY p.ProductName";
+        List<Product> result = new ArrayList<>();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                result.add(mapProduct(rs));
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "ProductDAO.findAllActiveForImport", e);
+        }
+        return result;
     }
 
     public List<Product> searchActive(String keyword) {

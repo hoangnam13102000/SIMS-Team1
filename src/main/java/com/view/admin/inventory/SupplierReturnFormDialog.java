@@ -33,6 +33,10 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
+import javax.swing.text.AttributeSet;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DocumentFilter;
+import javax.swing.text.PlainDocument;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -264,9 +268,9 @@ public class SupplierReturnFormDialog extends JDialog {
             return comboLabel(text, isSelected);
         });
 
-        qtyField = styledField();
+        qtyField = styledNumericField();
         qtyField.setPreferredSize(new Dimension(90, 38));
-        priceField = styledField();
+        priceField = styledNumericField();
         priceField.setPreferredSize(new Dimension(120, 38));
 
         JLabel remainHint = new JLabel(" ");
@@ -345,6 +349,7 @@ public class SupplierReturnFormDialog extends JDialog {
         lineTable.setBackground(AppColor.WHITE);
         lineTable.setFillsViewportHeight(true);
         lineTable.setIntercellSpacing(new Dimension(0, 0));
+        lineTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 
         JTableHeader header = lineTable.getTableHeader();
         header.setFont(new Font("Segoe UI", Font.BOLD, 12));
@@ -369,27 +374,24 @@ public class SupplierReturnFormDialog extends JDialog {
             }
         });
 
-        int[] widths = {100, 90, 170, 90, 70, 100, 110, 50};
+        int[] widths = {150, 140, 260, 130, 100, 140, 160, 60};
         for (int i = 0; i < widths.length && i < lineTable.getColumnCount(); i++) {
             lineTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         }
-        lineTable.getColumnModel().getColumn(7).setMaxWidth(56);
+        lineTable.getColumnModel().getColumn(7).setMinWidth(60);
+        lineTable.getColumnModel().getColumn(7).setMaxWidth(60);
 
-        DefaultTableCellRenderer left = cellRenderer(SwingConstants.LEFT);
-        DefaultTableCellRenderer right = cellRenderer(SwingConstants.RIGHT);
         DefaultTableCellRenderer center = cellRenderer(SwingConstants.CENTER);
-        lineTable.getColumnModel().getColumn(0).setCellRenderer(left);
-        lineTable.getColumnModel().getColumn(1).setCellRenderer(center);
-        lineTable.getColumnModel().getColumn(2).setCellRenderer(left);
-        lineTable.getColumnModel().getColumn(3).setCellRenderer(center);
-        lineTable.getColumnModel().getColumn(4).setCellRenderer(right);
-        lineTable.getColumnModel().getColumn(5).setCellRenderer(right);
+        for (int i = 0; i < 7; i++) {
+            lineTable.getColumnModel().getColumn(i).setCellRenderer(center);
+        }
+
         lineTable.getColumnModel().getColumn(6).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
                                                            boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                setHorizontalAlignment(SwingConstants.RIGHT);
+                setHorizontalAlignment(SwingConstants.CENTER);
                 setForeground(AppColor.SUCCESS);
                 setFont(getFont().deriveFont(Font.BOLD));
                 if (!isSelected) {
@@ -428,6 +430,8 @@ public class SupplierReturnFormDialog extends JDialog {
         JScrollPane scroll = new JScrollPane(lineTable);
         scroll.setBorder(BorderFactory.createLineBorder(softBorder(), 1));
         scroll.getViewport().setBackground(AppColor.WHITE);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scroll.setPreferredSize(new Dimension(0, 200));
 
         emptyHint = new JLabel("Chưa có lô — chọn NCC rồi dùng form phía trên để thêm dòng", SwingConstants.CENTER);
@@ -650,6 +654,37 @@ public class SupplierReturnFormDialog extends JDialog {
                 BorderFactory.createLineBorder(softBorder(), 1),
                 new EmptyBorder(4, 8, 4, 8)));
         return combo;
+    }
+
+    /**
+     * Ô nhập số: chặn ngay chữ và ký tự đặc biệt khi gõ hoặc dán,
+     * chỉ cho phép 0-9.
+     */
+    private JTextField styledNumericField() {
+        JTextField f = styledField();
+        f.setHorizontalAlignment(SwingConstants.CENTER);
+
+        ((PlainDocument) f.getDocument()).setDocumentFilter(new DocumentFilter() {
+            @Override
+            public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr)
+                    throws BadLocationException {
+                if (string == null) return;
+                String digitsOnly = string.replaceAll("[^0-9]", "");
+                if (!digitsOnly.isEmpty()) {
+                    super.insertString(fb, offset, digitsOnly, attr);
+                }
+            }
+
+            @Override
+            public void replace(FilterBypass fb, int offset, int length,
+                                 String text, AttributeSet attrs)
+                    throws BadLocationException {
+                String digitsOnly = text == null ? "" : text.replaceAll("[^0-9]", "");
+                super.replace(fb, offset, length, digitsOnly, attrs);
+            }
+        });
+
+        return f;
     }
 
     private JTextField styledField() {

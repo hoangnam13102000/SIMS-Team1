@@ -15,7 +15,15 @@ import java.sql.Types;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-
+/**
+ * DAO cho StockReconciliation (Doi chieu / kiem ke kho cuoi ngay).
+ *
+ * Chi INSERT qua day - viec tinh SystemStock, cap nhat Products.Stock va ghi
+ * InventoryTransactions deu do trigger trg_StockReconciliation_Apply
+ * (INSTEAD OF INSERT tren bang StockReconciliation) dam nhiem, giong tinh
+ * than cac DAO khac trong du an (vd InventoryBatchDAO.receiveBatch). Khong
+ * ho tro sua/xoa - xem trg_StockReconciliation_BlockDelete (R3).
+ */
 public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
     public StockReconciliationDAO() {
         ensureBatchIdColumn();
@@ -150,6 +158,24 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
             }
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "StockReconciliationDAO.countDiscrepanciesSince", e);
+            return 0;
+        }
+    }
+    /** Đếm số phiếu đối chiếu của hôm nay chưa được đánh dấu đã kiểm kê. */
+    public int countUncheckedToday() {
+        String sql = "SELECT COUNT(*) FROM StockReconciliation "
+                + "WHERE CreatedAt >= ? AND CreatedAt < ? AND Checked = 0 AND BatchID IS NOT NULL";
+        LocalDate today = LocalDate.now();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.valueOf(today.atStartOfDay()));
+            ps.setTimestamp(2, Timestamp.valueOf(today.plusDays(1).atStartOfDay()));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StockReconciliationDAO.countUncheckedToday", e);
             return 0;
         }
     }
