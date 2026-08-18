@@ -2,7 +2,13 @@ package com.view.admin.shift;
 
 import com.components.Pagination;
 import com.components.AppAlert;
+import com.components.BaseSearch;
+import com.components.BaseTable;
+import com.components.DatePickerField;
+import com.components.FilterDropdown;
 import com.components.SectionHeader;
+import com.components.StatCard;
+import com.components.table.RowColorProvider;
 import com.event.AutoRefresher;
 import com.event.DataChangedEvent;
 import com.model.Shift;
@@ -19,6 +25,7 @@ import com.utils.FileUtil;
 import com.utils.TableExportUtil;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.swing.FontIcon;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -28,7 +35,7 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 
 import java.awt.*;
 import java.io.File;
@@ -54,67 +61,89 @@ public class ShiftManagementPanel extends JPanel {
 	 */
 	private final boolean canOperate = AuthService.getInstance().can(AppPermission.SHIFT_OPERATE);
 
-	private final JLabel statusValue = valueLabel();
+	/*
+	 * 5 StatCard tổng quan ca - đồng bộ với StatCard dùng chung ở
+	 * AuditLogPanel/DashboardPanel/... thay cho ô tự vẽ trước đây.
+	 */
+	private final StatCard statusCard =
+			new StatCard("Trạng thái ca", "—", FontAwesomeSolid.CLOCK, AppColor.ACCENT, true);
 
-	private final JLabel openingValue = valueLabel();
+	private final StatCard openingCard =
+			new StatCard("Tiền đầu ca", "—", FontAwesomeSolid.WALLET, AppColor.SUCCESS, true);
 
-	private final JLabel salesValue = valueLabel();
+	private final StatCard salesCard =
+			new StatCard("Doanh thu tiền mặt", "—", FontAwesomeSolid.MONEY_BILL_WAVE, AppColor.ACCENT, true);
 
-	private final JLabel movementsValue = valueLabel();
+	private final StatCard movementsCard =
+			new StatCard("Thu / chi", "—", FontAwesomeSolid.EXCHANGE_ALT, AppColor.WARNING, true);
 
-	private final JLabel expectedValue = valueLabel();
+	private final StatCard expectedCard =
+			new StatCard("Tiền hệ thống", "—", FontAwesomeSolid.CALCULATOR, AppColor.INFO, true);
 
-	private final JButton openButton = actionButton("Mở ca", AppColor.SUCCESS);
+	private final JButton openButton =
+			actionButton("Mở ca", AppColor.SUCCESS, FontAwesomeSolid.PLAY_CIRCLE);
 
-	private final JButton cashInButton = actionButton("Thu tiền", AppColor.ACCENT);
+	private final JButton cashInButton =
+			actionButton("Thu tiền", AppColor.ACCENT, FontAwesomeSolid.ARROW_DOWN);
 
-	private final JButton cashOutButton = actionButton("Chi tiền", AppColor.WARNING);
+	private final JButton cashOutButton =
+			actionButton("Chi tiền", AppColor.WARNING, FontAwesomeSolid.ARROW_UP);
 
-	private final JButton closeButton = actionButton("Đóng ca", AppColor.ERROR);
+	private final JButton closeButton =
+			actionButton("Đóng ca", AppColor.ERROR, FontAwesomeSolid.LOCK);
 
-	private final JButton refreshButton = actionButton("Làm mới", AppColor.TEXT_SECONDARY);
+	private final JButton refreshButton =
+			outlineButton("Làm mới", FontAwesomeSolid.SYNC_ALT);
 
-	private final DefaultTableModel historyModel = readOnlyModel("Mã ca", "Nhân viên", "Bắt đầu", "Kết thúc",
-			"Trạng thái", "Hóa đơn", "Tiền hệ thống", "Tiền thực tế", "Chênh lệch");
+	/*
+	 * Bảng lịch sử ca + bảng Thu/Chi dùng chung BaseTable (shadow bo góc, header
+	 * có mũi tên sort, sọc dòng...) để đồng bộ hình thức với các trang CRUD
+	 * khác (AuditLogPanel, InvoicePanel...) thay vì JTable tự vẽ style riêng
+	 * như trước.
+	 */
+	private final BaseTable historyTable = buildHistoryTable();
 
-	private final JTable historyTable = buildTable(historyModel);
+	/*
+	 * Tìm kiếm + lọc dùng chung BaseSearch/FilterDropdown/DatePickerField,
+	 * đồng bộ giao diện với các trang CRUD khác (vd AuditLogPanel) thay vì
+	 * JTextField/JComboBox tự vẽ riêng như trước.
+	 */
+	private final BaseSearch historySearchField = new BaseSearch("Tìm mã ca, nhân viên...");
 
-	private final JTextField historySearchField = filterSearchField("Tìm mã ca, nhân viên...");
+	private final FilterDropdown<String> historyStatusFilter =
+			new FilterDropdown<>(FontAwesomeSolid.FILTER, new String[] { "Tất cả trạng thái", "Đang mở", "Đã đóng" });
 
-	private final JComboBox<String> historyStatusFilter = filterCombo("Tất cả trạng thái", "Đang mở", "Đã đóng");
-
-	private final JComboBox<String> historyDayFilter = dayFilterCombo();
-
-	private final JComboBox<String> historyMonthFilter = monthFilterCombo();
-
-	private final JComboBox<String> historyYearFilter = yearFilterCombo();
+	private DatePickerField historyDateFrom;
+	private DatePickerField historyDateTo;
 
 	private final Pagination historyPagination =
 	        new Pagination();
 
-	private final DefaultTableModel transactionModel = readOnlyModel("Mã giao dịch", "Loại", "Số tiền", "Lý do",
-			"Người tạo", "Thời gian");
+	private final BaseTable transactionTable = buildTransactionTable();
 
-	private final JTable transactionTable = buildTable(transactionModel);
+	private final BaseSearch transactionSearchField = new BaseSearch("Tìm mã giao dịch, lý do, người tạo...");
 
-	private final JTextField transactionSearchField = filterSearchField("Tìm mã giao dịch, lý do, người tạo...");
+	private final FilterDropdown<String> transactionTypeFilter =
+			new FilterDropdown<>(FontAwesomeSolid.FILTER, new String[] { "Tất cả loại", "Thu tiền", "Chi tiền" });
 
-	private final JComboBox<String> transactionTypeFilter = filterCombo("Tất cả loại", "Thu tiền", "Chi tiền");
+	private DatePickerField transactionDateFrom;
+	private DatePickerField transactionDateTo;
 
-	private final JComboBox<String> transactionDayFilter = dayFilterCombo();
-
-	private final JComboBox<String> transactionMonthFilter = monthFilterCombo();
-
-	private final JComboBox<String> transactionYearFilter = yearFilterCombo();
+	private boolean adjustingHistoryDateFilter;
+	private boolean adjustingTransactionDateFilter;
 
 	private final Pagination transactionPagination =
 	        new Pagination();
 
 	private final JLabel transactionTitle = new JLabel("Thu/chi của ca");
 
-	private final JToggleButton historyTabButton = tabButton("Lịch sử ca gần nhất");
+	private final JLabel historyCountLabel = new JLabel();
 
-	private final JToggleButton transactionTabButton = tabButton("Thu / chi của ca");
+	private final JLabel transactionCountLabel = new JLabel();
+
+	private final JToggleButton historyTabButton = tabButton("Lịch sử ca gần nhất", FontAwesomeSolid.HISTORY);
+
+	private final JToggleButton transactionTabButton = tabButton("Thu / chi của ca", FontAwesomeSolid.EXCHANGE_ALT);
 
 	private List<Shift> visibleShifts = new ArrayList<>();
 
@@ -200,6 +229,11 @@ public class ShiftManagementPanel extends JPanel {
 		 * Buoc 7A chi gan nut Lam moi. Cac nut nghiep vu se them o 7B.
 		 */
 
+		/*
+		 * Sua loi UX: truoc day moi nut duoc gan listener 2 lan (tao dialog mo
+		 * ca / hop thoai thu-chi hien ra 2 lan lien tiep khi bam 1 lan). Gio
+		 * chi gan 1 lan cho moi nut.
+		 */
 		openButton.addActionListener(event -> showOpenDialog());
 
 		cashInButton.addActionListener(event -> showCashMovementDialog(ShiftCashTransaction.CASH_IN));
@@ -210,16 +244,6 @@ public class ShiftManagementPanel extends JPanel {
 
 		refreshButton.addActionListener(event -> loadData());
 
-		openButton.addActionListener(event -> showOpenDialog());
-
-		cashInButton.addActionListener(event -> showCashMovementDialog(ShiftCashTransaction.CASH_IN));
-
-		cashOutButton.addActionListener(event -> showCashMovementDialog(ShiftCashTransaction.CASH_OUT));
-
-		closeButton.addActionListener(event -> loadClosePreview());
-
-		refreshButton.addActionListener(event -> loadData());
-		
 		historyPagination.setVisiblePages(5);
 
 		transactionPagination.setVisiblePages(5);
@@ -229,7 +253,7 @@ public class ShiftManagementPanel extends JPanel {
 		// Phân trang
 		bindPagination();
 
-		historyTable.getSelectionModel().addListSelectionListener(event -> {
+		historyTable.getTable().getSelectionModel().addListSelectionListener(event -> {
 			if (!event.getValueIsAdjusting() && !updatingHistory) {
 				loadSelectedTransactions();
 			}
@@ -250,48 +274,15 @@ public class ShiftManagementPanel extends JPanel {
 
 		cards.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		cards.setMaximumSize(new Dimension(Integer.MAX_VALUE, 104));
+		cards.setMaximumSize(new Dimension(Integer.MAX_VALUE, StatCard.PREFERRED_HEIGHT));
 
-		cards.add(summaryCard("Trạng thái ca", statusValue));
-
-		cards.add(summaryCard("Tiền đầu ca", openingValue));
-
-		cards.add(summaryCard("Doanh thu tiền mặt", salesValue));
-
-		cards.add(summaryCard("Thu / chi", movementsValue));
-
-		cards.add(summaryCard("Tiền hệ thống", expectedValue));
+		cards.add(statusCard);
+		cards.add(openingCard);
+		cards.add(salesCard);
+		cards.add(movementsCard);
+		cards.add(expectedCard);
 
 		return cards;
-	}
-
-	private JPanel summaryCard(String title, JLabel value) {
-		JPanel card = new JPanel();
-
-		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-
-		card.setBackground(AppColor.WHITE);
-
-		card.setBorder(BorderFactory.createCompoundBorder(new LineBorder(AppColor.BORDER, 1, true),
-				new EmptyBorder(16, 18, 16, 18)));
-
-		JLabel titleLabel = new JLabel(title);
-
-		titleLabel.setFont(AppFont.SMALL);
-
-		titleLabel.setForeground(AppColor.TEXT_MUTED);
-
-		titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-		value.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-		card.add(titleLabel);
-
-		card.add(Box.createVerticalStrut(9));
-
-		card.add(value);
-
-		return card;
 	}
 
 	private JPanel buildActions() {
@@ -300,7 +291,7 @@ public class ShiftManagementPanel extends JPanel {
 		row.setOpaque(false);
 		row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
 
 		JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, AppSpacing.SM, 0));
 
@@ -311,6 +302,19 @@ public class ShiftManagementPanel extends JPanel {
 			actions.add(cashInButton);
 			actions.add(cashOutButton);
 			actions.add(closeButton);
+
+			/*
+			 * Vạch chia nhóm nút nghiệp vụ (mở/thu/chi/đóng ca) với nút
+			 * "Làm mới" - phân tách rõ hành động ghi dữ liệu và hành động
+			 * chỉ xem lại dữ liệu, tránh bấm nhầm.
+			 */
+			JSeparator separator = new JSeparator(SwingConstants.VERTICAL);
+
+			separator.setPreferredSize(new Dimension(1, 24));
+
+			separator.setForeground(AppColor.BORDER);
+
+			actions.add(separator);
 		}
 
 		actions.add(refreshButton);
@@ -409,7 +413,15 @@ public class ShiftManagementPanel extends JPanel {
 
 		wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		wrapper.setPreferredSize(new Dimension(900, 430));
+		/*
+		 * Truoc day chi 430px nen JScrollPane trong BaseTable chi hien duoc
+		 * 1-2 dong roi bi cat ngang, phai cuon moi thay het du lieu. Tang len
+		 * de thay duoc nhieu dong hon cung 1 luc (con lai se tu cuon ben
+		 * trong bang neu trang co nhieu hon so dong hien thi duoc).
+		 */
+		wrapper.setPreferredSize(new Dimension(900, 640));
+
+		wrapper.setMinimumSize(new Dimension(400, 320));
 
 		wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
@@ -422,13 +434,15 @@ public class ShiftManagementPanel extends JPanel {
 
 	private JPanel buildHistoryFilterBar() {
 
+	    historyDateFrom = new DatePickerField(null, true);
+	    historyDateTo = new DatePickerField(null, true);
+
 	    return buildFilterBar(
 	            historySearchField,
 	            historyStatusFilter,
-	            "Trạng thái:",
-	            historyDayFilter,
-	            historyMonthFilter,
-	            historyYearFilter
+	            historyDateFrom,
+	            historyDateTo,
+	            historyCountLabel
 	    );
 	}
 
@@ -461,17 +475,20 @@ public class ShiftManagementPanel extends JPanel {
 
 
 	    /*
-	     * Tìm kiếm + loại + ngày/tháng/năm
-	     * nằm chung một dòng.
+	     * Tìm kiếm + loại + khoảng ngày nằm chung một dòng,
+	     * cùng bố cục "search trái - bộ lọc trái - đếm dòng phải"
+	     * như toolbar của các trang CRUD khác (BaseCrudPanel).
 	     */
+	    transactionDateFrom = new DatePickerField(null, true);
+	    transactionDateTo = new DatePickerField(null, true);
+
 	    JPanel filters =
 	            buildFilterBar(
 	                    transactionSearchField,
 	                    transactionTypeFilter,
-	                    "Loại:",
-	                    transactionDayFilter,
-	                    transactionMonthFilter,
-	                    transactionYearFilter
+	                    transactionDateFrom,
+	                    transactionDateTo,
+	                    transactionCountLabel
 	            );
 
 	    filters.setAlignmentX(
@@ -483,121 +500,69 @@ public class ShiftManagementPanel extends JPanel {
 	    return panel;
 	}
 
+	/**
+	 * Thanh công cụ tìm kiếm + lọc dùng chung cho cả 2 tab, bố cục giống
+	 * toolbar của BaseCrudPanel: tìm kiếm + các bộ lọc gộp bên trái, nhãn
+	 * đếm số dòng bên phải. Khoảng "Từ ngày - Đến ngày" thay cho 3 combo
+	 * ngày/tháng/năm rời rạc trước đây, đỡ rối mắt và dễ chọn khoảng ngày
+	 * bất kỳ hơn (đồng bộ với bộ lọc thời gian của Nhật ký hệ thống).
+	 */
 	private JPanel buildFilterBar(
-	        JTextField searchField,
-	        JComboBox<String> comboBox,
-	        String labelText,
-	        JComboBox<String> dayBox,
-	        JComboBox<String> monthBox,
-	        JComboBox<String> yearBox
+	        BaseSearch searchField,
+	        FilterDropdown<String> comboBox,
+	        DatePickerField dateFrom,
+	        DatePickerField dateTo,
+	        JLabel countLabel
 	) {
 
-	    JPanel bar =
-	            new JPanel(
-	                    new BorderLayout(
-	                            AppSpacing.MD,
-	                            0
-	                    )
-	            );
+	    JPanel bar = new JPanel(new BorderLayout(AppSpacing.MD, 0));
 
 	    bar.setOpaque(false);
 
-
-	    /*
-	     * ==========================
-	     * BÊN TRÁI: TÌM KIẾM
-	     * ==========================
-	     */
-
-	    JPanel left =
-	            new JPanel(
-	                    new FlowLayout(
-	                            FlowLayout.LEFT,
-	                            0,
-	                            0
-	                    )
-	            );
+	    JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 0));
 
 	    left.setOpaque(false);
 
 	    left.add(searchField);
 
+	    left.add(comboBox);
 
-	    /*
-	     * ==========================
-	     * BÊN PHẢI: CÁC BỘ LỌC
-	     * ==========================
-	     */
+	    dateFrom.setPreferredSize(new Dimension(120, 38));
+	    dateFrom.setToolTipText("Từ ngày");
 
-	    JPanel right =
-	            new JPanel(
-	                    new FlowLayout(
-	                            FlowLayout.RIGHT,
-	                            AppSpacing.SM,
-	                            0
-	                    )
-	            );
+	    JLabel sep = new JLabel("–");
 
-	    right.setOpaque(false);
+	    sep.setFont(AppFont.BODY);
 
+	    sep.setForeground(AppColor.TEXT_MUTED);
 
-	    /*
-	     * Trạng thái / Loại
-	     */
-	    JLabel comboLabel =
-	            new JLabel(labelText);
+	    dateTo.setPreferredSize(new Dimension(120, 38));
+	    dateTo.setToolTipText("Đến ngày");
 
-	    comboLabel.setFont(AppFont.BODY);
+	    JPanel dateRange = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 
-	    comboLabel.setForeground(
-	            AppColor.TEXT_SECONDARY
-	    );
+	    dateRange.setOpaque(false);
 
-	    right.add(comboLabel);
+	    dateRange.add(dateFrom);
+	    dateRange.add(sep);
+	    dateRange.add(dateTo);
 
-	    right.add(comboBox);
+	    left.add(dateRange);
 
+	    countLabel.setFont(AppFont.SMALL);
 
-	    /*
-	     * Lọc thời gian
-	     */
-	    JLabel dateLabel =
-	            new JLabel("Lọc thời gian:");
+	    countLabel.setForeground(AppColor.TEXT_MUTED);
 
-	    dateLabel.setFont(AppFont.BODY);
+	    bar.add(left, BorderLayout.WEST);
 
-	    dateLabel.setForeground(
-	            AppColor.TEXT_SECONDARY
-	    );
-
-	    right.add(dateLabel);
-
-	    right.add(dayBox);
-
-	    right.add(monthBox);
-
-	    right.add(yearBox);
-
-
-	    /*
-	     * Đưa 2 nhóm vào cùng một dòng.
-	     */
-	    bar.add(
-	            left,
-	            BorderLayout.WEST
-	    );
-
-	    bar.add(
-	            right,
-	            BorderLayout.EAST
-	    );
+	    bar.add(countLabel, BorderLayout.EAST);
 
 	    return bar;
 	}
 
 	private JPanel filterTableCard(
 	        JComponent header,
-	        JTable table,
+	        BaseTable table,
 	        JComponent pagination
 	) {
 
@@ -666,16 +631,11 @@ public class ShiftManagementPanel extends JPanel {
 	     * ========================
 	     */
 
-	    JScrollPane scroll =
-	            new JScrollPane(table);
-
-	    scroll.setBorder(null);
-
-	    scroll.getViewport()
-	            .setBackground(
-	                    AppColor.WHITE
-	            );
-
+	    /*
+	     * BaseTable tu quan ly JScrollPane + border bo goc/do bong rieng
+	     * (giong bang o AuditLogPanel/InvoicePanel...), nen them thang vao
+	     * card thay vi boc them 1 lop JScrollPane thu cong nhu truoc.
+	     */
 
 	    /*
 	     * ========================
@@ -714,7 +674,7 @@ public class ShiftManagementPanel extends JPanel {
 	    );
 
 	    card.add(
-	            scroll,
+	            table,
 	            BorderLayout.CENTER
 	    );
 
@@ -725,57 +685,6 @@ public class ShiftManagementPanel extends JPanel {
 
 
 	    return card;
-	}
-
-	private JPanel tableCard(JTable table) {
-
-		JPanel card = new JPanel(new BorderLayout());
-
-		card.setBackground(AppColor.WHITE);
-
-		card.setBorder(BorderFactory.createCompoundBorder(new LineBorder(AppColor.BORDER, 1, true),
-				new EmptyBorder(14, 16, 14, 16)));
-
-		JScrollPane scroll = new JScrollPane(table);
-
-		scroll.setBorder(new LineBorder(AppColor.BORDER));
-
-		scroll.getViewport().setBackground(AppColor.WHITE);
-
-		card.add(scroll, BorderLayout.CENTER);
-
-		return card;
-	}
-
-	private JPanel tableCard(String title, JTable table) {
-		JLabel label = new JLabel(title);
-
-		label.setFont(AppFont.HEADING_MD);
-
-		label.setForeground(AppColor.TEXT_PRIMARY);
-
-		return tableCard(label, table);
-	}
-
-	private JPanel tableCard(JLabel title, JTable table) {
-		JPanel card = new JPanel(new BorderLayout(0, 10));
-
-		card.setBackground(AppColor.WHITE);
-
-		card.setBorder(BorderFactory.createCompoundBorder(new LineBorder(AppColor.BORDER, 1, true),
-				new EmptyBorder(14, 16, 14, 16)));
-
-		card.add(title, BorderLayout.NORTH);
-
-		JScrollPane scroll = new JScrollPane(table);
-
-		scroll.setBorder(new LineBorder(AppColor.BORDER));
-
-		scroll.getViewport().setBackground(AppColor.WHITE);
-
-		card.add(scroll, BorderLayout.CENTER);
-
-		return card;
 	}
 
 	private void loadData() {
@@ -822,27 +731,27 @@ public class ShiftManagementPanel extends JPanel {
 		boolean open = shift != null && shift.isOpen();
 
 		if (open) {
-			statusValue.setText("ĐANG MỞ  #" + shift.getShiftId());
+			statusCard.setValue("ĐANG MỞ  #" + shift.getShiftId());
+			statusCard.setTrend("Đang bán hàng", true);
 
-			statusValue.setForeground(AppColor.SUCCESS);
+			openingCard.setValue(money(shift.getOpeningCash()));
 
-			openingValue.setText(money(shift.getOpeningCash()));
+			salesCard.setValue(money(shift.getCashSales()));
 
-			salesValue.setText(money(shift.getCashSales()));
+			movementsCard.setValue("+" + money(shift.getCashIn()) + " / -" + money(shift.getCashOut()));
 
-			movementsValue.setText("+" + money(shift.getCashIn()) + " / -" + money(shift.getCashOut()));
+			BigDecimal expected = expectedOf(shift);
 
-			expectedValue.setText(money(expectedOf(shift)));
+			expectedCard.setValue(money(expected));
 
 		} else {
-			statusValue.setText("CHƯA MỞ CA");
+			statusCard.setValue("CHƯA MỞ CA");
+			statusCard.setTrend("Chưa bán hàng", false);
 
-			statusValue.setForeground(AppColor.WARNING);
-
-			openingValue.setText("—");
-			salesValue.setText("—");
-			movementsValue.setText("—");
-			expectedValue.setText("—");
+			openingCard.setValue("—");
+			salesCard.setValue("—");
+			movementsCard.setValue("—");
+			expectedCard.setValue("—");
 		}
 
 		openButton.setEnabled(canOperate && !open);
@@ -852,6 +761,34 @@ public class ShiftManagementPanel extends JPanel {
 		cashOutButton.setEnabled(canOperate && open);
 
 		closeButton.setEnabled(canOperate && open);
+
+		/*
+		 * Tooltip giải thích lý do nút bị mờ (disabled) thay vì để người
+		 * dùng tự đoán tại sao không bấm được - đặc biệt hữu ích cho nhân
+		 * viên mới chưa quen quy trình mở/đóng ca.
+		 */
+		if (!canOperate) {
+			String noPermission = "Bạn không có quyền thao tác ca bán hàng";
+
+			openButton.setToolTipText(noPermission);
+			cashInButton.setToolTipText(noPermission);
+			cashOutButton.setToolTipText(noPermission);
+			closeButton.setToolTipText(noPermission);
+
+		} else if (open) {
+			openButton.setToolTipText("Ca #" + shift.getShiftId() + " đang mở - đóng ca hiện tại trước khi mở ca mới");
+			cashInButton.setToolTipText("Ghi nhận khoản tiền được thu thêm vào quỹ ca");
+			cashOutButton.setToolTipText("Ghi nhận khoản tiền chi ra khỏi quỹ ca");
+			closeButton.setToolTipText("Đối soát và đóng ca hiện tại");
+
+		} else {
+			String needOpen = "Mở ca trước khi thực hiện thao tác này";
+
+			openButton.setToolTipText("Mở ca mới để bắt đầu bán hàng");
+			cashInButton.setToolTipText(needOpen);
+			cashOutButton.setToolTipText(needOpen);
+			closeButton.setToolTipText(needOpen);
+		}
 	}
 
 	private void renderHistory() {
@@ -870,6 +807,8 @@ public class ShiftManagementPanel extends JPanel {
 
 	    int totalItems =
 	            filtered.size();
+
+	    historyCountLabel.setText("Tổng cộng: " + totalItems + " ca");
 
 
 	    /*
@@ -948,7 +887,7 @@ public class ShiftManagementPanel extends JPanel {
 	     * ====================================
 	     */
 
-	    historyModel.setRowCount(0);
+	    historyTable.clear();
 
 	    int openRow = -1;
 
@@ -979,7 +918,7 @@ public class ShiftManagementPanel extends JPanel {
 	                        : shift.getExpectedCash();
 
 
-	        historyModel.addRow(
+	        historyTable.addRow(
 	                new Object[] {
 
 	                    "#" + shift.getShiftId(),
@@ -1029,7 +968,7 @@ public class ShiftManagementPanel extends JPanel {
 
 
 	        int selectedViewRow =
-	                historyTable
+	                historyTable.getTable()
 	                        .convertRowIndexToView(
 	                                selectedModelRow
 	                        );
@@ -1037,17 +976,17 @@ public class ShiftManagementPanel extends JPanel {
 
 	        if (selectedViewRow >= 0) {
 
-	            historyTable
+	            historyTable.getTable()
 	                    .setRowSelectionInterval(
 	                            selectedViewRow,
 	                            selectedViewRow
 	                    );
 
 	        } else if (
-	                historyTable.getRowCount() > 0
+	                historyTable.getTable().getRowCount() > 0
 	        ) {
 
-	            historyTable
+	            historyTable.getTable()
 	                    .setRowSelectionInterval(
 	                            0,
 	                            0
@@ -1056,7 +995,7 @@ public class ShiftManagementPanel extends JPanel {
 
 	    } else {
 
-	        historyTable.clearSelection();
+	        historyTable.getTable().clearSelection();
 
 	        allTransactions =
 	                new ArrayList<>();
@@ -1081,7 +1020,7 @@ public class ShiftManagementPanel extends JPanel {
 	}
 
 	private void loadSelectedTransactions() {
-		int viewRow = historyTable.getSelectedRow();
+		int viewRow = historyTable.getTable().getSelectedRow();
 
 		if (viewRow < 0) {
 
@@ -1099,7 +1038,7 @@ public class ShiftManagementPanel extends JPanel {
 		    return;
 		}
 
-		int modelRow = historyTable.convertRowIndexToModel(viewRow);
+		int modelRow = historyTable.getTable().convertRowIndexToModel(viewRow);
 
 		if (
 		        modelRow < 0
@@ -1173,6 +1112,8 @@ public class ShiftManagementPanel extends JPanel {
 	    int totalItems =
 	            filtered.size();
 
+	    transactionCountLabel.setText("Tổng cộng: " + totalItems + " giao dịch");
+
 
 	    /*
 	     * ====================================
@@ -1233,7 +1174,7 @@ public class ShiftManagementPanel extends JPanel {
 	     * ====================================
 	     */
 
-	    transactionModel.setRowCount(0);
+	    transactionTable.clear();
 
 
 	    if (totalItems > 0) {
@@ -1252,7 +1193,7 @@ public class ShiftManagementPanel extends JPanel {
 	                            : "Chi tiền";
 
 
-	            transactionModel.addRow(
+	            transactionTable.addRow(
 	                    new Object[] {
 
 	                        transaction
@@ -1931,69 +1872,107 @@ public class ShiftManagementPanel extends JPanel {
 			cashOutButton.setEnabled(false);
 			closeButton.setEnabled(false);
 
+			/*
+			 * Trong lúc chờ kết quả từ server, cho người dùng biết rõ hệ
+			 * thống đang xử lý thay vì chỉ thấy nút mờ đi không rõ lý do.
+			 */
+			String processing = "Đang xử lý, vui lòng đợi...";
+
+			openButton.setToolTipText(processing);
+			cashInButton.setToolTipText(processing);
+			cashOutButton.setToolTipText(processing);
+			closeButton.setToolTipText(processing);
+
 		} else {
 			renderSummary(currentOpenShift);
 		}
 	}
 
-	private static JTable buildTable(DefaultTableModel model) {
-		JTable table = new JTable(model);
+	/**
+	 * Bảng lịch sử ca dùng BaseTable dùng chung (border bo góc + đổ bóng,
+	 * header có mũi tên sort, sọc dòng...) để đồng bộ hình thức với các
+	 * bảng khác trong ứng dụng (AuditLogPanel, InvoicePanel...) thay vì
+	 * JTable tự vẽ style riêng như trước.
+	 */
+	private static BaseTable buildHistoryTable() {
+		BaseTable table = new BaseTable(new String[] {
+				"Mã ca", "Nhân viên", "Bắt đầu", "Kết thúc",
+				"Trạng thái", "Hóa đơn", "Tiền hệ thống", "Tiền thực tế", "Chênh lệch"
+		});
 
-		table.setRowHeight(34);
+		table.getTable().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-		table.setFont(AppFont.BODY);
+		table.enableSorting();
 
-		table.setForeground(AppColor.TABLE_ROW_TEXT);
+		/*
+		 * Cột "Trạng thái" -> badge pill (Đang mở = xanh lá, Đã đóng = xám).
+		 */
+		table.setBadgeColumn(
+				4,
+				value -> String.valueOf(value),
+				value -> "Đang mở".equals(value) ? AppColor.SUCCESS : AppColor.TEXT_MUTED);
 
-		table.setBackground(AppColor.WHITE);
-
-		table.setGridColor(AppColor.TABLE_GRID);
-
-		table.setShowVerticalLines(false);
-
-		table.setSelectionBackground(AppColor.ACCENT_SELECTION_BG);
-
-		table.setSelectionForeground(AppColor.TEXT_PRIMARY);
-
-		table.getTableHeader().setFont(AppFont.SMALL_BOLD);
-
-		table.getTableHeader().setBackground(AppColor.TABLE_HEADER_BG);
-
-		table.getTableHeader().setForeground(Color.WHITE);
-
-		table.setAutoCreateRowSorter(true);
-
-		table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-
-		DefaultTableCellRenderer renderer = new DefaultTableCellRenderer();
-
-		renderer.setBorder(new EmptyBorder(0, 10, 0, 10));
-
-		table.setDefaultRenderer(Object.class, renderer);
+		/*
+		 * Cột "Chênh lệch" -> tô màu theo dấu (dương = xanh lá, âm = đỏ, "—" =
+		 * xám) thay vì chữ đen đồng nhất, giúp nhận diện nhanh ca lệch quỹ.
+		 */
+		table.setCustomColumn(8, signedMoneyRenderer(table.rowColorProvider()));
 
 		return table;
 	}
 
-	private static DefaultTableModel readOnlyModel(String... columns) {
-		return new DefaultTableModel(columns, 0) {
+	/** Bảng Thu/Chi của ca đang chọn, cùng chuẩn BaseTable như bảng lịch sử ca. */
+	private static BaseTable buildTransactionTable() {
+		BaseTable table = new BaseTable(new String[] {
+				"Mã giao dịch", "Loại", "Số tiền", "Lý do", "Người tạo", "Thời gian"
+		});
+
+		table.getTable().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+		table.enableSorting();
+
+		/*
+		 * Cột "Loại" -> badge pill (Thu tiền = xanh lá, Chi tiền = cam).
+		 */
+		table.setBadgeColumn(
+				1,
+				value -> String.valueOf(value),
+				value -> "Thu tiền".equals(value) ? AppColor.SUCCESS : AppColor.WARNING);
+
+		return table;
+	}
+
+	/**
+	 * Renderer dùng chung cho cột tiền có dấu (+/-), tô màu theo dấu và giữ
+	 * đúng sọc dòng của BaseTable đang truyền vào (rowColorProvider).
+	 */
+	private static TableCellRenderer signedMoneyRenderer(RowColorProvider rowColorProvider) {
+		return new DefaultTableCellRenderer() {
 			@Override
-			public boolean isCellEditable(int row, int column) {
-				return false;
+			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+					boolean hasFocus, int row, int column) {
+				JLabel c = (JLabel) super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+				c.setBackground(rowColorProvider.colorFor(row, isSelected));
+				c.setBorder(new EmptyBorder(0, 12, 0, 12));
+				String text = value != null ? value.toString() : "";
+				if (text.startsWith("+")) {
+					c.setForeground(AppColor.SUCCESS);
+				} else if (text.startsWith("-")) {
+					c.setForeground(AppColor.ERROR);
+				} else {
+					c.setForeground(AppColor.TEXT_MUTED);
+				}
+				c.setFont(AppFont.BODY_BOLD);
+				return c;
 			}
 		};
 	}
 
-	private static JLabel valueLabel() {
-		JLabel label = new JLabel("—");
+	private static JButton actionButton(String text, Color color, FontAwesomeSolid iconCode) {
 
-		label.setFont(AppFont.HEADING_MD);
+		FontIcon icon = FontIcon.of(iconCode, 15);
 
-		label.setForeground(AppColor.TEXT_PRIMARY);
-
-		return label;
-	}
-
-	private static JButton actionButton(String text, Color color) {
+		icon.setIconColor(Color.WHITE);
 
 		JButton button = new JButton(text) {
 
@@ -2040,28 +2019,38 @@ public class ShiftManagementPanel extends JPanel {
 				g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
 
 				/*
-				 * Vẽ chữ chính giữa nút.
+				 * Vẽ icon + chữ căn giữa nút - icon giúp nhận diện nhanh
+				 * hành động (mở/khóa/mũi tên thu-chi) thay vì chỉ có chữ.
 				 */
+				Color foreground = isEnabled()
+						? Color.WHITE
+						: blendColor(Color.WHITE, background, 0.28);
+
+				icon.setIconColor(foreground);
+
 				String label = getText();
 
 				FontMetrics metrics = g2.getFontMetrics(getFont());
 
-				int x = (getWidth() - metrics.stringWidth(label)) / 2;
+				int gap = 8;
 
-				int y = (getHeight() - metrics.getHeight()) / 2 + metrics.getAscent();
+				int contentWidth = icon.getIconWidth() + gap + metrics.stringWidth(label);
+
+				int startX = (getWidth() - contentWidth) / 2;
+
+				int iconY = (getHeight() - icon.getIconHeight()) / 2;
+
+				icon.paintIcon(this, g2, startX, iconY);
+
+				int textX = startX + icon.getIconWidth() + gap;
+
+				int textY = (getHeight() - metrics.getHeight()) / 2 + metrics.getAscent();
 
 				g2.setFont(getFont());
 
-				if (isEnabled()) {
+				g2.setColor(foreground);
 
-					g2.setColor(Color.WHITE);
-
-				} else {
-
-					g2.setColor(blendColor(Color.WHITE, background, 0.28));
-				}
-
-				g2.drawString(label, x, y);
+				g2.drawString(label, textX, textY);
 
 				g2.dispose();
 			}
@@ -2090,17 +2079,145 @@ public class ShiftManagementPanel extends JPanel {
 		return button;
 	}
 
-	private static JToggleButton tabButton(String text) {
+	/**
+	 * Nút phụ (vd "Làm mới") - viền mảnh, nền trắng, không tô đặc màu, để
+	 * không cạnh tranh thị giác với các nút nghiệp vụ chính (mở/thu/chi/đóng
+	 * ca). Cùng bo góc + kích thước với actionButton để thẳng hàng trên
+	 * cùng 1 dòng.
+	 */
+	private static JButton outlineButton(String text, FontAwesomeSolid iconCode) {
 
-		JToggleButton button = new JToggleButton(text);
+		FontIcon icon = FontIcon.of(iconCode, 14);
+
+		icon.setIconColor(AppColor.TEXT_SECONDARY);
+
+		JButton button = new JButton(text) {
+
+			@Override
+			protected void paintComponent(Graphics graphics) {
+
+				Graphics2D g2 = (Graphics2D) graphics.create();
+
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+				Color background = AppColor.WHITE;
+
+				Color borderColor = AppColor.BORDER;
+
+				Color foreground = AppColor.TEXT_SECONDARY;
+
+				if (!isEnabled()) {
+
+					foreground = AppColor.TEXT_DISABLED;
+
+				} else if (getModel().isPressed()) {
+
+					background = AppColor.BG_LIGHT;
+
+				} else if (getModel().isRollover()) {
+
+					background = AppColor.BG_LIGHTER;
+
+					borderColor = AppColor.TEXT_MUTED;
+				}
+
+				g2.setColor(background);
+
+				g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+
+				g2.setColor(borderColor);
+
+				g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 10, 10);
+
+				icon.setIconColor(foreground);
+
+				String label = getText();
+
+				FontMetrics metrics = g2.getFontMetrics(getFont());
+
+				int gap = 8;
+
+				int contentWidth = icon.getIconWidth() + gap + metrics.stringWidth(label);
+
+				int startX = (getWidth() - contentWidth) / 2;
+
+				int iconY = (getHeight() - icon.getIconHeight()) / 2;
+
+				icon.paintIcon(this, g2, startX, iconY);
+
+				int textX = startX + icon.getIconWidth() + gap;
+
+				int textY = (getHeight() - metrics.getHeight()) / 2 + metrics.getAscent();
+
+				g2.setFont(getFont());
+
+				g2.setColor(foreground);
+
+				g2.drawString(label, textX, textY);
+
+				g2.dispose();
+			}
+		};
 
 		button.setFont(AppFont.BUTTON);
 
+		button.setForeground(AppColor.TEXT_SECONDARY);
+
 		button.setFocusPainted(false);
+
+		button.setBorderPainted(false);
+
+		button.setContentAreaFilled(false);
+
+		button.setOpaque(false);
+
+		button.setRolloverEnabled(true);
+
+		button.setBorder(new EmptyBorder(9, 16, 9, 16));
 
 		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-		button.setBorder(new EmptyBorder(9, 16, 9, 16));
+		return button;
+	}
+
+	private static JToggleButton tabButton(String text, FontAwesomeSolid icon) {
+
+		FontIcon fontIcon = FontIcon.of(icon, 14);
+
+		JToggleButton button = new JToggleButton(text, fontIcon) {
+
+			@Override
+			protected void paintComponent(Graphics graphics) {
+
+				Graphics2D g2 = (Graphics2D) graphics.create();
+
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+				g2.setColor(getBackground());
+
+				g2.fillRoundRect(0, 0, getWidth(), getHeight(), 20, 20);
+
+				g2.dispose();
+
+				super.paintComponent(graphics);
+			}
+		};
+
+		button.setFont(AppFont.BUTTON);
+
+		button.setIconTextGap(8);
+
+		button.setFocusPainted(false);
+
+		button.setContentAreaFilled(false);
+
+		button.setOpaque(false);
+
+		button.setBorderPainted(false);
+
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+		button.setBorder(new EmptyBorder(8, 18, 8, 18));
 
 		return button;
 	}
@@ -2114,18 +2231,26 @@ public class ShiftManagementPanel extends JPanel {
 
 	private void styleTab(JToggleButton button) {
 
+		FontIcon icon = (FontIcon) button.getIcon();
+
 		if (button.isSelected()) {
 
 			button.setBackground(AppColor.ACCENT);
 
 			button.setForeground(Color.WHITE);
 
+			if (icon != null) icon.setIconColor(Color.WHITE);
+
 		} else {
 
 			button.setBackground(AppColor.WHITE);
 
 			button.setForeground(AppColor.TEXT_SECONDARY);
+
+			if (icon != null) icon.setIconColor(AppColor.TEXT_SECONDARY);
 		}
+
+		button.repaint();
 	}
 
 	private static Color mutedActionColor(Color base) {
@@ -2146,159 +2271,77 @@ public class ShiftManagementPanel extends JPanel {
 		return new Color(red, green, blue);
 	}
 
-	private static JTextField filterSearchField(String placeholder) {
-
-		JTextField field = new JTextField();
-
-		field.setFont(AppFont.BODY);
-
-		field.setForeground(AppColor.TEXT_PRIMARY);
-
-		field.setBackground(AppColor.WHITE);
-
-		field.setPreferredSize(new Dimension(330, 38));
-
-		field.setBorder(BorderFactory.createCompoundBorder(new LineBorder(AppColor.BORDER, 1, true),
-				new EmptyBorder(0, 12, 0, 12)));
-
-		field.putClientProperty("JTextField.placeholderText", placeholder);
-
-		return field;
-	}
-
-	private static JComboBox<String> filterCombo(String... values) {
-
-		JComboBox<String> combo = new JComboBox<>(values);
-
-		combo.setFont(AppFont.BODY);
-
-		combo.setBackground(AppColor.WHITE);
-
-		combo.setForeground(AppColor.TEXT_PRIMARY);
-
-		combo.setPreferredSize(new Dimension(170, 38));
-
-		return combo;
-	}
-
-	private static JComboBox<String> dayFilterCombo() {
-
-		String[] values = new String[32];
-
-		values[0] = "Tất cả ngày";
-
-		for (int i = 1; i <= 31; i++) {
-			values[i] = String.valueOf(i);
-		}
-
-		JComboBox<String> combo = filterCombo(values);
-
-		combo.setPreferredSize(new Dimension(120, 38));
-
-		return combo;
-	}
-
-	private static JComboBox<String> monthFilterCombo() {
-
-		String[] values = new String[13];
-
-		values[0] = "Tất cả tháng";
-
-		for (int i = 1; i <= 12; i++) {
-			values[i] = String.valueOf(i);
-		}
-
-		JComboBox<String> combo = filterCombo(values);
-
-		combo.setPreferredSize(new Dimension(125, 38));
-
-		return combo;
-	}
-
-	private static JComboBox<String> yearFilterCombo() {
-
-		int currentYear = LocalDate.now().getYear();
-
-		/*
-		 * Năm hiện tại + 10 năm trước. Ví dụ 2026 -> 2026, 2025, ..., 2016.
-		 */
-		String[] values = new String[12];
-
-		values[0] = "Tất cả năm";
-
-		for (int i = 1; i < values.length; i++) {
-
-			values[i] = String.valueOf(currentYear - (i - 1));
-		}
-
-		JComboBox<String> combo = filterCombo(values);
-
-		combo.setPreferredSize(new Dimension(125, 38));
-
-		return combo;
-	}
-
 	private void bindFilters() {
 
 		/*
 		 * ============================= LỊCH SỬ CA =============================
 		 */
 
-		historySearchField.getDocument().addDocumentListener(new DocumentListener() {
+		historySearchField.onSearch(keyword -> applyHistoryFilter());
 
-			@Override
-			public void insertUpdate(DocumentEvent event) {
-				applyHistoryFilter();
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent event) {
-				applyHistoryFilter();
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent event) {
-				applyHistoryFilter();
-			}
-		});
-
-		historyStatusFilter.addActionListener(event -> applyHistoryFilter());
-
-		historyDayFilter.addActionListener(event -> applyHistoryFilter());
-
-		historyMonthFilter.addActionListener(event -> applyHistoryFilter());
-
-		historyYearFilter.addActionListener(event -> applyHistoryFilter());
+		historyStatusFilter.onChange(value -> applyHistoryFilter());
 
 		/*
 		 * ============================= THU / CHI =============================
 		 */
 
-		transactionSearchField.getDocument().addDocumentListener(new DocumentListener() {
+		transactionSearchField.onSearch(keyword -> applyTransactionFilter());
 
-			@Override
-			public void insertUpdate(DocumentEvent event) {
-				applyTransactionFilter();
-			}
+		transactionTypeFilter.onChange(value -> applyTransactionFilter());
 
-			@Override
-			public void removeUpdate(DocumentEvent event) {
-				applyTransactionFilter();
-			}
+		bindDateRangeFilter(historyDateFrom, historyDateTo,
+				() -> adjustingHistoryDateFilter, v -> adjustingHistoryDateFilter = v,
+				this::applyHistoryFilter);
 
-			@Override
-			public void changedUpdate(DocumentEvent event) {
-				applyTransactionFilter();
+		bindDateRangeFilter(transactionDateFrom, transactionDateTo,
+				() -> adjustingTransactionDateFilter, v -> adjustingTransactionDateFilter = v,
+				this::applyTransactionFilter);
+	}
+
+	/**
+	 * Gắn sự kiện cho cặp DatePickerField "Từ ngày - Đến ngày" của 1 tab:
+	 * đổi ngày thì lọc lại; nếu "đến" nhỏ hơn "từ" thì cảnh báo và tự xóa
+	 * "đến" thay vì lọc ra kết quả rỗng gây khó hiểu. Giống hệt cách
+	 * AuditLogPanel xử lý khoảng ngày để 2 trang nhất quán với nhau.
+	 */
+	private void bindDateRangeFilter(DatePickerField fromField, DatePickerField toField,
+			java.util.function.BooleanSupplier isAdjusting, java.util.function.Consumer<Boolean> setAdjusting,
+			Runnable applyFilter) {
+
+		fromField.onChange(from -> {
+			if (isAdjusting.getAsBoolean()) return;
+
+			LocalDate to = toField.getValue();
+			if (from != null && to != null && to.isBefore(from)) {
+				AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+						"Ngày \"đến\" phải lớn hơn hoặc bằng ngày \"từ\".");
+				setAdjusting.accept(true);
+				try {
+					toField.setValue(null);
+				} finally {
+					setAdjusting.accept(false);
+				}
 			}
+			applyFilter.run();
 		});
 
-		transactionTypeFilter.addActionListener(event -> applyTransactionFilter());
+		toField.onChange(to -> {
+			if (isAdjusting.getAsBoolean()) return;
 
-		transactionDayFilter.addActionListener(event -> applyTransactionFilter());
-
-		transactionMonthFilter.addActionListener(event -> applyTransactionFilter());
-
-		transactionYearFilter.addActionListener(event -> applyTransactionFilter());
+			LocalDate from = fromField.getValue();
+			if (from != null && to != null && to.isBefore(from)) {
+				AppAlert.warning(this, "Khoảng ngày không hợp lệ",
+						"Ngày \"đến\" phải lớn hơn hoặc bằng ngày \"từ\".");
+				setAdjusting.accept(true);
+				try {
+					toField.setValue(null);
+				} finally {
+					setAdjusting.accept(false);
+				}
+				return;
+			}
+			applyFilter.run();
+		});
 	}
 
 	private void bindPagination() {
@@ -2373,7 +2416,7 @@ public class ShiftManagementPanel extends JPanel {
 
 		String query = lower(historySearchField.getText());
 
-		String selectedStatus = String.valueOf(historyStatusFilter.getSelectedItem());
+		String selectedStatus = String.valueOf(historyStatusFilter.getSelected());
 
 		List<Shift> result = new ArrayList<>();
 
@@ -2404,12 +2447,12 @@ public class ShiftManagementPanel extends JPanel {
 					|| selectedStatus.equals(statusLabel);
 
 			/*
-			 * Ngày / Tháng / Năm.
+			 * Khoảng ngày (Từ ngày - Đến ngày).
 			 *
 			 * Lịch sử ca lấy ngày Bắt đầu ca.
 			 */
-			boolean dateMatches = matchesSelectedDate(shift.getStartTime(), historyDayFilter, historyMonthFilter,
-					historyYearFilter);
+			boolean dateMatches = matchesDateRange(shift.getStartTime(),
+					historyDateFrom.getValue(), historyDateTo.getValue());
 
 			if (textMatches && statusMatches && dateMatches) {
 
@@ -2424,7 +2467,7 @@ public class ShiftManagementPanel extends JPanel {
 
 		String query = lower(transactionSearchField.getText());
 
-		String selectedType = String.valueOf(transactionTypeFilter.getSelectedItem());
+		String selectedType = String.valueOf(transactionTypeFilter.getSelected());
 
 		List<ShiftCashTransaction> result = new ArrayList<>();
 
@@ -2457,10 +2500,10 @@ public class ShiftManagementPanel extends JPanel {
 					|| selectedType.equals(typeLabel);
 
 			/*
-			 * Lọc theo ngày tạo giao dịch.
+			 * Lọc theo khoảng ngày tạo giao dịch (Từ ngày - Đến ngày).
 			 */
-			boolean dateMatches = matchesSelectedDate(transaction.getCreatedAt(), transactionDayFilter,
-					transactionMonthFilter, transactionYearFilter);
+			boolean dateMatches = matchesDateRange(transaction.getCreatedAt(),
+					transactionDateFrom.getValue(), transactionDateTo.getValue());
 
 			if (textMatches && typeMatches && dateMatches) {
 
@@ -2471,74 +2514,26 @@ public class ShiftManagementPanel extends JPanel {
 		return result;
 	}
 	
-	private static boolean matchesSelectedDate(
+	/**
+	 * Khớp thời điểm với khoảng "Từ ngày - Đến ngày" (2 đầu đều tùy chọn,
+	 * để trống nghĩa là không giới hạn phía đó). Thay cho lọc rời rạc theo
+	 * ngày/tháng/năm trước đây - cho phép chọn khoảng bất kỳ, không chỉ 1
+	 * ngày/tháng/năm cụ thể.
+	 */
+	private static boolean matchesDateRange(
 	        LocalDateTime dateTime,
-	        JComboBox<String> dayBox,
-	        JComboBox<String> monthBox,
-	        JComboBox<String> yearBox
+	        LocalDate from,
+	        LocalDate to
 	) {
 
 	    if (dateTime == null) {
 	        return false;
 	    }
 
-	    Integer day =
-	            selectedNumber(dayBox);
+	    LocalDate date = dateTime.toLocalDate();
 
-	    Integer month =
-	            selectedNumber(monthBox);
-
-	    Integer year =
-	            selectedNumber(yearBox);
-
-
-	    return (
-	            day == null
-	            || dateTime.getDayOfMonth() == day
-	    )
-	    &&
-	    (
-	            month == null
-	            || dateTime.getMonthValue() == month
-	    )
-	    &&
-	    (
-	            year == null
-	            || dateTime.getYear() == year
-	    );
-	}
-
-	private static Integer selectedNumber(
-	        JComboBox<String> combo
-	) {
-
-	    Object selected =
-	            combo.getSelectedItem();
-
-	    if (selected == null) {
-	        return null;
-	    }
-
-	    String value =
-	            selected.toString();
-
-	    /*
-	     * "Tất cả ngày"
-	     * "Tất cả tháng"
-	     * "Tất cả năm"
-	     */
-	    if (value.startsWith("Tất cả")) {
-	        return null;
-	    }
-
-	    try {
-
-	        return Integer.parseInt(value);
-
-	    } catch (NumberFormatException e) {
-
-	        return null;
-	    }
+	    return (from == null || !date.isBefore(from))
+	            && (to == null || !date.isAfter(to));
 	}
 
 	private static String lower(

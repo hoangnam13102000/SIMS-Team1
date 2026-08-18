@@ -62,7 +62,22 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
 
     @Override
     protected String[] getSearchableColumns() {
-        return new String[]{"r.SupplierReturnCode", "s.SupplierName", "r.Reason", "u.FullName", "r.Note"};
+        return new String[]{
+                "r.SupplierReturnCode",
+                "s.SupplierName",
+                "r.Reason",
+                "u.FullName",
+                "r.Note",
+                // Cho phép tìm phiếu trả NCC theo thông tin sản phẩm/lô trong chi tiết phiếu.
+                "EXISTS (SELECT 1 FROM SupplierReturnDetails rd1 JOIN Products p1 ON p1.ProductID = rd1.ProductID " +
+                        "WHERE rd1.SupplierReturnID = r.SupplierReturnID AND p1.ProductName LIKE ? ESCAPE '!')",
+                "EXISTS (SELECT 1 FROM SupplierReturnDetails rd2 JOIN Products p2 ON p2.ProductID = rd2.ProductID " +
+                        "WHERE rd2.SupplierReturnID = r.SupplierReturnID AND p2.ProductCode LIKE ? ESCAPE '!')",
+                "EXISTS (SELECT 1 FROM SupplierReturnDetails rd3 JOIN InventoryBatch b3 ON b3.BatchID = rd3.BatchID " +
+                        "WHERE rd3.SupplierReturnID = r.SupplierReturnID AND b3.BatchCode LIKE ? ESCAPE '!')",
+                "EXISTS (SELECT 1 FROM SupplierReturnDetails rd4 JOIN InventoryBatch b4 ON b4.BatchID = rd4.BatchID " +
+                        "WHERE rd4.SupplierReturnID = r.SupplierReturnID AND b4.LotNumber LIKE ? ESCAPE '!')"
+        };
     }
 
     @Override
@@ -462,8 +477,16 @@ public class SupplierReturnDAO extends BaseDAO<SupplierReturn> {
             StringBuilder or = new StringBuilder("(");
             for (int i = 0; i < columns.length; i++) {
                 if (i > 0) or.append(" OR ");
-                or.append(columns[i]).append(" LIKE ? ESCAPE '!'");
-                params.add(likeValue);
+                String column = columns[i];
+                // Một số cột là predicate EXISTS hoàn chỉnh để tìm trong chi tiết phiếu.
+                // Các cột thông thường mới cần nối thêm LIKE ở đây.
+                if (column.trim().startsWith("EXISTS (")) {
+                    or.append(column);
+                    params.add(likeValue);
+                } else {
+                    or.append(column).append(" LIKE ? ESCAPE '!' ");
+                    params.add(likeValue);
+                }
             }
             or.append(")");
             conds.add(or.toString());

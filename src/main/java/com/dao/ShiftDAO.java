@@ -226,6 +226,73 @@ public class ShiftDAO {
 
 	    return result;
 	}
+
+	/**
+	 * Lấy tất cả ca đang OPEN (dùng cho trang giám sát của quản lý).
+	 * Sắp xếp theo thời gian bắt đầu (mới nhất trước).
+	 */
+	public List<Shift> findAllOpenShifts() {
+	    return findShiftsForMonitor(null, null, true);
+	}
+
+	/**
+	 * Lấy danh sách ca cho trang giám sát quản lý.
+	 *
+	 * @param from     ngày bắt đầu ca (null = không giới hạn dưới)
+	 * @param to       ngày kết thúc lọc theo StartTime (null = không giới hạn trên)
+	 * @param openOnly true = chỉ ca OPEN; false = mọi trạng thái
+	 */
+	public List<Shift> findShiftsForMonitor(
+	        java.time.LocalDate from,
+	        java.time.LocalDate to,
+	        boolean openOnly
+	) {
+	    StringBuilder sql = new StringBuilder(SHIFT_SELECT);
+	    sql.append("WHERE 1=1 ");
+
+	    if (openOnly) {
+	        sql.append("AND s.Status = 'OPEN' ");
+	    }
+
+	    if (from != null) {
+	        sql.append("AND s.StartTime >= ? ");
+	    }
+	    if (to != null) {
+	        // inclusive đến hết ngày to
+	        sql.append("AND s.StartTime < ? ");
+	    }
+
+	    sql.append("ORDER BY s.StartTime DESC, s.ShiftID DESC");
+
+	    List<Shift> result = new ArrayList<>();
+
+	    try (
+	        Connection con = DBConnection.getConnection();
+	        PreparedStatement ps = con.prepareStatement(sql.toString())
+	    ) {
+	        int idx = 1;
+	        if (from != null) {
+	            ps.setTimestamp(idx++, java.sql.Timestamp.valueOf(from.atStartOfDay()));
+	        }
+	        if (to != null) {
+	            ps.setTimestamp(idx, java.sql.Timestamp.valueOf(to.plusDays(1).atStartOfDay()));
+	        }
+
+	        try (ResultSet rs = ps.executeQuery()) {
+	            while (rs.next()) {
+	                result.add(mapShift(rs));
+	            }
+	        }
+	    } catch (SQLException e) {
+	        AppLogger.getInstance().error(
+	                ErrorCode.DB_QUERY_FAIL,
+	                "ShiftDAO.findShiftsForMonitor from=" + from + " to=" + to + " openOnly=" + openOnly,
+	                e
+	        );
+	    }
+
+	    return result;
+	}
 	
 	/**
 	 * Lay cac giao dich thu/chi dang ACTIVE cua mot ca.

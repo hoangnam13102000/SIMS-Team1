@@ -45,6 +45,7 @@ import com.view.admin.report.RevenueReportPanel;
 import com.view.admin.returnexchange.ReturnExchangePanel;
 import com.view.admin.security.TwoFactorSettingsPanel;
 import com.view.admin.shift.ShiftManagementPanel;
+import com.view.admin.shift.ShiftMonitorPanel;
 import com.view.admin.stockalert.StockAlertPanel;
 import com.view.admin.supplier.SupplierPanel;
 import com.view.admin.permission.RolePermissionPanel;
@@ -558,7 +559,7 @@ public class AdminMainFrame extends JFrame {
         );
 
         /*
-         * Ca làm việc.
+         * Ca làm việc (mở/đóng ca + lịch sử).
          */
         layout.addPage(
                 "shifts",
@@ -567,6 +568,18 @@ public class AdminMainFrame extends JFrame {
                 new ShiftManagementPanel(),
                 AppPermission.SHIFT_OPERATE,
                 AppPermission.SHIFT_VIEW_ALL
+        );
+
+        /*
+         * Giám sát ca đang mở — phân quyền SHIFT_MONITOR
+         * (mặc định: Admin + Quản lý bán hàng).
+         */
+        layout.addPage(
+                "shiftMonitor",
+                "Giám sát ca đang mở",
+                FontAwesomeSolid.DESKTOP,
+                new ShiftMonitorPanel(),
+                AppPermission.SHIFT_MONITOR
         );
 
         /*

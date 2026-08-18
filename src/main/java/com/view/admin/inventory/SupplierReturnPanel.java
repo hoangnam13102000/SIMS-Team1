@@ -150,7 +150,7 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
         // 3) Nút "Xóa lọc" CHUẨN
         FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
         clearIcon.setIconColor(AppColor.TEXT_MUTED);
-        clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
+        clearFiltersLink = new JLabel("", clearIcon, SwingConstants.LEFT);
         clearFiltersLink.setIconTextGap(6);
         clearFiltersLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
         clearFiltersLink.setForeground(AppColor.TEXT_MUTED);
@@ -278,7 +278,7 @@ public class SupplierReturnPanel extends BaseCrudPanel<SupplierReturn> {
 
     @Override
     protected String getSearchPlaceholder() {
-        return "Tìm mã phiếu, NCC, lý do, người lập...";
+        return "Tìm mã phiếu, NCC, tên SP, mã SP, mã lô, lý do, người lập...";
     }
 
     @Override

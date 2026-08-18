@@ -103,6 +103,35 @@ public class ShiftService {
 	}
 	
 	/**
+	 * Lấy tất cả ca đang OPEN — yêu cầu quyền SHIFT_MONITOR.
+	 */
+	public List<Shift> getAllOpenShifts() {
+	    if (!authService.can(AppPermission.SHIFT_MONITOR)) {
+	        return Collections.emptyList();
+	    }
+	    return shiftDAO.findAllOpenShifts();
+	}
+
+	/**
+	 * Lấy danh sách ca cho trang giám sát (lọc theo ngày bắt đầu ca).
+	 * Yêu cầu quyền SHIFT_MONITOR (Admin / Quản lý bán hàng).
+	 *
+	 * @param from     từ ngày (null = không giới hạn)
+	 * @param to       đến ngày (null = không giới hạn)
+	 * @param openOnly true = chỉ ca đang mở
+	 */
+	public List<Shift> getShiftsForMonitor(
+	        java.time.LocalDate from,
+	        java.time.LocalDate to,
+	        boolean openOnly
+	) {
+	    if (!authService.can(AppPermission.SHIFT_MONITOR)) {
+	        return Collections.emptyList();
+	    }
+	    return shiftDAO.findShiftsForMonitor(from, to, openOnly);
+	}
+
+	/**
 	 * Lay danh sach thu/chi cua mot ca neu nguoi dung
 	 * co quyen xem ca do.
 	 */

@@ -393,3 +393,14 @@ INSERT IGNORE INTO RolePermissions (RoleID, PermissionID)
 SELECT r.RoleID, p.PermissionID
 FROM Roles r, Permissions p
 WHERE r.RoleCode = 'INVENTORY_MANAGER' AND p.PermissionCode = 'STOCK_REPORT_VIEW';
+
+
+
+INSERT IGNORE INTO Permissions (PermissionCode, Description) VALUES
+('SHIFT_MONITOR', 'Giám sát ca bán hàng');
+
+INSERT IGNORE INTO RolePermissions (RoleID, PermissionID)
+SELECT r.RoleID, p.PermissionID
+FROM Roles r, Permissions p
+WHERE r.RoleCode IN ('ADMIN', 'SALES_MANAGER')
+  AND p.PermissionCode = 'SHIFT_MONITOR';

@@ -206,7 +206,7 @@ public class SupplierReturnDetailDialog extends JDialog {
     }
 
     private JTable buildTable(List<SupplierReturnDetail> details) {
-        String[] cols = {"Mã lô", "Phiếu nhập", "Sản phẩm", "HSD", "SL trả", "Đơn giá", "Hoàn tiền"};
+        String[] cols = {"Mã lô", "Phiếu nhập", "Sản phẩm", "Mã sản phẩm", "HSD", "SL trả", "Đơn giá", "Hoàn tiền"};
         DefaultTableModel model = new DefaultTableModel(cols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
@@ -215,6 +215,7 @@ public class SupplierReturnDetailDialog extends JDialog {
                     d.getBatchCode(),
                     d.getReceiptCode() != null ? d.getReceiptCode() : "—",
                     d.getProductName(),
+                    d.getProductCode() != null ? d.getProductCode() : "—",
                     d.getExpiryDate() != null ? d.getExpiryDate().format(D) : "—",
                     d.getQuantity(),
                     NumberUtil.formatThousands(d.getUnitRefundPrice() != null ? d.getUnitRefundPrice().longValue() : 0),

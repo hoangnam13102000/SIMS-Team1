@@ -93,6 +93,8 @@ public final class AppPermissionCatalog {
                 "Vận hành ca bán hàng", "Mở ca, ghi thu/chi và đóng/đối soát ca của chính nhân viên.");
         put(AppPermission.SHIFT_VIEW_ALL, "Bán hàng",
                 "Xem tất cả ca bán hàng", "Xem lịch sử ca và chênh lệch quỹ của tất cả nhân viên.");
+        put(AppPermission.SHIFT_MONITOR, "Bán hàng",
+                "Giám sát ca bán hàng", "Xem trang giám sát ca đang mở: số ca, nhân viên, tổng quỹ theo ngày.");
         put(AppPermission.RETURN_EXCHANGE_CREATE, "Bán hàng",
                 "Tạo yêu cầu đổi/trả", "Tạo yêu cầu đổi/trả hàng cho 1 hoá đơn (bắt buộc ghi rõ lý do).");
         put(AppPermission.RETURN_EXCHANGE_APPROVE, "Bán hàng",

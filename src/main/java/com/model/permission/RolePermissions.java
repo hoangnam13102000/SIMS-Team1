@@ -32,6 +32,7 @@ public final class RolePermissions {
                 AppPermission.ORDER_MANAGE,
                 AppPermission.RETURN_EXCHANGE_APPROVE,
                 AppPermission.SHIFT_VIEW_ALL,
+                AppPermission.SHIFT_MONITOR,
                 AppPermission.EXCEPTION_REPORT_HANDLE,
                 AppPermission.STOCK_DISPOSE_VIEW,
                 AppPermission.PROMOTION_MANAGE

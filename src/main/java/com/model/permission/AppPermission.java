@@ -41,6 +41,8 @@ public enum AppPermission implements Permission {
     SHIFT_OPERATE,
     /** Xem lich su ca va chenh lech quy cua tat ca nhan vien. */
     SHIFT_VIEW_ALL,
+    /** Xem trang Giám sát ca đang mở (theo dõi realtime quỹ / NV theo ngày). */
+    SHIFT_MONITOR,
     /** Huy hoa don. */
     INVOICE_CANCEL,      
     /** Tao yeu cau doi/tra hang cho 1 hoa don (R4: bat buoc ghi ro ly do). */
