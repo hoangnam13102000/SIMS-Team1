@@ -5,8 +5,11 @@ import com.components.BaseSearch;
 import com.components.DatePickerField;
 import com.components.EmptyState;
 import com.components.FilterDropdown;
+import com.components.Pagination;
 import com.components.SectionHeader;
 import com.components.StatCard;
+import com.components.table.RowColorProvider;
+import com.components.table.StatusColumn;
 import com.event.AutoRefresher;
 import com.event.DataChangedEvent;
 import com.model.Shift;
@@ -24,6 +27,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -36,10 +40,8 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
- * Trang giám sát ca bán hàng dành cho Quản lý / Admin.
- * <p>
- * Lọc theo khoảng ngày bắt đầu ca, trạng thái (đang mở / tất cả),
- * tìm kiếm nhân viên. Hiển thị tổng quỹ, doanh thu, số hóa đơn.
+ * Trang giám sát ca bán hàng — UI bảng + phân trang đồng bộ
+ * với ShiftManagementPanel / các trang CRUD (filterTableCard, buildTable, Pagination).
  */
 public class ShiftMonitorPanel extends JPanel {
 
@@ -48,7 +50,6 @@ public class ShiftMonitorPanel extends JPanel {
 
     private final ShiftService shiftService = new ShiftService();
 
-    // ---- Stat cards ----
     private final StatCard openCountCard =
             new StatCard("Số ca", "0", FontAwesomeSolid.CLOCK, AppColor.ACCENT, true);
     private final StatCard totalExpectedCard =
@@ -58,7 +59,6 @@ public class ShiftMonitorPanel extends JPanel {
     private final StatCard totalInvoicesCard =
             new StatCard("Tổng hóa đơn", "0", FontAwesomeSolid.FILE_INVOICE, AppColor.WARNING, true);
 
-    // ---- Filters ----
     private final DatePickerField dateFrom = new DatePickerField(LocalDate.now(), true);
     private final DatePickerField dateTo = new DatePickerField(LocalDate.now(), true);
     private final FilterDropdown<String> statusFilter = new FilterDropdown<>(
@@ -66,31 +66,25 @@ public class ShiftMonitorPanel extends JPanel {
             new String[]{"Đang mở", "Tất cả trạng thái", "Đã đóng"}
     );
     private final BaseSearch searchField = new BaseSearch("Tìm theo tên nhân viên hoặc mã ca...");
-    private final JButton todayButton = new JButton("Hôm nay");
-    private final JButton clearDateButton = new JButton("Xóa ngày");
-    private final JButton refreshButton = new JButton("Làm mới");
+    private final JButton todayButton = chipButton("Hôm nay", AppColor.ACCENT);
+    private final JButton clearDateButton = chipButton("Xóa ngày", AppColor.TEXT_SECONDARY);
+    private final JButton refreshButton = chipButton("Làm mới", AppColor.TEXT_PRIMARY);
+
+    private final DefaultTableModel tableModel = readOnlyModel(
+            "Mã ca", "Nhân viên", "Trạng thái", "Bắt đầu", "Đã làm / KT",
+            "HĐ", "Tiền đầu", "DT tiền mặt", "Thu", "Chi", "Hoàn", "Quỹ hệ thống"
+    );
+    private final JTable table = buildTable(tableModel);
+    private final Pagination pagination = new Pagination();
     private final JLabel countLabel = new JLabel();
 
-    // ---- Table ----
-    private final DefaultTableModel tableModel = new DefaultTableModel(
-            new String[]{
-                    "Mã ca", "Nhân viên", "Trạng thái", "Bắt đầu", "Đã làm",
-                    "HĐ", "Tiền đầu", "DT tiền mặt", "Thu", "Chi", "Hoàn", "Quỹ hệ thống"
-            }, 0) {
-        @Override
-        public boolean isCellEditable(int row, int column) {
-            return false;
-        }
-    };
-
-    private final JTable table = new JTable(tableModel);
-    private final JScrollPane tableScroll = new JScrollPane(table);
-    private final JPanel tableWrapper = new JPanel(new BorderLayout());
     private final EmptyState emptyState = new EmptyState(
             FontAwesomeSolid.USER_CLOCK,
             "Không có ca nào phù hợp",
             "Thử đổi khoảng ngày hoặc bộ lọc trạng thái"
     );
+
+    private final JPanel tableCardHolder = new JPanel(new BorderLayout());
 
     private List<Shift> loadedShifts = new ArrayList<>();
     private List<Shift> filteredShifts = new ArrayList<>();
@@ -111,31 +105,30 @@ public class ShiftMonitorPanel extends JPanel {
         JPanel content = new JPanel();
         content.setOpaque(false);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-
         content.add(buildStatCards());
         content.add(Box.createVerticalStrut(AppSpacing.MD));
-        content.add(buildFilterBar());
-        content.add(Box.createVerticalStrut(AppSpacing.SM));
-        content.add(buildSearchBar());
-        content.add(Box.createVerticalStrut(AppSpacing.SM));
-        content.add(buildTableArea());
+
+        styleStatusColumn(table);
+        styleMoneyColumns(table);
+
+        pagination.setVisiblePages(5);
+        tableCardHolder.setOpaque(false);
+        tableCardHolder.setAlignmentX(Component.LEFT_ALIGNMENT);
+        tableCardHolder.add(filterTableCard(buildFilterHeader(), table, pagination), BorderLayout.CENTER);
+        content.add(tableCardHolder);
 
         add(content, BorderLayout.CENTER);
 
-        styleTable();
         bindEvents();
         AutoRefresher.bind(this, DataChangedEvent.class, 400, this::loadData);
         loadData();
     }
-
-    // ==================== UI builders ====================
 
     private JPanel buildStatCards() {
         JPanel cards = new JPanel(new GridLayout(1, 4, AppSpacing.MD, 0));
         cards.setOpaque(false);
         cards.setAlignmentX(Component.LEFT_ALIGNMENT);
         cards.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
-
         cards.add(openCountCard);
         cards.add(totalExpectedCard);
         cards.add(totalSalesCard);
@@ -143,77 +136,85 @@ public class ShiftMonitorPanel extends JPanel {
         return cards;
     }
 
-    private JPanel buildFilterBar() {
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 4));
-        bar.setOpaque(false);
-        bar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
+    private JComponent buildFilterHeader() {
+        JPanel wrap = new JPanel();
+        wrap.setOpaque(false);
+        wrap.setLayout(new BoxLayout(wrap, BoxLayout.Y_AXIS));
 
-        JLabel fromLbl = new JLabel("Từ ngày");
-        fromLbl.setFont(AppFont.BODY);
-        fromLbl.setForeground(AppColor.TEXT_SECONDARY);
-
-        JLabel toLbl = new JLabel("Đến ngày");
-        toLbl.setFont(AppFont.BODY);
-        toLbl.setForeground(AppColor.TEXT_SECONDARY);
+        JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, AppSpacing.SM, 0));
+        row1.setOpaque(false);
 
         dateFrom.setPreferredSize(new Dimension(140, 36));
         dateTo.setPreferredSize(new Dimension(140, 36));
         statusFilter.setPreferredSize(new Dimension(160, 36));
+        refreshButton.setIcon(FontIcon.of(FontAwesomeSolid.SYNC_ALT, 14, AppColor.TEXT_SECONDARY));
 
-        styleChipButton(todayButton, AppColor.ACCENT);
-        styleChipButton(clearDateButton, AppColor.TEXT_SECONDARY);
-        styleRefreshButton(refreshButton);
+        row1.add(mutedLabel("Từ ngày"));
+        row1.add(dateFrom);
+        row1.add(mutedLabel("Đến ngày"));
+        row1.add(dateTo);
+        row1.add(Box.createHorizontalStrut(6));
+        row1.add(statusFilter);
+        row1.add(Box.createHorizontalStrut(6));
+        row1.add(todayButton);
+        row1.add(clearDateButton);
+        row1.add(refreshButton);
 
-        bar.add(fromLbl);
-        bar.add(dateFrom);
-        bar.add(toLbl);
-        bar.add(dateTo);
-        bar.add(Box.createHorizontalStrut(8));
-        bar.add(statusFilter);
-        bar.add(Box.createHorizontalStrut(8));
-        bar.add(todayButton);
-        bar.add(clearDateButton);
-        bar.add(refreshButton);
-
-        return bar;
-    }
-
-    private JPanel buildSearchBar() {
-        JPanel bar = new JPanel(new BorderLayout(AppSpacing.MD, 0));
-        bar.setOpaque(false);
-        bar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
-
+        JPanel row2 = new JPanel(new BorderLayout(AppSpacing.MD, 0));
+        row2.setOpaque(false);
+        row2.setBorder(new EmptyBorder(AppSpacing.SM, 0, 0, 0));
         searchField.setPreferredSize(new Dimension(320, 36));
-        bar.add(searchField, BorderLayout.WEST);
-
+        row2.add(searchField, BorderLayout.WEST);
         countLabel.setFont(AppFont.BODY);
         countLabel.setForeground(AppColor.TEXT_SECONDARY);
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 8));
-        right.setOpaque(false);
-        right.add(countLabel);
-        bar.add(right, BorderLayout.EAST);
+        countLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        row2.add(countLabel, BorderLayout.EAST);
 
-        return bar;
+        wrap.add(row1);
+        wrap.add(row2);
+        return wrap;
     }
 
-    private JPanel buildTableArea() {
-        tableWrapper.setOpaque(false);
-        tableWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
-        tableWrapper.setLayout(new BorderLayout());
+    private JPanel filterTableCard(JComponent header, JTable table, JComponent paginationComp) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(AppColor.WHITE);
+        card.setBorder(new LineBorder(AppColor.BORDER, 1, true));
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        tableScroll.setBorder(new LineBorder(AppColor.BORDER, 1, true));
-        tableScroll.getViewport().setBackground(AppColor.WHITE);
-        tableScroll.setOpaque(false);
+        JPanel toolbarWrapper = new JPanel(new BorderLayout());
+        toolbarWrapper.setBackground(AppColor.WHITE);
+        toolbarWrapper.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
+                new EmptyBorder(14, 16, 14, 16)
+        ));
+        toolbarWrapper.add(header, BorderLayout.CENTER);
 
-        tableWrapper.add(tableScroll, BorderLayout.CENTER);
-        return tableWrapper;
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setBorder(null);
+        scroll.getViewport().setBackground(AppColor.WHITE);
+
+        JPanel paginationWrapper = new JPanel(new BorderLayout());
+        paginationWrapper.setBackground(AppColor.WHITE);
+        paginationWrapper.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER));
+        paginationWrapper.add(paginationComp, BorderLayout.CENTER);
+
+        card.add(toolbarWrapper, BorderLayout.NORTH);
+        card.add(scroll, BorderLayout.CENTER);
+        card.add(paginationWrapper, BorderLayout.SOUTH);
+        return card;
     }
 
-    private void styleChipButton(JButton btn, Color accent) {
+    private static JLabel mutedLabel(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(AppFont.BODY);
+        l.setForeground(AppColor.TEXT_SECONDARY);
+        return l;
+    }
+
+    private static JButton chipButton(String text, Color fg) {
+        JButton btn = new JButton(text);
         btn.setFont(AppFont.BUTTON);
-        btn.setForeground(accent);
+        btn.setForeground(fg);
         btn.setBackground(AppColor.WHITE);
         btn.setFocusPainted(false);
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -221,143 +222,154 @@ public class ShiftMonitorPanel extends JPanel {
                 new LineBorder(AppColor.BORDER, 1, true),
                 new EmptyBorder(8, 12, 8, 12)
         ));
+        return btn;
     }
 
-    private void styleRefreshButton(JButton btn) {
-        btn.setFont(AppFont.BUTTON);
-        btn.setForeground(AppColor.TEXT_PRIMARY);
-        btn.setBackground(AppColor.WHITE);
-        btn.setFocusPainted(false);
-        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btn.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(8, 14, 8, 14)
-        ));
-        btn.setIcon(FontIcon.of(FontAwesomeSolid.SYNC_ALT, 14, AppColor.TEXT_SECONDARY));
-    }
-
-    private void styleTable() {
-        table.setRowHeight(42);
-        table.setFont(AppFont.BODY);
-        table.setForeground(AppColor.TEXT_PRIMARY);
-        table.setBackground(AppColor.WHITE);
-        table.setSelectionBackground(new Color(
-                AppColor.ACCENT.getRed(),
-                AppColor.ACCENT.getGreen(),
-                AppColor.ACCENT.getBlue(),
-                40));
-        table.setSelectionForeground(AppColor.TEXT_PRIMARY);
-        table.setGridColor(new Color(
-                AppColor.BORDER.getRed(),
-                AppColor.BORDER.getGreen(),
-                AppColor.BORDER.getBlue(),
-                80));
-        table.setShowHorizontalLines(true);
-        table.setShowVerticalLines(false);
-        table.setIntercellSpacing(new Dimension(0, 1));
-        table.setFillsViewportHeight(true);
-        table.setAutoCreateRowSorter(true);
-
-        table.getTableHeader().setFont(AppFont.BODY_BOLD);
-        table.getTableHeader().setForeground(AppColor.TEXT_SECONDARY);
-        table.getTableHeader().setBackground(
-                AppColor.BG_LIGHT != null ? AppColor.BG_LIGHT : new Color(248, 250, 252));
-        table.getTableHeader().setReorderingAllowed(false);
-        table.getTableHeader().setPreferredSize(new Dimension(0, 40));
-
-        int[] widths = {70, 130, 90, 120, 90, 50, 100, 110, 90, 90, 90, 110};
-        for (int i = 0; i < widths.length && i < table.getColumnCount(); i++) {
-            table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
-        }
-
-        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
-        center.setHorizontalAlignment(SwingConstants.CENTER);
-
-        DefaultTableCellRenderer rightMoney = new DefaultTableCellRenderer() {
+    private static DefaultTableModel readOnlyModel(String... columns) {
+        return new DefaultTableModel(columns, 0) {
             @Override
-            public Component getTableCellRendererComponent(JTable t, Object value,
-                                                           boolean isSelected, boolean hasFocus,
-                                                           int row, int col) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
-                setHorizontalAlignment(SwingConstants.RIGHT);
-                if (!isSelected) setForeground(AppColor.TEXT_PRIMARY);
-                return c;
+            public boolean isCellEditable(int row, int column) {
+                return false;
             }
         };
+    }
 
-        DefaultTableCellRenderer statusRenderer = new DefaultTableCellRenderer() {
+    private static JTable buildTable(DefaultTableModel model) {
+        JTable table = new JTable(model);
+        table.setRowHeight(34);
+        table.setFont(AppFont.BODY);
+        table.setForeground(AppColor.TABLE_ROW_TEXT != null ? AppColor.TABLE_ROW_TEXT : AppColor.TEXT_PRIMARY);
+        table.setBackground(AppColor.WHITE);
+        table.setGridColor(AppColor.TABLE_GRID != null ? AppColor.TABLE_GRID : AppColor.BORDER);
+        table.setShowVerticalLines(false);
+        table.setSelectionBackground(
+                AppColor.ACCENT_SELECTION_BG != null ? AppColor.ACCENT_SELECTION_BG : new Color(59, 130, 246, 40));
+        table.setSelectionForeground(AppColor.TEXT_PRIMARY);
+        table.getTableHeader().setFont(AppFont.SMALL_BOLD);
+        table.getTableHeader().setBackground(
+                AppColor.TABLE_HEADER_BG != null ? AppColor.TABLE_HEADER_BG : AppColor.ACCENT);
+        table.getTableHeader().setForeground(Color.WHITE);
+        table.getTableHeader().setReorderingAllowed(false);
+        table.setAutoCreateRowSorter(true);
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.setFillsViewportHeight(true);
+
+        RowColorProvider rowColorProvider = stripedRowColorProvider();
+        DefaultTableCellRenderer renderer = new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable t, Object value,
-                                                           boolean isSelected, boolean hasFocus,
-                                                           int row, int col) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
-                setHorizontalAlignment(SwingConstants.CENTER);
-                setFont(getFont().deriveFont(Font.BOLD));
-                String text = value != null ? value.toString() : "";
-                if (!isSelected) {
-                    if ("Đang mở".equals(text)) {
-                        setForeground(AppColor.SUCCESS);
-                    } else if ("Đã đóng".equals(text)) {
-                        setForeground(AppColor.TEXT_MUTED);
-                    } else {
-                        setForeground(AppColor.TEXT_PRIMARY);
-                    }
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                           boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                c.setBackground(rowColorProvider.colorFor(row, isSelected));
+                if (c instanceof JLabel) {
+                    ((JLabel) c).setBorder(new EmptyBorder(0, 10, 0, 10));
                 }
                 return c;
             }
         };
+        renderer.setBorder(new EmptyBorder(0, 10, 0, 10));
+        table.setDefaultRenderer(Object.class, renderer);
 
-        table.getColumnModel().getColumn(0).setCellRenderer(center);
-        table.getColumnModel().getColumn(2).setCellRenderer(statusRenderer);
-        table.getColumnModel().getColumn(4).setCellRenderer(center);
-        table.getColumnModel().getColumn(5).setCellRenderer(center);
-
-        for (int col : new int[]{6, 7, 8, 9, 10}) {
-            table.getColumnModel().getColumn(col).setCellRenderer(rightMoney);
+        int[] widths = {70, 130, 100, 120, 100, 50, 100, 110, 90, 90, 90, 110};
+        for (int i = 0; i < widths.length && i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         }
-
-        table.getColumnModel().getColumn(11).setCellRenderer(new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable t, Object value,
-                                                           boolean isSelected, boolean hasFocus,
-                                                           int row, int col) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
-                setHorizontalAlignment(SwingConstants.RIGHT);
-                setFont(getFont().deriveFont(Font.BOLD));
-                if (!isSelected) setForeground(AppColor.INFO);
-                return c;
-            }
-        });
+        return table;
     }
 
-    // ==================== Events ====================
+    private static RowColorProvider stripedRowColorProvider() {
+        return (viewRow, isSelected) -> {
+            if (isSelected) {
+                return AppColor.ACCENT_SELECTION_BG != null
+                        ? AppColor.ACCENT_SELECTION_BG
+                        : new Color(59, 130, 246, 40);
+            }
+            Color odd = AppColor.TABLE_ROW_ODD != null ? AppColor.TABLE_ROW_ODD : new Color(248, 250, 252);
+            return viewRow % 2 == 0 ? AppColor.WHITE : odd;
+        };
+    }
+
+    private static void styleStatusColumn(JTable table) {
+        TableCellRenderer badge = StatusColumn.renderer(
+                value -> String.valueOf(value),
+                value -> "Đang mở".equals(String.valueOf(value)) ? AppColor.SUCCESS : AppColor.TEXT_MUTED,
+                stripedRowColorProvider()
+        );
+        table.getColumnModel().getColumn(2).setCellRenderer(badge);
+    }
+
+    private static void styleMoneyColumns(JTable table) {
+        RowColorProvider rowColorProvider = stripedRowColorProvider();
+        DefaultTableCellRenderer moneyRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                           boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                c.setBackground(rowColorProvider.colorFor(row, isSelected));
+                c.setBorder(new EmptyBorder(0, 10, 0, 10));
+                c.setHorizontalAlignment(SwingConstants.RIGHT);
+                if (column == 11) {
+                    c.setFont(AppFont.BODY_BOLD);
+                    if (!isSelected) c.setForeground(AppColor.INFO);
+                } else if (!isSelected) {
+                    c.setForeground(AppColor.TEXT_PRIMARY);
+                }
+                return c;
+            }
+        };
+        for (int col : new int[]{6, 7, 8, 9, 10, 11}) {
+            table.getColumnModel().getColumn(col).setCellRenderer(moneyRenderer);
+        }
+
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                           boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                c.setBackground(rowColorProvider.colorFor(row, isSelected));
+                c.setBorder(new EmptyBorder(0, 10, 0, 10));
+                c.setHorizontalAlignment(SwingConstants.CENTER);
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(0).setCellRenderer(center);
+        table.getColumnModel().getColumn(5).setCellRenderer(center);
+    }
 
     private void bindEvents() {
         refreshButton.addActionListener(e -> loadData());
-
         todayButton.addActionListener(e -> {
             LocalDate today = LocalDate.now();
             dateFrom.setValue(today);
             dateTo.setValue(today);
             loadData();
         });
-
         clearDateButton.addActionListener(e -> {
             dateFrom.setValue(null);
             dateTo.setValue(null);
             loadData();
         });
+        dateFrom.onChange(d -> { pagination.setCurrentPage(1); loadData(); });
+        dateTo.onChange(d -> { pagination.setCurrentPage(1); loadData(); });
+        statusFilter.onChange(s -> { pagination.setCurrentPage(1); loadData(); });
 
-        dateFrom.onChange(d -> loadData());
-        dateTo.onChange(d -> loadData());
-
-        statusFilter.onChange(s -> loadData());
-
-        searchField.onSearch(keyword -> applyTextFilter());
+        searchField.onSearch(k -> { pagination.setCurrentPage(1); applyTextFilterAndRender(); });
         searchField.getTextField().getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { applyTextFilter(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { applyTextFilter(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { applyTextFilter(); }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                pagination.setCurrentPage(1); applyTextFilterAndRender();
+            }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                pagination.setCurrentPage(1); applyTextFilterAndRender();
+            }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                pagination.setCurrentPage(1); applyTextFilterAndRender();
+            }
+        });
+
+        pagination.addPropertyChangeListener("pageChanged", e -> renderPage());
+        pagination.addPropertyChangeListener("pageSizeChanged", e -> {
+            pagination.setCurrentPage(1);
+            renderPage();
         });
 
         table.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -367,21 +379,20 @@ public class ShiftMonitorPanel extends JPanel {
                     int viewRow = table.getSelectedRow();
                     if (viewRow < 0) return;
                     int modelRow = table.convertRowIndexToModel(viewRow);
-                    if (modelRow >= 0 && modelRow < filteredShifts.size()) {
-                        showDetailDialog(filteredShifts.get(modelRow));
+                    int pageSize = pagination.getPageSize();
+                    int page = Math.max(1, pagination.getCurrentPage());
+                    int globalIndex = (page - 1) * pageSize + modelRow;
+                    if (globalIndex >= 0 && globalIndex < filteredShifts.size()) {
+                        showDetailDialog(filteredShifts.get(globalIndex));
                     }
                 }
             }
         });
     }
 
-    // ==================== Data ====================
-
     private void loadData() {
         LocalDate from = dateFrom.getValue();
         LocalDate to = dateTo.getValue();
-
-        // Đảm bảo from <= to
         if (from != null && to != null && from.isAfter(to)) {
             LocalDate tmp = from;
             from = to;
@@ -392,9 +403,7 @@ public class ShiftMonitorPanel extends JPanel {
 
         String statusSel = statusFilter.getSelected();
         boolean closedOnly = "Đã đóng".equals(statusSel);
-        // Chỉ query OPEN khi chọn "Đang mở"; "Tất cả" / "Đã đóng" → lấy mọi status
-        boolean openOnlyQuery = "Đang mở".equals(statusSel)
-                || (statusSel == null);
+        boolean openOnlyQuery = "Đang mở".equals(statusSel) || statusSel == null;
 
         final LocalDate fFrom = from;
         final LocalDate fTo = to;
@@ -404,7 +413,6 @@ public class ShiftMonitorPanel extends JPanel {
         SwingWorker<List<Shift>, Void> worker = new SwingWorker<>() {
             @Override
             protected List<Shift> doInBackground() {
-                // Khi chỉ xem "Đã đóng" vẫn query all status trong khoảng ngày rồi lọc
                 return shiftService.getShiftsForMonitor(fFrom, fTo, fOpenOnly);
             }
 
@@ -413,16 +421,11 @@ public class ShiftMonitorPanel extends JPanel {
                 try {
                     List<Shift> result = get();
                     if (result == null) result = new ArrayList<>();
-
                     if (fClosedOnly) {
-                        result = result.stream()
-                                .filter(s -> !s.isOpen())
-                                .collect(Collectors.toList());
+                        result = result.stream().filter(s -> !s.isOpen()).collect(Collectors.toList());
                     }
-
                     loadedShifts = result;
-                    updateStatCards(loadedShifts);
-                    applyTextFilter();
+                    applyTextFilterAndRender();
                 } catch (Exception ex) {
                     AppAlert.error(ShiftMonitorPanel.this,
                             "Không tải được danh sách ca.\n" + ex.getMessage());
@@ -432,11 +435,9 @@ public class ShiftMonitorPanel extends JPanel {
         worker.execute();
     }
 
-    private void applyTextFilter() {
+    private void applyTextFilterAndRender() {
         String q = searchField.getText() != null
-                ? searchField.getText().trim().toLowerCase(Locale.ROOT)
-                : "";
-
+                ? searchField.getText().trim().toLowerCase(Locale.ROOT) : "";
         if (q.isEmpty()) {
             filteredShifts = new ArrayList<>(loadedShifts);
         } else {
@@ -444,22 +445,37 @@ public class ShiftMonitorPanel extends JPanel {
                     .filter(s -> matches(s, q))
                     .collect(Collectors.toList());
         }
-
-        rebuildTable(filteredShifts);
+        updateStatCards(filteredShifts);
+        pagination.setTotalItems(filteredShifts.size());
+        renderPage();
         updateCountLabel();
-        toggleEmptyState(filteredShifts.isEmpty());
     }
 
     private boolean matches(Shift s, String q) {
         String name = s.getUserName() != null ? s.getUserName().toLowerCase(Locale.ROOT) : "";
-        String id = String.valueOf(s.getShiftId());
-        return name.contains(q) || id.contains(q);
+        return name.contains(q) || String.valueOf(s.getShiftId()).contains(q);
     }
 
-    private void rebuildTable(List<Shift> shifts) {
+    private void renderPage() {
         tableModel.setRowCount(0);
-        for (Shift s : shifts) {
-            BigDecimal expected = expectedCash(s);
+        if (filteredShifts.isEmpty()) {
+            showEmpty(true);
+            return;
+        }
+        showEmpty(false);
+
+        int pageSize = pagination.getPageSize();
+        int page = Math.max(1, pagination.getCurrentPage());
+        int fromIdx = (page - 1) * pageSize;
+        int toIdx = Math.min(fromIdx + pageSize, filteredShifts.size());
+        if (fromIdx >= filteredShifts.size()) {
+            pagination.setCurrentPage(1);
+            fromIdx = 0;
+            toIdx = Math.min(pageSize, filteredShifts.size());
+        }
+
+        for (int i = fromIdx; i < toIdx; i++) {
+            Shift s = filteredShifts.get(i);
             tableModel.addRow(new Object[]{
                     s.getShiftId(),
                     s.getUserName() != null ? s.getUserName() : "—",
@@ -472,51 +488,75 @@ public class ShiftMonitorPanel extends JPanel {
                     money(s.getCashIn()),
                     money(s.getCashOut()),
                     money(s.getCashRefunds()),
-                    money(expected)
+                    money(expectedCash(s))
             });
         }
+        updateCountLabel();
+    }
+
+    private void showEmpty(boolean empty) {
+        tableCardHolder.removeAll();
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(AppColor.WHITE);
+        card.setBorder(new LineBorder(AppColor.BORDER, 1, true));
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel toolbarWrapper = new JPanel(new BorderLayout());
+        toolbarWrapper.setBackground(AppColor.WHITE);
+        toolbarWrapper.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
+                new EmptyBorder(14, 16, 14, 16)
+        ));
+        toolbarWrapper.add(buildFilterHeader(), BorderLayout.CENTER);
+
+        JPanel paginationWrapper = new JPanel(new BorderLayout());
+        paginationWrapper.setBackground(AppColor.WHITE);
+        paginationWrapper.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER));
+        paginationWrapper.add(pagination, BorderLayout.CENTER);
+
+        card.add(toolbarWrapper, BorderLayout.NORTH);
+        if (empty) {
+            card.add(emptyState, BorderLayout.CENTER);
+        } else {
+            JScrollPane scroll = new JScrollPane(table);
+            scroll.setBorder(null);
+            scroll.getViewport().setBackground(AppColor.WHITE);
+            card.add(scroll, BorderLayout.CENTER);
+        }
+        card.add(paginationWrapper, BorderLayout.SOUTH);
+
+        tableCardHolder.add(card, BorderLayout.CENTER);
+        tableCardHolder.revalidate();
+        tableCardHolder.repaint();
     }
 
     private void updateStatCards(List<Shift> shifts) {
-        int count = shifts.size();
         BigDecimal totalExpected = BigDecimal.ZERO;
         BigDecimal totalSales = BigDecimal.ZERO;
         int totalInvoices = 0;
-
         for (Shift s : shifts) {
             totalExpected = totalExpected.add(expectedCash(s));
             totalSales = totalSales.add(nullSafe(s.getCashSales()));
             totalInvoices += s.getInvoiceCount();
         }
-
-        openCountCard.setValue(String.valueOf(count));
+        openCountCard.setValue(String.valueOf(shifts.size()));
         totalExpectedCard.setValue(money(totalExpected));
         totalSalesCard.setValue(money(totalSales));
         totalInvoicesCard.setValue(String.valueOf(totalInvoices));
     }
 
     private void updateCountLabel() {
-        int shown = filteredShifts.size();
-        int total = loadedShifts.size();
-        if (shown == total) {
-            countLabel.setText(total + " ca");
-        } else {
-            countLabel.setText("Hiển thị " + shown + " / " + total + " ca");
+        int total = filteredShifts.size();
+        int pageSize = pagination.getPageSize();
+        int page = Math.max(1, pagination.getCurrentPage());
+        if (total == 0) {
+            countLabel.setText("0 ca");
+            return;
         }
+        int from = (page - 1) * pageSize + 1;
+        int to = Math.min(page * pageSize, total);
+        countLabel.setText("Hiển thị " + from + "–" + to + " / " + total + " ca");
     }
-
-    private void toggleEmptyState(boolean empty) {
-        tableWrapper.removeAll();
-        if (empty) {
-            tableWrapper.add(emptyState, BorderLayout.CENTER);
-        } else {
-            tableWrapper.add(tableScroll, BorderLayout.CENTER);
-        }
-        tableWrapper.revalidate();
-        tableWrapper.repaint();
-    }
-
-    // ==================== Detail dialog ====================
 
     private void showDetailDialog(Shift shift) {
         JDialog dialog = new JDialog(
@@ -537,7 +577,6 @@ public class ShiftMonitorPanel extends JPanel {
 
         JPanel grid = new JPanel(new GridLayout(0, 2, AppSpacing.MD, AppSpacing.SM));
         grid.setOpaque(false);
-
         addInfoRow(grid, "Nhân viên", shift.getUserName());
         addInfoRow(grid, "Trạng thái", shift.isOpen() ? "Đang mở" : "Đã đóng");
         addInfoRow(grid, "Bắt đầu", formatDateTime(shift.getStartTime()));
@@ -550,14 +589,12 @@ public class ShiftMonitorPanel extends JPanel {
         addInfoRow(grid, "Chi tiền", money(shift.getCashOut()));
         addInfoRow(grid, "Hoàn tiền mặt", money(shift.getCashRefunds()));
         addInfoRow(grid, "Quỹ hệ thống", money(expectedCash(shift)));
-
         if (shift.getOpeningNote() != null && !shift.getOpeningNote().isBlank()) {
             addInfoRow(grid, "Ghi chú mở ca", shift.getOpeningNote());
         }
         if (shift.getClosingNote() != null && !shift.getClosingNote().isBlank()) {
             addInfoRow(grid, "Ghi chú đóng ca", shift.getClosingNote());
         }
-
         root.add(grid, BorderLayout.CENTER);
 
         JButton closeBtn = new JButton("Đóng");
@@ -586,10 +623,7 @@ public class ShiftMonitorPanel extends JPanel {
         grid.add(v);
     }
 
-    // ==================== Helpers ====================
-
     private static BigDecimal expectedCash(Shift s) {
-        // Ca đã đóng: ưu tiên expectedCash đã lưu
         if (!s.isOpen() && s.getExpectedCash() != null) {
             return s.getExpectedCash();
         }
@@ -618,9 +652,7 @@ public class ShiftMonitorPanel extends JPanel {
         Duration d = Duration.between(start, LocalDateTime.now());
         long hours = d.toHours();
         long minutes = d.toMinutes() % 60;
-        if (hours > 0) {
-            return hours + " giờ " + minutes + " phút";
-        }
+        if (hours > 0) return hours + " giờ " + minutes + " phút";
         return minutes + " phút";
     }
 }
