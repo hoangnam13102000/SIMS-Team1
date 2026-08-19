@@ -37,3 +37,8 @@ Nang cap project dang chay (A1-A3 huy hoa don co phe duyet):
 09_ORDER_ASSIGNMENT_HISTORY.sql
 - Gán đơn online cho SALES_STAFF + phân quyền theo AssignedTo.
 - Lưu lịch sử chuyển trạng thái OrderStatusHistory.
+
+10_HELD_CARTS.sql
+- A6-A7 POS: tạm giữ nhiều giỏ hàng, tìm/khôi phục/hủy theo ca và nhân viên.
+- Tạo HeldCarts + HeldCartItems; thêm quyền POS_CART_HOLD/POS_CART_RESTORE.
+- Không dùng information_schema, phù hợp tài khoản MySQL bị giới hạn.

@@ -523,6 +523,15 @@ public class ShiftDAO {
 					}
 				}
 
+				/* Gio tam giu chi co hieu luc trong ca da tao. Khi dong ca,
+				 * tu dong het han de ca sau khong khoi phuc nham du lieu cu. */
+				try (PreparedStatement ps = con.prepareStatement(
+						"UPDATE HeldCarts SET Status='EXPIRED', ExpiredAt=CURRENT_TIMESTAMP "
+						+ "WHERE ShiftID=? AND Status='HELD'")) {
+					ps.setInt(1, shiftId);
+					ps.executeUpdate();
+				}
+
 				Shift closedShift = findById(con, shiftId);
 
 				if (closedShift == null) {

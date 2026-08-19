@@ -31,6 +31,7 @@ public final class AuditEntityTypes {
         LABEL_TO_ENTITY.put("yêu cầu hủy hóa đơn", ActivityLog.ENTITY_INVOICE_CANCEL_REQUEST);
         LABEL_TO_ENTITY.put("yêu cầu huỷ hóa đơn", ActivityLog.ENTITY_INVOICE_CANCEL_REQUEST);
         LABEL_TO_ENTITY.put("đơn hàng", ActivityLog.ENTITY_ORDER);
+        LABEL_TO_ENTITY.put("giỏ tạm giữ", ActivityLog.ENTITY_HELD_CART);
         LABEL_TO_ENTITY.put("cảnh báo", ActivityLog.ENTITY_STOCK_ALERT);
         LABEL_TO_ENTITY.put("phiếu nhập kho", ActivityLog.ENTITY_PURCHASE_RECEIPT);
         LABEL_TO_ENTITY.put("ca bán hàng", ActivityLog.ENTITY_SHIFT);

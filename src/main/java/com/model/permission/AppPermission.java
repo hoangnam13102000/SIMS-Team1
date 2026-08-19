@@ -68,6 +68,10 @@ public enum AppPermission implements Permission {
     ORDER_PROCESS_ASSIGNED,
     /** Gan / doi nhan vien phu trach don online. */
     ORDER_ASSIGN,
+    /** Tam giu gio hang POS de phuc vu khach khac. */
+    POS_CART_HOLD,
+    /** Tim / khoi phuc / huy phieu gio hang tam giu cua chinh nhan vien. */
+    POS_CART_RESTORE,
     /** NV ban hang bao cao SP het/sap het hang cho Quan ly kho. */
     STOCK_ALERT_REPORT,
     /** Quan ly kho xem va xu ly cac bao cao het/sap het hang (len ke hoach nhap bo sung). */

@@ -123,6 +123,10 @@ public final class AppPermissionCatalog {
                 "Xử lý đơn được giao", "Chỉ xử lý trạng thái các đơn hàng online được gán cho chính nhân viên đang đăng nhập.");
         put(AppPermission.ORDER_ASSIGN, "Bán hàng",
                 "Gán đơn cho nhân viên", "Gán hoặc đổi nhân viên bán hàng phụ trách đơn online.");
+        put(AppPermission.POS_CART_HOLD, "Bán hàng",
+                "Tạm giữ giỏ POS", "Tạm giữ giỏ hàng hiện tại để phục vụ khách khác trong cùng ca.");
+        put(AppPermission.POS_CART_RESTORE, "Bán hàng",
+                "Khôi phục giỏ POS", "Tìm, khôi phục hoặc hủy các giỏ tạm giữ của chính nhân viên trong ca hiện tại.");
         put(AppPermission.PROMOTION_MANAGE, "Bán hàng",
                 "Quản lý khuyến mãi", "Tạo, sửa, bật/tắt, xoá khuyến mãi / mã giảm giá.");
 

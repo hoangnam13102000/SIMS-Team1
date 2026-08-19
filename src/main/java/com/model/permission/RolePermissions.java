@@ -65,7 +65,9 @@ public final class RolePermissions {
                 AppPermission.RETURN_EXCHANGE_CREATE,
                 AppPermission.EXCEPTION_REPORT_CREATE,
                 AppPermission.ORDER_VIEW_ASSIGNED,
-                AppPermission.ORDER_PROCESS_ASSIGNED
+                AppPermission.ORDER_PROCESS_ASSIGNED,
+                AppPermission.POS_CART_HOLD,
+                AppPermission.POS_CART_RESTORE
         ));
 
         DEFAULT_MAP.put(Role.CUSTOMER, PermissionSet.EMPTY);

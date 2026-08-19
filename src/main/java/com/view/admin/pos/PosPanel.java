@@ -29,6 +29,7 @@ import com.model.Shift;
 import com.model.User;
 import com.model.permission.AppPermission;
 import com.service.AuthService;
+import com.service.HeldCartService;
 import com.service.PosCartService;
 import com.service.ShiftService;
 import com.service.payment.PayPalService;
@@ -64,6 +65,7 @@ public class PosPanel extends JPanel {
 	private final CustomerDAO customerDAO = new CustomerDAO();
 	private final InvoiceDAO invoiceDAO = new InvoiceDAO();
 	private final ShiftService shiftService = new ShiftService();
+	private final HeldCartService heldCartService = new HeldCartService();
 	private final StoreConfigDAO storeConfigDAO = new StoreConfigDAO();
 	private final PosCartService cart = PosCartService.getInstance();
 
@@ -100,6 +102,8 @@ public class PosPanel extends JPanel {
 	private final JButton applyPromoButton = new JButton("Áp dụng");
 	private final JButton clearPromoButton = new JButton("Bỏ");
 	private final JLabel promoStatusLabel = new JLabel(" ");
+	private final JButton holdCartButton = new JButton("Tạm giữ");
+	private final JButton heldCartsButton = new JButton("Giỏ đã giữ");
 	private final JButton checkoutButton = new JButton();
 	private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang lập hóa đơn...");
 	private String selectedPaymentMethod = "CASH";
@@ -431,6 +435,8 @@ public class PosPanel extends JPanel {
 		bottom.add(Box.createVerticalStrut(6));
 		bottom.add(fixedHeight(buildPaymentMethodRow(), 32));
 		bottom.add(Box.createVerticalStrut(6));
+		bottom.add(fixedHeight(buildHeldCartActions(), 34));
+		bottom.add(Box.createVerticalStrut(6));
 		bottom.add(fixedHeight(buildCheckoutButton(), 42));
 		panel.add(bottom, BorderLayout.SOUTH);
 		return panel;
@@ -741,6 +747,16 @@ public class PosPanel extends JPanel {
 		return row;
 	}
 
+	private void selectPaymentMethod(String method) {
+		String normalized = method != null ? method.trim().toUpperCase() : "CASH";
+		if (!paymentButtons.containsKey(normalized)) normalized = "CASH";
+		selectedPaymentMethod = normalized;
+		for (var entry : paymentButtons.entrySet()) {
+			entry.getValue().setSelected(entry.getKey().equals(normalized));
+			styleToggle(entry.getValue());
+		}
+	}
+
 	private void styleToggle(JToggleButton btn) {
 		boolean selected = btn.isSelected();
 		btn.setOpaque(true);
@@ -802,6 +818,10 @@ public class PosPanel extends JPanel {
 			pointsSpinner.setEnabled(false);
 			pointsHintLabel.setText(" ");
 		}
+		boolean canHold = AuthService.getInstance().can(AppPermission.POS_CART_HOLD);
+		boolean canRestore = AuthService.getInstance().can(AppPermission.POS_CART_RESTORE);
+		holdCartButton.setEnabled(canHold && !cart.isEmpty());
+		heldCartsButton.setEnabled(canRestore);
 		checkoutButton.setEnabled(!cart.isEmpty());
 	}
 
@@ -935,6 +955,87 @@ public class PosPanel extends JPanel {
 		valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
 		row.add(valueLabel, BorderLayout.EAST);
 		return row;
+	}
+
+	// ---------------- Tam giu / khoi phuc gio hang ----------------
+	private JPanel buildHeldCartActions() {
+		JPanel row = new JPanel(new GridLayout(1, 2, 8, 0));
+		row.setOpaque(false);
+
+		holdCartButton.setFont(AppFont.SMALL_BOLD);
+		holdCartButton.setFocusPainted(false);
+		holdCartButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		holdCartButton.setToolTipText("Tạm giữ giỏ hiện tại để phục vụ khách khác");
+		for (var al : holdCartButton.getActionListeners()) holdCartButton.removeActionListener(al);
+		holdCartButton.addActionListener(e -> holdCurrentCart());
+
+		heldCartsButton.setFont(AppFont.SMALL_BOLD);
+		heldCartsButton.setFocusPainted(false);
+		heldCartsButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		heldCartsButton.setToolTipText("Tìm và khôi phục các giỏ đã tạm giữ trong ca này");
+		for (var al : heldCartsButton.getActionListeners()) heldCartsButton.removeActionListener(al);
+		heldCartsButton.addActionListener(e -> openHeldCarts());
+
+		row.add(holdCartButton);
+		row.add(heldCartsButton);
+		return row;
+	}
+
+	private void holdCurrentCart() {
+		if (cart.isEmpty()) {
+			AppAlert.warning(this, "Giỏ hàng đang trống.");
+			return;
+		}
+		String note = JOptionPane.showInputDialog(this,
+				"Ghi chú cho giỏ tạm giữ (có thể bỏ trống):",
+				"Tạm giữ giỏ hàng", JOptionPane.QUESTION_MESSAGE);
+		if (note == null) return;
+
+		int confirm = JOptionPane.showConfirmDialog(this,
+				"Tạm giữ giỏ hiện tại? Sau khi lưu, POS sẽ được làm trống để phục vụ khách khác.",
+				"Xác nhận tạm giữ", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (confirm != JOptionPane.YES_OPTION) return;
+
+		HeldCartService.Result<com.model.HeldCart> result = heldCartService.holdCurrentCart(cart, selectedPaymentMethod, note);
+		if (!result.isSuccess()) {
+			AppAlert.error(this, "Không thể tạm giữ", result.getMessage());
+			return;
+		}
+		selectPaymentMethod("CASH");
+		resetPromoUiFromCart();
+		AppAlert.success(this, "Đã tạm giữ", result.getMessage());
+	}
+
+	private void openHeldCarts() {
+		Shift openShift = shiftService.getMyOpenShift();
+		if (openShift == null) {
+			AppAlert.warning(this, "Bạn phải mở ca bán hàng trước khi xem giỏ tạm giữ.");
+			return;
+		}
+		Window owner = SwingUtilities.getWindowAncestor(this);
+		HeldCartDialog dialog = new HeldCartDialog(owner instanceof Frame ? (Frame) owner : null, heldCartService, cart);
+		dialog.setVisible(true);
+		if (dialog.isRestored()) {
+			com.model.HeldCart restored = dialog.getRestoredCart();
+			selectPaymentMethod(restored != null ? restored.getPaymentMethodSnapshot() : "CASH");
+			resetPromoUiFromCart();
+			loadProducts(searchBar.getText(), selectedCategoryId());
+		}
+	}
+
+	private void resetPromoUiFromCart() {
+		if (cart.getAppliedPromotion() != null) {
+			promoCodeField.setText(cart.getAppliedPromotion().getCode());
+			promoCodeField.setEditable(false);
+			promoStatusLabel.setText("Đã áp dụng " + cart.getAppliedPromotion().getCode());
+			promoStatusLabel.setForeground(AppColor.SUCCESS);
+		} else {
+			promoCodeField.setText("");
+			promoCodeField.setEditable(true);
+			promoStatusLabel.setText(" ");
+			promoStatusLabel.setForeground(AppColor.TEXT_MUTED);
+		}
+		refreshCartSummary();
 	}
 
 	// ---------------- Nut thanh toan + logic tao hoa don ----------------

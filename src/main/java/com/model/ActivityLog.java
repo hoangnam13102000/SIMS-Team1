@@ -29,6 +29,8 @@ public class ActivityLog {
     public static final String ENTITY_PHONE = "PHONE";
     public static final String ENTITY_CATEGORY = "CATEGORY";
     public static final String ENTITY_ORDER = "ORDER";
+    /** Gio hang POS da tam giu. */
+    public static final String ENTITY_HELD_CART = "HELD_CART";
     public static final String ENTITY_USER = "USER";
     public static final String ENTITY_CUSTOMER = "CUSTOMER";
     public static final String ENTITY_SUPPLIER = "SUPPLIER";

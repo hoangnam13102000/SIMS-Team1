@@ -343,6 +343,23 @@ public class ProductDAO extends BaseDAO<Product> {
         return result;
     }
 
+    public Product findActiveById(int productId) {
+        if (productId <= 0) return null;
+        String sql = BASE_SELECT
+                + "WHERE p.Status = 'ACTIVE' AND c.Status = 'ACTIVE' AND p.ProductID = ?";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, productId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? mapProduct(rs) : null;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "ProductDAO.findActiveById - productId=" + productId, e);
+            return null;
+        }
+    }
+
     public Product findActiveByCode(String code) {
         if (code == null || code.isBlank()) return null;
         // Ap dung dieu kien tuong tu findActive(): khong tra ve san pham neu

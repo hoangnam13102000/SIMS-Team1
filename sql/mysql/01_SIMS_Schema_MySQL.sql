@@ -1057,6 +1057,53 @@ ALTER TABLE Orders
 CREATE INDEX IX_Invoices_PromotionID ON Invoices(PromotionID);
 CREATE INDEX IX_Orders_PromotionID ON Orders(PromotionID);
 
+/* ============================================================
+   XIII. HELD CARTS - TẠM GIỮ NHIỀU GIỎ POS
+   ============================================================ */
+CREATE TABLE HeldCarts (
+    HoldID                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    HoldCode                VARCHAR(30) NULL UNIQUE,
+    ShiftID                 INT NOT NULL,
+    HeldBy                  INT NOT NULL,
+    CustomerID              INT NULL,
+    CustomerLabelSnapshot   VARCHAR(255) NULL,
+    PromotionID             INT NULL,
+    PromotionCode           VARCHAR(30) NULL,
+    PaymentMethodSnapshot   VARCHAR(20) NOT NULL DEFAULT 'CASH'
+                                CHECK (PaymentMethodSnapshot IN ('CASH','BANK_TRANSFER','PAYPAL','CARD')),
+    PointsToUse             INT NOT NULL DEFAULT 0,
+    SubTotalSnapshot        DECIMAL(18,0) NOT NULL DEFAULT 0,
+    DiscountSnapshot        DECIMAL(18,0) NOT NULL DEFAULT 0,
+    PointsDiscountSnapshot  DECIMAL(18,0) NOT NULL DEFAULT 0,
+    Status                  VARCHAR(20) NOT NULL DEFAULT 'HELD'
+                                CHECK (Status IN ('HELD','RESTORED','CANCELLED','EXPIRED')),
+    Note                    VARCHAR(500) NULL,
+    HeldAt                  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    RestoredAt              DATETIME NULL,
+    CancelledAt             DATETIME NULL,
+    ExpiredAt               DATETIME NULL,
+    CONSTRAINT FK_HeldCarts_Shift FOREIGN KEY (ShiftID) REFERENCES Shifts(ShiftID),
+    CONSTRAINT FK_HeldCarts_HeldBy FOREIGN KEY (HeldBy) REFERENCES Users(UserID),
+    CONSTRAINT FK_HeldCarts_Customer FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID),
+    CONSTRAINT FK_HeldCarts_Promotion FOREIGN KEY (PromotionID) REFERENCES Promotions(PromotionID),
+    KEY IX_HeldCarts_User_Shift_Status (HeldBy, ShiftID, Status, HeldAt),
+    KEY IX_HeldCarts_Code (HoldCode)
+) ENGINE=InnoDB;
+
+CREATE TABLE HeldCartItems (
+    HoldItemID           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    HoldID               BIGINT NOT NULL,
+    ProductID            INT NOT NULL,
+    ProductCodeSnapshot  VARCHAR(20) NULL,
+    ProductNameSnapshot  VARCHAR(150) NOT NULL,
+    Quantity             INT NOT NULL CHECK (Quantity > 0),
+    UnitPriceSnapshot    DECIMAL(18,0) NOT NULL CHECK (UnitPriceSnapshot >= 0),
+    CONSTRAINT FK_HeldCartItems_HeldCart FOREIGN KEY (HoldID) REFERENCES HeldCarts(HoldID) ON DELETE CASCADE,
+    CONSTRAINT FK_HeldCartItems_Product FOREIGN KEY (ProductID) REFERENCES Products(ProductID),
+    UNIQUE KEY UQ_HeldCartItems_Hold_Product (HoldID, ProductID),
+    KEY IX_HeldCartItems_Product (ProductID)
+) ENGINE=InnoDB;
+
 -- ============================================================
 -- SIMS - Migration_2FA.sql
 -- Database: MySQL

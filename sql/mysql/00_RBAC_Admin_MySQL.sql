@@ -150,6 +150,10 @@ VALUES
 
     ('ORDER_ASSIGN',              'Gán đơn online cho nhân viên'),
 
+    ('POS_CART_HOLD',             'Tạm giữ giỏ hàng tại POS'),
+
+    ('POS_CART_RESTORE',          'Khôi phục/hủy giỏ hàng tạm giữ tại POS'),
+
     ('STOCK_ALERT_REPORT',        'Báo cáo hàng sắp hết'),
 
     ('STOCK_ALERT_VIEW',          'Xử lý cảnh báo tồn'),
@@ -280,7 +284,9 @@ WHERE r.RoleCode = 'SALES_STAFF'
       'RETURN_EXCHANGE_CREATE',
       'EXCEPTION_REPORT_CREATE',
       'ORDER_VIEW_ASSIGNED',
-      'ORDER_PROCESS_ASSIGNED'
+      'ORDER_PROCESS_ASSIGNED',
+      'POS_CART_HOLD',
+      'POS_CART_RESTORE'
   );
 
 
