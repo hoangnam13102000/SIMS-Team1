@@ -58,6 +58,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.function.BiConsumer;
 
 /**
@@ -65,6 +66,12 @@ import java.util.function.BiConsumer;
  * Form thêm từng dòng + bảng danh sách (chỉ đọc + xóa).
  */
 public class PurchaseReceiptFormDialog extends JDialog {
+
+    private static final Random RANDOM = new Random();
+    /** So dong demo se duoc tu dong sinh moi lan bam nut - chi de demo, khong lien quan logic nghiep vu. */
+    private static final int DEMO_MIN_LINES = 2;
+    private static final int DEMO_MAX_LINES = 4;
+    private static final String[] DEMO_LOT_PREFIXES = {"LNCC", "PO", "BATCH"};
 
     private final PurchaseReceiptDAO receiptDAO = new PurchaseReceiptDAO();
     private final List<Product> products;
@@ -83,6 +90,7 @@ public class PurchaseReceiptFormDialog extends JDialog {
     private JLabel totalLabel;
     private JLabel lineCountLabel;
     private JLabel emptyHint;
+    private JButton demoButton;
 
     private BiConsumer<Integer, Integer> onSaved;
 
@@ -164,6 +172,8 @@ public class PurchaseReceiptFormDialog extends JDialog {
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBorder(new EmptyBorder(16, 24, 8, 24));
 
+        body.add(buildDemoBar());
+        body.add(Box.createVerticalStrut(10));
         body.add(cardSupplier());
         body.add(Box.createVerticalStrut(12));
         body.add(cardAddLine());
@@ -177,6 +187,78 @@ public class PurchaseReceiptFormDialog extends JDialog {
         outer.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         outer.getVerticalScrollBar().setUnitIncrement(16);
         return outer;
+    }
+
+    // ---------------------------------------------------------------
+    // Nút Demo — tự động điền nhà cung cấp + sinh vài dòng sản phẩm mẫu
+    // ---------------------------------------------------------------
+
+    private JPanel buildDemoBar() {
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        bar.setOpaque(false);
+        bar.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+
+        demoButton = new JButton("Điền dữ liệu Demo", FontIcon.of(FontAwesomeSolid.BOLT, 13, Color.WHITE));
+        demoButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        demoButton.setFocusPainted(false);
+        demoButton.setBackground(AppColor.ACCENT);
+        demoButton.setForeground(Color.WHITE);
+        demoButton.setBorder(new EmptyBorder(7, 14, 7, 14));
+        demoButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        demoButton.setToolTipText("Tự động chọn NCC và sinh vài dòng sản phẩm mẫu để giảm thời gian demo");
+        demoButton.addActionListener(e -> fillDemoData());
+        bar.add(demoButton);
+        return bar;
+    }
+
+    /**
+     * Dien nhanh nha cung cap + sinh vai dong san pham ngau nhien vao bang
+     * de phuc vu demo, khong dung cho du lieu thuc te.
+     */
+    private void fillDemoData() {
+        if (suppliers.isEmpty()) {
+            BaseDialog.error(this, "Chưa có nhà cung cấp", "Vui lòng tạo nhà cung cấp trước khi dùng demo.");
+            return;
+        }
+        if (products.isEmpty()) {
+            BaseDialog.error(this, "Chưa có sản phẩm", "Vui lòng tạo sản phẩm trước khi dùng demo.");
+            return;
+        }
+
+        if (supplierCombo.getSelectedItem() == null) {
+            supplierCombo.setSelectedIndex(RANDOM.nextInt(suppliers.size()));
+        }
+
+        List<Product> shuffled = new ArrayList<>(products);
+        java.util.Collections.shuffle(shuffled, RANDOM);
+        int lineCount = Math.min(shuffled.size(), DEMO_MIN_LINES + RANDOM.nextInt(DEMO_MAX_LINES - DEMO_MIN_LINES + 1));
+
+        for (int i = 0; i < lineCount; i++) {
+            Product product = shuffled.get(i);
+            LineRow row = new LineRow();
+            row.product = product;
+            row.quantity = 10 + RANDOM.nextInt(191); // 10 - 200
+            row.importPrice = randomDemoPrice(product);
+            row.lotNumber = DEMO_LOT_PREFIXES[RANDOM.nextInt(DEMO_LOT_PREFIXES.length)] + "-" + (100000 + RANDOM.nextInt(900000));
+            row.manufactureDate = LocalDate.now().minusDays(1 + RANDOM.nextInt(60));
+            row.expiryDate = row.manufactureDate.plusDays(90 + RANDOM.nextInt(275)); // ~3 - 12 tháng sau NSX
+            tableModel.addRow(row);
+        }
+        refreshSummary();
+        supplierCombo.requestFocusInWindow();
+    }
+
+    /** Gia nhap demo: lay theo gia nhap hien tai cua san pham (+-15%), hoac ngau nhien neu san pham chua co gia nhap. */
+    private BigDecimal randomDemoPrice(Product product) {
+        BigDecimal base = product.getImportPrice();
+        if (base == null || base.signum() <= 0) {
+            long fallback = 5000 + RANDOM.nextInt(20) * 5000L; // 5,000 - 100,000
+            return BigDecimal.valueOf(fallback);
+        }
+        double variance = 0.85 + RANDOM.nextDouble() * 0.3; // 85% - 115%
+        long rounded = Math.round(base.doubleValue() * variance / 500.0) * 500;
+        return BigDecimal.valueOf(Math.max(rounded, 500));
     }
 
     private JPanel cardSupplier() {

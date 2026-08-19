@@ -59,6 +59,10 @@ public class ChatPanel extends JPanel {
 
     private final Map<Integer, String> onlineCustomers = new LinkedHashMap<>();
     private final Map<Integer, String> customerDisplayNames = new LinkedHashMap<>();
+    /** Cache User khách hàng (có AvatarUrl) để hiển thị avatar thật trên danh sách chat. */
+    private final Map<Integer, User> customerDirectory = new LinkedHashMap<>();
+    /** Cache icon avatar tròn theo (url|size) để tránh đọc file/URL mỗi lần render list. */
+    private final Map<String, ImageIcon> avatarIconCache = new LinkedHashMap<>();
     private final Set<Integer> knownCustomerIds = new LinkedHashSet<>();
     private final Set<Integer> customerHistoryLoaded = new HashSet<>();
     private final Set<Integer> staffHistoryLoaded = new HashSet<>();
@@ -714,14 +718,49 @@ public class ChatPanel extends JPanel {
     private void loadKnownCustomerThreads() {
         for (ChatConversation c : ChatHistoryService.getInstance().listRecentCustomerThreads(100)) {
             Integer customerId = c.getCustomerUserId();
-            if (customerId != null) knownCustomerIds.add(customerId);
+            if (customerId != null) {
+                knownCustomerIds.add(customerId);
+                ensureCustomerUser(customerId);
+            }
         }
+    }
+
+    /**
+     * Nạp hồ sơ User khách hàng (có AvatarUrl) vào cache khi lần đầu biết userId.
+     * Gọi an toàn nhiều lần — chỉ query DB nếu chưa có trong customerDirectory.
+     */
+    private void ensureCustomerUser(int userId) {
+        if (userId <= 0 || customerDirectory.containsKey(userId)) return;
+        try {
+            User u = userDAO.findById(userId);
+            if (u != null) {
+                customerDirectory.put(userId, u);
+                if (u.getFullName() != null && !u.getFullName().isBlank()) {
+                    customerDisplayNames.putIfAbsent(userId, u.getFullName());
+                }
+            }
+        } catch (Exception ignored) {
+            // Không chặn UI chat nếu lỗi DB; avatar sẽ fallback chữ cái.
+        }
+    }
+
+    /** Lấy avatarUrl đã cache của khách (null nếu chưa có / chưa upload). */
+    private String customerAvatarUrl(int userId) {
+        User u = customerDirectory.get(userId);
+        return u != null ? u.getAvatarUrl() : null;
+    }
+
+    /** Lấy avatarUrl của nhân viên nội bộ từ staffDirectory. */
+    private String staffAvatarUrl(int userId) {
+        User u = staffDirectory.get(userId);
+        return u != null ? u.getAvatarUrl() : null;
     }
 
     private void selectCustomer(int userId) {
         selectedCustomerId = userId;
         selectedStaffId = null;
         customerUnread.put(userId, false);
+        ensureCustomerUser(userId);
         customerList.repaint();
         notifyUnreadCountChanged();
         String name = customerDisplayName(userId);
@@ -762,6 +801,7 @@ public class ChatPanel extends JPanel {
 
     private void ensureCustomerHistoryLoaded(int userId) {
         if (!customerHistoryLoaded.add(userId)) return;
+        ensureCustomerUser(userId);
         List<ChatHistoryMessage> history = ChatHistoryService.getInstance().loadCustomerHistory(userId, 200);
         if (history.isEmpty()) return;
         knownCustomerIds.add(userId);
@@ -1308,6 +1348,7 @@ public class ChatPanel extends JPanel {
         if (message.isJoin()) {
             onlineCustomers.put(message.userId, message.userName);
             knownCustomerIds.add(message.userId);
+            ensureCustomerUser(message.userId);
             customerConversations.computeIfAbsent(message.userId, k -> new ArrayList<>());
             refreshCustomerListVisual();
             if (!staffTabActive && selectedCustomerId != null && selectedCustomerId == message.userId)
@@ -1322,6 +1363,7 @@ public class ChatPanel extends JPanel {
             onlineCustomers.putIfAbsent(message.userId,
                     message.userName != null ? message.userName : ("Khách #" + message.userId));
             knownCustomerIds.add(message.userId);
+            ensureCustomerUser(message.userId);
             String preview = previewOf(message);
             customerLastPreview.put(message.userId, preview);
             customerLastTime.put(message.userId,
@@ -1403,6 +1445,15 @@ public class ChatPanel extends JPanel {
 
     private void ensureStaffInDirectory(ChatMessage message) {
         if (staffDirectory.containsKey(message.userId)) return;
+        // Ưu tiên nạp đủ hồ sơ (có AvatarUrl) từ DB
+        try {
+            User fromDb = userDAO.findById(message.userId);
+            if (fromDb != null) {
+                staffDirectory.put(message.userId, fromDb);
+                return;
+            }
+        } catch (Exception ignored) {
+        }
         User stub = new User();
         stub.setUserId(message.userId);
         stub.setFullName(message.userName);
@@ -1846,9 +1897,18 @@ public class ChatPanel extends JPanel {
     private static String initialOf(String name) {
         if (name == null || name.isBlank()) return "?";
         String trimmed = name.trim();
-        String[] parts = trimmed.split("\s+");
-        String lastName = parts[parts.length - 1];
-        return lastName.substring(0, 1).toUpperCase();
+        String[] parts = trimmed.split("\\s+");
+        // Ưu tiên chữ cái cuối (tên riêng VN); bỏ phần dạng #6 / số
+        for (int i = parts.length - 1; i >= 0; i--) {
+            String p = parts[i];
+            if (p.isEmpty()) continue;
+            char c = p.charAt(0);
+            if (Character.isLetter(c)) {
+                return Character.toUpperCase(c) + "";
+            }
+        }
+        char c = trimmed.charAt(0);
+        return Character.isLetterOrDigit(c) ? Character.toUpperCase(c) + "" : "?";
     }
 
     private String formatChatTime(long timestamp) {
@@ -1882,11 +1942,14 @@ public class ChatPanel extends JPanel {
     }
 
     /**
-     * Avatar label tùy chỉnh: hình tròn với chữ cái đầu tên và nền màu theo user ID.
+     * Avatar label tùy chỉnh: ưu tiên ảnh đại diện thật (AvatarUrl),
+     * fallback hình tròn + chữ cái đầu tên và nền màu theo user ID.
      */
     private class AvatarLabel extends JLabel {
         private int userId = 0;
         private final int size;
+        /** true khi đang hiển thị ảnh thật (không vẽ vòng màu phía sau). */
+        private boolean hasPhoto;
 
         AvatarLabel(int size) {
             this.size = size;
@@ -1901,25 +1964,60 @@ public class ChatPanel extends JPanel {
             setMaximumSize(dim);
         }
 
+        /** Cập nhật avatar: name + userId, không có URL ảnh → chỉ chữ cái. */
         void updateFor(String name, int userId) {
+            updateFor(name, userId, null);
+        }
+
+        /**
+         * Cập nhật avatar với URL ảnh (local path hoặc http).
+         * Nếu đọc được ảnh → hiển thị ảnh tròn; không thì fallback chữ cái + màu.
+         */
+        void updateFor(String name, int userId, String avatarUrl) {
             this.userId = userId;
-            setText(initialOf(name));
+            String initials = initialOf(name);
+
+            if (avatarUrl != null && !avatarUrl.isBlank()) {
+                String cacheKey = avatarUrl + "|" + size;
+                ImageIcon icon = avatarIconCache.get(cacheKey);
+                if (icon == null) {
+                    BufferedImage raw = ImageUtil.readSafe(avatarUrl);
+                    if (raw != null) {
+                        icon = ImageUtil.circularIcon(avatarUrl, size, initials);
+                        avatarIconCache.put(cacheKey, icon);
+                    }
+                }
+                if (icon != null) {
+                    setIcon(icon);
+                    setText(null);
+                    hasPhoto = true;
+                    repaint();
+                    return;
+                }
+            }
+
+            // Fallback: chữ cái + nền màu theo userId (vẽ trong paintComponent)
+            setIcon(null);
+            setText(initials);
+            hasPhoto = false;
             repaint();
         }
 
         @Override
         protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            if (!hasPhoto) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            int diameter = Math.min(getWidth(), getHeight());
-            int x = (getWidth() - diameter) / 2;
-            int y = (getHeight() - diameter) / 2;
+                int diameter = Math.min(getWidth(), getHeight());
+                int x = (getWidth() - diameter) / 2;
+                int y = (getHeight() - diameter) / 2;
 
-            g2.setColor(avatarColorFor(userId));
-            g2.fillOval(x, y, diameter, diameter);
+                g2.setColor(avatarColorFor(userId));
+                g2.fillOval(x, y, diameter, diameter);
 
-            g2.dispose();
+                g2.dispose();
+            }
             super.paintComponent(g);
         }
     }
@@ -2036,8 +2134,8 @@ public class ChatPanel extends JPanel {
             String preview = customerLastPreview.get(userId);
             Long lastTime = customerLastTime.get(userId);
 
-            // Cập nhật avatar
-            avatarLabel.updateFor(name, userId);
+            // Cập nhật avatar (ảnh thật nếu có AvatarUrl, không thì chữ cái)
+            avatarLabel.updateFor(name, userId, customerAvatarUrl(userId));
 
             // Trạng thái online
             onlineDot.setForeground(online ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);
@@ -2157,8 +2255,8 @@ public class ChatPanel extends JPanel {
             String preview = staffLastPreview.get(userId);
             Long lastTime = staffLastTime.get(userId);
 
-            // Cập nhật avatar
-            avatarLabel.updateFor(name, userId);
+            // Cập nhật avatar (ảnh thật nếu có AvatarUrl, không thì chữ cái)
+            avatarLabel.updateFor(name, userId, staffAvatarUrl(userId));
 
             // Trạng thái online
             onlineDot.setForeground(online ? AppColor.GREEN : AppColor.TEXT_MUTED_ALT);

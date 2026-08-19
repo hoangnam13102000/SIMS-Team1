@@ -29,7 +29,6 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Cursor;
 import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -40,315 +39,453 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Dialog chi xem chi tiet 1 phieu tieu huy — UI hien dai (card + chip + zebra table).
+ * Dialog chi tiết phiếu tiêu hủy (hủy hàng) — UI đồng bộ với {@link PurchaseReceiptDetailDialog}.
+ * <ul>
+ *   <li>Header: icon badge + mã phiếu + subtitle + status pill</li>
+ *   <li>Body: card thông tin lưới 2 cột + bảng dòng sản phẩm + tổng thiệt hại</li>
+ *   <li>Footer: nút Đóng</li>
+ * </ul>
  */
 public class StockDisposalDetailDialog extends JDialog {
 
-    private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-    private static final DateTimeFormatter D = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final long EXPIRY_WARNING_DAYS = 30;
+
+    private final StockDisposal disposal;
+    private final List<StockDisposalDetail> details;
 
     public StockDisposalDetailDialog(Frame owner, StockDisposal disposal, StockDisposalDAO dao) {
         super(owner, "Chi tiết phiếu tiêu hủy", Dialog.ModalityType.APPLICATION_MODAL);
-        List<StockDisposalDetail> details = dao.getDetails(disposal.getDisposalId());
+        this.disposal = disposal;
+        this.details = dao.getDetails(disposal.getDisposalId());
 
-        setSize(760, 580);
-        setMinimumSize(new Dimension(640, 460));
+        setSize(880, 660);
+        setMinimumSize(new Dimension(640, 500));
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
-        Color pageBg = AppColor.PAGE_BG != null ? AppColor.PAGE_BG : new Color(248, 250, 252);
-        getContentPane().setBackground(pageBg);
+        getContentPane().setBackground(AppColor.WHITE);
 
-        add(buildHeader(disposal), BorderLayout.NORTH);
-        add(buildBody(disposal, details), BorderLayout.CENTER);
-        add(buildFooter(disposal), BorderLayout.SOUTH);
+        add(buildHeader(), BorderLayout.NORTH);
+        add(buildBody(details), BorderLayout.CENTER);
+        add(buildFooter(), BorderLayout.SOUTH);
 
         getRootPane().registerKeyboardAction(e -> dispose(),
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
                 JComponent.WHEN_IN_FOCUSED_WINDOW);
+
         setLocationRelativeTo(owner);
     }
 
-    private JPanel buildHeader(StockDisposal d) {
+    // ---------------------------------------------------------------
+    // Header: icon + mã phiếu + trạng thái (giống phiếu nhập kho)
+    // ---------------------------------------------------------------
+
+    private JPanel buildHeader() {
         JPanel header = new JPanel(new BorderLayout(14, 0));
         header.setBackground(AppColor.WHITE);
         header.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, softBorder()),
-                new EmptyBorder(18, 24, 16, 24)));
+                BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
+                new EmptyBorder(18, 24, 18, 24)));
 
-        FontIcon icon = FontIcon.of(FontAwesomeSolid.TRASH, 18, AppColor.ERROR);
+        boolean cancelled = disposal.isCancelled();
+        // Tiêu hủy: icon trash; trạng thái hủy phiếu = ERROR, hoàn tất = SUCCESS
+        Color statusIconColor = cancelled ? AppColor.ERROR : AppColor.SUCCESS;
+        Color statusIconBg = cancelled ? AppColor.ERROR_BG : AppColor.SUCCESS_BG;
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.TRASH, 18);
+        icon.setIconColor(statusIconColor);
         JLabel iconBadge = new JLabel(icon, SwingConstants.CENTER) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(AppColor.ERROR_BG != null ? AppColor.ERROR_BG : new Color(254, 226, 226));
+                g2.setColor(statusIconBg);
                 g2.fillOval(0, 0, getWidth(), getHeight());
                 g2.dispose();
                 super.paintComponent(g);
             }
         };
-        iconBadge.setPreferredSize(new Dimension(48, 48));
+        iconBadge.setPreferredSize(new Dimension(44, 44));
 
-        JPanel titles = new JPanel();
-        titles.setOpaque(false);
-        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        JPanel titleBox = new JPanel();
+        titleBox.setOpaque(false);
+        titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
 
-        JLabel code = new JLabel(nullSafe(d.getDisposalCode()));
-        code.setFont(AppFont.DIALOG_TITLE != null ? AppFont.DIALOG_TITLE : new Font("Segoe UI", Font.BOLD, 20));
-        code.setForeground(AppColor.TEXT_PRIMARY);
-        code.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel titleLabel = new JLabel(emptyDash(disposal.getDisposalCode()));
+        titleLabel.setFont(AppFont.DIALOG_TITLE);
+        titleLabel.setForeground(AppColor.TEXT_PRIMARY);
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        chips.setOpaque(false);
-        chips.setAlignmentX(Component.LEFT_ALIGNMENT);
-        chips.add(chip(d.getReasonLabel(),
-                AppColor.WARNING_BG != null ? AppColor.WARNING_BG : new Color(254, 243, 199),
-                AppColor.WARNING != null ? AppColor.WARNING : new Color(180, 83, 9)));
-        chips.add(chip(d.isCancelled() ? "Đã hủy" : "Hoàn tất",
-                d.isCancelled()
-                        ? (AppColor.ERROR_BG != null ? AppColor.ERROR_BG : new Color(254, 226, 226))
-                        : (AppColor.SUCCESS_BG != null ? AppColor.SUCCESS_BG : new Color(220, 252, 231)),
-                d.isCancelled() ? AppColor.ERROR : AppColor.SUCCESS));
+        JLabel subtitleLabel = new JLabel(emptyDash(disposal.getReasonLabel())
+                + "  \u00b7  " + (cancelled ? "Đã hủy" : "Hoàn tất"));
+        subtitleLabel.setFont(AppFont.BODY);
+        subtitleLabel.setForeground(cancelled ? AppColor.ERROR : AppColor.TEXT_MUTED);
+        subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        titles.add(code);
-        titles.add(Box.createVerticalStrut(8));
-        titles.add(chips);
+        titleBox.add(titleLabel);
+        titleBox.add(Box.createVerticalStrut(4));
+        titleBox.add(subtitleLabel);
 
         header.add(iconBadge, BorderLayout.WEST);
-        header.add(titles, BorderLayout.CENTER);
+        header.add(titleBox, BorderLayout.CENTER);
+        header.add(statusPill(cancelled), BorderLayout.EAST);
         return header;
     }
 
-    private JComponent buildBody(StockDisposal d, List<StockDisposalDetail> details) {
-        JPanel content = new JPanel();
-        content.setOpaque(false);
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setBorder(new EmptyBorder(16, 20, 12, 20));
-
-        content.add(infoCard(d));
-        content.add(Box.createVerticalStrut(14));
-        content.add(tableCard(details));
-
-        JScrollPane scroll = new JScrollPane(content);
-        scroll.setBorder(null);
-        scroll.getViewport().setOpaque(false);
-        scroll.setOpaque(false);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        return scroll;
-    }
-
-    private JPanel infoCard(StockDisposal d) {
-        JPanel card = whiteCard();
-        card.setLayout(new GridLayout(1, 3, 16, 0));
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 88));
-
-        card.add(statCell(FontAwesomeSolid.USER, "Người lập", nullSafe(d.getCreatedByName())));
-        card.add(statCell(FontAwesomeSolid.CALENDAR_ALT, "Ngày lập",
-                d.getCreatedAt() != null ? d.getCreatedAt().format(DT) : "—"));
-        String note = (d.getNote() != null && !d.getNote().isBlank()) ? d.getNote() : "—";
-        card.add(statCell(FontAwesomeSolid.STICKY_NOTE, "Ghi chú", note));
-        return card;
-    }
-
-    private JPanel statCell(FontAwesomeSolid fa, String label, String value) {
-        JPanel p = new JPanel();
-        p.setOpaque(false);
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-
-        JLabel lb = new JLabel(label);
-        lb.setFont(AppFont.SMALL_BOLD != null ? AppFont.SMALL_BOLD : new Font("Segoe UI", Font.BOLD, 11));
-        lb.setForeground(AppColor.TEXT_MUTED);
-        lb.setIcon(FontIcon.of(fa, 11, AppColor.TEXT_MUTED));
-        lb.setIconTextGap(6);
-        lb.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        JLabel val = new JLabel("<html><body style='width:160px'>" + escape(value) + "</body></html>");
-        val.setFont(AppFont.BODY != null ? AppFont.BODY : new Font("Segoe UI", Font.PLAIN, 13));
-        val.setForeground(AppColor.TEXT_PRIMARY);
-        val.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        p.add(lb);
-        p.add(Box.createVerticalStrut(6));
-        p.add(val);
-        return p;
-    }
-
-    private JPanel tableCard(List<StockDisposalDetail> details) {
-        JPanel card = whiteCard();
-        card.setLayout(new BorderLayout(0, 10));
-
-        JPanel top = new JPanel(new BorderLayout());
-        top.setOpaque(false);
-        JLabel section = new JLabel("Danh sách lô tiêu hủy");
-        section.setFont(AppFont.BODY_BOLD != null ? AppFont.BODY_BOLD : new Font("Segoe UI", Font.BOLD, 13));
-        section.setForeground(AppColor.TEXT_PRIMARY);
-        JLabel count = new JLabel(details.size() + " dòng");
-        count.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        count.setForeground(AppColor.TEXT_MUTED);
-        top.add(section, BorderLayout.WEST);
-        top.add(count, BorderLayout.EAST);
-
-        JTable table = buildTable(details);
-        JScrollPane scroll = new JScrollPane(table);
-        scroll.setBorder(BorderFactory.createLineBorder(softBorder(), 1));
-        scroll.getViewport().setBackground(AppColor.WHITE);
-        scroll.setPreferredSize(new Dimension(0, Math.min(280, 40 + details.size() * 36)));
-
-        card.add(top, BorderLayout.NORTH);
-        card.add(scroll, BorderLayout.CENTER);
-        return card;
-    }
-
-    private JTable buildTable(List<StockDisposalDetail> details) {
-        String[] cols = {"Mã lô", "Sản phẩm", "HSD", "SL hủy", "Giá vốn", "Tổn thất"};
-        DefaultTableModel model = new DefaultTableModel(cols, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return false; }
-        };
-        for (StockDisposalDetail d : details) {
-            model.addRow(new Object[]{
-                    d.getBatchCode(),
-                    d.getProductName(),
-                    d.getExpiryDate() != null ? d.getExpiryDate().format(D) : "—",
-                    d.getQuantity(),
-                    NumberUtil.formatThousands(d.getUnitCost() != null ? d.getUnitCost().longValue() : 0),
-                    NumberUtil.formatThousands(d.getLineLossAmount() != null ? d.getLineLossAmount().longValue() : 0)
-            });
-        }
-
-        JTable table = new JTable(model) {
-            @Override
-            public Component prepareRenderer(javax.swing.table.TableCellRenderer renderer, int row, int column) {
-                Component c = super.prepareRenderer(renderer, row, column);
-                if (!isRowSelected(row)) {
-                    c.setBackground(row % 2 == 0 ? AppColor.WHITE
-                            : (AppColor.BG_LIGHTER != null ? AppColor.BG_LIGHTER : new Color(248, 250, 252)));
-                }
-                return c;
-            }
-        };
-        table.setFont(AppFont.BODY != null ? AppFont.BODY : new Font("Segoe UI", Font.PLAIN, 13));
-        table.setRowHeight(34);
-        table.getTableHeader().setFont(AppFont.SMALL_BOLD != null ? AppFont.SMALL_BOLD : new Font("Segoe UI", Font.BOLD, 12));
-        table.getTableHeader().setBackground(AppColor.BG_LIGHT != null ? AppColor.BG_LIGHT : new Color(241, 245, 249));
-        table.getTableHeader().setForeground(AppColor.TEXT_MUTED);
-        table.getTableHeader().setReorderingAllowed(false);
-        table.setGridColor(softBorder());
-        table.setShowVerticalLines(false);
-        table.setShowHorizontalLines(true);
-        table.setFillsViewportHeight(true);
-        table.setRowSelectionAllowed(false);
-        table.setFocusable(false);
-
-        int[] widths = {110, 180, 100, 70, 100, 110};
-        for (int i = 0; i < widths.length && i < table.getColumnCount(); i++) {
-            table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
-        }
-
-        DefaultTableCellRenderer right = new DefaultTableCellRenderer();
-        right.setHorizontalAlignment(SwingConstants.RIGHT);
-        table.getColumnModel().getColumn(3).setCellRenderer(right);
-        table.getColumnModel().getColumn(4).setCellRenderer(right);
-
-        DefaultTableCellRenderer lossRenderer = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
-                                                           boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
-                setHorizontalAlignment(SwingConstants.RIGHT);
-                setForeground(AppColor.ERROR);
-                setFont(getFont().deriveFont(Font.BOLD));
-                return c;
-            }
-        };
-        table.getColumnModel().getColumn(5).setCellRenderer(lossRenderer);
-        return table;
-    }
-
-    private JPanel buildFooter(StockDisposal d) {
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setBackground(AppColor.WHITE);
-        footer.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, softBorder()),
-                new EmptyBorder(12, 24, 14, 24)));
-
-        long loss = d.getTotalLossAmount() != null ? d.getTotalLossAmount().longValue() : 0;
-
-        JPanel lossBox = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        lossBox.setOpaque(false);
-        lossBox.add(new JLabel(FontIcon.of(FontAwesomeSolid.CHART_LINE, 16, AppColor.ERROR)));
-        JLabel lossLabel = new JLabel("Tổng tổn thất");
-        lossLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lossLabel.setForeground(AppColor.TEXT_MUTED);
-        JLabel lossValue = new JLabel(NumberUtil.formatThousands(loss) + " đ");
-        lossValue.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        lossValue.setForeground(AppColor.ERROR);
-        lossBox.add(lossLabel);
-        lossBox.add(lossValue);
-
-        JButton close = new JButton("Đóng");
-        close.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        close.setFocusPainted(false);
-        close.setBackground(AppColor.WHITE);
-        close.setForeground(AppColor.TEXT_PRIMARY);
-        close.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(softBorder(), 1),
-                new EmptyBorder(8, 18, 8, 18)));
-        close.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        close.addActionListener(e -> dispose());
-
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        right.setOpaque(false);
-        right.add(close);
-
-        footer.add(lossBox, BorderLayout.WEST);
-        footer.add(right, BorderLayout.EAST);
-        getRootPane().setDefaultButton(close);
-        return footer;
-    }
-
-    private JPanel whiteCard() {
-        JPanel p = new JPanel();
-        p.setBackground(AppColor.WHITE);
-        p.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(softBorder(), 1),
-                new EmptyBorder(14, 16, 14, 16)));
-        p.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return p;
-    }
-
-    private JLabel chip(String text, Color bg, Color fg) {
-        JLabel chip = new JLabel(text) {
+    private JLabel statusPill(boolean cancelled) {
+        JLabel pill = new JLabel(cancelled ? "Đã hủy" : "Hoàn tất", SwingConstants.CENTER) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(bg);
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                g2.setColor(cancelled ? AppColor.ERROR_BG : AppColor.SUCCESS_BG);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
                 g2.dispose();
                 super.paintComponent(g);
             }
         };
-        chip.setOpaque(false);
-        chip.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        chip.setForeground(fg);
-        chip.setBorder(new EmptyBorder(4, 10, 4, 10));
-        return chip;
+        pill.setFont(AppFont.SMALL_BOLD);
+        pill.setForeground(cancelled ? AppColor.ERROR : AppColor.SUCCESS);
+        pill.setBorder(new EmptyBorder(6, 16, 6, 16));
+        pill.setVerticalAlignment(SwingConstants.CENTER);
+        return pill;
     }
 
-    private static Color softBorder() {
-        return AppColor.BORDER != null ? AppColor.BORDER : new Color(226, 232, 240);
+    // ---------------------------------------------------------------
+    // Body: card thông tin lưới 2 cột + bảng dòng sản phẩm
+    // ---------------------------------------------------------------
+
+    private JScrollPane buildBody(List<StockDisposalDetail> details) {
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setBackground(AppColor.WHITE);
+        content.setBorder(new EmptyBorder(18, 24, 18, 24));
+
+        JPanel infoCard = new JPanel(new BorderLayout());
+        infoCard.setOpaque(true);
+        infoCard.setBackground(AppColor.BG_LIGHT);
+        infoCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
+                new EmptyBorder(16, 16, 16, 16)));
+        infoCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 260));
+
+        JPanel infoGrid = new JPanel(new GridLayout(0, 2, 28, 14));
+        infoGrid.setOpaque(false);
+        infoGrid.add(infoCell("Lý do tiêu hủy", disposal.getReasonLabel()));
+        infoGrid.add(infoCell("Người tạo phiếu", disposal.getCreatedByName()));
+        infoGrid.add(infoCell("Ngày tạo",
+                disposal.getCreatedAt() != null
+                        ? disposal.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
+        infoGrid.add(infoCell("Số dòng sản phẩm", String.valueOf(details.size())));
+        infoGrid.add(infoCell("Trạng thái", disposal.isCancelled() ? "Đã hủy" : "Hoàn tất"));
+        infoGrid.add(infoCell("Ghi chú",
+                disposal.getNote() != null && !disposal.getNote().isBlank()
+                        ? disposal.getNote() : "-"));
+        long loss = disposal.getTotalLossAmount() != null
+                ? disposal.getTotalLossAmount().longValue() : 0;
+        infoGrid.add(infoCellTotal("Tổng thiệt hại",
+                NumberUtil.formatThousands(loss) + " đ"));
+
+        infoCard.add(infoGrid, BorderLayout.CENTER);
+        content.add(infoCard);
+        content.add(Box.createVerticalStrut(20));
+
+        JLabel sectionLabel = new JLabel("Danh sách sản phẩm (" + details.size() + ")");
+        sectionLabel.setFont(AppFont.BODY_BOLD);
+        sectionLabel.setForeground(AppColor.TEXT_PRIMARY);
+        sectionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(sectionLabel);
+        content.add(Box.createVerticalStrut(10));
+
+        JTable table = buildDetailTable(details);
+        JScrollPane tableScroll = new JScrollPane(table);
+        tableScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        int tableH = Math.max(80, Math.min(260, 38 + details.size() * 34));
+        tableScroll.setPreferredSize(new Dimension(700, tableH));
+        tableScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, tableH + 20));
+        tableScroll.getViewport().setBackground(AppColor.WHITE);
+        tableScroll.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
+        content.add(tableScroll);
+
+        content.add(Box.createVerticalStrut(12));
+        content.add(buildTotalSummary());
+
+        if (details.stream().anyMatch(this::isNearOrPastExpiry)) {
+            content.add(Box.createVerticalStrut(12));
+            content.add(expiryNotice());
+        }
+
+        JScrollPane scroll = new JScrollPane(content);
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.getViewport().setBackground(AppColor.WHITE);
+        return scroll;
     }
 
-    private static String nullSafe(String s) {
-        return s != null && !s.isBlank() ? s : "—";
+    private JPanel infoCell(String label, String value) {
+        JPanel cell = new JPanel();
+        cell.setOpaque(false);
+        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+
+        JLabel labelComp = new JLabel(label);
+        labelComp.setFont(AppFont.SMALL_BOLD);
+        labelComp.setForeground(AppColor.TEXT_MUTED);
+        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel valueComp = new JLabel(emptyDash(value));
+        valueComp.setFont(AppFont.BODY);
+        valueComp.setForeground(AppColor.TEXT_PRIMARY);
+        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        cell.add(labelComp);
+        cell.add(Box.createVerticalStrut(2));
+        cell.add(valueComp);
+        return cell;
     }
 
-    private static String escape(String s) {
-        if (s == null) return "—";
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    private JPanel infoCellTotal(String label, String value) {
+        JPanel cell = new JPanel();
+        cell.setOpaque(false);
+        cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+
+        JLabel labelComp = new JLabel(label);
+        labelComp.setFont(AppFont.SMALL_BOLD);
+        labelComp.setForeground(AppColor.TEXT_MUTED);
+        labelComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel valueComp = new JLabel(emptyDash(value));
+        valueComp.setFont(AppFont.BODY_BOLD);
+        valueComp.setForeground(AppColor.ERROR);
+        valueComp.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        cell.add(labelComp);
+        cell.add(Box.createVerticalStrut(2));
+        cell.add(valueComp);
+        return cell;
+    }
+
+    // ---------------------------------------------------------------
+    // Bảng dòng sản phẩm
+    // ---------------------------------------------------------------
+
+    private JTable buildDetailTable(List<StockDisposalDetail> details) {
+        String[] columns = {
+                "Mã sản phẩm", "Sản phẩm", "Mã lô (hệ thống)",
+                "HSD", "SL hủy", "Đơn giá vốn", "Thiệt hại"
+        };
+        DefaultTableModel model = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        for (StockDisposalDetail d : details) {
+            model.addRow(new Object[]{
+                    emptyDash(d.getProductCode()),
+                    emptyDash(d.getProductName()),
+                    emptyDash(d.getBatchCode()),
+                    d.getExpiryDate() != null ? d.getExpiryDate().format(DATE_FORMAT) : "-",
+                    d.getQuantity(),
+                    NumberUtil.formatThousands(d.getUnitCost() != null
+                            ? d.getUnitCost().longValue() : 0),
+                    NumberUtil.formatThousands(d.getLineLossAmount() != null
+                            ? d.getLineLossAmount().longValue() : 0)
+            });
+        }
+
+        JTable table = new JTable(model);
+        table.setFont(AppFont.BODY);
+        table.setRowHeight(34);
+        table.setBackground(AppColor.WHITE);
+        table.setForeground(AppColor.TEXT_PRIMARY);
+        table.setSelectionBackground(AppColor.ACCENT_BG_SOFT);
+        table.getTableHeader().setFont(AppFont.SMALL_BOLD);
+        table.getTableHeader().setBackground(AppColor.BG_LIGHT);
+        table.getTableHeader().setForeground(AppColor.TEXT_PRIMARY);
+        table.getTableHeader().setPreferredSize(new Dimension(0, 36));
+        table.getTableHeader().setReorderingAllowed(false);
+        table.setGridColor(AppColor.TABLE_GRID);
+        table.setShowVerticalLines(false);
+        table.setShowHorizontalLines(true);
+        table.setFillsViewportHeight(true);
+        table.setRowSelectionAllowed(false);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        table.setIntercellSpacing(new Dimension(0, 0));
+
+        table.getColumnModel().getColumn(0).setPreferredWidth(110);
+        table.getColumnModel().getColumn(1).setPreferredWidth(180);
+        table.getColumnModel().getColumn(2).setPreferredWidth(120);
+        table.getColumnModel().getColumn(3).setPreferredWidth(90);
+        table.getColumnModel().getColumn(4).setPreferredWidth(70);
+        table.getColumnModel().getColumn(4).setMaxWidth(80);
+        table.getColumnModel().getColumn(5).setPreferredWidth(100);
+        table.getColumnModel().getColumn(6).setPreferredWidth(110);
+
+        // Mã SP: đậm
+        DefaultTableCellRenderer codeRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                             boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setFont(AppFont.BODY_BOLD);
+                setForeground(AppColor.TEXT_PRIMARY);
+                setBackground(AppColor.WHITE);
+                setBorder(new EmptyBorder(0, 10, 0, 4));
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(0).setCellRenderer(codeRenderer);
+
+        // Mã lô hệ thống: accent
+        DefaultTableCellRenderer batchCodeRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                             boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setForeground(AppColor.ACCENT);
+                setFont(AppFont.SMALL_BOLD);
+                setBackground(AppColor.WHITE);
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(2).setCellRenderer(batchCodeRenderer);
+
+        // HSD: cảnh báo sắp/đã hết hạn
+        DefaultTableCellRenderer expiry = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                             boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setBackground(AppColor.WHITE);
+                LocalDate exp = details.get(row).getExpiryDate();
+                if (exp != null && exp.isBefore(LocalDate.now())) {
+                    setForeground(AppColor.ERROR);
+                    setFont(AppFont.BODY_BOLD);
+                } else if (exp != null && !exp.isAfter(LocalDate.now().plusDays(EXPIRY_WARNING_DAYS))) {
+                    setForeground(AppColor.WARNING);
+                    setFont(AppFont.BODY_BOLD);
+                } else {
+                    setForeground(AppColor.TEXT_PRIMARY);
+                    setFont(AppFont.BODY);
+                }
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(3).setCellRenderer(expiry);
+
+        // SL hủy: căn giữa
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                             boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                setBackground(AppColor.WHITE);
+                setForeground(AppColor.TEXT_PRIMARY);
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(4).setCellRenderer(center);
+
+        // Đơn giá vốn + thiệt hại: căn phải; thiệt hại màu ERROR
+        DefaultTableCellRenderer money = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                             boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.RIGHT);
+                setBackground(AppColor.WHITE);
+                setForeground(column == 6 ? AppColor.ERROR : AppColor.TEXT_PRIMARY);
+                setFont(column == 6 ? AppFont.BODY_BOLD : AppFont.BODY);
+                setBorder(new EmptyBorder(0, 4, 0, 12));
+                return c;
+            }
+        };
+        table.getColumnModel().getColumn(5).setCellRenderer(money);
+        table.getColumnModel().getColumn(6).setCellRenderer(money);
+
+        return table;
+    }
+
+    private boolean isNearOrPastExpiry(StockDisposalDetail d) {
+        LocalDate exp = d.getExpiryDate();
+        return exp != null && !exp.isAfter(LocalDate.now().plusDays(EXPIRY_WARNING_DAYS));
+    }
+
+    private JPanel expiryNotice() {
+        JPanel notice = new JPanel(new BorderLayout(8, 0));
+        notice.setOpaque(true);
+        notice.setBackground(AppColor.WARNING_BG);
+        notice.setBorder(new EmptyBorder(10, 14, 10, 14));
+        notice.setAlignmentX(Component.LEFT_ALIGNMENT);
+        notice.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.EXCLAMATION_TRIANGLE, 14);
+        icon.setIconColor(AppColor.WARNING);
+        JLabel iconLabel = new JLabel(icon);
+
+        JLabel text = new JLabel("Phiếu có lô hàng sắp hết hạn hoặc đã hết hạn sử dụng.");
+        text.setFont(AppFont.SMALL_BOLD);
+        text.setForeground(AppColor.WARNING);
+
+        notice.add(iconLabel, BorderLayout.WEST);
+        notice.add(text, BorderLayout.CENTER);
+        return notice;
+    }
+
+    private JPanel buildTotalSummary() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+
+        JLabel label = new JLabel("Tổng thiệt hại:  ");
+        label.setFont(AppFont.BODY);
+        label.setForeground(AppColor.TEXT_MUTED);
+
+        long loss = disposal.getTotalLossAmount() != null
+                ? disposal.getTotalLossAmount().longValue() : 0;
+        JLabel value = new JLabel(NumberUtil.formatThousands(loss) + " đ");
+        value.setFont(AppFont.HEADING_MD);
+        value.setForeground(AppColor.ERROR);
+
+        row.add(label);
+        row.add(value);
+        return row;
+    }
+
+    private static String emptyDash(String value) {
+        return value == null || value.isBlank() ? "-" : value;
+    }
+
+    // ---------------------------------------------------------------
+    // Footer: nút Đóng (giống phiếu nhập kho)
+    // ---------------------------------------------------------------
+
+    private JPanel buildFooter() {
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        footer.setBackground(AppColor.BG_LIGHT);
+        footer.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
+                new EmptyBorder(12, 24, 12, 24)));
+
+        JButton closeButton = new JButton("Đóng");
+        closeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        closeButton.setFocusPainted(false);
+        closeButton.setBackground(AppColor.BORDER);
+        closeButton.setForeground(AppColor.TEXT_PRIMARY);
+        closeButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+        closeButton.addActionListener(e -> dispose());
+        footer.add(closeButton);
+
+        getRootPane().setDefaultButton(closeButton);
+        return footer;
     }
 }
