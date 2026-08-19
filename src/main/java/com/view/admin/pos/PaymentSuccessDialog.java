@@ -235,7 +235,12 @@ public class PaymentSuccessDialog extends JDialog {
                         "In hóa đơn", JOptionPane.INFORMATION_MESSAGE);
             }
 
-        } catch (Exception ex) {
+        } catch (Throwable ex) {
+            // Throwable (khong chi Exception): loi khoi tao class PDF (vd static
+            // initializer nap font/anh that bai) duoc JVM boc thanh Error
+            // (ExceptionInInitializerError/NoClassDefFoundError), khong phai
+            // Exception - can bat rong hon de nguoi dung LUON thay thong bao loi
+            // thay vi nut "In hoa don" khong phan hoi gi ca.
             statusLabel.setForeground(AppColor.ERROR);
             statusLabel.setText("Lỗi: Không thể tạo file PDF");
             JOptionPane.showMessageDialog(this,

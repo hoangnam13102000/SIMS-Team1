@@ -432,26 +432,17 @@ public class AdminMainFrame extends JFrame {
          * KHO
          * ============================================================
          *
-         * Permission được map riêng theo từng chức năng:
+         * Thứ tự menu (sidebar):
+         *   1. Nhập kho              (STOCK_IMPORT)
+         *   2. Quản lý lô hàng       (STOCK_VIEW)
+         *   3. Tiêu hủy hàng         (STOCK_DISPOSE / STOCK_DISPOSE_VIEW)
+         *   4. Trả hàng NCC          (SUPPLIER_RETURN_*)
+         *   5. Đối chiếu kho cuối ngày (STOCK_RECONCILE)  ← ngay dưới trả hàng NCC
+         *   6. Cảnh báo tồn kho      (STOCK_ALERT_VIEW)
+         *   7. Báo cáo tồn kho       (STOCK_REPORT_VIEW)
          *
-         * STOCK_VIEW
-         *      -> Quản lý lô hàng
-         *      (Tổng quan kho chỉ là Dashboard của Quản lý kho, không hiện menu riêng)
-         *
-         * STOCK_IMPORT
-         *      -> Quản lý nhập kho
-         *
-         * STOCK_RECONCILE
-         *      -> Kiểm kê / đối chiếu
-         *
-         * STOCK_DISPOSE / STOCK_DISPOSE_VIEW
-         *      -> Tiêu hủy tồn kho
-         *
-         * STOCK_REPORT_VIEW
-         *      -> Báo cáo hàng tồn kho
-         *
-         * Không ẩn cứng toàn bộ section theo role.
-         * MainLayout sẽ tự kiểm tra permission của từng page.
+         * Tổng quan kho chỉ là Dashboard của Quản lý kho, không hiện menu riêng.
+         * Không ẩn cứng toàn bộ section theo role — MainLayout tự lọc theo permission.
          */
         layout.addSection(
                 Lang.get("sidebar.section.warehouse")
@@ -490,17 +481,6 @@ public class AdminMainFrame extends JFrame {
         );
 
         /*
-         * Kiểm kê / đối chiếu.
-         */
-        layout.addPage(
-                "stockReconciliation",
-                Lang.get("sidebar.stockReconciliation"),
-                FontAwesomeSolid.BALANCE_SCALE,
-                new StockReconciliationPanel(),
-                AppPermission.STOCK_RECONCILE
-        );
-
-        /*
          * Tiêu hủy tồn kho.
          */
         layout.addPage(
@@ -522,6 +502,17 @@ public class AdminMainFrame extends JFrame {
                 new SupplierReturnPanel(),
                 AppPermission.SUPPLIER_RETURN_CREATE,
                 AppPermission.SUPPLIER_RETURN_VIEW
+        );
+
+        /*
+         * Đối chiếu kho cuối ngày — đặt ngay dưới "Trả hàng nhà cung cấp".
+         */
+        layout.addPage(
+                "stockReconciliation",
+                Lang.get("sidebar.stockReconciliation"),
+                FontAwesomeSolid.BALANCE_SCALE,
+                new StockReconciliationPanel(),
+                AppPermission.STOCK_RECONCILE
         );
 
         /*

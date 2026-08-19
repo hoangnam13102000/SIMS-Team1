@@ -1,6 +1,6 @@
 package com.utils.pdf;
 
-import com.lowagie.text.pdf.draw.LineSeparator;
+import com.lowagie.text.pdf.draw.DottedLineSeparator;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
 import com.utils.NumberUtil;
@@ -9,27 +9,38 @@ import com.lowagie.text.pdf.*;
 import java.awt.Color;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Xuat hoa don ban hang ra file PDF voi thiet ke hien dai, chuyen nghiep.
- * Su dung thu vien OpenPDF (com.github.librepdf:openpdf).
+ * Xuat hoa don ban hang ra file PDF voi thiet ke hien dai, phong cach sieu
+ * thi (lay cam hung bo cuc tu Bach Hoa Xanh: khoi tieu de bang noi bat,
+ * duong ke cham kieu "xe hoa don", tong tien duoc nhan manh trong khoi mau
+ * dam), nhung dung dung mau thuong hieu that cua cua hang - xanh duong dam
+ * / xanh duong sang cua logo Connect Mart (logo_icon.png).
+ *
+ * Su dung thu vien OpenPDF (com.github.librepdf:openpdf), nhung nhung font
+ * Roboto (co san trong resources/fonts, ma hoa IDENTITY_H) de hien thi day
+ * du tieng Viet co dau.
  */
 public class InvoicePdfExporter {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-    // Mau sac chu dao - xanh duong nhat hien dai
-    private static final Color PRIMARY_COLOR = new Color(30, 64, 175);      // Blue-700
-    private static final Color PRIMARY_LIGHT = new Color(219, 234, 254);    // Blue-100
-    private static final Color HEADER_BG = new Color(30, 64, 175);           // Blue-700
-    private static final Color ROW_ALT_BG = new Color(248, 250, 252);        // Slate-50
-    private static final Color BORDER_COLOR = new Color(226, 232, 240);     // Slate-200
-    private static final Color TEXT_DARK = new Color(15, 23, 42);            // Slate-900
-    private static final Color TEXT_MUTED = new Color(100, 116, 139);        // Slate-500
+    // ---- Bang mau chu dao - xanh duong thuong hieu Connect Mart (lay tu logo_icon.png) ----
+    private static final Color PRIMARY_COLOR = new Color(15, 45, 110);     // Xanh duong dam (logo) - tieu de, khoi tong tien
+    private static final Color PRIMARY_LIGHT = new Color(222, 234, 250);   // Xanh duong nhat - nen highlight
+    private static final Color HEADER_BG = new Color(15, 45, 110);         // Nen tieu de bang san pham
+    private static final Color ACCENT_BLUE = new Color(0, 157, 230);       // Xanh duong sang (logo) - dai trang tri, nhan manh
+    private static final Color ACCENT_BLUE_LIGHT = new Color(224, 244, 253); // Nen nhat cho ghi chu doi/tra
+    private static final Color ROW_ALT_BG = new Color(240, 246, 252);      // Nen xen ke cac dong (xanh rat nhat)
+    private static final Color BORDER_COLOR = new Color(214, 227, 242);    // Duong ke nhe
+    private static final Color TEXT_DARK = new Color(23, 32, 46);          // Chu chinh
+    private static final Color TEXT_MUTED = new Color(100, 116, 139);      // Chu phu, nhan muc
 
     // Font
     private static Font storeNameFont;
@@ -41,27 +52,70 @@ public class InvoicePdfExporter {
     private static Font tableBodyFont;
     private static Font totalLabelFont;
     private static Font totalValueFont;
-    private static Font grandTotalFont;
+    private static Font grandTotalLabelFont;
+    private static Font grandTotalValueFont;
     private static Font footerFont;
+    private static Font footerCodeFont;
+
+    private static byte[] logoBytes;
 
     static {
         try {
-            BaseFont helvetica = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.WINANSI, BaseFont.EMBEDDED);
-            BaseFont helveticaBold = BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.WINANSI, BaseFont.EMBEDDED);
+            // Dung font Roboto nhung san (ho tro day du dau tieng Viet) thay vi
+            // Helvetica chuan (Helvetica/WinAnsi khong the hien thi dau tieng Viet).
+            // QUAN TRONG: chi nhung phan BAT BUOC (font) moi duoc phep lam fail
+            // ca static initializer. Neu 1 dong throw o day, JVM boc thanh
+            // ExceptionInInitializerError/NoClassDefFoundError (deu la Error,
+            // KHONG PHAI Exception) - cac noi goi InvoicePdfExporter.exportInvoice(...)
+            // hien dang "catch (Exception ex)" se KHONG bat duoc loi nay, khien nut
+            // "In hoa don" o POS lan man hinh Quan ly hoa don deu im lang khong phan
+            // hoi (giong nhu khong lam gi ca). Vi vay logo (chi mang tinh trang tri)
+            // duoc nap RIENG, khong bao gio lam fail ca class.
+            byte[] regularBytes = loadResourceBytes("/fonts/Roboto-Regular.ttf");
+            byte[] boldBytes = loadResourceBytes("/fonts/Roboto-Bold.ttf");
 
-            storeNameFont = new Font(helveticaBold, 22, Font.BOLD, PRIMARY_COLOR);
-            storeInfoFont = new Font(helvetica, 10, Font.NORMAL, TEXT_MUTED);
-            titleFont = new Font(helveticaBold, 16, Font.BOLD, TEXT_DARK);
-            sectionLabelFont = new Font(helvetica, 9, Font.NORMAL, TEXT_MUTED);
-            sectionValueFont = new Font(helveticaBold, 11, Font.BOLD, TEXT_DARK);
-            tableHeaderFont = new Font(helveticaBold, 9, Font.BOLD, Color.WHITE);
-            tableBodyFont = new Font(helvetica, 10, Font.NORMAL, TEXT_DARK);
-            totalLabelFont = new Font(helvetica, 10, Font.NORMAL, TEXT_MUTED);
-            totalValueFont = new Font(helveticaBold, 10, Font.BOLD, TEXT_DARK);
-            grandTotalFont = new Font(helveticaBold, 15, Font.BOLD, PRIMARY_COLOR);
-            footerFont = new Font(helvetica, 9, Font.ITALIC, TEXT_MUTED);
+            BaseFont roboto = BaseFont.createFont("Roboto-Regular.ttf", BaseFont.IDENTITY_H,
+                    BaseFont.EMBEDDED, true, regularBytes, null);
+            BaseFont robotoBold = BaseFont.createFont("Roboto-Bold.ttf", BaseFont.IDENTITY_H,
+                    BaseFont.EMBEDDED, true, boldBytes, null);
+
+            storeNameFont = new Font(robotoBold, 21, Font.NORMAL, PRIMARY_COLOR);
+            storeInfoFont = new Font(roboto, 9, Font.NORMAL, TEXT_MUTED);
+            titleFont = new Font(robotoBold, 15, Font.NORMAL, TEXT_DARK);
+            sectionLabelFont = new Font(roboto, 8.5f, Font.NORMAL, TEXT_MUTED);
+            sectionValueFont = new Font(robotoBold, 11, Font.NORMAL, TEXT_DARK);
+            tableHeaderFont = new Font(robotoBold, 9, Font.NORMAL, Color.WHITE);
+            tableBodyFont = new Font(roboto, 10, Font.NORMAL, TEXT_DARK);
+            totalLabelFont = new Font(roboto, 10, Font.NORMAL, TEXT_MUTED);
+            totalValueFont = new Font(robotoBold, 10, Font.NORMAL, TEXT_DARK);
+            grandTotalLabelFont = new Font(robotoBold, 13, Font.NORMAL, Color.WHITE);
+            grandTotalValueFont = new Font(robotoBold, 16, Font.NORMAL, Color.WHITE);
+            footerFont = new Font(roboto, 9, Font.ITALIC, TEXT_MUTED);
+            footerCodeFont = new Font(roboto, 8, Font.NORMAL, TEXT_MUTED);
         } catch (Exception e) {
-            throw new RuntimeException("Khong the khoi tao font PDF", e);
+            throw new RuntimeException("Khong the khoi tao font cho PDF hoa don", e);
+        }
+
+        // Logo la thanh phan trang tri, khong bat buoc: dung lai file logo_icon.png
+        // co san (da duoc dung o Header/AppIcon...) nen chac chan ton tai trong
+        // resources. Neu vi ly do gi do van khong doc duoc (thieu file, build cu
+        // chua copy resources...) thi bo qua anh, hoa don van xuat ra binh thuong
+        // (khong co logo) thay vi lam sap ca tinh nang in hoa don.
+        try {
+            logoBytes = loadResourceBytes("/logo/logo_icon.png");
+        } catch (Exception e) {
+            logoBytes = null;
+            System.err.println("[InvoicePdfExporter] Khong the nap anh logo (/logo/logo_icon.png), "
+                    + "hoa don se duoc xuat khong co logo: " + e.getMessage());
+        }
+    }
+
+    private static byte[] loadResourceBytes(String resourcePath) throws IOException {
+        try (InputStream is = InvoicePdfExporter.class.getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                throw new IOException("Khong tim thay tai nguyen trong resources: " + resourcePath);
+            }
+            return is.readAllBytes();
         }
     }
 
@@ -76,23 +130,27 @@ public class InvoicePdfExporter {
 
         addStoreHeader(document);
 
-        Paragraph title = new Paragraph("HOA DON BAN HANG", titleFont);
+        Paragraph title = new Paragraph("HÓA ĐƠN BÁN HÀNG", titleFont);
         title.setAlignment(Element.ALIGN_CENTER);
+        title.setSpacingBefore(4);
         title.setSpacingAfter(6);
         document.add(title);
 
-        LineSeparator line = new LineSeparator(1.5f, 100, PRIMARY_LIGHT, Element.ALIGN_CENTER, 0);
-        document.add(line);
+        DottedLineSeparator dotted = new DottedLineSeparator();
+        dotted.setLineColor(BORDER_COLOR);
+        dotted.setGap(3f);
+        document.add(dotted);
+
         Paragraph spacer = new Paragraph(" ");
-        spacer.setSpacingBefore(6);
-        spacer.setSpacingAfter(6);
+        spacer.setSpacingBefore(4);
+        spacer.setSpacingAfter(4);
         document.add(spacer);
 
         addInvoiceInfo(document, invoice);
         addProductTable(document, invoice, details);
         addReturnNote(document, invoice);
         addTotalSection(document, invoice);
-        addFooter(document);
+        addFooter(document, invoice);
 
         document.close();
         writer.close();
@@ -100,19 +158,50 @@ public class InvoicePdfExporter {
     }
 
     private static void addStoreHeader(Document document) throws DocumentException {
-        Paragraph storeName = new Paragraph("SIMS STORE", storeNameFont);
+        if (logoBytes != null) {
+            try {
+                Image logo = Image.getInstance(logoBytes);
+                logo.scaleToFit(44, 42);
+                logo.setAlignment(Element.ALIGN_CENTER);
+                logo.setSpacingAfter(2);
+                document.add(logo);
+            } catch (Exception e) {
+                // Anh logo loi/hong khong duoc lam gian doan viec xuat hoa don.
+            }
+        }
+
+        Paragraph storeName = new Paragraph("CONNECT MART", storeNameFont);
         storeName.setAlignment(Element.ALIGN_CENTER);
-        storeName.setSpacingAfter(4);
+        storeName.setSpacingAfter(3);
 
         Paragraph storeInfo = new Paragraph(
-                "254 Nguyen Van Linh, Quan 7, TP.Ho Chi Minh  |  028 3876 5432  |  hello@simsstore.vn",
+                "254 Nguyễn Văn Linh, Quận 7, TP. Hồ Chí Minh  |  1900 636 522  |  cskh@connectmart.vn",
                 storeInfoFont
         );
         storeInfo.setAlignment(Element.ALIGN_CENTER);
-        storeInfo.setSpacingAfter(10);
+        storeInfo.setSpacingAfter(8);
 
         document.add(storeName);
         document.add(storeInfo);
+
+        // Dai 2 tong mau xanh duong, dong bo voi 2 sac do cua logo Connect Mart.
+        PdfPTable bandTable = new PdfPTable(2);
+        bandTable.setWidthPercentage(100);
+        bandTable.setWidths(new float[]{3f, 1f});
+
+        PdfPCell darkBand = new PdfPCell();
+        darkBand.setBackgroundColor(PRIMARY_COLOR);
+        darkBand.setFixedHeight(3f);
+        darkBand.setBorder(Rectangle.NO_BORDER);
+        bandTable.addCell(darkBand);
+
+        PdfPCell lightBand = new PdfPCell();
+        lightBand.setBackgroundColor(ACCENT_BLUE);
+        lightBand.setFixedHeight(3f);
+        lightBand.setBorder(Rectangle.NO_BORDER);
+        bandTable.addCell(lightBand);
+
+        document.add(bandTable);
     }
 
     private static void addInvoiceInfo(Document document, Invoice invoice) throws DocumentException {
@@ -126,12 +215,12 @@ public class InvoicePdfExporter {
         PdfPCell leftCell = new PdfPCell();
         leftCell.setBorder(Rectangle.NO_BORDER);
         leftCell.setPadding(4);
-        leftCell.addElement(new Paragraph("KHACH HANG", sectionLabelFont));
+        leftCell.addElement(new Paragraph("KHÁCH HÀNG", sectionLabelFont));
         String customerName = invoice.getCustomerName() != null && !invoice.getCustomerName().isBlank()
-                ? invoice.getCustomerName() : "Khach le";
+                ? invoice.getCustomerName() : "Khách lẻ";
         leftCell.addElement(new Paragraph(customerName, sectionValueFont));
         leftCell.addElement(new Paragraph(" "));
-        leftCell.addElement(new Paragraph("NHAN VIEN LAP", sectionLabelFont));
+        leftCell.addElement(new Paragraph("NHÂN VIÊN LẬP", sectionLabelFont));
         leftCell.addElement(new Paragraph(invoice.getCreatedByName() != null ? invoice.getCreatedByName() : "-", sectionValueFont));
 
         // Cot phai
@@ -140,7 +229,7 @@ public class InvoicePdfExporter {
         rightCell.setPadding(4);
         rightCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
 
-        Paragraph p1 = new Paragraph("MA HOA DON", sectionLabelFont);
+        Paragraph p1 = new Paragraph("MÃ HÓA ĐƠN", sectionLabelFont);
         p1.setAlignment(Element.ALIGN_RIGHT);
         rightCell.addElement(p1);
 
@@ -149,7 +238,7 @@ public class InvoicePdfExporter {
         rightCell.addElement(p2);
         rightCell.addElement(new Paragraph(" "));
 
-        Paragraph p3 = new Paragraph("NGAY LAP", sectionLabelFont);
+        Paragraph p3 = new Paragraph("NGÀY LẬP", sectionLabelFont);
         p3.setAlignment(Element.ALIGN_RIGHT);
         rightCell.addElement(p3);
 
@@ -160,7 +249,7 @@ public class InvoicePdfExporter {
         rightCell.addElement(p4);
         rightCell.addElement(new Paragraph(" "));
 
-        Paragraph p5 = new Paragraph("PHUONG THUC", sectionLabelFont);
+        Paragraph p5 = new Paragraph("PHƯƠNG THỨC", sectionLabelFont);
         p5.setAlignment(Element.ALIGN_RIGHT);
         rightCell.addElement(p5);
 
@@ -195,8 +284,8 @@ public class InvoicePdfExporter {
         table.setSpacingAfter(8);
 
         String[] headers = showReturns
-                ? new String[]{"STT", "SAN PHAM", "DON GIA", "SL", "DA TRA", "CON LAI", "THANH TIEN"}
-                : new String[]{"STT", "SAN PHAM", "DON GIA", "SL", "THANH TIEN"};
+                ? new String[]{"STT", "SẢN PHẨM", "ĐƠN GIÁ", "SL", "ĐÃ TRẢ", "CÒN LẠI", "THÀNH TIỀN"}
+                : new String[]{"STT", "SẢN PHẨM", "ĐƠN GIÁ", "SL", "THÀNH TIỀN"};
         for (String h : headers) {
             PdfPCell cell = new PdfPCell(new Phrase(h, tableHeaderFont));
             cell.setBackgroundColor(HEADER_BG);
@@ -250,15 +339,20 @@ public class InvoicePdfExporter {
     private static void addReturnNote(Document document, Invoice invoice) throws DocumentException {
         if (!invoice.hasReturns()) return;
 
-        String note = "Da hoan: " + formatVND(invoice.getRefundedAmount().longValue())
-                + "  -  " + invoice.getApprovedReturnCount() + " phieu doi/tra da duyet"
-                + " (SL/thanh tien tren da tru hang tra, xem chi tiet phieu doi/tra tai quay).";
-        Font noteFont = new Font(totalLabelFont.getBaseFont(), 9, Font.ITALIC, new Color(180, 83, 9)); // Amber-700
+        String note = "Đã hoàn: " + formatVND(invoice.getRefundedAmount().longValue())
+                + "  -  " + invoice.getApprovedReturnCount() + " phiếu đổi/trả đã duyệt"
+                + " (SL/thành tiền trên đã trừ hàng trả, xem chi tiết phiếu đổi/trả tại quầy).";
+        Font noteFont = new Font(totalLabelFont.getBaseFont(), 9, Font.NORMAL, PRIMARY_COLOR);
 
-        Paragraph p = new Paragraph(note, noteFont);
-        p.setSpacingBefore(2);
-        p.setSpacingAfter(6);
-        document.add(p);
+        PdfPTable noteTable = new PdfPTable(1);
+        noteTable.setWidthPercentage(100);
+        noteTable.setSpacingAfter(6);
+        PdfPCell noteCell = new PdfPCell(new Phrase(note, noteFont));
+        noteCell.setBackgroundColor(ACCENT_BLUE_LIGHT);
+        noteCell.setBorder(Rectangle.NO_BORDER);
+        noteCell.setPadding(7);
+        noteTable.addCell(noteCell);
+        document.add(noteTable);
     }
 
     private static void addTotalSection(Document document, Invoice invoice) throws DocumentException {
@@ -274,10 +368,10 @@ public class InvoicePdfExporter {
         long vat = invoice.getVatAmount() != null ? invoice.getVatAmount().longValue() : 0;
         long grandTotal = invoice.getTotalAmount() != null ? invoice.getTotalAmount().longValue() : 0;
 
-        addTotalRow(totalTable, "Tam tinh:", formatVND(subTotal));
+        addTotalRow(totalTable, "Tạm tính:", formatVND(subTotal));
 
         if (discount > 0) {
-            String promoLabel = "Giam gia";
+            String promoLabel = "Giảm giá";
             if (invoice.getPromotionCode() != null && !invoice.getPromotionCode().isBlank()) {
                 promoLabel += " (" + invoice.getPromotionCode() + ")";
             }
@@ -285,7 +379,7 @@ public class InvoicePdfExporter {
         }
 
         if (pointsDiscount > 0) {
-            addTotalRow(totalTable, "Diem thanh vien (" + invoice.getPointsUsed() + " diem):",
+            addTotalRow(totalTable, "Điểm thành viên (" + invoice.getPointsUsed() + " điểm):",
                     "-" + formatVND(pointsDiscount));
         }
 
@@ -298,30 +392,33 @@ public class InvoicePdfExporter {
         // Duong ke
         PdfPCell empty = new PdfPCell();
         empty.setBorder(Rectangle.NO_BORDER);
-        empty.setFixedHeight(1);
+        empty.setFixedHeight(3);
         totalTable.addCell(empty);
 
         PdfPCell divider = new PdfPCell();
         divider.setBorder(Rectangle.TOP);
         divider.setBorderColorTop(BORDER_COLOR);
         divider.setBorderWidthTop(1f);
-        divider.setFixedHeight(1);
+        divider.setFixedHeight(3);
         totalTable.addCell(divider);
 
-        // TONG CONG
-        PdfPCell labelCell = new PdfPCell(new Phrase("TONG CONG:", grandTotalFont));
+        // TONG CONG - khoi mau xanh dam, chu trang, noi bat nhu bang gia BHX
+        PdfPCell labelCell = new PdfPCell(new Phrase("TỔNG CỘNG", grandTotalLabelFont));
+        labelCell.setBackgroundColor(PRIMARY_COLOR);
         labelCell.setBorder(Rectangle.NO_BORDER);
-        labelCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        labelCell.setPadding(8);
-        labelCell.setPaddingRight(16);
+        labelCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        labelCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        labelCell.setPadding(10);
+        labelCell.setPaddingLeft(14);
         totalTable.addCell(labelCell);
 
-        PdfPCell valueCell = new PdfPCell(new Phrase(formatVND(grandTotal) + " VND", grandTotalFont));
+        PdfPCell valueCell = new PdfPCell(new Phrase(formatVND(grandTotal), grandTotalValueFont));
+        valueCell.setBackgroundColor(PRIMARY_COLOR);
         valueCell.setBorder(Rectangle.NO_BORDER);
-        valueCell.setBackgroundColor(PRIMARY_LIGHT);
+        valueCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
         valueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
         valueCell.setPadding(10);
-        valueCell.setPaddingRight(16);
+        valueCell.setPaddingRight(14);
         totalTable.addCell(valueCell);
 
         document.add(totalTable);
@@ -343,23 +440,25 @@ public class InvoicePdfExporter {
         table.addCell(valueCell);
     }
 
-    private static void addFooter(Document document) throws DocumentException {
+    private static void addFooter(Document document, Invoice invoice) throws DocumentException {
         Paragraph sp = new Paragraph(" ");
-        sp.setSpacingBefore(20);
+        sp.setSpacingBefore(16);
         document.add(sp);
 
-        LineSeparator line = new LineSeparator(0.5f, 100, BORDER_COLOR, Element.ALIGN_CENTER, 0);
-        document.add(line);
+        DottedLineSeparator dotted = new DottedLineSeparator();
+        dotted.setLineColor(BORDER_COLOR);
+        dotted.setGap(3f);
+        document.add(dotted);
 
         Paragraph f1 = new Paragraph(
-                "Cam on quy khach da mua sam tai SIMS Store! Hen gap lai quy khach.",
+                "Cảm ơn quý khách đã mua sắm tại Connect Mart! Hẹn gặp lại quý khách.",
                 footerFont
         );
         f1.setAlignment(Element.ALIGN_CENTER);
         f1.setSpacingBefore(8);
 
         Paragraph f2 = new Paragraph(
-                "Ho tro: 028 3876 5432  |  hello@simsstore.vn  |  www.simsstore.vn",
+                "Hỗ trợ: 1900 636 522  |  cskh@connectmart.vn  |  www.connectmart.vn",
                 footerFont
         );
         f2.setAlignment(Element.ALIGN_CENTER);
@@ -367,19 +466,27 @@ public class InvoicePdfExporter {
 
         document.add(f1);
         document.add(f2);
+
+        Paragraph f3 = new Paragraph(
+                "Mã tra cứu: " + (invoice.getInvoiceCode() != null ? invoice.getInvoiceCode() : "-"),
+                footerCodeFont
+        );
+        f3.setAlignment(Element.ALIGN_CENTER);
+        f3.setSpacingBefore(6);
+        document.add(f3);
     }
 
     private static String formatVND(long amount) {
-        return NumberUtil.formatThousands(amount) + " d";
+        return NumberUtil.formatThousands(amount) + " đ";
     }
 
     private static String paymentMethodLabel(String method) {
         if (method == null) return "-";
         switch (method) {
-            case "CASH": return "Tien mat";
-            case "BANK_TRANSFER": return "Chuyen khoan";
+            case "CASH": return "Tiền mặt";
+            case "BANK_TRANSFER": return "Chuyển khoản";
             case "PAYPAL": return "PayPal";
-            case "CARD": return "The";
+            case "CARD": return "Thẻ";
             default: return method;
         }
     }

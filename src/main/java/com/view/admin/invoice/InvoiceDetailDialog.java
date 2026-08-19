@@ -546,7 +546,9 @@ public class InvoiceDetailDialog extends JDialog {
 				JOptionPane.showMessageDialog(this, "Đã tạo file PDF tại:\n" + pdfFile.getAbsolutePath(), "Xuất PDF",
 						JOptionPane.INFORMATION_MESSAGE);
 			}
-		} catch (Exception ex) {
+		} catch (Throwable ex) {
+			// Bat rong hon Exception: loi khoi tao class PDF (static initializer)
+			// duoc JVM boc thanh Error, se khong bi "nuot" im lang nua.
 			AppAlert.error(this, "Lỗi PDF", ex.getMessage());
 		}
 	}
