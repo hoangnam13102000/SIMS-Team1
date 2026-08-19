@@ -93,7 +93,7 @@ public class StockAlert {
 
     /** Ten hien thi cho cot "Nguoi bao cao" - "Hệ thống" neu la canh bao tu dong. */
     public String getReportedByDisplay() {
-        return isAutoReported() ? "Hệ thống (tự động)" : reportedByName;
+        return isAutoReported() ? "Hệ thống" : reportedByName;
     }
 
     public boolean isResolved() {

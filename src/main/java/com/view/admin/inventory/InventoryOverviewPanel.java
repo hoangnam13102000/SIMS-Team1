@@ -97,7 +97,7 @@ public class InventoryOverviewPanel extends JPanel {
     private JLabel inboundValue;
     private JLabel outboundValue;
     private JLabel disposalValue;
-    private JLabel transactionValue;
+    private JLabel reconciliationDiscrepancyValue;
 
     public InventoryOverviewPanel() {
         setLayout(new BorderLayout());
@@ -275,7 +275,7 @@ public class InventoryOverviewPanel extends JPanel {
         content.add(metricTile("Nhập hôm nay", "0", AppColor.SUCCESS));
         content.add(metricTile("Xuất hôm nay", "0", AppColor.ACCENT));
         content.add(metricTile("Tiêu hủy hôm nay", "0", AppColor.ERROR));
-        content.add(metricTile("Giao dịch hôm nay", "0", AppColor.INFO));
+        content.add(metricTile("Số phiếu chênh lệch", "0", AppColor.ERROR));
         card.getContentPanel().add(content, BorderLayout.CENTER);
         return card;
     }
@@ -310,7 +310,7 @@ public class InventoryOverviewPanel extends JPanel {
         else if ("Nhập hôm nay".equals(label)) inboundValue = value;
         else if ("Xuất hôm nay".equals(label)) outboundValue = value;
         else if ("Tiêu hủy hôm nay".equals(label)) disposalValue = value;
-        else if ("Giao dịch hôm nay".equals(label)) transactionValue = value;
+        else if ("Số phiếu chênh lệch".equals(label)) reconciliationDiscrepancyValue = value;
         return tile;
     }
 
@@ -585,6 +585,7 @@ public class InventoryOverviewPanel extends JPanel {
         int expiringSoon;
         int expiredWithStock;
         int discrepancies;
+        int reconciliationDiscrepanciesToday;
     }
 
     private void loadData() {
@@ -606,6 +607,7 @@ public class InventoryOverviewPanel extends JPanel {
                 data.expiringSoon = inventoryBatchDao.countExpiringSoon(30);
                 data.expiredWithStock = inventoryBatchDao.countExpiredWithStock();
                 data.discrepancies = reconciliationDao.countUncheckedToday();
+                data.reconciliationDiscrepanciesToday = reconciliationDao.countDiscrepanciesToday();
                 return data;
             }
 
@@ -648,7 +650,8 @@ public class InventoryOverviewPanel extends JPanel {
         if (inboundValue != null) inboundValue.setText(NumberUtil.formatThousands(data.movement.inboundQuantity));
         if (outboundValue != null) outboundValue.setText(NumberUtil.formatThousands(data.movement.outboundQuantity));
         if (disposalValue != null) disposalValue.setText(NumberUtil.formatThousands(data.movement.disposalQuantity));
-        if (transactionValue != null) transactionValue.setText(NumberUtil.formatThousands(data.movement.transactionCount));
+        if (reconciliationDiscrepancyValue != null) reconciliationDiscrepancyValue.setText(
+                NumberUtil.formatThousands(data.reconciliationDiscrepanciesToday));
 
         renderLowStock(data.lowStockItems);
         renderStockAlerts(data.pendingAlerts);
@@ -731,7 +734,7 @@ public class InventoryOverviewPanel extends JPanel {
         JLabel nameLabel = new JLabel(alert.getProductName());
         nameLabel.setFont(AppFont.BODY_BOLD);
         nameLabel.setForeground(AppColor.TEXT_PRIMARY);
-        JLabel byLabel = new JLabel("Báo bởi " + alert.getReportedByName());
+        JLabel byLabel = new JLabel("Báo bởi " + alert.getReportedByDisplay());
         byLabel.setFont(AppFont.FOOTER);
         byLabel.setForeground(AppColor.TEXT_MUTED);
         left.add(nameLabel);

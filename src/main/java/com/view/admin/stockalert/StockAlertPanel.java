@@ -65,7 +65,7 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 String text = value != null ? value.toString() : "";
                 c.setText(text);
                 c.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-                c.setHorizontalAlignment(SwingConstants.LEFT);
+                c.setHorizontalAlignment(SwingConstants.CENTER);
                 c.setBackground(isSelected ? AppColor.ACCENT_SELECTION_BG : (row % 2 == 0 ? AppColor.WHITE : AppColor.TABLE_ROW_ODD));
                 if (text != null && !text.isBlank()) {
                     FontIcon copyIcon = FontIcon.of(FontAwesomeSolid.COPY, 11);
@@ -246,7 +246,7 @@ public class StockAlertPanel extends BaseCrudPanel<StockAlert> {
                 item.getProductCode(),
                 item.getProductName(),
                 item.getAlertType(),
-                item.getReportedByName(),
+                item.getReportedByDisplay(),
                 item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-",
                 item.getStatus()
         };

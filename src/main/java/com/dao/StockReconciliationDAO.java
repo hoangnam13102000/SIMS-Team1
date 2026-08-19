@@ -75,7 +75,11 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
     }
     @Override
     protected String getOrderBy() {
-        return "r.CreatedAt DESC, r.ReconciliationID DESC";
+        // Uu tien hien thi len tren: (1) phieu chua kiem ke, (2) phieu da kiem
+        // nhung con chenh lech. Phieu da kiem VA da khop (Checked=1, Discrepancy=0)
+        // khong con gi phai xu ly nen day xuong cuoi danh sach.
+        return "CASE WHEN r.Checked = 1 AND r.Discrepancy = 0 THEN 1 ELSE 0 END, "
+                + "r.CreatedAt DESC, r.ReconciliationID DESC";
     }
     @Override
     protected String[] getSearchableColumns() {
@@ -164,7 +168,7 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
     /** Đếm số phiếu đối chiếu của hôm nay chưa được đánh dấu đã kiểm kê. */
     public int countUncheckedToday() {
         String sql = "SELECT COUNT(*) FROM StockReconciliation "
-                + "WHERE CreatedAt >= ? AND CreatedAt < ? AND Checked = 0 AND BatchID IS NOT NULL";
+                + "WHERE CreatedAt >= ? AND CreatedAt < ? AND Checked = 0 AND BatchID IS NOT NULL AND SystemStock <> 0";
         LocalDate today = LocalDate.now();
         try (Connection con = DBConnection.getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -176,6 +180,29 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
         } catch (Exception e) {
             AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
                     "StockReconciliationDAO.countUncheckedToday", e);
+            return 0;
+        }
+    }
+    /**
+     * Dem so dong lech (Discrepancy <> 0) cua PHIEN HOM NAY - dung cho the
+     * "So phieu chenh lech" o trang tong quan kho. Loc them BatchID IS NOT
+     * NULL de dong nhat voi danh sach hien thi tren trang doi chieu kho cuoi
+     * ngay (getPagedFiltered an cac dong khong co lo hang).
+     */
+    public int countDiscrepanciesToday() {
+        String sql = "SELECT COUNT(*) FROM StockReconciliation "
+                + "WHERE CreatedAt >= ? AND CreatedAt < ? AND Discrepancy <> 0 AND BatchID IS NOT NULL AND SystemStock <> 0";
+        LocalDate today = LocalDate.now();
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.valueOf(today.atStartOfDay()));
+            ps.setTimestamp(2, Timestamp.valueOf(today.plusDays(1).atStartOfDay()));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (Exception e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "StockReconciliationDAO.countDiscrepanciesToday", e);
             return 0;
         }
     }
@@ -194,6 +221,9 @@ public class StockReconciliationDAO extends BaseDAO<StockReconciliation> {
         // online (kho chỉ trừ theo InventoryBatch), nên ẩn hẳn khỏi bảng đối
         // chiếu — tránh nhân viên tưởng nhầm là "tồn thật" có thể tất toán được.
         conditions.add("r.BatchID IS NOT NULL");
+        // Tồn kho hệ thống = 0 nghĩa là lô/sản phẩm không còn gì để đối chiếu
+        // (không có gì kiểm đếm thực tế), nên ẩn khỏi bảng để đỡ nhiễu.
+        conditions.add("r.SystemStock <> 0");
         String trimmedKeyword = keyword == null ? "" : keyword.trim();
         if (!trimmedKeyword.isEmpty()) {
             String[] columns = getSearchableColumns();
