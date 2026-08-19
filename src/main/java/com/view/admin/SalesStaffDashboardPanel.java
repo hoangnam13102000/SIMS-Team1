@@ -57,12 +57,13 @@ import java.util.List;
 /**
  * Dashboard riêng cho <b>Nhân viên bán hàng</b> ({@code Role.SALES_STAFF}).
  * <p>
- * Tập trung ca làm việc tại quầy và hiệu suất cá nhân trong ngày:
+ * Tập trung ca làm việc tại quầy và hiệu suất cá nhân theo đúng ca đang mở:
  * <ul>
  *   <li>Trạng thái ca OPEN / chưa mở ca</li>
- *   <li>Doanh thu · số hóa đơn · SP đã bán của chính NV hôm nay</li>
- *   <li>Hóa đơn gần đây do mình tạo</li>
- *   <li>Đổi/trả đang chờ quản lý duyệt (do mình tạo)</li>
+ *   <li>Doanh thu · số hóa đơn · SP đã bán của chính NV trong ShiftID hiện tại</li>
+ *   <li>Tiền mặt dự kiến của ca</li>
+ *   <li>Đơn online đang được giao cho chính NV</li>
+ *   <li>Yêu cầu hủy và đổi/trả đang chờ duyệt trong ca</li>
  * </ul>
  * UI đồng bộ {@link SectionHeader}, {@link StatCard}, {@link DashboardCard}.
  */
@@ -80,6 +81,9 @@ public class SalesStaffDashboardPanel extends JPanel {
     private StatCard myItemsCard;
     private StatCard cancelledCard;
     private StatCard pendingReturnCard;
+    private StatCard expectedCashCard;
+    private StatCard assignedOrdersCard;
+    private StatCard pendingCancelCard;
 
     private JPanel shiftDetailPanel;
     private JPanel recentInvoiceListPanel;
@@ -115,7 +119,7 @@ public class SalesStaffDashboardPanel extends JPanel {
         String name = user != null ? user.getFullName() : null;
         String subtitle = (name == null || name.isBlank())
                 ? "Ca làm việc, doanh thu cá nhân và hóa đơn gần đây tại quầy"
-                : "Chào " + name + " — theo dõi ca làm việc và kết quả bán hàng hôm nay";
+                : "Chào " + name + " — theo dõi KPI theo đúng ca làm việc hiện tại";
         return new SectionHeader(FontAwesomeSolid.CASH_REGISTER, AppColor.ACCENT,
                 "Tổng quan quầy bán", subtitle);
     }
@@ -141,20 +145,27 @@ public class SalesStaffDashboardPanel extends JPanel {
     private JPanel buildStatsRow() {
         shiftStatusCard = new StatCard("Trạng thái ca", "—",
                 FontAwesomeSolid.USER_CLOCK, AppColor.INFO);
-        myRevenueCard = new StatCard("Doanh thu của tôi", "0 đ",
+        myRevenueCard = new StatCard("Doanh thu ca của tôi", "0 đ",
                 FontAwesomeSolid.MONEY_BILL_WAVE, AppColor.ACCENT);
-        myInvoiceCard = new StatCard("Hóa đơn hôm nay", "0",
+        myInvoiceCard = new StatCard("Hóa đơn ca này", "0",
                 FontAwesomeSolid.RECEIPT, AppColor.TEAL);
-        myItemsCard = new StatCard("SP đã bán", "0",
+        myItemsCard = new StatCard("SP bán trong ca", "0",
                 FontAwesomeSolid.BOX_OPEN, AppColor.SUCCESS);
-        cancelledCard = new StatCard("Hóa đơn hủy hôm nay", "0",
+        cancelledCard = new StatCard("Hóa đơn hủy trong ca", "0",
                 FontAwesomeSolid.BAN, AppColor.ERROR);
         pendingReturnCard = new StatCard("Đổi/trả chờ duyệt", "0",
                 FontAwesomeSolid.EXCHANGE_ALT, AppColor.WARNING);
+        expectedCashCard = new StatCard("Tiền mặt dự kiến", "0 đ",
+                FontAwesomeSolid.WALLET, AppColor.INFO);
+        assignedOrdersCard = new StatCard("Đơn online được giao", "0",
+                FontAwesomeSolid.TRUCK, AppColor.ACCENT);
+        pendingCancelCard = new StatCard("Yêu cầu hủy chờ duyệt", "0",
+                FontAwesomeSolid.HOURGLASS_HALF, AppColor.WARNING);
 
         StatCard[] cards = {
                 shiftStatusCard, myRevenueCard, myInvoiceCard,
-                myItemsCard, cancelledCard, pendingReturnCard
+                myItemsCard, expectedCashCard, assignedOrdersCard,
+                cancelledCard, pendingReturnCard, pendingCancelCard
         };
 
         JPanel row = new JPanel() {
@@ -163,7 +174,7 @@ public class SalesStaffDashboardPanel extends JPanel {
             {
                 setOpaque(false);
                 setAlignmentX(Component.LEFT_ALIGNMENT);
-                setLayout(new GridLayout(2, 3, AppSpacing.MD, AppSpacing.MD));
+                setLayout(new GridLayout(3, 3, AppSpacing.MD, AppSpacing.MD));
                 for (StatCard c : cards) add(c);
                 addComponentListener(new java.awt.event.ComponentAdapter() {
                     @Override
@@ -194,7 +205,7 @@ public class SalesStaffDashboardPanel extends JPanel {
             public Dimension getPreferredSize() {
                 Dimension d = super.getPreferredSize();
                 if (lastCols <= 0) {
-                    return new Dimension(d.width, StatCard.PREFERRED_HEIGHT * 2 + AppSpacing.MD);
+                    return new Dimension(d.width, StatCard.PREFERRED_HEIGHT * 3 + AppSpacing.MD * 2);
                 }
                 return d;
             }
@@ -250,7 +261,7 @@ public class SalesStaffDashboardPanel extends JPanel {
     private DashboardCard buildPendingReturnsCard() {
         DashboardCard card = new DashboardCard(
                 "Đổi / trả của tôi đang chờ",
-                "Yêu cầu bạn tạo — chờ Quản lý bán hàng duyệt",
+                "Chỉ lấy yêu cầu thuộc hóa đơn trong ca đang mở",
                 FontAwesomeSolid.EXCHANGE_ALT, AppColor.WARNING);
         pendingReturnListPanel = new ScrollableColumn();
         card.getContentPanel().add(plainScroll(pendingReturnListPanel), BorderLayout.CENTER);
@@ -259,8 +270,8 @@ public class SalesStaffDashboardPanel extends JPanel {
 
     private DashboardCard buildRecentInvoicesCard() {
         DashboardCard card = new DashboardCard(
-                "Hóa đơn gần đây của tôi",
-                "Các hóa đơn bạn vừa tạo tại quầy",
+                "Hóa đơn gần đây trong ca",
+                "Chỉ hiển thị hóa đơn thuộc ShiftID đang mở",
                 FontAwesomeSolid.FILE_INVOICE, AppColor.ACCENT);
         recentInvoiceListPanel = new ScrollableColumn();
         card.getContentPanel().add(plainScroll(recentInvoiceListPanel), BorderLayout.CENTER);
@@ -296,10 +307,13 @@ public class SalesStaffDashboardPanel extends JPanel {
 
     private static class StaffDashData {
         Shift openShift;
-        StaffDayStats dayStats;
+        StaffDayStats shiftStats;
+        BigDecimal expectedCash = BigDecimal.ZERO;
+        int assignedActiveOrders;
         int myPendingReturns;
-        List<PendingReturnItem> pendingReturnItems;
-        List<StaffInvoiceItem> recentInvoices;
+        int pendingCancelRequests;
+        List<PendingReturnItem> pendingReturnItems = List.of();
+        List<StaffInvoiceItem> recentInvoices = List.of();
     }
 
     private void loadData() {
@@ -311,16 +325,28 @@ public class SalesStaffDashboardPanel extends JPanel {
                 int userId = user != null ? user.getUserId() : 0;
 
                 StaffDashData data = new StaffDashData();
+                data.shiftStats = new StaffDayStats(0, BigDecimal.ZERO, 0, 0);
+
                 if (userId > 0) {
                     data.openShift = shiftDao.findOpenShiftByUserId(userId);
-                    data.dayStats = dashboardDao.getStaffDayStats(userId);
-                    data.myPendingReturns = dashboardDao.countMyPendingReturns(userId);
-                    data.pendingReturnItems = dashboardDao.getMyPendingReturns(userId, 8);
-                    data.recentInvoices = dashboardDao.getStaffRecentInvoices(userId, 10);
-                } else {
-                    data.dayStats = new StaffDayStats(0, BigDecimal.ZERO, 0, 0);
-                    data.pendingReturnItems = List.of();
-                    data.recentInvoices = List.of();
+                    // Đơn online là hàng việc được giao cho nhân viên, không phụ thuộc ca vì
+                    // bảng Orders không có ShiftID. Chỉ đếm các đơn chưa kết thúc.
+                    data.assignedActiveOrders = dashboardDao.countMyAssignedActiveOrders(userId);
+
+                    if (data.openShift != null && data.openShift.isOpen()) {
+                        int shiftId = data.openShift.getShiftId();
+
+                        // Tất cả KPI bán hàng phía dưới đều khóa theo đúng ShiftID hiện tại.
+                        data.shiftStats = dashboardDao.getStaffShiftStats(userId, shiftId);
+                        data.expectedCash = calculateExpectedCash(data.openShift);
+                        data.myPendingReturns = dashboardDao.countMyPendingReturnsForShift(userId, shiftId);
+                        data.pendingCancelRequests = dashboardDao
+                                .countMyPendingCancelRequestsForShift(userId, shiftId);
+                        data.pendingReturnItems = dashboardDao
+                                .getMyPendingReturnsForShift(userId, shiftId, 8);
+                        data.recentInvoices = dashboardDao
+                                .getStaffRecentInvoicesForShift(userId, shiftId, 10);
+                    }
                 }
                 return data;
             }
@@ -341,8 +367,8 @@ public class SalesStaffDashboardPanel extends JPanel {
     }
 
     private void applyData(StaffDashData data) {
-        StaffDayStats stats = data.dayStats != null
-                ? data.dayStats : new StaffDayStats(0, BigDecimal.ZERO, 0, 0);
+        StaffDayStats stats = data.shiftStats != null
+                ? data.shiftStats : new StaffDayStats(0, BigDecimal.ZERO, 0, 0);
 
         // Ca
         if (data.openShift != null && data.openShift.isOpen()) {
@@ -356,37 +382,76 @@ public class SalesStaffDashboardPanel extends JPanel {
             shiftStatusCard.setTrend("Cần mở ca trước khi bán", false);
         }
 
+        boolean hasOpenShift = data.openShift != null && data.openShift.isOpen();
+        String shiftLabel = hasOpenShift ? "Ca #" + data.openShift.getShiftId() : "Chưa có ca OPEN";
+
         myRevenueCard.setValue(NumberUtil.formatThousands(stats.revenue.longValue()) + " đ");
-        myRevenueCard.setSubtitle("Hóa đơn ACTIVE bạn tạo hôm nay");
+        myRevenueCard.setSubtitle(hasOpenShift
+                ? "Hóa đơn ACTIVE của " + shiftLabel
+                : "Mở ca để bắt đầu tính KPI");
 
         myInvoiceCard.setValue(NumberUtil.formatThousands(stats.invoiceCount));
         if (stats.invoiceCount > 0 && stats.revenue.compareTo(BigDecimal.ZERO) > 0) {
             long aov = stats.revenue.longValue() / stats.invoiceCount;
-            myInvoiceCard.setSubtitle("AOV " + NumberUtil.formatThousands(aov) + " đ");
+            myInvoiceCard.setSubtitle("AOV " + NumberUtil.formatThousands(aov) + " đ · " + shiftLabel);
         } else {
-            myInvoiceCard.setSubtitle("Chưa có hóa đơn hôm nay");
+            myInvoiceCard.setSubtitle(hasOpenShift ? "Chưa có hóa đơn trong ca" : "Chưa có ca OPEN");
         }
 
         myItemsCard.setValue(NumberUtil.formatThousands(stats.itemsSold));
-        myItemsCard.setSubtitle("Số lượng sản phẩm đã bán");
+        myItemsCard.setSubtitle(hasOpenShift ? "Số lượng SP bán trong " + shiftLabel : "Chưa có ca OPEN");
+
+        expectedCashCard.setValue(NumberUtil.formatThousands(data.expectedCash.longValue()) + " đ");
+        expectedCashCard.setSubtitle(hasOpenShift
+                ? "Đầu ca + CASH + thu - chi - hoàn"
+                : "Chưa có ca OPEN");
+
+        assignedOrdersCard.setValue(NumberUtil.formatThousands(data.assignedActiveOrders));
+        assignedOrdersCard.setSubtitle(data.assignedActiveOrders == 0
+                ? "Không có đơn online đang phụ trách"
+                : "NEW / CONFIRMED / SHIPPING");
 
         cancelledCard.setValue(NumberUtil.formatThousands(stats.cancelledCount));
         if (stats.cancelledCount == 0) {
-            cancelledCard.setSubtitle("Không có hóa đơn bị hủy");
+            cancelledCard.setSubtitle(hasOpenShift ? "Không có hóa đơn hủy trong ca" : "Chưa có ca OPEN");
         } else {
-            cancelledCard.setTrend(stats.cancelledCount + " HĐ hủy trong ngày", false);
+            cancelledCard.setTrend(stats.cancelledCount + " HĐ hủy trong " + shiftLabel, false);
         }
 
         pendingReturnCard.setValue(NumberUtil.formatThousands(data.myPendingReturns));
         if (data.myPendingReturns == 0) {
-            pendingReturnCard.setSubtitle("Không còn yêu cầu chờ duyệt");
+            pendingReturnCard.setSubtitle(hasOpenShift ? "Không có đổi/trả chờ duyệt trong ca" : "Chưa có ca OPEN");
         } else {
-            pendingReturnCard.setTrend(data.myPendingReturns + " đang chờ QL duyệt", false);
+            pendingReturnCard.setTrend(data.myPendingReturns + " đang chờ QL duyệt · " + shiftLabel, false);
+        }
+
+        pendingCancelCard.setValue(NumberUtil.formatThousands(data.pendingCancelRequests));
+        if (data.pendingCancelRequests == 0) {
+            pendingCancelCard.setSubtitle(hasOpenShift
+                    ? "Không có yêu cầu hủy đang chờ"
+                    : "Chưa có ca OPEN");
+        } else {
+            pendingCancelCard.setTrend(data.pendingCancelRequests
+                    + " yêu cầu PENDING/PROCESSING · " + shiftLabel, false);
         }
 
         renderShiftDetail(data.openShift);
         renderPendingReturns(data.pendingReturnItems);
         renderRecentInvoices(data.recentInvoices);
+    }
+
+    /**
+     * Công thức đối soát tiền mặt hiện tại của ca. ShiftDAO đã nạp sẵn các
+     * thành phần cashSales/cashIn/cashOut/cashRefunds trong cùng ShiftID.
+     */
+    private static BigDecimal calculateExpectedCash(Shift shift) {
+        if (shift == null) return BigDecimal.ZERO;
+        BigDecimal opening = shift.getOpeningCash() != null ? shift.getOpeningCash() : BigDecimal.ZERO;
+        return opening
+                .add(shift.getCashSales())
+                .add(shift.getCashIn())
+                .subtract(shift.getCashOut())
+                .subtract(shift.getCashRefunds());
     }
 
     // ---------------------------------------------------------------
@@ -406,6 +471,9 @@ public class SalesStaffDashboardPanel extends JPanel {
             shiftDetailPanel.add(detailLine("Tiền đầu ca",
                     NumberUtil.formatThousands(
                             shift.getOpeningCash() != null ? shift.getOpeningCash().longValue() : 0) + " đ"));
+            shiftDetailPanel.add(Box.createVerticalStrut(6));
+            shiftDetailPanel.add(detailLine("Tiền mặt dự kiến",
+                    NumberUtil.formatThousands(calculateExpectedCash(shift).longValue()) + " đ"));
             shiftDetailPanel.add(Box.createVerticalStrut(6));
             shiftDetailPanel.add(detailLine("Hóa đơn trong ca",
                     NumberUtil.formatThousands(shift.getInvoiceCount())));

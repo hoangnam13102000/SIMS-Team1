@@ -410,4 +410,170 @@ public class DashboardDAO {
         }
         return list;
     }
+
+    /**
+     * Thống kê KPI của nhân viên trong đúng một ca bán hàng.
+     * Đây là nguồn dữ liệu cho dashboard SALES_STAFF khi đang có ca OPEN.
+     */
+    public StaffDayStats getStaffShiftStats(int userId, int shiftId) {
+        String sql = "SELECT "
+                + "(SELECT COUNT(*) FROM Invoices WHERE CreatedBy = ? AND ShiftID = ? AND Status = 'ACTIVE') AS InvoiceCount, "
+                + "(SELECT COALESCE(SUM(TotalAmount), 0) FROM Invoices WHERE CreatedBy = ? AND ShiftID = ? AND Status = 'ACTIVE') AS Revenue, "
+                + "(SELECT COALESCE(SUM(d.Quantity), 0) FROM InvoiceDetails d "
+                + "   JOIN Invoices i ON i.InvoiceID = d.InvoiceID "
+                + "   WHERE i.CreatedBy = ? AND i.ShiftID = ? AND i.Status = 'ACTIVE') AS ItemsSold, "
+                + "(SELECT COUNT(*) FROM Invoices WHERE CreatedBy = ? AND ShiftID = ? AND Status = 'CANCELLED') AS CancelledCount";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, shiftId);
+            ps.setInt(3, userId);
+            ps.setInt(4, shiftId);
+            ps.setInt(5, userId);
+            ps.setInt(6, shiftId);
+            ps.setInt(7, userId);
+            ps.setInt(8, shiftId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new StaffDayStats(
+                            rs.getInt("InvoiceCount"),
+                            rs.getBigDecimal("Revenue"),
+                            rs.getLong("ItemsSold"),
+                            rs.getInt("CancelledCount"));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.getStaffShiftStats - userId=" + userId + ", shiftId=" + shiftId, e);
+        }
+        return new StaffDayStats(0, java.math.BigDecimal.ZERO, 0, 0);
+    }
+
+    /** Số đơn online chưa kết thúc đang được giao cho chính nhân viên. */
+    public int countMyAssignedActiveOrders(int userId) {
+        String sql = "SELECT COUNT(*) FROM Orders "
+                + "WHERE AssignedTo = ? AND OrderStatus IN ('NEW','CONFIRMED','SHIPPING')";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.countMyAssignedActiveOrders - userId=" + userId, e);
+        }
+        return 0;
+    }
+
+    /**
+     * Số yêu cầu hủy hóa đơn của chính nhân viên còn đang chờ/xử lý trong đúng ca.
+     */
+    public int countMyPendingCancelRequestsForShift(int userId, int shiftId) {
+        String sql = "SELECT COUNT(*) "
+                + "FROM InvoiceCancelRequests r "
+                + "JOIN Invoices i ON i.InvoiceID = r.InvoiceID "
+                + "WHERE r.RequestedBy = ? AND i.ShiftID = ? "
+                + "AND r.Status IN ('PENDING','PROCESSING')";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, shiftId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.countMyPendingCancelRequestsForShift - userId=" + userId
+                            + ", shiftId=" + shiftId, e);
+        }
+        return 0;
+    }
+
+    /** Số yêu cầu đổi/trả do nhân viên tạo còn PENDING trong đúng ca. */
+    public int countMyPendingReturnsForShift(int userId, int shiftId) {
+        String sql = "SELECT COUNT(*) FROM ReturnExchanges r "
+                + "JOIN Invoices i ON i.InvoiceID = r.InvoiceID "
+                + "WHERE r.CreatedBy = ? AND i.ShiftID = ? AND r.Status = 'PENDING'";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, shiftId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.countMyPendingReturnsForShift - userId=" + userId
+                            + ", shiftId=" + shiftId, e);
+        }
+        return 0;
+    }
+
+    /** Hóa đơn gần đây của nhân viên trong đúng ca. */
+    public List<StaffInvoiceItem> getStaffRecentInvoicesForShift(int userId, int shiftId, int limit) {
+        String sql = "SELECT InvoiceID, InvoiceCode, TotalAmount, Status, PaymentMethod, CreatedAt "
+                + "FROM Invoices WHERE CreatedBy = ? AND ShiftID = ? "
+                + "ORDER BY CreatedAt DESC, InvoiceID DESC LIMIT ?";
+        List<StaffInvoiceItem> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, shiftId);
+            ps.setInt(3, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    java.sql.Timestamp ts = rs.getTimestamp("CreatedAt");
+                    list.add(new StaffInvoiceItem(
+                            rs.getInt("InvoiceID"),
+                            rs.getString("InvoiceCode"),
+                            rs.getBigDecimal("TotalAmount"),
+                            rs.getString("Status"),
+                            rs.getString("PaymentMethod"),
+                            ts != null ? ts.toLocalDateTime() : null));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.getStaffRecentInvoicesForShift - userId=" + userId
+                            + ", shiftId=" + shiftId, e);
+        }
+        return list;
+    }
+
+    /** Đổi/trả do tôi tạo còn PENDING trong đúng ca. */
+    public List<PendingReturnItem> getMyPendingReturnsForShift(int userId, int shiftId, int limit) {
+        String sql = "SELECT r.ReturnID, i.InvoiceCode, r.Type, u.FullName AS CreatedByName, "
+                + "r.TotalValue, r.CreatedAt "
+                + "FROM ReturnExchanges r "
+                + "JOIN Invoices i ON i.InvoiceID = r.InvoiceID "
+                + "JOIN Users u ON u.UserID = r.CreatedBy "
+                + "WHERE r.Status = 'PENDING' AND r.CreatedBy = ? AND i.ShiftID = ? "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT ?";
+        List<PendingReturnItem> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, shiftId);
+            ps.setInt(3, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    java.sql.Timestamp ts = rs.getTimestamp("CreatedAt");
+                    list.add(new PendingReturnItem(
+                            rs.getInt("ReturnID"),
+                            rs.getString("InvoiceCode"),
+                            rs.getString("Type"),
+                            rs.getString("CreatedByName"),
+                            rs.getBigDecimal("TotalValue"),
+                            ts != null ? ts.toLocalDateTime() : null));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.getMyPendingReturnsForShift - userId=" + userId
+                            + ", shiftId=" + shiftId, e);
+        }
+        return list;
+    }
+
 }
