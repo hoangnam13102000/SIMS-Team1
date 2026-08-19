@@ -61,10 +61,13 @@ public class ShiftDAO {
 			+ "(SELECT COUNT(*) " + " FROM Invoices inv " + " WHERE inv.ShiftID = s.ShiftID "
 			+ "   AND inv.Status = 'ACTIVE'" + ") AS InvoiceCount, "
 
-			// Tiền CASH thực tế đã thu tại thời điểm bán
-			+ "COALESCE((" + " SELECT SUM(inv.OriginalTotalAmount) " + " FROM Invoices inv "
-			+ " WHERE inv.ShiftID = s.ShiftID " + "   AND inv.Status = 'ACTIVE' " + "   AND inv.PaymentMethod = 'CASH'"
-			+ "), 0) AS CashSales, "
+			// Tiền CASH thực tế đã thu tại thời điểm bán. InvoicePayments hỗ trợ split payment.
+			+ "COALESCE(( SELECT SUM(CASE "
+			+ " WHEN EXISTS (SELECT 1 FROM InvoicePayments px WHERE px.InvoiceID=inv.InvoiceID) "
+			+ " THEN COALESCE((SELECT SUM(p.Amount) FROM InvoicePayments p WHERE p.InvoiceID=inv.InvoiceID "
+			+ "   AND p.PaymentStatus='COMPLETED' AND p.PaymentMethod='CASH'),0) "
+			+ " WHEN inv.PaymentMethod='CASH' THEN inv.OriginalTotalAmount ELSE 0 END) "
+			+ " FROM Invoices inv WHERE inv.ShiftID=s.ShiftID AND inv.Status='ACTIVE'), 0) AS CashSales, "
 
 			// Thu tiền mặt trong ca
 			+ "COALESCE((" + " SELECT SUM(t.Amount) " + " FROM ShiftCashTransactions t "
@@ -561,10 +564,13 @@ public class ShiftDAO {
 
 		String sql = "SELECT " + "s.OpeningCash, "
 
-		// Tổng tiền CASH gốc đã thu khi bán
-				+ "COALESCE((" + " SELECT SUM(inv.OriginalTotalAmount) " + " FROM Invoices inv "
-				+ " WHERE inv.ShiftID = s.ShiftID " + "   AND inv.Status = 'ACTIVE' "
-				+ "   AND inv.PaymentMethod = 'CASH'" + "), 0) AS CashSales, "
+		// Tổng tiền CASH gốc đã thu khi bán; ưu tiên InvoicePayments để split payment không làm lệch két.
+				+ "COALESCE(( SELECT SUM(CASE "
+				+ " WHEN EXISTS (SELECT 1 FROM InvoicePayments px WHERE px.InvoiceID=inv.InvoiceID) "
+				+ " THEN COALESCE((SELECT SUM(p.Amount) FROM InvoicePayments p WHERE p.InvoiceID=inv.InvoiceID "
+				+ "   AND p.PaymentStatus='COMPLETED' AND p.PaymentMethod='CASH'),0) "
+				+ " WHEN inv.PaymentMethod='CASH' THEN inv.OriginalTotalAmount ELSE 0 END) "
+				+ " FROM Invoices inv WHERE inv.ShiftID=s.ShiftID AND inv.Status='ACTIVE'), 0) AS CashSales, "
 
 				// Các khoản thu tiền mặt thủ công
 				+ "COALESCE((" + " SELECT SUM(t.Amount) " + " FROM ShiftCashTransactions t "

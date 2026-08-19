@@ -2,9 +2,11 @@ package com.view.admin.returnexchange;
 
 import com.components.BaseDialog;
 import com.dao.ReturnExchangeDAO;
+import com.dao.ReturnExchangeEvidenceDAO;
 import com.i18n.Lang;
 import com.model.ReturnExchange;
 import com.model.ReturnExchangeDetail;
+import com.model.ReturnExchangeEvidence;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
 import com.service.AuthService;
@@ -35,6 +37,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dialog;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -45,6 +48,7 @@ import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
 import java.time.format.DateTimeFormatter;
+import java.net.URI;
 import java.util.List;
 
 public class ReturnExchangeDetailDialog extends JDialog {
@@ -52,6 +56,7 @@ public class ReturnExchangeDetailDialog extends JDialog {
 	private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
 	private final ReturnExchangeDAO returnExchangeDAO;
+	private final ReturnExchangeEvidenceDAO evidenceDAO = new ReturnExchangeEvidenceDAO();
 	private final ReturnExchange item;
 
 	public ReturnExchangeDetailDialog(Frame owner, ReturnExchange item, ReturnExchangeDAO returnExchangeDAO) {
@@ -256,6 +261,8 @@ public class ReturnExchangeDetailDialog extends JDialog {
 
 		infoCard.add(cardInner, BorderLayout.CENTER);
 		content.add(infoCard);
+		content.add(Box.createVerticalStrut(16));
+		content.add(buildEvidencePanel());
 		content.add(Box.createVerticalStrut(20));
 
 		JLabel sectionLabel = new JLabel(Lang.get("returnExchange.detail.products", details.size()));
@@ -282,6 +289,51 @@ public class ReturnExchangeDetailDialog extends JDialog {
 		scroll.getVerticalScrollBar().setUnitIncrement(16);
 		scroll.getViewport().setBackground(AppColor.WHITE);
 		return scroll;
+	}
+
+	private JComponent buildEvidencePanel() {
+		List<ReturnExchangeEvidence> evidence = evidenceDAO.getByReturnId(item.getReturnId());
+		JPanel panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+		panel.setOpaque(true);
+		panel.setBackground(AppColor.BG_LIGHT);
+		panel.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(AppColor.BORDER, 1, true), new EmptyBorder(12, 14, 12, 14)));
+		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 170));
+
+		JLabel title = new JLabel("Ảnh bằng chứng (" + evidence.size() + ")");
+		title.setFont(AppFont.BODY_BOLD);
+		title.setForeground(AppColor.TEXT_PRIMARY);
+		panel.add(title);
+		panel.add(Box.createVerticalStrut(6));
+		if (evidence.isEmpty()) {
+			JLabel empty = new JLabel("Chưa có ảnh bằng chứng cho phiếu này.");
+			empty.setFont(AppFont.SMALL);
+			empty.setForeground(AppColor.TEXT_MUTED);
+			panel.add(empty);
+			return panel;
+		}
+
+		for (ReturnExchangeEvidence e : evidence) {
+			JButton open = new JButton((e.getOriginalFileName() != null ? e.getOriginalFileName() : "Ảnh")
+					+ (e.getUploadedByName() != null ? " · " + e.getUploadedByName() : ""));
+			open.setHorizontalAlignment(SwingConstants.LEFT);
+			open.setFont(AppFont.SMALL);
+			open.setForeground(AppColor.ACCENT);
+			open.setBorderPainted(false);
+			open.setContentAreaFilled(false);
+			open.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
+			open.addActionListener(ev -> {
+				try {
+					if (Desktop.isDesktopSupported()) Desktop.getDesktop().browse(URI.create(e.getImageUrl()));
+				} catch (Exception ex) {
+					BaseDialog.error(this, "Không thể mở ảnh", ex.getMessage());
+				}
+			});
+			panel.add(open);
+		}
+		return panel;
 	}
 
 	private JPanel infoCell(String label, String value) {

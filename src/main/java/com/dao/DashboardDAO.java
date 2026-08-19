@@ -351,9 +351,12 @@ public class DashboardDAO {
 
     /** Hóa đơn gần đây do nhân viên tạo (mọi trạng thái), tối đa {@code limit}. */
     public List<StaffInvoiceItem> getStaffRecentInvoices(int userId, int limit) {
-        String sql = "SELECT InvoiceID, InvoiceCode, TotalAmount, Status, PaymentMethod, CreatedAt "
-                + "FROM Invoices WHERE CreatedBy = ? "
-                + "ORDER BY CreatedAt DESC, InvoiceID DESC LIMIT ?";
+        String sql = "SELECT i.InvoiceID, i.InvoiceCode, i.TotalAmount, i.Status, "
+                + "CASE WHEN (SELECT COUNT(DISTINCT ip.PaymentMethod) FROM InvoicePayments ip "
+                + "WHERE ip.InvoiceID=i.InvoiceID AND ip.PaymentStatus='COMPLETED') > 1 "
+                + "THEN 'MIXED' ELSE i.PaymentMethod END AS PaymentMethod, i.CreatedAt "
+                + "FROM Invoices i WHERE i.CreatedBy = ? "
+                + "ORDER BY i.CreatedAt DESC, i.InvoiceID DESC LIMIT ?";
         List<StaffInvoiceItem> list = new ArrayList<>();
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -512,9 +515,12 @@ public class DashboardDAO {
 
     /** Hóa đơn gần đây của nhân viên trong đúng ca. */
     public List<StaffInvoiceItem> getStaffRecentInvoicesForShift(int userId, int shiftId, int limit) {
-        String sql = "SELECT InvoiceID, InvoiceCode, TotalAmount, Status, PaymentMethod, CreatedAt "
-                + "FROM Invoices WHERE CreatedBy = ? AND ShiftID = ? "
-                + "ORDER BY CreatedAt DESC, InvoiceID DESC LIMIT ?";
+        String sql = "SELECT i.InvoiceID, i.InvoiceCode, i.TotalAmount, i.Status, "
+                + "CASE WHEN (SELECT COUNT(DISTINCT ip.PaymentMethod) FROM InvoicePayments ip "
+                + "WHERE ip.InvoiceID=i.InvoiceID AND ip.PaymentStatus='COMPLETED') > 1 "
+                + "THEN 'MIXED' ELSE i.PaymentMethod END AS PaymentMethod, i.CreatedAt "
+                + "FROM Invoices i WHERE i.CreatedBy = ? AND i.ShiftID = ? "
+                + "ORDER BY i.CreatedAt DESC, i.InvoiceID DESC LIMIT ?";
         List<StaffInvoiceItem> list = new ArrayList<>();
         try (Connection con = getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {

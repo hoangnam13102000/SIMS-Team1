@@ -355,12 +355,19 @@ public class RevenueReportDAO {
     }
 
     public List<PaymentSlice> getRevenueByPaymentMethod(LocalDate from, LocalDate to) {
-        String sql = "SELECT inv.PaymentMethod, "
-                + "COALESCE(SUM(" + NET_INVOICE_REVENUE + "), 0) AS Revenue, "
-                + "COUNT(*) AS Cnt "
-                + "FROM Invoices inv "
-                + "WHERE inv.Status = 'ACTIVE' AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
-                + "GROUP BY inv.PaymentMethod ORDER BY Revenue DESC";
+        /*
+         * InvoicePayments là nguồn thật cho cơ cấu PTTT. Với hóa đơn đã trả một phần,
+         * phân bổ doanh thu còn lại theo tỷ lệ Amount / OriginalTotalAmount để tổng pie
+         * luôn khớp doanh thu thuần của Invoices.TotalAmount.
+         */
+        String sql = "SELECT p.PaymentMethod, "
+                + "COALESCE(SUM(CASE WHEN inv.OriginalTotalAmount > 0 "
+                + "THEN inv.TotalAmount * p.Amount / inv.OriginalTotalAmount ELSE 0 END), 0) AS Revenue, "
+                + "COUNT(DISTINCT inv.InvoiceID) AS Cnt "
+                + "FROM InvoicePayments p JOIN Invoices inv ON inv.InvoiceID=p.InvoiceID "
+                + "WHERE inv.Status='ACTIVE' AND p.PaymentStatus='COMPLETED' "
+                + "AND CAST(inv.CreatedAt AS DATE) BETWEEN ? AND ? "
+                + "GROUP BY p.PaymentMethod ORDER BY Revenue DESC";
 
         List<PaymentSlice> list = new ArrayList<>();
         try (Connection con = getConnection();

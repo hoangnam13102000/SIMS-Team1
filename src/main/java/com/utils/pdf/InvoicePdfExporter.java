@@ -1,17 +1,23 @@
 package com.utils.pdf;
 
 import com.lowagie.text.pdf.draw.DottedLineSeparator;
+import com.dao.InvoicePaymentDAO;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
+import com.model.InvoicePayment;
 import com.utils.NumberUtil;
+import com.utils.InvoiceQrUtil;
+import com.utils.QrCodeUtil;
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.*;
 import java.awt.Color;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import javax.imageio.ImageIO;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -150,6 +156,9 @@ public class InvoicePdfExporter {
         addProductTable(document, invoice, details);
         addReturnNote(document, invoice);
         addTotalSection(document, invoice);
+        List<InvoicePayment> payments = new InvoicePaymentDAO().getByInvoiceId(invoice.getInvoiceId());
+        addPaymentSection(document, invoice, payments);
+        addInvoiceQr(document, invoice);
         addFooter(document, invoice);
 
         document.close();
@@ -424,6 +433,66 @@ public class InvoicePdfExporter {
         document.add(totalTable);
     }
 
+    private static void addPaymentSection(Document document, Invoice invoice, List<InvoicePayment> payments)
+            throws DocumentException {
+        Paragraph heading = new Paragraph("THANH TOÁN", sectionLabelFont);
+        heading.setSpacingBefore(10);
+        heading.setSpacingAfter(5);
+        document.add(heading);
+
+        PdfPTable table = new PdfPTable(new float[]{1.35f, 1f, 1f, 1f, 1.55f});
+        table.setWidthPercentage(100);
+        String[] headers = {"PHƯƠNG THỨC", "SỐ TIỀN", "KHÁCH ĐƯA", "TIỀN THỪA", "MÃ GD"};
+        for (String h : headers) {
+            PdfPCell c = new PdfPCell(new Phrase(h, tableHeaderFont));
+            c.setBackgroundColor(PRIMARY_COLOR);
+            c.setBorder(Rectangle.NO_BORDER);
+            c.setPadding(6);
+            c.setHorizontalAlignment(Element.ALIGN_CENTER);
+            table.addCell(c);
+        }
+
+        if (payments == null || payments.isEmpty()) {
+            addPaymentRow(table, paymentMethodLabel(invoice.getPaymentMethod()),
+                    invoice.getOriginalTotalAmount() != null ? invoice.getOriginalTotalAmount().longValue() : 0,
+                    null, null, null);
+        } else {
+            for (InvoicePayment p : payments) {
+                if (!p.isCompleted()) continue;
+                addPaymentRow(table, paymentMethodLabel(p.getPaymentMethod()), p.getAmount().longValue(),
+                        p.isCash() ? p.getTenderedAmount().longValue() : null,
+                        p.isCash() ? p.getChangeAmount().longValue() : null, p.getProviderTransactionId());
+            }
+        }
+        document.add(table);
+    }
+
+    private static void addPaymentRow(PdfPTable table, String method, long amount, Long tendered, Long change, String ref) {
+        table.addCell(bodyCell(method, Element.ALIGN_LEFT, false));
+        table.addCell(bodyCell(formatVND(amount), Element.ALIGN_RIGHT, false));
+        table.addCell(bodyCell(tendered != null ? formatVND(tendered) : "-", Element.ALIGN_RIGHT, false));
+        table.addCell(bodyCell(change != null ? formatVND(change) : "-", Element.ALIGN_RIGHT, false));
+        table.addCell(bodyCell(ref != null && !ref.isBlank() ? ref : "-", Element.ALIGN_LEFT, false));
+    }
+
+    private static void addInvoiceQr(Document document, Invoice invoice) {
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(QrCodeUtil.generate(InvoiceQrUtil.payload(invoice), 180), "png", out);
+            Image qr = Image.getInstance(out.toByteArray());
+            qr.scaleToFit(92, 92);
+            qr.setAlignment(Element.ALIGN_CENTER);
+            qr.setSpacingBefore(10);
+            document.add(qr);
+            Paragraph hint = new Paragraph("Quét QR để tra cứu mã " + invoice.getInvoiceCode(), footerCodeFont);
+            hint.setAlignment(Element.ALIGN_CENTER);
+            hint.setSpacingAfter(2);
+            document.add(hint);
+        } catch (Exception ignore) {
+            // Không để lỗi QR làm thất bại việc xuất PDF hóa đơn.
+        }
+    }
+
     private static void addTotalRow(PdfPTable table, String label, String value) {
         PdfPCell labelCell = new PdfPCell(new Phrase(label, totalLabelFont));
         labelCell.setBorder(Rectangle.NO_BORDER);
@@ -487,6 +556,7 @@ public class InvoicePdfExporter {
             case "BANK_TRANSFER": return "Chuyển khoản";
             case "PAYPAL": return "PayPal";
             case "CARD": return "Thẻ";
+            case "MIXED": return "Kết hợp";
             default: return method;
         }
     }

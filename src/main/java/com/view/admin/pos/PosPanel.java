@@ -24,6 +24,7 @@ import com.model.Category;
 import com.model.Customer;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
+import com.model.InvoicePayment;
 import com.model.Product;
 import com.model.Shift;
 import com.model.User;
@@ -433,7 +434,7 @@ public class PosPanel extends JPanel {
 		bottom.add(fixedHeight(summaryRow(new JLabel("Tổng cộng"), totalValue, AppFont.HEADING_MD, AppColor.TEXT_TITLE),
 				26));
 		bottom.add(Box.createVerticalStrut(6));
-		bottom.add(fixedHeight(buildPaymentMethodRow(), 32));
+		bottom.add(fixedHeight(buildPaymentMethodRow(), 68));
 		bottom.add(Box.createVerticalStrut(6));
 		bottom.add(fixedHeight(buildHeldCartActions(), 34));
 		bottom.add(Box.createVerticalStrut(6));
@@ -722,10 +723,10 @@ public class PosPanel extends JPanel {
 
 	// ---------------- Phuong thuc thanh toan ----------------
 	private JPanel buildPaymentMethodRow() {
-		JPanel row = new JPanel(new GridLayout(1, 4, 6, 0));
+		JPanel row = new JPanel(new GridLayout(2, 3, 6, 6));
 		row.setOpaque(false);
-		String[] methods = { "CASH", "BANK_TRANSFER", "PAYPAL", "CARD" };
-		String[] labels = { "Tiền mặt", "Chuyển khoản", "PayPal (Sandbox)", "Thẻ" };
+		String[] methods = { "CASH", "BANK_TRANSFER", "PAYPAL", "CARD", "MIXED" };
+		String[] labels = { "Tiền mặt", "Chuyển khoản", "PayPal (Sandbox)", "Thẻ", "Kết hợp" };
 		ButtonGroup group = new ButtonGroup();
 		for (int i = 0; i < methods.length; i++) {
 			String method = methods[i];
@@ -996,7 +997,7 @@ public class PosPanel extends JPanel {
 				"Xác nhận tạm giữ", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
 		if (confirm != JOptionPane.YES_OPTION) return;
 
-		HeldCartService.Result<com.model.HeldCart> result = heldCartService.holdCurrentCart(cart, selectedPaymentMethod, note);
+		HeldCartService.Result<com.model.HeldCart> result = heldCartService.holdCurrentCart(cart, "MIXED".equals(selectedPaymentMethod) ? "CASH" : selectedPaymentMethod, note);
 		if (!result.isSuccess()) {
 			AppAlert.error(this, "Không thể tạm giữ", result.getMessage());
 			return;
@@ -1141,17 +1142,33 @@ public class PosPanel extends JPanel {
 		} else if ("BANK_TRANSFER".equals(selectedPaymentMethod)) {
 			payWithVietQrThenCreateInvoice(currentUser, checkoutShiftId, snapshot, customerId, expectedSubTotal,
 					expectedTotal, discountBd, promotionId, promotionCode, pointsToUse, pointsDiscountBd);
-		} else {
+		} else if ("CASH".equals(selectedPaymentMethod)) {
+			List<InvoicePayment> payments = PosPaymentDialog.showCash(this, expectedTotal);
+			if (payments == null) return;
 			createInvoiceAndFinish(currentUser, checkoutShiftId, snapshot, customerId, expectedSubTotal,
-					selectedPaymentMethod, null, null, discountBd, promotionId, promotionCode, pointsToUse,
-					pointsDiscountBd);
+					"CASH", null, null, discountBd, promotionId, promotionCode, pointsToUse,
+					pointsDiscountBd, payments);
+		} else if ("CARD".equals(selectedPaymentMethod)) {
+			List<InvoicePayment> payments = PosPaymentDialog.showCard(this, expectedTotal);
+			if (payments == null) return;
+			createInvoiceAndFinish(currentUser, checkoutShiftId, snapshot, customerId, expectedSubTotal,
+					"CARD", null, null, discountBd, promotionId, promotionCode, pointsToUse,
+					pointsDiscountBd, payments);
+		} else {
+			List<InvoicePayment> payments = PosPaymentDialog.showCashCard(this, expectedTotal);
+			if (payments == null) return;
+			// Cột legacy PaymentMethod giữ CARD để các luồng hủy trực tiếp CASH không áp dụng nhầm
+			// cho hóa đơn kết hợp. Chi tiết thật nằm trong InvoicePayments.
+			createInvoiceAndFinish(currentUser, checkoutShiftId, snapshot, customerId, expectedSubTotal,
+					"CARD", null, null, discountBd, promotionId, promotionCode, pointsToUse,
+					pointsDiscountBd, payments);
 		}
 	}
 
 	private void createInvoiceAndFinish(User currentUser, int checkoutShiftId, List<CartItem> snapshot,
 			Integer customerId, long expectedSubTotal, String paymentMethod, String payPalOrderId,
 			String payPalCaptureId, BigDecimal discountAmount, Integer promotionId, String promotionCode,
-			int pointsUsed, BigDecimal pointsDiscountAmount) {
+			int pointsUsed, BigDecimal pointsDiscountAmount, List<InvoicePayment> payments) {
 		checkoutButton.setEnabled(false);
 		loadingOverlay.start("Đang lập hóa đơn...");
 		SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
@@ -1190,7 +1207,7 @@ public class PosPanel extends JPanel {
 					detail.setUnitPrice(item.getProduct().getSellPrice());
 					details.add(detail);
 				}
-				return invoiceDAO.createInvoice(invoice, details);
+				return invoiceDAO.createInvoice(invoice, details, payments);
 			}
 
 			@Override
@@ -1303,7 +1320,12 @@ public class PosPanel extends JPanel {
 		 * expectedTotalAmount bảo đảm invoice được ghi đúng số tiền đã capture qua
 		 * PayPal.
 		 */
-		boolean created = invoiceDAO.createInvoice(invoice, details, BigDecimal.valueOf(totalVnd));
+		InvoicePayment payment = new InvoicePayment(InvoicePayment.METHOD_PAYPAL, BigDecimal.valueOf(totalVnd));
+		payment.setProvider("PAYPAL");
+		payment.setProviderTransactionId(payPalCaptureId);
+		payment.setProviderPaymentId(payPalOrderId);
+		payment.setIdempotencyKey(payPalCaptureId != null ? "PAYPAL:" + payPalCaptureId : null);
+		boolean created = invoiceDAO.createInvoice(invoice, details, BigDecimal.valueOf(totalVnd), List.of(payment));
 
 		return created ? invoice : null;
 	}
@@ -1664,7 +1686,12 @@ public class PosPanel extends JPanel {
 			details.add(detail);
 		}
 
-		boolean created = invoiceDAO.createInvoice(invoice, details, BigDecimal.valueOf(totalVnd));
+		InvoicePayment payment = new InvoicePayment(InvoicePayment.METHOD_BANK_TRANSFER, BigDecimal.valueOf(totalVnd));
+		payment.setProvider("PAYOS");
+		payment.setProviderTransactionId(bankReference != null && !bankReference.isBlank() ? bankReference : paymentLinkId);
+		payment.setProviderPaymentId(paymentLinkId);
+		payment.setIdempotencyKey("PAYOS:" + payOsOrderCode);
+		boolean created = invoiceDAO.createInvoice(invoice, details, BigDecimal.valueOf(totalVnd), List.of(payment));
 		return created ? invoice : null;
 	}
 

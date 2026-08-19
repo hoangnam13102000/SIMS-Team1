@@ -2,9 +2,11 @@ package com.view.admin.invoice;
 
 import com.components.AppAlert;
 import com.dao.InvoiceDAO;
+import com.dao.InvoicePaymentDAO;
 import com.dao.ReturnExchangeDAO;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
+import com.model.InvoicePayment;
 import com.model.InvoiceCancelRequest;
 import com.model.ReturnExchange;
 import com.model.permission.AppPermission;
@@ -143,6 +145,7 @@ public class InvoiceDetailDialog extends JDialog {
 		JTabbedPane tabs = new JTabbedPane();
 		tabs.setFont(new Font("Segoe UI", Font.PLAIN, 13));
 		tabs.addTab("Sản phẩm", buildProductTable());
+		tabs.addTab("Thanh toán", buildPaymentTable());
 		tabs.addTab("Phiếu đổi/trả", buildReturnTable());
 		body.add(tabs, BorderLayout.CENTER);
 
@@ -347,6 +350,40 @@ public class InvoiceDetailDialog extends JDialog {
 		}
 		c.setBackground(bg);
 		c.setForeground(fg);
+	}
+
+	private JComponent buildPaymentTable() {
+		List<InvoicePayment> payments = new InvoicePaymentDAO().getByInvoiceId(invoice.getInvoiceId());
+		if (payments.isEmpty()) {
+			JLabel empty = new JLabel("Chưa có dữ liệu InvoicePayments cho hóa đơn này.", SwingConstants.CENTER);
+			empty.setForeground(AppColor.TEXT_MUTED);
+			empty.setBorder(new EmptyBorder(40, 20, 40, 20));
+			return empty;
+		}
+
+		String[] cols = { "Phương thức", "Số tiền", "Khách đưa", "Tiền thừa", "Mã giao dịch", "Trạng thái" };
+		DefaultTableModel model = new DefaultTableModel(cols, 0) {
+			@Override public boolean isCellEditable(int row, int column) { return false; }
+		};
+		for (InvoicePayment p : payments) {
+			model.addRow(new Object[] {
+					InvoicePanel.paymentMethodLabel(p.getPaymentMethod()),
+					formatMoney(p.getAmount()),
+					p.isCash() ? formatMoney(p.getTenderedAmount()) : "—",
+					p.isCash() ? formatMoney(p.getChangeAmount()) : "—",
+					p.getProviderTransactionId() != null ? p.getProviderTransactionId() : "—",
+					p.getPaymentStatus()
+			});
+		}
+		JTable table = new JTable(model);
+		table.setRowHeight(38);
+		table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+		table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+		table.setFillsViewportHeight(true);
+		table.setRowSelectionAllowed(false);
+		JScrollPane scroll = new JScrollPane(table);
+		scroll.setBorder(BorderFactory.createLineBorder(AppColor.BORDER));
+		return scroll;
 	}
 
 	private JComponent buildReturnTable() {

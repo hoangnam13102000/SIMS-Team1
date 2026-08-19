@@ -5,9 +5,13 @@ import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.FileUtil;
 import com.utils.NumberUtil;
+import com.utils.QrCodeUtil;
+import com.utils.InvoiceQrUtil;
 import com.utils.pdf.InvoicePdfExporter;
 import com.dao.InvoiceDAO;
+import com.dao.InvoicePaymentDAO;
 import com.model.InvoiceDetail;
+import com.model.InvoicePayment;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 import javax.swing.*;
@@ -38,8 +42,8 @@ public class PaymentSuccessDialog extends JDialog {
         this.invoice = invoice;
         this.invoiceDAO = invoiceDAO;
 
-        setSize(480, 520);
-        setMinimumSize(new Dimension(420, 480));
+        setSize(480, 650);
+        setMinimumSize(new Dimension(420, 600));
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
@@ -141,13 +145,42 @@ public class PaymentSuccessDialog extends JDialog {
                 ? invoice.getCreatedAt().format(DATE_TIME_FORMAT) : "-";
         infoCard.add(createInfoRow("Thời gian", dateStr, false));
 
+        List<InvoicePayment> payments = new InvoicePaymentDAO().getByInvoiceId(invoice.getInvoiceId());
+        if (!payments.isEmpty()) {
+            infoCard.add(Box.createVerticalStrut(10));
+            String method = payments.size() > 1 ? "Kết hợp" : paymentLabel(payments.get(0).getPaymentMethod());
+            infoCard.add(createInfoRow("Thanh toán", method, false));
+            long change = payments.stream().filter(InvoicePayment::isCash)
+                    .map(InvoicePayment::getChangeAmount).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add).longValue();
+            if (change > 0) {
+                infoCard.add(Box.createVerticalStrut(10));
+                infoCard.add(createInfoRow("Tiền thừa", NumberUtil.formatThousands(change) + " đ", true));
+            }
+        }
+
         if (invoice.getPointsEarned() > 0) {
             infoCard.add(Box.createVerticalStrut(10));
             infoCard.add(createInfoRow("Điểm thưởng", "+" + invoice.getPointsEarned() + " điểm", false));
         }
 
         content.add(infoCard);
-        content.add(Box.createVerticalStrut(16));
+        content.add(Box.createVerticalStrut(14));
+
+        try {
+            JLabel qr = new JLabel(new ImageIcon(QrCodeUtil.generate(InvoiceQrUtil.payload(invoice), 116)));
+            qr.setAlignmentX(Component.CENTER_ALIGNMENT);
+            qr.setToolTipText("QR tra cứu hóa đơn " + invoice.getInvoiceCode());
+            content.add(qr);
+            JLabel qrHint = new JLabel("QR hóa đơn · " + invoice.getInvoiceCode());
+            qrHint.setFont(AppFont.SMALL);
+            qrHint.setForeground(AppColor.TEXT_MUTED);
+            qrHint.setAlignmentX(Component.CENTER_ALIGNMENT);
+            content.add(Box.createVerticalStrut(4));
+            content.add(qrHint);
+        } catch (Exception ignore) {
+            // QR chỉ là tiện ích; không làm hỏng dialog thanh toán thành công.
+        }
+        content.add(Box.createVerticalStrut(12));
 
         statusLabel = new JLabel(" ");
         statusLabel.setFont(AppFont.SMALL);
@@ -174,6 +207,17 @@ public class PaymentSuccessDialog extends JDialog {
         row.add(labelComp, BorderLayout.WEST);
         row.add(valueComp, BorderLayout.EAST);
         return row;
+    }
+
+    private String paymentLabel(String method) {
+        if (method == null) return "-";
+        return switch (method) {
+            case "CASH" -> "Tiền mặt";
+            case "BANK_TRANSFER" -> "Chuyển khoản";
+            case "PAYPAL" -> "PayPal";
+            case "CARD" -> "Thẻ";
+            default -> method;
+        };
     }
 
     private JPanel buildButtons() {

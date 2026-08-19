@@ -3,12 +3,15 @@ package com.view.admin.invoice;
 import com.components.BaseDialog;
 import com.dao.ProductDAO;
 import com.dao.ReturnExchangeDAO;
+import com.dao.ReturnExchangeEvidenceDAO;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
 import com.model.Product;
 import com.model.ReturnExchange;
 import com.model.ReturnExchangeDetail;
 import com.service.AuthService;
+import com.service.media.CloudinaryService;
+import com.service.media.CloudinaryUploadException;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.NumberUtil;
@@ -22,6 +25,7 @@ import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JFileChooser;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
@@ -34,6 +38,7 @@ import javax.swing.KeyStroke;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.WindowConstants;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -50,6 +55,7 @@ import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -88,6 +94,8 @@ public class ReturnExchangeDialog extends JDialog {
 	private JComboBox<Product> productCombo;
 	private JSpinner exchangeQtySpinner;
 	private JTextArea reasonArea;
+	private JPanel evidenceListPanel;
+	private final List<File> evidenceFiles = new ArrayList<>();
 
 	private final List<ReturnExchangeDetail> exchangeOutLines = new ArrayList<>();
 
@@ -208,6 +216,12 @@ public class ReturnExchangeDialog extends JDialog {
 		refundSection = buildRefundSection();
 		refundSection.setVisible(true);
 		content.add(refundSection);
+		content.add(Box.createVerticalStrut(18));
+
+		// ---- Ảnh bằng chứng ----
+		content.add(sectionLabel("Ảnh bằng chứng (tối đa 3 ảnh)"));
+		content.add(Box.createVerticalStrut(8));
+		content.add(buildEvidenceSection());
 		content.add(Box.createVerticalStrut(18));
 
 		// ---- Lý do ----
@@ -518,6 +532,96 @@ public class ReturnExchangeDialog extends JDialog {
 		exchangeListPanel.repaint();
 	}
 
+	private JComponent buildEvidenceSection() {
+		JPanel panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+		panel.setOpaque(true);
+		panel.setBackground(AppColor.BG_LIGHT);
+		panel.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(AppColor.BORDER, 1, true), new EmptyBorder(10, 12, 10, 12)));
+		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180));
+
+		JButton add = pillButton("Thêm ảnh", AppColor.ACCENT, Color.WHITE, true);
+		add.setAlignmentX(Component.LEFT_ALIGNMENT);
+		add.addActionListener(e -> chooseEvidenceImages());
+		panel.add(add);
+		panel.add(Box.createVerticalStrut(8));
+
+		evidenceListPanel = new JPanel();
+		evidenceListPanel.setLayout(new BoxLayout(evidenceListPanel, BoxLayout.Y_AXIS));
+		evidenceListPanel.setOpaque(false);
+		panel.add(evidenceListPanel);
+		refreshEvidenceList();
+		return panel;
+	}
+
+	private void chooseEvidenceImages() {
+		if (evidenceFiles.size() >= 3) {
+			BaseDialog.error(this, "Đã đủ ảnh", "Mỗi phiếu đổi/trả tối đa 3 ảnh bằng chứng.");
+			return;
+		}
+		JFileChooser chooser = new JFileChooser();
+		chooser.setDialogTitle("Chọn ảnh bằng chứng đổi/trả");
+		chooser.setMultiSelectionEnabled(true);
+		chooser.setFileFilter(new FileNameExtensionFilter("Ảnh (*.jpg, *.jpeg, *.png, *.webp, *.gif)",
+				"jpg", "jpeg", "png", "webp", "gif"));
+		if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+		File[] selected = chooser.getSelectedFiles();
+		if (selected == null || selected.length == 0) selected = new File[]{chooser.getSelectedFile()};
+		for (File file : selected) {
+			if (file == null) continue;
+			if (evidenceFiles.size() >= 3) break;
+			if (!evidenceFiles.contains(file)) evidenceFiles.add(file);
+		}
+		refreshEvidenceList();
+	}
+
+	private void refreshEvidenceList() {
+		if (evidenceListPanel == null) return;
+		evidenceListPanel.removeAll();
+		if (evidenceFiles.isEmpty()) {
+			JLabel empty = new JLabel("Chưa chọn ảnh. Có thể tạo phiếu mà không có ảnh.");
+			empty.setFont(AppFont.SMALL);
+			empty.setForeground(AppColor.TEXT_MUTED);
+			evidenceListPanel.add(empty);
+		} else {
+			for (int i = 0; i < evidenceFiles.size(); i++) {
+				File file = evidenceFiles.get(i);
+				int index = i;
+				JPanel row = new JPanel(new BorderLayout(8, 0));
+				row.setOpaque(false);
+				JLabel name = new JLabel((i + 1) + ". " + file.getName());
+				name.setFont(AppFont.SMALL);
+				JButton remove = new JButton("Xóa");
+				remove.setBorderPainted(false);
+				remove.setContentAreaFilled(false);
+				remove.setForeground(AppColor.ERROR);
+				remove.addActionListener(e -> { evidenceFiles.remove(index); refreshEvidenceList(); });
+				row.add(name, BorderLayout.CENTER);
+				row.add(remove, BorderLayout.EAST);
+				evidenceListPanel.add(row);
+			}
+		}
+		evidenceListPanel.revalidate();
+		evidenceListPanel.repaint();
+	}
+
+	private int uploadEvidenceAfterCreate(int returnId, int userId) {
+		if (evidenceFiles.isEmpty()) return 0;
+		ReturnExchangeEvidenceDAO evidenceDAO = new ReturnExchangeEvidenceDAO();
+		int failed = 0;
+		for (File file : evidenceFiles) {
+			try {
+				String url = CloudinaryService.getInstance().uploadProductImage(file);
+				if (!evidenceDAO.add(returnId, url, file.getName(), userId)) failed++;
+			} catch (CloudinaryUploadException ex) {
+				failed++;
+			}
+		}
+		return failed;
+	}
+
 	// ---------------------------------------------------------------
 	// Footer
 	// ---------------------------------------------------------------
@@ -631,10 +735,15 @@ public class ReturnExchangeDialog extends JDialog {
 		}
 
 		created = true;
+		int evidenceFailed = uploadEvidenceAfterCreate(header.getReturnId(), header.getCreatedBy());
 		String message = header.isRequiresApproval()
 				? "Đã tạo yêu cầu đổi/trả cho hóa đơn " + invoice.getInvoiceCode()
 						+ ". Giá trị lớn nên cần Quản lý bán hàng duyệt trước khi cập nhật kho."
 				: "Đã tạo và xử lý xong yêu cầu đổi/trả cho hóa đơn " + invoice.getInvoiceCode() + ".";
+		if (!evidenceFiles.isEmpty()) {
+			if (evidenceFailed == 0) message += " Đã lưu " + evidenceFiles.size() + " ảnh bằng chứng.";
+			else message += " Phiếu đã tạo nhưng có " + evidenceFailed + " ảnh tải lên thất bại; ảnh đó chưa được lưu.";
+		}
 		// Anchor vào owner (Frame), không dùng this — tránh toast bị dispose theo dialog.
 		BaseDialog.success(getOwner(), "Thành công", message);
 		dispose();

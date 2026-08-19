@@ -2,6 +2,7 @@ package com.view.admin.invoice;
 
 import com.components.AppAlert;
 import com.components.DatePickerField;
+import com.components.barcode.BarcodeScannerDialog;
 import com.components.crud.BaseCrudPanel;
 import com.components.table.ActionColumn;
 import com.dao.InvoiceDAO;
@@ -10,6 +11,7 @@ import com.model.InvoiceDetail;
 import com.theme.AppColor;
 import com.utils.FileUtil;
 import com.utils.NumberUtil;
+import com.utils.InvoiceQrUtil;
 import com.utils.PaginationHelper;
 import com.utils.pdf.InvoicePdfExporter;
 import com.service.InvoiceService;
@@ -90,6 +92,7 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 		});
 
 		buildDateFilterBar();
+		addInvoiceQrScannerButton();
 		initialLoad();
 		applyColumnWidths();
 		table.setActionColumn(new ActionColumn()
@@ -97,6 +100,34 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 					if (supportsView())
 						viewRow(modelRow);
 				}).add("export", FontAwesomeSolid.FILE_PDF, AppColor.ACCENT, "Xuất hóa đơn PDF", this::exportRowPdf));
+	}
+
+	private void addInvoiceQrScannerButton() {
+		JButton scan = new JButton("Quét QR HĐ");
+		scan.setFont(new Font("Segoe UI", Font.BOLD, 13));
+		scan.setFocusPainted(false);
+		scan.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		FontIcon icon = FontIcon.of(FontAwesomeSolid.CAMERA, 13);
+		icon.setIconColor(AppColor.ACCENT);
+		scan.setIcon(icon);
+		scan.setIconTextGap(6);
+		scan.addActionListener(e -> {
+			Window owner = SwingUtilities.getWindowAncestor(this);
+			BarcodeScannerDialog dialog = new BarcodeScannerDialog(owner,
+					"Quét QR hóa đơn", "Đưa QR trên hóa đơn vào giữa khung hình");
+			dialog.onScanned(raw -> {
+				String invoiceCode = InvoiceQrUtil.extractInvoiceCode(raw);
+				if (invoiceCode == null) {
+					AppAlert.warning(this, "QR không hợp lệ",
+							"Mã vừa quét không phải QR hóa đơn SIMS.");
+					return;
+				}
+				if (searchBar != null) searchBar.setText(invoiceCode);
+				applyFilters();
+			});
+			dialog.setVisible(true);
+		});
+		addToolbarFilter(scan);
 	}
 
 	private void buildDateFilterBar() {
@@ -244,7 +275,8 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
 	@Override
 	protected PaginationHelper.PaginationResult<Invoice> searchPage(String keyword, int page, int pageSize) {
-		return invoiceService.getVisiblePaged(page, pageSize, keyword, selectedFromDate(), selectedToDate());
+		String normalized = InvoiceQrUtil.normalizeSearchKeyword(keyword);
+		return invoiceService.getVisiblePaged(page, pageSize, normalized, selectedFromDate(), selectedToDate());
 	}
 
 	@Override
@@ -429,6 +461,8 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 			return "PayPal";
 		case "CARD":
 			return "Thẻ";
+		case "MIXED":
+			return "Kết hợp";
 		default:
 			return method;
 		}

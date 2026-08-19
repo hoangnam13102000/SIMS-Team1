@@ -375,6 +375,32 @@ CREATE TABLE InvoiceDetails (
         FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
 ) ENGINE=InnoDB;
 
+CREATE TABLE InvoicePayments (
+    PaymentID              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    InvoiceID              INT NOT NULL,
+    PaymentMethod          VARCHAR(20) NOT NULL
+                               CHECK (PaymentMethod IN ('CASH','BANK_TRANSFER','PAYPAL','CARD')),
+    Amount                 DECIMAL(18,0) NOT NULL CHECK (Amount >= 0),
+    TenderedAmount         DECIMAL(18,0) NOT NULL DEFAULT 0 CHECK (TenderedAmount >= 0),
+    ChangeAmount           DECIMAL(18,0) NOT NULL DEFAULT 0 CHECK (ChangeAmount >= 0),
+    Provider               VARCHAR(30) NULL,
+    ProviderTransactionID  VARCHAR(120) NULL,
+    ProviderPaymentID      VARCHAR(120) NULL,
+    IdempotencyKey         VARCHAR(150) NULL,
+    PaymentStatus          VARCHAR(20) NOT NULL DEFAULT 'COMPLETED'
+                               CHECK (PaymentStatus IN ('PENDING','COMPLETED','FAILED','REFUNDED')),
+    CreatedBy              INT NOT NULL,
+    CreatedAt              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT FK_InvoicePayments_Invoice
+        FOREIGN KEY (InvoiceID) REFERENCES Invoices(InvoiceID) ON DELETE CASCADE,
+    CONSTRAINT FK_InvoicePayments_CreatedBy
+        FOREIGN KEY (CreatedBy) REFERENCES Users(UserID),
+    UNIQUE KEY UQ_InvoicePayments_ProviderTxn (Provider, ProviderTransactionID),
+    UNIQUE KEY UQ_InvoicePayments_Idempotency (IdempotencyKey),
+    KEY IX_InvoicePayments_Invoice_Status (InvoiceID, PaymentStatus),
+    KEY IX_InvoicePayments_Method_CreatedAt (PaymentMethod, CreatedAt)
+) ENGINE=InnoDB;
+
 /* ============================================================
    V. ĐỔI / TRẢ HÀNG  (đã có DiscountShare + PointsShare)
    ============================================================ */
@@ -561,6 +587,21 @@ CREATE TABLE ReturnExchangeDetails (
         FOREIGN KEY (ReturnID) REFERENCES ReturnExchanges(ReturnID),
     CONSTRAINT FK_ReturnExchangeDetails_Products
         FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+) ENGINE=InnoDB;
+
+/* Ảnh bằng chứng đổi/trả; có thể có nhiều ảnh cho một phiếu. */
+CREATE TABLE ReturnExchangeEvidence (
+    EvidenceID       BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ReturnID         INT NOT NULL,
+    ImageUrl         VARCHAR(500) NOT NULL,
+    OriginalFileName VARCHAR(255) NULL,
+    UploadedBy       INT NOT NULL,
+    UploadedAt       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT FK_ReturnExchangeEvidence_Return
+        FOREIGN KEY (ReturnID) REFERENCES ReturnExchanges(ReturnID) ON DELETE CASCADE,
+    CONSTRAINT FK_ReturnExchangeEvidence_UploadedBy
+        FOREIGN KEY (UploadedBy) REFERENCES Users(UserID),
+    KEY IX_ReturnExchangeEvidence_Return (ReturnID, UploadedAt)
 ) ENGINE=InnoDB;
 
 /* ============================================================

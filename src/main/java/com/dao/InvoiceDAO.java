@@ -6,6 +6,7 @@ import com.event.AppEventBus;
 import com.event.DataChangedEvent;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
+import com.model.InvoicePayment;
 import com.utils.DBConnection;
 import com.utils.PaginationHelper;
 
@@ -53,7 +54,11 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				+ "inv.CustomerID, cu.FullName AS CustomerName, inv.CreatedAt, "
 				+ "inv.SubTotal, inv.DiscountAmount, inv.PromotionID, inv.PromotionCode, "
 				+ "inv.PointsUsed, inv.PointsDiscountAmount, " + "inv.VATRate, inv.VATAmount, inv.TotalAmount, "
-				+ "inv.OriginalTotalAmount, " + "inv.PaymentMethod, inv.PayPalOrderID, inv.PayPalCaptureID, "
+				+ "inv.OriginalTotalAmount, "
+				+ "CASE WHEN (SELECT COUNT(DISTINCT ip.PaymentMethod) FROM InvoicePayments ip "
+				+ "WHERE ip.InvoiceID=inv.InvoiceID AND ip.PaymentStatus='COMPLETED') > 1 "
+				+ "THEN 'MIXED' ELSE inv.PaymentMethod END AS PaymentMethod, "
+				+ "inv.PayPalOrderID, inv.PayPalCaptureID, "
 				+ "inv.PayOsOrderCode, inv.PayOsPaymentLinkID, inv.BankTransferReference, "
 				+ "inv.Status, inv.CancelReason, inv.CancelledAt, "
 				+ "(SELECT r.Status FROM InvoiceCancelRequests r WHERE r.InvoiceID = inv.InvoiceID "
@@ -276,10 +281,19 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 	}
 
 	public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items) {
-		return createInvoice(invoice, items, null);
+		return createInvoice(invoice, items, null, null);
 	}
 
 	public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items, BigDecimal expectedTotalAmount) {
+		return createInvoice(invoice, items, expectedTotalAmount, null);
+	}
+
+	public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items, List<InvoicePayment> payments) {
+		return createInvoice(invoice, items, null, payments);
+	}
+
+	public boolean createInvoice(Invoice invoice, List<InvoiceDetail> items, BigDecimal expectedTotalAmount,
+			List<InvoicePayment> payments) {
 		if (invoice == null || items == null || items.isEmpty()) {
 			return false;
 		}
@@ -299,6 +313,10 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 		String updateTotalsSql = "UPDATE Invoices SET " + "InvoiceCode = ?, " + "SubTotal = ?, " + "TotalAmount = ?, "
 				+ "OriginalTotalAmount = ?, " + "DiscountAmount = ?, " + "PointsUsed = ?, "
 				+ "PointsDiscountAmount = ? " + "WHERE InvoiceID = ?";
+		String insertPaymentSql = "INSERT INTO InvoicePayments "
+				+ "(InvoiceID, PaymentMethod, Amount, TenderedAmount, ChangeAmount, Provider, "
+				+ "ProviderTransactionID, ProviderPaymentID, IdempotencyKey, PaymentStatus, CreatedBy) "
+				+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 		try (Connection con = DBConnection.getConnection()) {
 			con.setAutoCommit(false);
@@ -514,6 +532,43 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 					ps.executeUpdate();
 				}
 
+				/*
+				 * InvoicePayments là nguồn sự thật về cách khách đã trả tiền.
+				 * Tổng các dòng COMPLETED bắt buộc phải bằng tổng hóa đơn.
+				 */
+				List<InvoicePayment> effectivePayments = preparePayments(invoice, payments, totalAmount);
+				BigDecimal paidTotal = BigDecimal.ZERO;
+				for (InvoicePayment payment : effectivePayments) {
+					if (payment.isCompleted()) {
+						paidTotal = paidTotal.add(payment.getAmount());
+					}
+				}
+				if (paidTotal.compareTo(totalAmount) != 0) {
+					con.rollback();
+					AppLogger.getInstance().error(ErrorCode.INVOICE_CREATE_FAIL,
+							"InvoicePayments mismatch - expected=" + totalAmount + " - paid=" + paidTotal, null);
+					return false;
+				}
+
+				try (PreparedStatement ps = con.prepareStatement(insertPaymentSql)) {
+					for (InvoicePayment payment : effectivePayments) {
+						validatePayment(payment);
+						ps.setInt(1, invoiceId);
+						ps.setString(2, payment.getPaymentMethod());
+						ps.setBigDecimal(3, payment.getAmount());
+						ps.setBigDecimal(4, payment.getTenderedAmount());
+						ps.setBigDecimal(5, payment.getChangeAmount());
+						setNullableString(ps, 6, payment.getProvider());
+						setNullableString(ps, 7, payment.getProviderTransactionId());
+						setNullableString(ps, 8, payment.getProviderPaymentId());
+						setNullableString(ps, 9, payment.getIdempotencyKey());
+						ps.setString(10, payment.getPaymentStatus());
+						ps.setInt(11, invoice.getCreatedBy());
+						ps.addBatch();
+					}
+					ps.executeBatch();
+				}
+
 				int pointsEarned = 0;
 				if (invoice.getCustomerId() != null && totalAmount.signum() > 0) {
 					BigDecimal pointRate = storeConfigDAO.getPointRate();
@@ -559,6 +614,58 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 					"InvoiceDAO.createInvoice - createdBy=" + invoice.getCreatedBy(), e);
 			return false;
 		}
+	}
+
+	private List<InvoicePayment> preparePayments(Invoice invoice, List<InvoicePayment> requested, BigDecimal totalAmount) {
+		List<InvoicePayment> result = new ArrayList<>();
+		if (requested != null) {
+			for (InvoicePayment p : requested) {
+				if (p != null && p.getAmount().signum() > 0) result.add(p);
+			}
+		}
+		if (!result.isEmpty()) return result;
+
+		String method = invoice.getPaymentMethod() != null ? invoice.getPaymentMethod() : InvoicePayment.METHOD_CASH;
+		InvoicePayment p = new InvoicePayment(method, totalAmount);
+		p.setPaymentStatus(InvoicePayment.STATUS_COMPLETED);
+		if (InvoicePayment.METHOD_CASH.equalsIgnoreCase(method)) {
+			p.setTenderedAmount(totalAmount);
+			p.setChangeAmount(BigDecimal.ZERO);
+		} else if (InvoicePayment.METHOD_PAYPAL.equalsIgnoreCase(method)) {
+			p.setProvider("PAYPAL");
+			p.setProviderTransactionId(invoice.getPayPalCaptureId());
+			p.setProviderPaymentId(invoice.getPayPalOrderId());
+			if (invoice.getPayPalCaptureId() != null) p.setIdempotencyKey("PAYPAL:" + invoice.getPayPalCaptureId());
+		} else if (InvoicePayment.METHOD_BANK_TRANSFER.equalsIgnoreCase(method)) {
+			p.setProvider("PAYOS");
+			p.setProviderTransactionId(invoice.getBankTransferReference() != null
+					? invoice.getBankTransferReference() : invoice.getPayOsPaymentLinkId());
+			p.setProviderPaymentId(invoice.getPayOsPaymentLinkId());
+			if (invoice.getPayOsOrderCode() != null) p.setIdempotencyKey("PAYOS:" + invoice.getPayOsOrderCode());
+		} else if (InvoicePayment.METHOD_CARD.equalsIgnoreCase(method)) {
+			p.setProvider("CARD");
+		}
+		result.add(p);
+		return result;
+	}
+
+	private void validatePayment(InvoicePayment payment) throws SQLException {
+		if (payment.getPaymentMethod() == null || payment.getPaymentMethod().isBlank())
+			throw new SQLException("Thiếu phương thức thanh toán.");
+		if (payment.getAmount().signum() < 0)
+			throw new SQLException("Số tiền thanh toán không được âm.");
+		if (payment.isCash()) {
+			if (payment.getTenderedAmount().compareTo(payment.getAmount()) < 0)
+				throw new SQLException("Tiền khách đưa nhỏ hơn phần tiền mặt phải trả.");
+			BigDecimal expectedChange = payment.getTenderedAmount().subtract(payment.getAmount());
+			if (payment.getChangeAmount().compareTo(expectedChange) != 0)
+				throw new SQLException("Tiền thừa không khớp tiền khách đưa.");
+		}
+	}
+
+	private void setNullableString(PreparedStatement ps, int index, String value) throws SQLException {
+		if (value == null || value.isBlank()) ps.setNull(index, Types.VARCHAR);
+		else ps.setString(index, value.trim());
 	}
 
 	/** Danh sach dong SP + so luong da tra (APPROVED). */

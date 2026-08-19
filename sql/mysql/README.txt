@@ -42,3 +42,9 @@ Nang cap project dang chay (A1-A3 huy hoa don co phe duyet):
 - A6-A7 POS: tạm giữ nhiều giỏ hàng, tìm/khôi phục/hủy theo ca và nhân viên.
 - Tạo HeldCarts + HeldCartItems; thêm quyền POS_CART_HOLD/POS_CART_RESTORE.
 - Không dùng information_schema, phù hợp tài khoản MySQL bị giới hạn.
+
+
+11_INVOICE_PAYMENTS_RETURN_EVIDENCE.sql
+- A10-A12: QR hóa đơn, nhiều dòng InvoicePayments, tiền khách đưa/tiền thừa và thanh toán kết hợp CASH + CARD.
+- Tạo ReturnExchangeEvidence để lưu URL ảnh bằng chứng đổi/trả trên Cloudinary.
+- Backfill hóa đơn cũ sang InvoicePayments; không dùng information_schema.
