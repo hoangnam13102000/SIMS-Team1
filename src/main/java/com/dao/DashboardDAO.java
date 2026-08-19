@@ -119,4 +119,295 @@ public class DashboardDAO {
         }
         return list;
     }
+
+    // ------------------------------------------------------------------
+    // Chỉ số dành riêng cho dashboard Quản lý bán hàng
+    // ------------------------------------------------------------------
+
+    /** 1 dòng yêu cầu đổi/trả đang chờ duyệt. */
+    public static class PendingReturnItem {
+        public final int returnId;
+        public final String invoiceCode;
+        public final String type;
+        public final String createdByName;
+        public final java.math.BigDecimal totalValue;
+        public final java.time.LocalDateTime createdAt;
+
+        public PendingReturnItem(int returnId, String invoiceCode, String type,
+                                 String createdByName, java.math.BigDecimal totalValue,
+                                 java.time.LocalDateTime createdAt) {
+            this.returnId = returnId;
+            this.invoiceCode = invoiceCode;
+            this.type = type;
+            this.createdByName = createdByName;
+            this.totalValue = totalValue != null ? totalValue : java.math.BigDecimal.ZERO;
+            this.createdAt = createdAt;
+        }
+
+        public boolean isExchange() {
+            return "EXCHANGE".equalsIgnoreCase(type);
+        }
+    }
+
+    /** 1 dòng báo cáo ngoại lệ đang PENDING. */
+    public static class PendingExceptionItem {
+        public final int reportId;
+        public final String createdByName;
+        public final String content;
+        public final java.time.LocalDateTime createdAt;
+
+        public PendingExceptionItem(int reportId, String createdByName, String content,
+                                    java.time.LocalDateTime createdAt) {
+            this.reportId = reportId;
+            this.createdByName = createdByName;
+            this.content = content;
+            this.createdAt = createdAt;
+        }
+    }
+
+    /** Số yêu cầu đổi/trả đang chờ Quản lý bán hàng duyệt. */
+    public int countPendingReturnExchanges() {
+        String sql = "SELECT COUNT(*) FROM ReturnExchanges WHERE Status = 'PENDING'";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "DashboardDAO.countPendingReturnExchanges", e);
+        }
+        return 0;
+    }
+
+    /** Danh sách yêu cầu đổi/trả PENDING mới nhất (tối đa {@code limit}). */
+    public List<PendingReturnItem> getPendingReturnExchanges(int limit) {
+        String sql = "SELECT r.ReturnID, i.InvoiceCode, r.Type, u.FullName AS CreatedByName, "
+                + "r.TotalValue, r.CreatedAt "
+                + "FROM ReturnExchanges r "
+                + "JOIN Invoices i ON i.InvoiceID = r.InvoiceID "
+                + "JOIN Users u ON u.UserID = r.CreatedBy "
+                + "WHERE r.Status = 'PENDING' "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT ?";
+        List<PendingReturnItem> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    java.sql.Timestamp ts = rs.getTimestamp("CreatedAt");
+                    list.add(new PendingReturnItem(
+                            rs.getInt("ReturnID"),
+                            rs.getString("InvoiceCode"),
+                            rs.getString("Type"),
+                            rs.getString("CreatedByName"),
+                            rs.getBigDecimal("TotalValue"),
+                            ts != null ? ts.toLocalDateTime() : null));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "DashboardDAO.getPendingReturnExchanges", e);
+        }
+        return list;
+    }
+
+    /** Số báo cáo ngoại lệ đang chờ xử lý. */
+    public int countPendingExceptionReports() {
+        String sql = "SELECT COUNT(*) FROM ExceptionReports WHERE Status = 'PENDING'";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "DashboardDAO.countPendingExceptionReports", e);
+        }
+        return 0;
+    }
+
+    /** Danh sách báo cáo ngoại lệ PENDING mới nhất. */
+    public List<PendingExceptionItem> getPendingExceptionReports(int limit) {
+        String sql = "SELECT er.ReportID, u.FullName AS CreatedByName, er.Content, er.CreatedAt "
+                + "FROM ExceptionReports er "
+                + "JOIN Users u ON u.UserID = er.CreatedBy "
+                + "WHERE er.Status = 'PENDING' "
+                + "ORDER BY er.CreatedAt DESC, er.ReportID DESC LIMIT ?";
+        List<PendingExceptionItem> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    java.sql.Timestamp ts = rs.getTimestamp("CreatedAt");
+                    list.add(new PendingExceptionItem(
+                            rs.getInt("ReportID"),
+                            rs.getString("CreatedByName"),
+                            rs.getString("Content"),
+                            ts != null ? ts.toLocalDateTime() : null));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "DashboardDAO.getPendingExceptionReports", e);
+        }
+        return list;
+    }
+
+
+    // ------------------------------------------------------------------
+    // Chỉ số dashboard Nhân viên bán hàng (theo user đang đăng nhập)
+    // ------------------------------------------------------------------
+
+    /** Kết quả bán hàng cá nhân trong ngày. */
+    public static class StaffDayStats {
+        public final int invoiceCount;
+        public final java.math.BigDecimal revenue;
+        public final long itemsSold;
+        public final int cancelledCount;
+
+        public StaffDayStats(int invoiceCount, java.math.BigDecimal revenue,
+                             long itemsSold, int cancelledCount) {
+            this.invoiceCount = invoiceCount;
+            this.revenue = revenue != null ? revenue : java.math.BigDecimal.ZERO;
+            this.itemsSold = itemsSold;
+            this.cancelledCount = cancelledCount;
+        }
+    }
+
+    /** Hóa đơn gần đây của nhân viên. */
+    public static class StaffInvoiceItem {
+        public final int invoiceId;
+        public final String invoiceCode;
+        public final java.math.BigDecimal totalAmount;
+        public final String status;
+        public final String paymentMethod;
+        public final java.time.LocalDateTime createdAt;
+
+        public StaffInvoiceItem(int invoiceId, String invoiceCode,
+                                java.math.BigDecimal totalAmount, String status,
+                                String paymentMethod, java.time.LocalDateTime createdAt) {
+            this.invoiceId = invoiceId;
+            this.invoiceCode = invoiceCode;
+            this.totalAmount = totalAmount != null ? totalAmount : java.math.BigDecimal.ZERO;
+            this.status = status;
+            this.paymentMethod = paymentMethod;
+            this.createdAt = createdAt;
+        }
+
+        public boolean isCancelled() {
+            return "CANCELLED".equalsIgnoreCase(status);
+        }
+    }
+
+    /**
+     * Thống kê bán hàng của 1 nhân viên trong ngày hôm nay
+     * (hóa đơn ACTIVE theo CreatedBy + ngày tạo).
+     */
+    public StaffDayStats getStaffDayStats(int userId) {
+        String sql = "SELECT "
+                + "(SELECT COUNT(*) FROM Invoices WHERE CreatedBy = ? AND Status = 'ACTIVE' "
+                + "   AND CAST(CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)) AS InvoiceCount, "
+                + "(SELECT COALESCE(SUM(TotalAmount), 0) FROM Invoices WHERE CreatedBy = ? AND Status = 'ACTIVE' "
+                + "   AND CAST(CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)) AS Revenue, "
+                + "(SELECT COALESCE(SUM(d.Quantity), 0) FROM InvoiceDetails d "
+                + "   JOIN Invoices i ON i.InvoiceID = d.InvoiceID "
+                + "   WHERE i.CreatedBy = ? AND i.Status = 'ACTIVE' "
+                + "   AND CAST(i.CreatedAt AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)) AS ItemsSold, "
+                + "(SELECT COUNT(*) FROM Invoices WHERE CreatedBy = ? AND Status = 'CANCELLED' "
+                + "   AND CAST(COALESCE(CancelledAt, CreatedAt) AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)) AS CancelledCount";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, userId);
+            ps.setInt(3, userId);
+            ps.setInt(4, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new StaffDayStats(
+                            rs.getInt("InvoiceCount"),
+                            rs.getBigDecimal("Revenue"),
+                            rs.getLong("ItemsSold"),
+                            rs.getInt("CancelledCount"));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.getStaffDayStats - userId=" + userId, e);
+        }
+        return new StaffDayStats(0, java.math.BigDecimal.ZERO, 0, 0);
+    }
+
+    /** Số yêu cầu đổi/trả do nhân viên tạo còn PENDING. */
+    public int countMyPendingReturns(int userId) {
+        String sql = "SELECT COUNT(*) FROM ReturnExchanges WHERE CreatedBy = ? AND Status = 'PENDING'";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.countMyPendingReturns - userId=" + userId, e);
+        }
+        return 0;
+    }
+
+    /** Hóa đơn gần đây do nhân viên tạo (mọi trạng thái), tối đa {@code limit}. */
+    public List<StaffInvoiceItem> getStaffRecentInvoices(int userId, int limit) {
+        String sql = "SELECT InvoiceID, InvoiceCode, TotalAmount, Status, PaymentMethod, CreatedAt "
+                + "FROM Invoices WHERE CreatedBy = ? "
+                + "ORDER BY CreatedAt DESC, InvoiceID DESC LIMIT ?";
+        List<StaffInvoiceItem> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    java.sql.Timestamp ts = rs.getTimestamp("CreatedAt");
+                    list.add(new StaffInvoiceItem(
+                            rs.getInt("InvoiceID"),
+                            rs.getString("InvoiceCode"),
+                            rs.getBigDecimal("TotalAmount"),
+                            rs.getString("Status"),
+                            rs.getString("PaymentMethod"),
+                            ts != null ? ts.toLocalDateTime() : null));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.getStaffRecentInvoices - userId=" + userId, e);
+        }
+        return list;
+    }
+
+    /** Đổi/trả do tôi tạo còn PENDING (tối đa limit). */
+    public List<PendingReturnItem> getMyPendingReturns(int userId, int limit) {
+        String sql = "SELECT r.ReturnID, i.InvoiceCode, r.Type, u.FullName AS CreatedByName, "
+                + "r.TotalValue, r.CreatedAt "
+                + "FROM ReturnExchanges r "
+                + "JOIN Invoices i ON i.InvoiceID = r.InvoiceID "
+                + "JOIN Users u ON u.UserID = r.CreatedBy "
+                + "WHERE r.Status = 'PENDING' AND r.CreatedBy = ? "
+                + "ORDER BY r.CreatedAt DESC, r.ReturnID DESC LIMIT ?";
+        List<PendingReturnItem> list = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    java.sql.Timestamp ts = rs.getTimestamp("CreatedAt");
+                    list.add(new PendingReturnItem(
+                            rs.getInt("ReturnID"),
+                            rs.getString("InvoiceCode"),
+                            rs.getString("Type"),
+                            rs.getString("CreatedByName"),
+                            rs.getBigDecimal("TotalValue"),
+                            ts != null ? ts.toLocalDateTime() : null));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "DashboardDAO.getMyPendingReturns - userId=" + userId, e);
+        }
+        return list;
+    }
 }

@@ -300,6 +300,14 @@ public class AdminMainFrame extends JFrame {
                 && user.getRole() == Role.SALES_MANAGER;
     }
 
+    /** Nhân viên bán hàng (quầy / POS). */
+    private boolean isSalesStaff() {
+        var user = AuthService.getInstance().getCurrentUser();
+        return user != null
+                && user.getRole() == Role.SALES_STAFF;
+    }
+
+
     /**
      * Build toàn bộ MainLayout thành object độc lập.
      *
@@ -324,12 +332,25 @@ public class AdminMainFrame extends JFrame {
          * Quản lý kho:
          *      Dashboard = InventoryOverviewPanel
          *
-         * Role khác:
+         * Quản lý bán hàng:
+         *      Dashboard = SalesManagerDashboardPanel
+         *
+         * Nhân viên bán hàng:
+         *      Dashboard = SalesStaffDashboardPanel
+         *
+         * Role khác (Admin...):
          *      Dashboard = DashboardPanel
          */
-        JPanel dashboardPanel = isInventoryManager()
-                ? new InventoryOverviewPanel()
-                : new DashboardPanel();
+        JPanel dashboardPanel;
+        if (isInventoryManager()) {
+            dashboardPanel = new InventoryOverviewPanel();
+        } else if (isSalesManager()) {
+            dashboardPanel = new SalesManagerDashboardPanel();
+        } else if (isSalesStaff()) {
+            dashboardPanel = new SalesStaffDashboardPanel();
+        } else {
+            dashboardPanel = new DashboardPanel();
+        }
 
         layout.addPage(
                 "dashboard",
