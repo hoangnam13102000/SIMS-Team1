@@ -432,4 +432,199 @@ public class InventoryReportDAO {
 
         return new MonthlyCategoryTrend(months, series);
     }
+
+    // ---------------------------------------------------------------
+    // Lich su chung tu lam thay doi lo
+    // ---------------------------------------------------------------
+
+    public static class BatchHistory {
+        public final LocalDateTime changedAt;
+        public final String documentType;
+        public final String documentCode;
+        public final String batchCode;
+        public final String lotNumber;
+        public final String productCode;
+        public final String productName;
+        public final int quantity;
+        public final String direction;
+        public final String userName;
+        public final String note;
+        /** Ton kho cua LO nay NGAY TRUOC khi chung tu nay tac dong (tinh don, khong luu DB). */
+        public int stockBefore;
+        /** Ton kho cua LO nay NGAY SAU khi chung tu nay tac dong (tinh don, khong luu DB). */
+        public int stockAfter;
+
+        public BatchHistory(LocalDateTime changedAt, String documentType, String documentCode,
+                            String batchCode, String lotNumber, String productCode, String productName,
+                            int quantity, String direction, String userName, String note) {
+            this.changedAt = changedAt;
+            this.documentType = documentType;
+            this.documentCode = documentCode;
+            this.batchCode = batchCode;
+            this.lotNumber = lotNumber;
+            this.productCode = productCode;
+            this.productName = productName;
+            this.quantity = quantity;
+            this.direction = direction;
+            this.userName = userName;
+            this.note = note;
+        }
+    }
+
+    /**
+     * Lich su cac chung tu tac dong truc tiep toi tung lo.
+     *
+     * Nguon:
+     * - Phieu nhap: PurchaseReceiptDetails -> InventoryBatch
+     * - Hoa don ban/huy hoa don: InvoiceDetailBatches
+     * - Doi/tra: ReturnExchangeDetailBatches
+     * - Huy hang: StockDisposalDetails
+     * - Tra NCC: SupplierReturnDetails
+     *
+     * Loc theo 1 tu khoa chung (khop ma lo/so lo, ma chung tu, ma SP, ten SP)
+     * va khoang ngay - giao dien 1 o tim kiem duy nhat, giong PurchaseReceiptPanel/
+     * StockDisposalPanel thay vi 3 o rieng le.
+     */
+    private static String escapeLike(String value) {
+        if (value == null || value.isEmpty()) return value == null ? "" : value;
+        return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
+
+    public List<BatchHistory> getBatchHistory(String keyword, LocalDate fromDate, LocalDate toDate) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT x.ChangedAt, x.DocumentType, x.DocumentCode, x.BatchCode, x.LotNumber, " +
+                "       x.ProductCode, x.ProductName, x.Quantity, x.Direction, x.UserName, x.Note " +
+                "FROM (" +
+                // Phieu nhap: moi detail tao ra 1 batch.
+                " SELECT r.CreatedAt AS ChangedAt, 'PHIẾU NHẬP' AS DocumentType, r.ReceiptCode AS DocumentCode, " +
+                "        b.BatchCode, b.LotNumber, p.ProductCode, p.ProductName, d.Quantity, 'IN' AS Direction, " +
+                "        u.FullName AS UserName, r.Status AS Note " +
+                " FROM PurchaseReceiptDetails d " +
+                " JOIN PurchaseReceipts r ON r.ReceiptID = d.ReceiptID " +
+                " JOIN InventoryBatch b ON b.ReceiptDetailID = d.ReceiptDetailID " +
+                " JOIN Products p ON p.ProductID = d.ProductID " +
+                " JOIN Users u ON u.UserID = r.CreatedBy " +
+                " UNION ALL " +
+                // Hoa don ban: chi tiet batch ghi nhan FEFO.
+                " SELECT i.CreatedAt, " +
+                "        CASE WHEN i.Status = 'CANCELLED' THEN 'HỦY HÓA ĐƠN' ELSE 'HÓA ĐƠN BÁN' END, " +
+                "        i.InvoiceCode, b.BatchCode, b.LotNumber, p.ProductCode, p.ProductName, " +
+                "        idb.Quantity, CASE WHEN i.Status = 'CANCELLED' THEN 'IN' ELSE 'OUT' END, " +
+                "        u.FullName, i.Status " +
+                " FROM InvoiceDetailBatches idb " +
+                " JOIN InvoiceDetails d ON d.InvoiceDetailID = idb.InvoiceDetailID " +
+                " JOIN Invoices i ON i.InvoiceID = d.InvoiceID " +
+                " JOIN InventoryBatch b ON b.BatchID = idb.BatchID " +
+                " JOIN Products p ON p.ProductID = d.ProductID " +
+                " JOIN Users u ON u.UserID = i.CreatedBy " +
+                " UNION ALL " +
+                // Doi/tra hang: batch nao duoc nhap/xuat lai deu co lien ket.
+                " SELECT r.CreatedAt, " +
+                "        CASE WHEN r.Type = 'RETURN' THEN 'TRẢ HÀNG' ELSE 'ĐỔI HÀNG' END, " +
+                "        CONCAT('RT_', LPAD(r.ReturnID, 6, '0')), b.BatchCode, b.LotNumber, " +
+                "        p.ProductCode, p.ProductName, reb.Quantity, rd.Direction, u.FullName, r.Status " +
+                " FROM ReturnExchangeDetailBatches reb " +
+                " JOIN ReturnExchangeDetails rd ON rd.ReturnDetailID = reb.ReturnDetailID " +
+                " JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID " +
+                " JOIN InventoryBatch b ON b.BatchID = reb.BatchID " +
+                " JOIN Products p ON p.ProductID = rd.ProductID " +
+                " JOIN Users u ON u.UserID = r.CreatedBy " +
+                " WHERE r.Status = 'APPROVED' " +
+                " UNION ALL " +
+                // Huy hang.
+                " SELECT s.CreatedAt, 'PHIẾU HỦY', " +
+                "        COALESCE(s.DisposalCode, CONCAT('HUY_', LPAD(s.DisposalID, 6, '0'))), " +
+                "        b.BatchCode, b.LotNumber, p.ProductCode, p.ProductName, sd.Quantity, 'OUT', " +
+                "        u.FullName, s.Reason " +
+                " FROM StockDisposalDetails sd " +
+                " JOIN StockDisposals s ON s.DisposalID = sd.DisposalID " +
+                " JOIN InventoryBatch b ON b.BatchID = sd.BatchID " +
+                " JOIN Products p ON p.ProductID = sd.ProductID " +
+                " JOIN Users u ON u.UserID = s.CreatedBy " +
+                " WHERE s.Status = 'COMPLETED' " +
+                " UNION ALL " +
+                // Tra lai nha cung cap.
+                " SELECT s.CreatedAt, 'TRẢ NHÀ CUNG CẤP', " +
+                "        COALESCE(s.SupplierReturnCode, CONCAT('NCC_', LPAD(s.SupplierReturnID, 6, '0'))), " +
+                "        b.BatchCode, b.LotNumber, p.ProductCode, p.ProductName, srd.Quantity, 'OUT', " +
+                "        u.FullName, s.Reason " +
+                " FROM SupplierReturnDetails srd " +
+                " JOIN SupplierReturns s ON s.SupplierReturnID = srd.SupplierReturnID " +
+                " JOIN InventoryBatch b ON b.BatchID = srd.BatchID " +
+                " JOIN Products p ON p.ProductID = srd.ProductID " +
+                " JOIN Users u ON u.UserID = s.CreatedBy " +
+                " WHERE s.Status = 'COMPLETED' " +
+                ") x WHERE 1=1");
+
+        List<Object> params = new ArrayList<>();
+        String kw = keyword == null ? "" : keyword.trim();
+
+        if (!kw.isEmpty()) {
+            sql.append(" AND (x.BatchCode LIKE ? ESCAPE '!' OR x.LotNumber LIKE ? ESCAPE '!'" +
+                    " OR x.DocumentCode LIKE ? ESCAPE '!' OR x.ProductCode LIKE ? ESCAPE '!'" +
+                    " OR x.ProductName LIKE ? ESCAPE '!')");
+            String v = "%" + escapeLike(kw) + "%";
+            params.add(v); params.add(v); params.add(v); params.add(v); params.add(v);
+        }
+        // KHONG loc theo ngay o day: can lay DU lich su cua lo (ke ca truoc "tu ngay")
+        // moi tinh dung "ton truoc/sau" (tinh don o tang ung dung, khong luu DB).
+        // Loc ngay se ap dung SAU KHI da tinh xong ton luy ke, xem ben duoi.
+        sql.append(" ORDER BY x.BatchCode, x.ChangedAt ASC");
+
+        List<BatchHistory> all = new ArrayList<>();
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) ps.setObject(i + 1, params.get(i));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Timestamp ts = rs.getTimestamp("ChangedAt");
+                    all.add(new BatchHistory(
+                            ts != null ? ts.toLocalDateTime() : null,
+                            rs.getString("DocumentType"),
+                            rs.getString("DocumentCode"),
+                            rs.getString("BatchCode"),
+                            rs.getString("LotNumber"),
+                            rs.getString("ProductCode"),
+                            rs.getString("ProductName"),
+                            rs.getInt("Quantity"),
+                            rs.getString("Direction"),
+                            rs.getString("UserName"),
+                            rs.getString("Note")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "InventoryReportDAO.getBatchHistory", e);
+            return new ArrayList<>();
+        }
+
+        // Tinh ton luy ke TRUOC/SAU cho tung LO, di theo dung thu tu thoi gian
+        // (lo moi luon bat dau tu 0 - dong dau tien chinh la phieu nhap tao ra lo).
+        Map<String, Integer> running = new LinkedHashMap<>();
+        for (BatchHistory h : all) {
+            int before = running.getOrDefault(h.batchCode, 0);
+            int delta = "IN".equalsIgnoreCase(h.direction) ? h.quantity : -h.quantity;
+            int after = before + delta;
+            h.stockBefore = before;
+            h.stockAfter = after;
+            running.put(h.batchCode, after);
+        }
+
+        // Loc theo khoang ngay SAU KHI da tinh xong ton luy ke, roi sap xep MOI NHAT truoc.
+        Timestamp fromTs = fromDate != null ? Timestamp.valueOf(fromDate.atStartOfDay()) : null;
+        Timestamp toTs = toDate != null ? Timestamp.valueOf(toDate.plusDays(1).atStartOfDay()) : null;
+        List<BatchHistory> result = new ArrayList<>();
+        for (BatchHistory h : all) {
+            if (h.changedAt == null) continue;
+            Timestamp ts = Timestamp.valueOf(h.changedAt);
+            if (fromTs != null && ts.before(fromTs)) continue;
+            if (toTs != null && !ts.before(toTs)) continue;
+            result.add(h);
+        }
+        result.sort((a, b) -> b.changedAt.compareTo(a.changedAt));
+        return result;
+    }
+
+
 }

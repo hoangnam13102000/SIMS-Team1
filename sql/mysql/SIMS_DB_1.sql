@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Aug 19, 2026 at 02:31 AM
+-- Generation Time: Aug 19, 2026 at 01:50 PM
 -- Server version: 8.0.46-0ubuntu0.22.04.3
 -- PHP Version: 8.1.2-1ubuntu2.24
 
@@ -1604,7 +1604,185 @@ INSERT INTO `AuditLogs` (`LogID`, `UserID`, `Action`, `TableName`, `RecordID`, `
 (1289, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-18 23:42:13'),
 (1290, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-18 23:45:31'),
 (1291, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-18 23:46:02'),
-(1292, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-18 23:48:29');
+(1292, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-18 23:48:29'),
+(1293, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 09:59:31'),
+(1294, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 10:01:23'),
+(1295, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 10:11:35'),
+(1296, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 10:11:35'),
+(1297, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 10:19:31'),
+(1298, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 10:19:48'),
+(1299, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 10:19:49'),
+(1300, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 10:26:02'),
+(1301, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 10:30:10'),
+(1302, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 10:30:10'),
+(1303, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 10:46:27'),
+(1304, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 10:46:48'),
+(1305, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 10:46:49'),
+(1306, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 10:51:48'),
+(1307, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 10:52:08'),
+(1308, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 10:52:08'),
+(1309, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 10:52:29'),
+(1310, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 10:58:57'),
+(1311, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 10:58:58'),
+(1312, 1, 'CREATE', 'PRODUCT', 14, NULL, '{\"productId\":14,\"productCode\":\"SP_0014\",\"productName\":\"Nước rửa chén Sunlight chanh 694\",\"categoryId\":4,\"categoryName\":\"Thực phẩm khô\",\"brand\":\"Sunlight\",\"unit\":\"Chai\",\"weightVolume\":\"750ml\",\"description\":\"Nước rửa chén hương chanh, đánh bay dầu mỡ hiệu quả.\",\"importPrice\":0,\"sellPrice\":25000,\"autoPrice\":false,\"stock\":0,\"minStock\":18,\"status\":\"ACTIVE\"}', 'Đã thêm mới sản phẩm', NULL, '2026-08-19 10:59:24'),
+(1313, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 11:03:19'),
+(1314, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 11:03:39'),
+(1315, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 11:03:39'),
+(1316, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 11:13:10'),
+(1317, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 11:13:39'),
+(1318, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 11:13:39'),
+(1319, 1, 'CREATE', 'SUPPLIER', 6, NULL, '{\"supplierId\":6,\"supplierName\":\"Công ty TNHH Thực phẩm \\u0026 Đồ uống Miền Nam - CN988\",\"address\":\"123 Nguyễn Văn Linh, Quận 7, TP.HCM\",\"phone\":\"0360362297\",\"email\":\"thucphammiennam988@gmail.com\",\"suppliedItems\":\"Nước ngọt, nước suối, nước tăng lực\",\"productCount\":0}', 'Đã thêm mới nhà cung cấp', NULL, '2026-08-19 11:14:01'),
+(1320, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 11:18:06'),
+(1321, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 11:21:57'),
+(1322, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 11:21:57'),
+(1323, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 11:24:35'),
+(1324, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 11:25:05'),
+(1325, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 11:25:06'),
+(1326, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 11:27:27'),
+(1327, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 11:34:34'),
+(1328, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 11:34:34'),
+(1329, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 11:35:34'),
+(1330, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 11:37:19'),
+(1331, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 11:37:19'),
+(1332, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 11:38:26'),
+(1333, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 11:49:32'),
+(1334, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 11:49:33'),
+(1335, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 12:01:26'),
+(1336, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 12:01:26'),
+(1337, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 12:09:04'),
+(1338, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 12:10:02'),
+(1339, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 12:11:27'),
+(1340, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 12:14:35'),
+(1341, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 12:18:47'),
+(1342, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 12:18:55'),
+(1343, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 12:20:53'),
+(1344, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 12:21:05'),
+(1345, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 12:21:43'),
+(1346, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 13:31:28'),
+(1347, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 13:50:35'),
+(1348, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 13:52:27'),
+(1349, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 13:52:36'),
+(1350, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 14:01:36'),
+(1351, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:02:19'),
+(1352, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:05:20'),
+(1353, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 14:05:36'),
+(1354, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 14:05:42'),
+(1355, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:08:07'),
+(1356, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:09:32'),
+(1357, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:16:44'),
+(1358, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:18:50'),
+(1359, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:26:16'),
+(1360, 2, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng nhập', NULL, '2026-08-19 07:26:17'),
+(1361, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:40:42'),
+(1362, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:50:57'),
+(1363, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 14:52:40'),
+(1364, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:52:54'),
+(1365, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 14:55:57'),
+(1366, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:03:17'),
+(1367, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 15:04:27'),
+(1368, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:05:44'),
+(1369, 2, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng xuất', NULL, '2026-08-19 08:12:37'),
+(1370, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 15:25:17'),
+(1371, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:25:35'),
+(1372, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:29:39'),
+(1373, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 15:29:56'),
+(1374, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:30:20'),
+(1375, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:32:08'),
+(1376, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:34:09'),
+(1377, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:39:58'),
+(1378, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 15:41:08'),
+(1379, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:19:18'),
+(1380, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 16:20:26'),
+(1381, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:21:08'),
+(1382, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 16:27:26'),
+(1383, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 16:27:26'),
+(1384, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:28:27'),
+(1385, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 16:30:12'),
+(1386, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:30:24'),
+(1387, 1, 'UPDATE', 'ROLE_PERMISSION', NULL, NULL, NULL, 'Cập nhật quyền cho vai trò \"Quản lý kho\" (INVENTORY_MANAGER)', NULL, '2026-08-19 16:30:29'),
+(1388, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 16:30:38'),
+(1389, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:30:41'),
+(1390, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 16:31:02'),
+(1391, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:31:53'),
+(1392, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 16:38:36'),
+(1393, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 16:38:42'),
+(1394, 2, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng nhập', NULL, '2026-08-19 09:39:06'),
+(1395, 2, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng xuất', NULL, '2026-08-19 09:42:37'),
+(1396, 2, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng nhập', NULL, '2026-08-19 16:44:37'),
+(1397, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:54:05'),
+(1398, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 16:54:32'),
+(1399, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 16:57:13'),
+(1400, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 17:02:56'),
+(1401, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 17:03:03'),
+(1402, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 17:09:13'),
+(1403, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:09:24'),
+(1404, 2, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng xuất', NULL, '2026-08-19 17:13:11'),
+(1405, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 17:15:36'),
+(1406, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 17:15:48'),
+(1407, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 17:20:09'),
+(1408, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 17:20:18'),
+(1409, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:21:02'),
+(1410, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 17:21:13'),
+(1411, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:21:22'),
+(1412, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 17:21:51'),
+(1413, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:28:18'),
+(1414, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 17:28:29'),
+(1415, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 17:28:35'),
+(1416, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:29:54'),
+(1417, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 17:34:18'),
+(1418, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 17:34:26'),
+(1419, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 17:36:37'),
+(1420, 2, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng nhập', NULL, '2026-08-19 17:36:47'),
+(1421, 2, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng xuất', NULL, '2026-08-19 17:39:48'),
+(1422, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:43:37'),
+(1423, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:49:15'),
+(1424, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 17:50:36'),
+(1425, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 18:06:41'),
+(1426, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 18:12:57'),
+(1427, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 18:19:06'),
+(1428, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 18:39:54'),
+(1429, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 18:48:38'),
+(1430, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 18:57:37'),
+(1431, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:00:49'),
+(1432, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:06:08'),
+(1433, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:07:40'),
+(1434, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:09:36'),
+(1435, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:13:27'),
+(1436, 3, 'LOGIN_FAILED', 'USER', NULL, NULL, NULL, 'Đăng nhập thất bại với tên đăng nhập \"invmgr\"', NULL, '2026-08-19 19:18:13'),
+(1437, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:18:15'),
+(1438, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:28:00'),
+(1439, 2, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng nhập', NULL, '2026-08-19 19:29:38'),
+(1440, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:33:39'),
+(1441, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:41:26'),
+(1442, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:46:23'),
+(1443, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:50:02'),
+(1444, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 19:59:28'),
+(1445, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:01:21'),
+(1446, 2, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng xuất', NULL, '2026-08-19 20:01:27'),
+(1447, 2, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng nhập', NULL, '2026-08-19 20:01:41'),
+(1448, 2, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hà Minh Tuấn đã đăng xuất', NULL, '2026-08-19 20:07:28'),
+(1449, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 20:08:13'),
+(1450, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 20:08:13'),
+(1451, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:15:47'),
+(1452, 1, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng xuất', NULL, '2026-08-19 20:24:13'),
+(1453, 1, 'LOGIN_2FA_SUCCESS', 'USER', NULL, NULL, NULL, 'Xác thực 2FA (Email OTP) thành công khi đăng nhập', NULL, '2026-08-19 20:24:21'),
+(1454, 1, 'LOGIN', 'USER', NULL, NULL, NULL, 'Hoàng Trung Nam đã đăng nhập', NULL, '2026-08-19 20:24:21'),
+(1455, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:24:28'),
+(1456, 4, 'LOGIN', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng nhập', NULL, '2026-08-19 20:24:34'),
+(1457, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 20:27:41');
+INSERT INTO `AuditLogs` (`LogID`, `UserID`, `Action`, `TableName`, `RecordID`, `OldValue`, `NewValue`, `Detail`, `IPAddress`, `CreatedAt`) VALUES
+(1458, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:29:02'),
+(1459, 4, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Lê Hoa Trường Vũ đã đăng xuất', NULL, '2026-08-19 20:29:54'),
+(1460, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:30:56'),
+(1461, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 20:34:29'),
+(1462, 11, 'LOGIN', 'USER', NULL, NULL, NULL, 'Khách hàng Demo đã đăng nhập', NULL, '2026-08-19 20:34:43'),
+(1463, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:36:28'),
+(1464, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 20:37:00'),
+(1465, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:42:43'),
+(1466, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 20:43:22'),
+(1467, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:43:57'),
+(1468, 3, 'LOGOUT', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng xuất', NULL, '2026-08-19 20:44:18'),
+(1469, 3, 'LOGIN', 'USER', NULL, NULL, NULL, 'Trần Tài Phương đã đăng nhập', NULL, '2026-08-19 20:45:37');
 
 -- --------------------------------------------------------
 
@@ -1657,9 +1835,9 @@ INSERT INTO `ChatConversations` (`ConversationID`, `ConversationType`, `Customer
 (1, 'CUSTOMER_SUPPORT', 6, NULL, NULL, '2026-08-12 07:53:32', '2026-08-18 20:40:53', 0),
 (2, 'STAFF_DM', NULL, 4, 5, '2026-08-12 05:53:32', '2026-08-12 09:53:32', 0),
 (3, 'STAFF_DM', NULL, 2, 4, '2026-08-14 19:18:02', '2026-08-14 19:18:03', 0),
-(4, 'STAFF_DM', NULL, 1, 4, '2026-08-14 19:18:12', '2026-08-15 09:09:07', 0),
+(4, 'STAFF_DM', NULL, 1, 4, '2026-08-14 19:18:12', '2026-08-19 20:26:48', 0),
 (5, 'STAFF_DM', NULL, 2, 3, '2026-08-15 05:23:08', '2026-08-15 13:15:19', 0),
-(6, 'STAFF_DM', NULL, 1, 3, '2026-08-15 05:24:26', '2026-08-18 20:03:25', 0),
+(6, 'STAFF_DM', NULL, 1, 3, '2026-08-15 05:24:26', '2026-08-19 20:33:17', 0),
 (7, 'STAFF_DM', NULL, 3, 4, '2026-08-15 09:09:50', '2026-08-15 09:10:13', 0),
 (8, 'STAFF_DM', NULL, 1, 2, '2026-08-15 10:21:44', '2026-08-15 13:15:07', 0);
 
@@ -1723,7 +1901,12 @@ INSERT INTO `ChatMessages` (`MessageID`, `ConversationID`, `SenderUserID`, `Send
 (49, 1, 4, 'Lê Hoa Trường Vũ', 1, NULL, NULL, NULL, 'uploads/chat/files/f_1786969127587_Import_SanPham_Mau.xlsx', 'Import_SanPham_Mau.xlsx', '2026-08-17 19:18:49', 0),
 (50, 6, 3, 'Trần Tài Phương', 1, 'eh', NULL, NULL, NULL, NULL, '2026-08-18 20:03:13', 0),
 (51, 6, 1, 'Hoàng Trung Nam', 1, 'hi', NULL, NULL, NULL, NULL, '2026-08-18 20:03:24', 0),
-(52, 1, 6, 'Nguyễn Thị Lan', 0, 'aloo', NULL, NULL, NULL, NULL, '2026-08-18 20:40:53', 0);
+(52, 1, 6, 'Nguyễn Thị Lan', 0, 'aloo', NULL, NULL, NULL, NULL, '2026-08-18 20:40:53', 0),
+(53, 4, 4, 'Lê Hoa Trường Vũ', 1, 'hi', NULL, NULL, NULL, NULL, '2026-08-19 20:26:35', 0),
+(54, 4, 1, 'Hoàng Trung Nam', 1, 'hi', NULL, NULL, NULL, NULL, '2026-08-19 20:26:47', 0),
+(55, 6, 3, 'Trần Tài Phương', 1, 'hi', NULL, NULL, NULL, NULL, '2026-08-19 20:30:03', 0),
+(56, 6, 3, 'Trần Tài Phương', 1, 'hiii', NULL, NULL, NULL, NULL, '2026-08-19 20:30:07', 0),
+(57, 6, 3, 'Trần Tài Phương', 1, 'hiii', NULL, NULL, NULL, NULL, '2026-08-19 20:33:16', 0);
 
 -- --------------------------------------------------------
 
@@ -1745,7 +1928,7 @@ CREATE TABLE `Customers` (
 INSERT INTO `Customers` (`CustomerID`, `CustomerCode`, `MemberPoint`, `CreatedAt`) VALUES
 (6, 'CUS_0006', 120, '2026-08-12 10:53:30'),
 (7, 'CUS_0007', 35, '2026-08-12 10:53:30'),
-(8, 'CUS_0008', 68, '2026-08-12 10:53:30'),
+(8, 'CUS_0008', 58, '2026-08-12 10:53:30'),
 (9, 'CUS_0009', 12, '2026-08-12 10:53:30'),
 (10, 'CUS_0010', 0, '2026-08-12 10:53:30'),
 (11, 'CUS_0011', 0, '2026-08-12 10:53:32');
@@ -1837,16 +2020,16 @@ INSERT INTO `InventoryBatch` (`BatchID`, `BatchCode`, `LotNumber`, `ProductID`, 
 (6, 'LOT_000006', 'LOT-TRAXANH-001', 6, 2, 6, '2026-08-02', '2027-02-08', '2026-08-12 10:53:30', '6000', 300, 270, 'ACTIVE', '2026-08-12 10:53:30'),
 (7, 'LOT_000007', 'LOT-CAPHE-001', 7, 2, 7, '2026-08-04', '2027-08-12', '2026-08-12 10:53:30', '65000', 150, 147, 'ACTIVE', '2026-08-12 10:53:30'),
 (8, 'LOT_000008', 'LOT-CAPHE-EXP-001', 7, 2, 10, '2025-07-13', '2026-08-07', '2026-08-12 10:53:30', '65000', 20, 0, 'DEPLETED', '2026-08-12 10:53:30'),
-(9, 'LOT_000009', 'LOT-CACHUA-001', 3, 3, 3, '2026-08-01', '2026-09-01', '2026-08-12 10:53:30', '17500', 200, 191, 'ACTIVE', '2026-08-12 10:53:30'),
+(9, 'LOT_000009', 'LOT-CACHUA-001', 3, 3, 3, '2026-08-01', '2026-09-01', '2026-08-12 10:53:30', '17500', 200, 189, 'ACTIVE', '2026-08-12 10:53:30'),
 (10, 'LOT_000010', 'LOT-CAROT-001', 4, 3, 4, '2026-08-01', '2026-09-16', '2026-08-12 10:53:30', '12000', 250, 247, 'ACTIVE', '2026-08-12 10:53:30'),
 (11, 'LOT_000011', 'LOT-SUA-001', 9, 4, 8, '2026-08-03', '2026-09-06', '2026-08-12 10:53:30', '28000', 200, 198, 'ACTIVE', '2026-08-12 10:53:30'),
 (12, 'LOT_000012', 'LOT-BANHQUY-001', 10, 4, 9, '2026-08-03', '2026-10-11', '2026-08-12 10:53:30', '20000', 8, 0, 'ACTIVE', '2026-08-12 10:53:30'),
-(16, 'LOT_000016', 'LOT-BQ-022', 10, 4, 18, '2026-08-14', '2026-11-21', '2026-08-14 10:48:27', '20000', 8, 8, 'ACTIVE', '2026-08-14 10:48:27'),
+(16, 'LOT_000016', 'LOT-BQ-022', 10, 4, 18, '2026-08-14', '2026-11-21', '2026-08-14 10:48:27', '20000', 8, 0, 'DEPLETED', '2026-08-14 10:48:27'),
 (17, 'LOT_000017', 'LOT_BQ_001', 10, 2, 19, '2026-08-15', '2026-11-14', '2026-08-15 13:52:03', '20000', 100, 99, 'DEPLETED', '2026-08-15 13:52:03'),
 (18, 'LOT_000018', 'LOT-BANHQUYBO-002', 10, 4, 20, '2026-08-18', '2026-11-14', '2026-08-18 10:34:11', '20000', 10, 10, 'ACTIVE', '2026-08-18 10:34:11'),
 (19, 'LOT_000019', 'LOT-MITOMHAOHAO', 8, 4, 21, '2026-08-18', '2026-08-20', '2026-08-18 15:58:08', '90000', 2, 0, 'DEPLETED', '2026-08-18 15:58:08'),
 (20, 'LOT_000020', 'LOT-HAOHAO-003', 8, 4, 22, '2026-08-18', '2026-08-20', '2026-08-18 16:08:42', '90000', 2, 0, 'DEPLETED', '2026-08-18 16:08:42'),
-(21, 'LOT_000021', 'LOT-CHUOIGIA-012', 10, 4, 23, '2026-08-18', '2026-08-23', '2026-08-18 21:06:32', '30000', 10, 10, 'ACTIVE', '2026-08-18 21:06:32'),
+(21, 'LOT_000021', 'LOT-CHUOIGIA-012', 10, 4, 23, '2026-08-18', '2026-08-23', '2026-08-18 21:06:32', '30000', 10, 5, 'DEPLETED', '2026-08-18 21:06:32'),
 (22, 'LOT_000022', 'LOT-CHUOIGIA-013', 2, 4, 24, '2026-08-18', '2026-08-23', '2026-08-18 21:07:37', '30000', 10, 9, 'ACTIVE', '2026-08-18 21:07:37');
 
 -- --------------------------------------------------------
@@ -1979,7 +2162,13 @@ INSERT INTO `InventoryTransactions` (`TransactionID`, `ProductID`, `TransactionT
 (102, 4, 'RETURN_IN', 'IN', 1, 246, 247, 'ReturnExchanges', 13, 1, '2026-08-18 20:56:35', NULL),
 (103, 10, 'IMPORT', 'IN', 10, 117, 127, 'PurchaseReceipts', 17, 3, '2026-08-18 21:06:32', NULL),
 (104, 2, 'IMPORT', 'IN', 10, 395, 405, 'PurchaseReceipts', 18, 3, '2026-08-18 21:07:37', NULL),
-(105, 2, 'SALE', 'OUT', 1, 405, 404, 'Invoices', 40, 4, '2026-08-18 21:19:29', NULL);
+(105, 2, 'SALE', 'OUT', 1, 405, 404, 'Invoices', 40, 4, '2026-08-18 21:19:29', NULL),
+(106, 10, 'SUPPLIER_RETURN', 'OUT', 8, 127, 119, 'SupplierReturns', 3, 3, '2026-08-19 14:20:09', 'Trả NCC QUALITY TRNC_000003'),
+(107, 10, 'DISPOSAL', 'OUT', 5, 119, 114, 'StockDisposals', 19, 3, '2026-08-19 14:23:06', 'Tieu huy EXPIRED TH_000019'),
+(108, 3, 'SALE', 'OUT', 3, 191, 188, 'Invoices', 41, 4, '2026-08-19 17:16:50', NULL),
+(109, 10, 'SALE', 'OUT', 1, 114, 113, 'Invoices', 41, 4, '2026-08-19 17:16:50', NULL),
+(110, 3, 'RETURN_IN', 'IN', 1, 188, 189, 'ReturnExchanges', 14, 4, '2026-08-19 17:37:03', NULL),
+(111, 10, 'RETURN_IN', 'IN', 1, 113, 10, 'ReturnExchanges', 14, 4, '2026-08-19 17:37:03', NULL);
 
 -- --------------------------------------------------------
 
@@ -2021,7 +2210,9 @@ INSERT INTO `InvoiceDetailBatches` (`InvoiceDetailID`, `BatchID`, `Quantity`) VA
 (65, 9, 1),
 (66, 10, 1),
 (67, 11, 2),
-(68, 22, 1);
+(68, 22, 1),
+(69, 9, 3),
+(70, 18, 1);
 
 -- --------------------------------------------------------
 
@@ -2110,7 +2301,9 @@ INSERT INTO `InvoiceDetails` (`InvoiceDetailID`, `InvoiceID`, `ProductID`, `Quan
 (65, 39, 3, 1, '24000'),
 (66, 39, 4, 1, '17000'),
 (67, 39, 9, 2, '33000'),
-(68, 40, 2, 1, '35000');
+(68, 40, 2, 1, '35000'),
+(69, 41, 3, 3, '24000'),
+(70, 41, 10, 1, '38000');
 
 --
 -- Triggers `InvoiceDetails`
@@ -2265,7 +2458,8 @@ INSERT INTO `Invoices` (`InvoiceID`, `InvoiceCode`, `ShiftID`, `CreatedBy`, `Cus
 (37, 'HD-20260818-0037', 32, 4, NULL, '2026-08-18 18:23:37', '0', '0', NULL, NULL, '0.00', '0', '24000', 'BANK_TRANSFER', NULL, NULL, 1787052177796, '54668f3e266a479cab59de74f8daf651', 'FT26230KM8KD', 'ACTIVE', NULL, NULL, 0, '0'),
 (38, 'HD-20260818-0038', 35, 4, NULL, '2026-08-18 20:40:58', '89000', '0', NULL, NULL, '0.00', '89000', '89000', 'BANK_TRANSFER', NULL, NULL, 1787060360763, 'bad80d2e725143b4993f6c3d9841b919', 'FT26230L065F', 'ACTIVE', NULL, NULL, 0, '0'),
 (39, 'HD-20260818-0039', 36, 1, NULL, '2026-08-18 20:55:58', '66000', '0', NULL, NULL, '0.00', '66000', '107000', 'CASH', NULL, NULL, NULL, NULL, NULL, 'ACTIVE', NULL, NULL, 0, '0'),
-(40, 'HD-20260818-0040', 35, 4, NULL, '2026-08-18 21:19:29', '35000', '0', NULL, NULL, '0.00', '35000', '35000', 'CASH', NULL, NULL, NULL, NULL, NULL, 'ACTIVE', NULL, NULL, 0, '0');
+(40, 'HD-20260818-0040', 35, 4, NULL, '2026-08-18 21:19:29', '35000', '0', NULL, NULL, '0.00', '35000', '35000', 'CASH', NULL, NULL, NULL, NULL, NULL, 'ACTIVE', NULL, NULL, 0, '0'),
+(41, 'HD-20260819-0041', 35, 4, 8, '2026-08-19 17:16:50', '48000', '8727', 5, 'FREESHIP', '0.00', '29673', '68000', 'CASH', NULL, NULL, NULL, NULL, NULL, 'ACTIVE', NULL, NULL, 22, '9600');
 
 --
 -- Triggers `Invoices`
@@ -2388,7 +2582,8 @@ INSERT INTO `OrderDetails` (`OrderDetailID`, `OrderID`, `ProductID`, `ProductNam
 (4, 3, 6, 'Trà xanh Không Độ 500ml', 6, '8500'),
 (5, 3, 5, 'Nước suối 500ml', 6, '6000'),
 (6, 4, 3, 'Cà chua', 2, '24000'),
-(7, 5, 2, 'Chuối già', 2, '20000');
+(7, 5, 2, 'Chuối già', 2, '20000'),
+(8, 6, 4, 'Cà rốt', 2, '17000');
 
 -- --------------------------------------------------------
 
@@ -2432,7 +2627,8 @@ INSERT INTO `Orders` (`OrderID`, `OrderCode`, `CustomerID`, `CustomerName`, `Cus
 (2, 'DH0002', 7, 'Trần Văn Hùng', 'hung.tran@gmail.com', '0987654321', '45 Lý Thường Kiệt, Q.10, TP.HCM', '2026-08-11 10:53:32', '89000', '0', NULL, NULL, '8.00', '89000', 'PAYPAL', 'PAID', NULL, NULL, 'CONFIRMED', 1, NULL, NULL, NULL),
 (3, 'DH0003', 8, 'Phạm Thị Mai', 'mai.pham@gmail.com', '0933112233', '78 Điện Biên Phủ, Bình Thạnh, TP.HCM', '2026-08-10 10:53:32', '87000', '0', NULL, NULL, '8.00', '87000', 'COD', 'PENDING', NULL, NULL, 'SHIPPING', 1, NULL, NULL, NULL),
 (4, 'DH0004', 9, 'Lê Anh Đức', 'duc.le@gmail.com', '0977665544', '9 Hoàng Diệu, Hải Châu, Đà Nẵng', '2026-08-08 10:53:32', '48000', '0', NULL, NULL, '8.00', '48000', 'PAYPAL', 'PAID', NULL, NULL, 'COMPLETED', 1, NULL, '2026-08-09 10:53:32', NULL),
-(5, 'DH0005', NULL, 'Khách vãng lai - Đỗ Văn Kiên', 'kien.do.guest@gmail.com', '0909998888', '23 Phan Đăng Lưu, Phú Nhuận, TP.HCM', '2026-08-09 10:53:32', '40000', '0', NULL, NULL, '8.00', '40000', 'COD', 'FAILED', NULL, NULL, 'CANCELLED', 1, 'Khách đổi ý, không còn nhu cầu mua nữa', NULL, NULL);
+(5, 'DH0005', NULL, 'Khách vãng lai - Đỗ Văn Kiên', 'kien.do.guest@gmail.com', '0909998888', '23 Phan Đăng Lưu, Phú Nhuận, TP.HCM', '2026-08-09 10:53:32', '40000', '0', NULL, NULL, '8.00', '40000', 'COD', 'FAILED', NULL, NULL, 'CANCELLED', 1, 'Khách đổi ý, không còn nhu cầu mua nữa', NULL, NULL),
+(6, 'DH0006', 11, 'Khách hàng Demo', 'customer1@sims.local', '0901234567', 'sdf', '2026-08-19 20:35:05', '34000', '0', NULL, NULL, '8.00', '34000', 'COD', 'PENDING', NULL, NULL, 'NEW', 1, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -2544,14 +2740,14 @@ CREATE TABLE `Products` (
 INSERT INTO `Products` (`ProductID`, `ProductCode`, `ProductName`, `CategoryID`, `Brand`, `Unit`, `WeightVolume`, `Description`, `ImportPrice`, `SellPrice`, `Margin`, `AutoPrice`, `ImageUrl`, `Stock`, `MinStock`, `Status`, `CreatedAt`, `UpdatedAt`) VALUES
 (1, 'SP_0001', 'Táo Envy', 1, NULL, NULL, NULL, NULL, '35000', '40000', '10000', 1, 'https://res.cloudinary.com/dk4todoe8/image/upload/v1787062104/tao-envy_wtde2f.jpg', 175, 10, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-18 21:08:25'),
 (2, 'SP_0002', 'Chuối già', 1, NULL, NULL, NULL, NULL, '30000', '35000', '5000', 1, 'uploads/products/chuoi-gia.jpg', 404, 15, 'ACTIVE', '2026-08-12 10:53:30', NULL),
-(3, 'SP_0003', 'Cà chua', 2, NULL, NULL, NULL, NULL, '17500', '24000', '6500', 1, 'uploads/products/ca-chua.jpg', 191, 10, 'ACTIVE', '2026-08-12 10:53:30', NULL),
+(3, 'SP_0003', 'Cà chua', 2, NULL, NULL, NULL, NULL, '17500', '24000', '6500', 1, 'uploads/products/ca-chua.jpg', 189, 10, 'ACTIVE', '2026-08-12 10:53:30', NULL),
 (4, 'SP_0004', 'Cà rốt', 2, NULL, NULL, NULL, NULL, '12000', '17000', '5000', 1, 'https://res.cloudinary.com/dk4todoe8/image/upload/v1787060763/ca-rot_twbcpb.jpg', 247, 10, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-18 20:46:04'),
 (5, 'SP_0005', 'Nước suối 500ml', 3, NULL, NULL, NULL, NULL, '4000', '9000', '2000', 1, 'https://res.cloudinary.com/dk4todoe8/image/upload/v1787060803/nuoc-suoi_uhocmp.jpg', 500, 30, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-18 20:46:44'),
 (6, 'SP_0006', 'Trà xanh Không Độ 500ml', 3, NULL, NULL, NULL, NULL, '6000', '11000', '2500', 1, 'https://res.cloudinary.com/jcgabkar/image/upload/v1786791955/ymamfyauyxidkkycujo8.jpg', 270, 20, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-15 18:05:56'),
 (7, 'SP_0007', 'Cà phê bột 500g', 4, NULL, NULL, NULL, NULL, '65000', '70000', '24000', 1, 'https://res.cloudinary.com/dk4todoe8/image/upload/v1787062040/ca-phe-bot_rvdd7o.jpg', 147, 5, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-18 21:07:21'),
 (8, 'SP_0008', 'Mì tôm Hảo Hảo (thùng)', 4, NULL, NULL, NULL, NULL, '90000', '105000', '15000', 1, 'https://res.cloudinary.com/jcgabkar/image/upload/v1786799749/k1mqe1gx8qivvdc4rttk.jpg', 0, 5, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-18 15:57:13'),
 (9, 'SP_0009', 'Sữa tươi Vinamilk 1L', 5, NULL, NULL, NULL, NULL, '28000', '33000', '8000', 1, 'https://res.cloudinary.com/jcgabkar/image/upload/v1786799711/lab1kvrjppicd6gbggel.jpg', 198, 20, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-17 22:21:41'),
-(10, 'SP_0010', 'Bánh quy bơ 200g', 6, NULL, NULL, NULL, NULL, '30000', '38000', '8000', 1, 'https://res.cloudinary.com/jcgabkar/image/upload/v1786799625/sczmbnlbdtyop7oxlwav.jpg', 127, 10, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-15 20:13:46'),
+(10, 'SP_0010', 'Bánh quy bơ 200g', 6, NULL, NULL, NULL, NULL, '30000', '38000', '8000', 1, 'https://res.cloudinary.com/jcgabkar/image/upload/v1786799625/sczmbnlbdtyop7oxlwav.jpg', 10, 10, 'ACTIVE', '2026-08-12 10:53:30', '2026-08-15 20:13:46'),
 (11, 'SP_0011', 'Bánh quy Cosy 300g', 6, 'Cosy', NULL, NULL, 'Bánh quy bơ giòn tan', '0', '5000', NULL, 1, 'https://res.cloudinary.com/dk4todoe8/image/upload/v1786934962/banh-cosy-quy-bo_bmc4ip.jpg', 0, 0, 'DISABLED', '2026-08-15 13:29:40', '2026-08-17 09:49:23'),
 (12, 'SP_0012', 'Nước suối Lavie 500ml', 3, 'Lavie', NULL, NULL, 'Nước khoáng thiên nhiên', '0', '5000', NULL, 1, 'https://res.cloudinary.com/dk4todoe8/image/upload/v1786934937/dat-nuoc-lavie_aemtsn.jpg', 0, 0, 'DISABLED', '2026-08-15 13:29:41', '2026-08-17 09:48:58'),
 (13, 'SP_0013', 'Cà phê bột Trung Nguyên 500g', 3, 'Trung Nguyên', NULL, NULL, 'Cà phê rang xay nguyên chất', '0', '5000', NULL, 1, 'https://res.cloudinary.com/dk4todoe8/image/upload/v1786880029/ca-phe-trung-nguyen_emvgr4.jpg', 0, 0, 'DISABLED', '2026-08-15 13:29:41', '2026-08-17 09:46:47');
@@ -2628,7 +2824,7 @@ INSERT INTO `Promotions` (`PromotionID`, `Code`, `Name`, `DiscountType`, `Discou
 (2, 'GIAM50K', 'Giảm ngay 50.000đ', 'AMOUNT', '50000', NULL, '300000', '2026-07-13', '2027-02-08', 500, 0, 1, 0, NULL, 1, '2026-08-12 10:53:32', 0, NULL),
 (3, 'WELCOME15', 'Chào thành viên mới - Giảm 15%', 'PERCENT', '15', '40000', '150000', '2026-07-13', '2027-02-08', NULL, 0, 1, 0, NULL, 1, '2026-08-12 10:53:32', 0, NULL),
 (4, 'FLASH20', 'Flash sale - Giảm 20%', 'PERCENT', '20', '100000', '200000', '2026-08-12', '2026-09-11', 200, 0, 1, 0, NULL, 1, '2026-08-12 10:53:32', 0, NULL),
-(5, 'FREESHIP', 'Ưu đãi 20.000đ', 'AMOUNT', '20000', NULL, '99000', '2026-07-13', '2027-02-08', 9999, 0, 1, 0, NULL, 1, '2026-08-12 10:53:32', 0, NULL);
+(5, 'FREESHIP', 'Ưu đãi 20.000đ', 'AMOUNT', '20000', NULL, '99000', '2026-07-13', '2027-02-08', 9999, 1, 1, 0, NULL, 1, '2026-08-12 10:53:32', 0, NULL);
 
 -- --------------------------------------------------------
 
@@ -2780,7 +2976,9 @@ INSERT INTO `ReturnExchangeDetailBatches` (`ReturnDetailID`, `BatchID`, `Quantit
 (13, 10, 1),
 (14, 9, 1),
 (15, 9, 1),
-(16, 10, 1);
+(16, 10, 1),
+(17, 9, 1),
+(18, 18, 1);
 
 -- --------------------------------------------------------
 
@@ -2817,7 +3015,9 @@ INSERT INTO `ReturnExchangeDetails` (`ReturnDetailID`, `ReturnID`, `ProductID`, 
 (13, 11, 4, 1, 'IN', '17000'),
 (14, 12, 3, 1, 'IN', '24000'),
 (15, 13, 3, 1, 'IN', '24000'),
-(16, 13, 4, 1, 'IN', '17000');
+(16, 13, 4, 1, 'IN', '17000'),
+(17, 14, 3, 1, 'IN', '24000'),
+(18, 14, 10, 1, 'IN', '38000');
 
 -- --------------------------------------------------------
 
@@ -2865,7 +3065,8 @@ INSERT INTO `ReturnExchanges` (`ReturnID`, `InvoiceID`, `Type`, `Reason`, `Rejec
 (10, 33, 'RETURN', 'bị dập', NULL, '24000', 0, 'APPROVED', 4, '2026-08-18 08:52:11', 4, '2026-08-18 08:52:11', '0', '0', 'CASH', 22, 'CASH-22-RET-10', 'COMPLETED', 4, '2026-08-18 08:52:11'),
 (11, 34, 'RETURN', 'bị hư', NULL, '17000', 0, 'APPROVED', 4, '2026-08-18 08:53:43', 4, '2026-08-18 08:53:43', '0', '0', 'BANK_TRANSFER', NULL, NULL, 'PENDING', NULL, NULL),
 (12, 37, 'RETURN', 'kkkkk', NULL, '24000', 0, 'APPROVED', 4, '2026-08-18 18:26:47', 4, '2026-08-18 18:26:47', '0', '0', 'BANK_TRANSFER', NULL, NULL, 'PENDING', NULL, NULL),
-(13, 39, 'RETURN', 'a', NULL, '41000', 0, 'APPROVED', 1, '2026-08-18 20:56:35', 1, '2026-08-18 20:56:35', '0', '0', 'CASH', 36, 'CASH-36-RET-13', 'COMPLETED', 1, '2026-08-18 20:56:35');
+(13, 39, 'RETURN', 'a', NULL, '41000', 0, 'APPROVED', 1, '2026-08-18 20:56:35', 1, '2026-08-18 20:56:35', '0', '0', 'CASH', 36, 'CASH-36-RET-13', 'COMPLETED', 1, '2026-08-18 20:56:35'),
+(14, 41, 'RETURN', 'hỏnh', NULL, '38327', 1, 'APPROVED', 2, '2026-08-19 17:37:03', 4, '2026-08-19 17:36:13', '11273', '12400', 'CASH', 35, 'CASH-35-RET-14', 'COMPLETED', 4, '2026-08-19 17:37:03');
 
 --
 -- Triggers `ReturnExchanges`
@@ -2979,19 +3180,20 @@ CREATE TABLE `Roles` (
   `RoleID` int NOT NULL,
   `RoleCode` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
   `RoleName` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+  `Description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `IsSystem` tinyint(1) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `Roles`
 --
 
-INSERT INTO `Roles` (`RoleID`, `RoleCode`, `RoleName`, `Description`) VALUES
-(1, 'ADMIN', 'Quản trị viên', 'Toàn quyền hệ thống'),
-(2, 'SALES_MANAGER', 'Quản lý bán hàng', 'Giám sát hoạt động bán hàng'),
-(3, 'INVENTORY_MANAGER', 'Quản lý kho', 'Kiểm soát nhập - xuất - tồn kho'),
-(4, 'SALES_STAFF', 'Nhân viên bán hàng', 'Trực tiếp giao dịch với khách'),
-(5, 'CUSTOMER', 'Khách hàng', 'Tự đăng ký, xem sản phẩm và mua hàng ở phía client');
+INSERT INTO `Roles` (`RoleID`, `RoleCode`, `RoleName`, `Description`, `IsSystem`) VALUES
+(1, 'ADMIN', 'Quản trị viên', 'Toàn quyền hệ thống', 1),
+(2, 'SALES_MANAGER', 'Quản lý bán hàng', 'Giám sát hoạt động bán hàng', 1),
+(3, 'INVENTORY_MANAGER', 'Quản lý kho', 'Kiểm soát nhập - xuất - tồn kho', 1),
+(4, 'SALES_STAFF', 'Nhân viên bán hàng', 'Trực tiếp giao dịch với khách', 1),
+(5, 'CUSTOMER', 'Khách hàng', 'Tự đăng ký, xem sản phẩm và mua hàng ở phía client', 1);
 
 -- --------------------------------------------------------
 
@@ -3126,7 +3328,8 @@ INSERT INTO `StockAlerts` (`AlertID`, `ProductID`, `AlertType`, `StockAtReport`,
 (3, 10, 'LOW_STOCK', 9, NULL, NULL, '2026-08-15 07:48:54', 'RESOLVED', 1, 3, '2026-08-18 12:19:02'),
 (4, 13, 'OUT_OF_STOCK', 0, NULL, NULL, '2026-08-17 12:42:56', 'PLANNED', 1, NULL, NULL),
 (5, 8, 'LOW_STOCK', 2, NULL, NULL, '2026-08-18 15:58:08', 'RESOLVED', 1, 3, '2026-08-18 16:07:58'),
-(6, 8, 'LOW_STOCK', 4, NULL, NULL, '2026-08-18 16:08:42', 'NEW', 1, NULL, NULL);
+(6, 8, 'LOW_STOCK', 4, NULL, NULL, '2026-08-18 16:08:42', 'NEW', 1, NULL, NULL),
+(7, 10, 'LOW_STOCK', 10, NULL, NULL, '2026-08-19 17:37:03', 'NEW', 1, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -3167,7 +3370,8 @@ INSERT INTO `StockDisposalDetails` (`DisposalDetailID`, `DisposalID`, `ProductID
 (16, 15, 2, 4, 45, '15000'),
 (17, 16, 8, 19, 2, '90000'),
 (18, 17, 8, 20, 1, '90000'),
-(19, 18, 8, 20, 1, '90000');
+(19, 18, 8, 20, 1, '90000'),
+(20, 19, 10, 21, 5, '30000');
 
 -- --------------------------------------------------------
 
@@ -3208,7 +3412,8 @@ INSERT INTO `StockDisposals` (`DisposalID`, `DisposalCode`, `Reason`, `Status`, 
 (15, 'TH_000015', 'EXPIRED', 'COMPLETED', '675000', NULL, 3, '2026-08-18 11:32:59'),
 (16, 'TH_000016', 'EXPIRED', 'COMPLETED', '180000', NULL, 3, '2026-08-18 19:45:05'),
 (17, 'TH_000017', 'EXPIRED', 'COMPLETED', '90000', NULL, 3, '2026-08-18 20:05:09'),
-(18, 'TH_000018', 'EXPIRED', 'COMPLETED', '90000', NULL, 3, '2026-08-18 20:22:21');
+(18, 'TH_000018', 'EXPIRED', 'COMPLETED', '90000', NULL, 3, '2026-08-18 20:22:21'),
+(19, 'TH_000019', 'EXPIRED', 'COMPLETED', '150000', NULL, 3, '2026-08-19 14:23:06');
 
 -- --------------------------------------------------------
 
@@ -3444,7 +3649,19 @@ INSERT INTO `StockReconciliation` (`ReconciliationID`, `ProductID`, `BatchID`, `
 (206, 8, 19, 0, 0, NULL, 1, '2026-08-18 15:58:20', 0, NULL, NULL),
 (207, 8, 20, 0, 0, NULL, 4, '2026-08-18 16:12:39', 0, NULL, NULL),
 (208, 2, 22, 9, 9, NULL, 4, '2026-08-18 21:18:33', 0, NULL, NULL),
-(209, 10, 21, 10, 10, NULL, 4, '2026-08-18 21:18:33', 0, NULL, NULL);
+(209, 10, 21, 10, 10, NULL, 4, '2026-08-18 21:18:33', 0, NULL, NULL),
+(210, 1, 1, 175, 175, NULL, 4, '2026-08-19 09:59:34', 0, NULL, NULL),
+(211, 2, 2, 395, 395, NULL, 4, '2026-08-19 09:59:34', 0, NULL, NULL),
+(212, 2, 22, 9, 9, NULL, 4, '2026-08-19 09:59:34', 0, NULL, NULL),
+(213, 3, 9, 189, 189, NULL, 4, '2026-08-19 09:59:34', 0, NULL, NULL),
+(214, 4, 10, 247, 247, NULL, 4, '2026-08-19 09:59:35', 1, 3, '2026-08-19 14:41:13'),
+(215, 5, 5, 500, 500, NULL, 4, '2026-08-19 09:59:35', 1, 3, '2026-08-19 14:41:11'),
+(216, 6, 6, 270, 270, NULL, 4, '2026-08-19 09:59:35', 1, 3, '2026-08-19 14:41:09'),
+(217, 7, 7, 147, 147, NULL, 4, '2026-08-19 09:59:35', 1, 3, '2026-08-19 14:41:07'),
+(218, 9, 11, 198, 198, NULL, 4, '2026-08-19 09:59:35', 1, 3, '2026-08-19 14:41:05'),
+(219, 10, 16, 0, 0, NULL, 4, '2026-08-19 09:59:35', 0, NULL, NULL),
+(220, 10, 18, 10, 10, NULL, 4, '2026-08-19 09:59:35', 1, 3, '2026-08-19 14:41:02'),
+(221, 10, 21, 5, 2, NULL, 4, '2026-08-19 09:59:35', 1, 3, '2026-08-19 14:27:11');
 
 --
 -- Triggers `StockReconciliation`
@@ -3614,7 +3831,7 @@ INSERT INTO `StoreConfig` (`ConfigKey`, `ConfigValue`) VALUES
 ('DEFAULT_MARGIN', '5000'),
 ('DEFAULT_UNIT', 'cái'),
 ('POINT_RATE', '100000'),
-('RETURN_APPROVAL_THRESHOLD', '500000'),
+('RETURN_APPROVAL_THRESHOLD', '0'),
 ('RETURN_POLICY_DAYS', '1'),
 ('STORE_NAME', 'Connect Mart'),
 ('VAT_RATE', '0');
@@ -3673,7 +3890,8 @@ CREATE TABLE `SupplierReturnDetails` (
 
 INSERT INTO `SupplierReturnDetails` (`SupplierReturnDetailID`, `SupplierReturnID`, `ProductID`, `BatchID`, `Quantity`, `UnitRefundPrice`) VALUES
 (1, 1, 7, 8, 10, '65000'),
-(2, 2, 1, 3, 25, '35000');
+(2, 2, 1, 3, 25, '35000'),
+(3, 3, 10, 16, 8, '20000');
 
 -- --------------------------------------------------------
 
@@ -3699,7 +3917,8 @@ CREATE TABLE `SupplierReturns` (
 
 INSERT INTO `SupplierReturns` (`SupplierReturnID`, `SupplierReturnCode`, `SupplierID`, `Reason`, `Status`, `TotalRefundAmount`, `Note`, `CreatedBy`, `CreatedAt`) VALUES
 (1, 'TRNC_000001', 2, 'EXPIRED', 'COMPLETED', '650000', 'Trả lại lô cà phê bột hết hạn sử dụng, yêu cầu NCC hoàn tiền', 3, '2026-08-12 10:53:31'),
-(2, 'TRNC_000002', 1, 'DAMAGED', 'COMPLETED', '875000', NULL, 3, '2026-08-17 19:59:34');
+(2, 'TRNC_000002', 1, 'DAMAGED', 'COMPLETED', '875000', NULL, 3, '2026-08-17 19:59:34'),
+(3, 'TRNC_000003', 4, 'QUALITY', 'COMPLETED', '160000', NULL, 3, '2026-08-19 14:20:09');
 
 -- --------------------------------------------------------
 
@@ -3727,7 +3946,7 @@ INSERT INTO `Suppliers` (`SupplierID`, `SupplierName`, `Address`, `Phone`, `Emai
 (1, 'Công ty TNHH Nông sản Miền Tây', '123 Nguyễn Trãi, Cần Thơ', '0710123456', 'contact@mientaynongsan.vn', 'Trái cây, rau củ', 0, NULL, '875000'),
 (2, 'Công ty CP Thực phẩm An Bình', '45 Lê Lợi, TP.HCM', '0281234567', 'sales@anbinhfood.vn', 'Đồ uống, thực phẩm khô', 0, NULL, '650000'),
 (3, 'Công ty TNHH Rau sạch Đà Lạt', '88 Trần Phú, Đà Lạt', '0263123456', 'contact@dalatveggie.vn', 'Rau củ', 0, NULL, '0'),
-(4, 'Công ty CP Sữa & Bánh kẹo Việt', '12 Cách Mạng Tháng 8, TP.HCM', '0287654321', 'sales@vietdairy.vn', 'Sữa, bánh kẹo', 0, NULL, '0'),
+(4, 'Công ty CP Sữa & Bánh kẹo Việt', '12 Cách Mạng Tháng 8, TP.HCM', '0287654321', 'sales@vietdairy.vn', 'Sữa, bánh kẹo', 0, NULL, '160000'),
 (5, 'Công ty TNHH Gia vị Miền Trung', '56 Trần Hưng Đạo, Đà Nẵng', '0236123456', 'contact@giavimientrung.vn', 'Gia vị, thực phẩm khô', 1, '2026-07-13 10:53:30', '0');
 
 -- --------------------------------------------------------
@@ -3867,7 +4086,7 @@ ALTER TABLE `ChatConversations`
 ALTER TABLE `ChatMessages`
   ADD PRIMARY KEY (`MessageID`),
   ADD KEY `IX_ChatMessages_Conversation_Created` (`ConversationID`,`CreatedAt`),
-  ADD KEY `IX_ChatMessages_Sender` (`SenderUserID`,`DESC`);
+  ADD KEY `IX_ChatMessages_Sender` (`SenderUserID`);
 
 --
 -- Indexes for table `Customers`
@@ -4094,7 +4313,7 @@ ALTER TABLE `StockDisposals`
   ADD PRIMARY KEY (`DisposalID`),
   ADD UNIQUE KEY `UQ_StockDisposals_DisposalCode` (`DisposalCode`),
   ADD KEY `FK_StockDisposals_CreatedBy` (`CreatedBy`),
-  ADD KEY `IX_StockDisposals_CreatedAt` (`DESC`);
+  ADD KEY `IX_StockDisposals_CreatedAt` (`CreatedAt`);
 
 --
 -- Indexes for table `StockReconciliation`
@@ -4134,7 +4353,7 @@ ALTER TABLE `SupplierReturns`
   ADD PRIMARY KEY (`SupplierReturnID`),
   ADD UNIQUE KEY `UQ_SupplierReturns_Code` (`SupplierReturnCode`),
   ADD KEY `FK_SupplierReturns_CreatedBy` (`CreatedBy`),
-  ADD KEY `IX_SupplierReturns_CreatedAt` (`DESC`),
+  ADD KEY `IX_SupplierReturns_CreatedAt` (`CreatedAt`),
   ADD KEY `IX_SupplierReturns_Supplier` (`SupplierID`);
 
 --
@@ -4172,7 +4391,7 @@ ALTER TABLE `UserTwoFactorBackupCodes`
 -- AUTO_INCREMENT for table `AuditLogs`
 --
 ALTER TABLE `AuditLogs`
-  MODIFY `LogID` bigint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1293;
+  MODIFY `LogID` bigint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1470;
 
 --
 -- AUTO_INCREMENT for table `Categories`
@@ -4190,7 +4409,7 @@ ALTER TABLE `ChatConversations`
 -- AUTO_INCREMENT for table `ChatMessages`
 --
 ALTER TABLE `ChatMessages`
-  MODIFY `MessageID` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=53;
+  MODIFY `MessageID` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=58;
 
 --
 -- AUTO_INCREMENT for table `ExceptionReports`
@@ -4316,7 +4535,7 @@ ALTER TABLE `StockDisposals`
 -- AUTO_INCREMENT for table `StockReconciliation`
 --
 ALTER TABLE `StockReconciliation`
-  MODIFY `ReconciliationID` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=210;
+  MODIFY `ReconciliationID` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=222;
 
 --
 -- AUTO_INCREMENT for table `SupplierReturnDetails`
@@ -4334,7 +4553,7 @@ ALTER TABLE `SupplierReturns`
 -- AUTO_INCREMENT for table `Suppliers`
 --
 ALTER TABLE `Suppliers`
-  MODIFY `SupplierID` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `SupplierID` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `Users`

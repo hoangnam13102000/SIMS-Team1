@@ -48,6 +48,7 @@ import com.view.admin.shift.ShiftManagementPanel;
 import com.view.admin.shift.ShiftMonitorPanel;
 import com.view.admin.stockalert.StockAlertPanel;
 import com.view.admin.supplier.SupplierPanel;
+import com.view.admin.permission.RoleManagementPanel;
 import com.view.admin.permission.RolePermissionPanel;
 import com.view.client.ProfilePanel;
 import com.view.layouts.MainLayout;
@@ -733,6 +734,14 @@ public class AdminMainFrame extends JFrame {
          *      - chỉnh permission của vai trò
          *      - quản lý phân quyền
          */
+                layout.addPage(
+                "roleManagement",
+                Lang.get("sidebar.roleManagement"),
+                FontAwesomeSolid.USER_TAG,
+                new RoleManagementPanel(),
+                AppPermission.RBAC_MANAGE
+        );
+
         layout.addPage(
                 "rolePermissions",
                 Lang.get("sidebar.rolePermissions"),

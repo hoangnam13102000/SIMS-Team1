@@ -3,6 +3,7 @@
    Schema hoàn chỉnh - MySQL 8.0+ / MariaDB 10.5+
    Đã tích hợp: DiscountShare + PointsShare vào ReturnExchanges
    Đã tích hợp: Shift cash reconciliation + ShiftCashTransactions.
+   Đã tích hợp: Custom Role RBAC (Roles.IsSystem).
    ============================================================ */
 CREATE DATABASE IF NOT EXISTS SIMS_DB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE SIMS_DB;
@@ -14,7 +15,26 @@ CREATE TABLE Roles (
     RoleID          INT AUTO_INCREMENT PRIMARY KEY,
     RoleCode        VARCHAR(30)  NOT NULL UNIQUE,
     RoleName        VARCHAR(100) NOT NULL,
-    Description     VARCHAR(255) NULL
+    Description     VARCHAR(255) NULL,
+
+    /*
+     * 1 = Role hệ thống
+     * 0 = Role custom do Admin tạo
+     *
+     * Role hệ thống:
+     * - Không được xóa trên UI
+     * - Không nên cho phép đổi RoleCode
+     *
+     * Role custom:
+     * - Admin có thể tạo
+     * - Admin có thể sửa tên / mô tả
+     * - Admin có thể phân quyền
+     * - Có thể xóa nếu không còn User sử dụng
+     */
+    IsSystem        TINYINT(1) NOT NULL DEFAULT 0,
+
+    CONSTRAINT CK_Roles_IsSystem
+        CHECK (IsSystem IN (0, 1))
 ) ENGINE=InnoDB;
 
 CREATE TABLE Permissions (

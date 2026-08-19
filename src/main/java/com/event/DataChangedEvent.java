@@ -27,6 +27,8 @@ public final class DataChangedEvent {
     public static final String USER = "USER";
     /** Danh muc san pham (Categories) vua them/sua/xoa. */
     public static final String CATEGORY = "CATEGORY";
+    /** Vai tro (Roles) vua them/sua/xoa — dong bo trang Phan quyen. */
+    public static final String ROLE = "ROLE";
     /** San pham (Products) vua them/sua/xoa. */
     public static final String PRODUCT = "PRODUCT";
     /** Dùng khi restore / thao tác ghi đè toàn bộ DB — mọi panel đều reload. */

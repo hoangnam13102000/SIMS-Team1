@@ -92,9 +92,28 @@ public class DashboardCard extends JPanel {
         return badge;
     }
 
-    /** Them 1 thanh phan (vd nut lam moi) vao goc phai cua header. */
+    /**
+     * Them 1 thanh phan (vd nut "Tuy chon", nut lam moi...) vao goc phai
+     * cua header.
+     * <p>
+     * KHONG add truc tiep vao headerRow (BorderLayout.EAST): BorderLayout se
+     * KEO GIAN component EAST theo chieu cao toan bo headerRow (bang chieu
+     * cao cua titleBlock - icon badge 32px + tieu de + mo ta phu, thuong cao
+     * hon nhieu so voi 1 nut bam binh thuong), bat ke component da tu
+     * setPreferredSize/setMaximumSize co dinh hay chua (BorderLayout khong
+     * xet maximumSize). Ket qua la nut bi bien dang/khac kich thuoc so voi
+     * nut "Tuy chon" chuan dung o cac trang khac.
+     * <p>
+     * Boc action trong 1 wrapper GridBagLayout (khong fill) truoc khi dat
+     * vao EAST: wrapper co the bi keo gian tu do, nhung ban than action ben
+     * trong LUON giu dung kich thuoc preferred cua no va duoc can giua theo
+     * chieu doc - hoan toan doc lap voi chieu cao header.
+     */
     public void setHeaderAction(JComponent action) {
-        headerRow.add(action, BorderLayout.EAST);
+        JPanel wrapper = new JPanel(new GridBagLayout());
+        wrapper.setOpaque(false);
+        wrapper.add(action, new GridBagConstraints());
+        headerRow.add(wrapper, BorderLayout.EAST);
     }
 
     public JPanel getContentPanel() {

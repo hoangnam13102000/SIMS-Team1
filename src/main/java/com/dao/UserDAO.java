@@ -487,7 +487,8 @@ public class UserDAO extends BaseDAO<User> {
         user.setEmail(rs.getString("Email"));
         user.setPhone(rs.getString("Phone"));
         user.setAvatarUrl(rs.getString("AvatarUrl"));
-        user.setRole(Role.valueOf(rs.getString("RoleCode")));
+        String roleCode = rs.getString("RoleCode");
+        user.setRoleCode(roleCode); // setRoleCode cũng gán enum nếu là role hệ thống
         user.setLocked(rs.getBoolean("IsLocked"));
         user.setFailedLoginCount(rs.getInt("FailedLoginCount"));
         user.setStatus(rs.getString("Status"));

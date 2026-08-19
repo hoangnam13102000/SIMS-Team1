@@ -363,7 +363,7 @@ public class LoginFrame extends JFrame {
                     }
 
                     dispose();
-                    if (user.getRole() != Role.CUSTOMER) {
+                    if (!user.isCustomer()) {
                         new AdminMainFrame();
                     } else {
                         new ClientMainFrame();

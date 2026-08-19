@@ -30,7 +30,7 @@ public class AuthService {
     public void setCurrentUser(User user) {
         this.currentUser = user;
         PermissionManager.getInstance().setCurrentPermissions(
-                user != null ? RolePermissions.of(user.getRole()) : null);
+                user != null ? RolePermissions.ofRoleCode(user.getRoleCode()) : null);
     }
 
     public boolean isLoggedIn() {

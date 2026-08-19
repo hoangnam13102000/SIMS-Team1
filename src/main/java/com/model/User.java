@@ -8,12 +8,18 @@ public class User {
     private String email;
     private String phone;
     private String avatarUrl;
+    /**
+     * Role hệ thống (enum). null nếu user thuộc role do Admin tạo (chỉ có {@link #roleCode}).
+     */
     private Role role;
+    /** RoleCode trong DB (luôn có) — dùng phân quyền khi role tùy chỉnh. */
+    private String roleCode;
     private boolean locked;
     private int failedLoginCount;
     private String status; // ACTIVE | DISABLED
     private java.time.LocalDateTime createdAt;
-    private String employeeCode; // "EMP_0001" - null neu Role.CUSTOMER (khong co ho so Employees)
+    private String employeeCode; // "EMP_0001" - null neu Role.CUSTOMER
+
     public User() {
     }
 
@@ -23,8 +29,9 @@ public class User {
         this.fullName = fullName;
         this.email = email;
         this.phone = phone;
-        this.role = role;
+        setRole(role);
     }
+
     public java.time.LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(java.time.LocalDateTime createdAt) { this.createdAt = createdAt; }
 
@@ -47,7 +54,23 @@ public class User {
     public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 
     public Role getRole() { return role; }
-    public void setRole(Role role) { this.role = role; }
+
+    public void setRole(Role role) {
+        this.role = role;
+        if (role != null) {
+            this.roleCode = role.name();
+        }
+    }
+
+    public String getRoleCode() {
+        if (roleCode != null && !roleCode.isBlank()) return roleCode;
+        return role != null ? role.name() : null;
+    }
+
+    public void setRoleCode(String roleCode) {
+        this.roleCode = roleCode;
+        this.role = Role.tryParse(roleCode);
+    }
 
     public boolean isLocked() { return locked; }
     public void setLocked(boolean locked) { this.locked = locked; }
@@ -65,13 +88,19 @@ public class User {
         return "DISABLED".equalsIgnoreCase(status);
     }
 
+    /** true nếu là khách hàng (client), kể cả khi chỉ có roleCode. */
+    public boolean isCustomer() {
+        return Role.CUSTOMER == role
+                || Role.CUSTOMER.name().equalsIgnoreCase(getRoleCode());
+    }
+
     @Override
     public String toString() {
         return "User{" +
                 "userId=" + userId +
                 ", username='" + username + '\'' +
                 ", fullName='" + fullName + '\'' +
-                ", role=" + role +
+                ", roleCode='" + getRoleCode() + '\'' +
                 '}';
     }
 }

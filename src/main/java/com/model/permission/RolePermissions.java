@@ -89,19 +89,34 @@ public final class RolePermissions {
      * may/tien trinh nao.
      */
     public static PermissionSet of(Role role) {
-        if (role == Role.ADMIN) {
-            // Xem Javadoc class: Admin LUON toan quyen, khong phu thuoc DB.
+        if (role == null) {
+            return PermissionSet.EMPTY;
+        }
+        return ofRoleCode(role.name());
+    }
+
+    /**
+     * Quyền theo RoleCode (hỗ trợ role do Admin tạo thêm, không có trong enum {@link Role}).
+     * ADMIN luôn toàn quyền.
+     */
+    public static PermissionSet ofRoleCode(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) {
+            return PermissionSet.EMPTY;
+        }
+        String code = roleCode.trim().toUpperCase();
+        if (Role.ADMIN.name().equals(code)) {
             return PermissionSet.of(AppPermission.values());
         }
 
         ensureSeeded();
 
-        Set<AppPermission> fromDb = new RolePermissionDAO().getPermissionsByRole(role);
+        Set<AppPermission> fromDb = new RolePermissionDAO().getPermissionsByRoleCode(code);
         if (fromDb == null) {
-            // null = TRUY VAN THAT BAI (loi ket noi/CSDL) - khac voi tap
-            // rong hop le (Admin da chu dong thu hoi het quyen cua Role do)
-            // - fallback ve hardcode de app van dung duoc.
-            return DEFAULT_MAP.getOrDefault(role, PermissionSet.EMPTY);
+            Role known = Role.tryParse(code);
+            if (known != null) {
+                return DEFAULT_MAP.getOrDefault(known, PermissionSet.EMPTY);
+            }
+            return PermissionSet.EMPTY;
         }
         return PermissionSet.of(fromDb.toArray(new Permission[0]));
     }

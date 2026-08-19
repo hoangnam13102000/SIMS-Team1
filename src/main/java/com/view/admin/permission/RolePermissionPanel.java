@@ -5,9 +5,14 @@ import com.components.LoadingOverlay;
 import com.components.SectionHeader;
 import com.components.ToggleSwitch;
 import com.core.log.AppLogger;
+import com.i18n.Lang;
+import com.event.AutoRefresher;
+import com.event.DataChangedEvent;
 import com.dao.RolePermissionDAO;
 import com.model.ActivityLog;
+import com.model.AppRole;
 import com.model.Role;
+import com.dao.RoleDAO;
 import com.model.User;
 import com.model.permission.AppPermission;
 import com.model.permission.AppPermissionCatalog;
@@ -24,7 +29,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
-import java.util.EnumMap;
+import javax.swing.JTextField;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,25 +60,26 @@ public class RolePermissionPanel extends JPanel {
      * Role.CUSTOMER khong co tac dung gi trong thuc te - hien no ra chi gay
      * nham lan cho Admin (tuong minh dang cau hinh duoc quyen cho khach hang).
      */
-    private static final Role[] MANAGED_ROLES = {
-            Role.ADMIN, Role.SALES_MANAGER, Role.INVENTORY_MANAGER, Role.SALES_STAFF
-    };
-
     private final RolePermissionDAO dao = new RolePermissionDAO();
+    private final RoleDAO roleDao = new RoleDAO();
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang tải phân quyền...");
     private final JPanel roleListPanel = new JPanel();
     private final JPanel permissionListPanel = new ScrollableFormPanel();
     private final JLabel currentRoleLabel = new JLabel();
     private JButton saveButton;
     private JButton resetButton;
+    private JTextField roleSearchField;
+    private JLabel roleCountLabel;
 
-    /** Quyen cua tung Role doc tu DB (hoac mac dinh neu DB loi) - nguon du lieu cho danh sach ben trai. */
-    private Map<Role, Set<AppPermission>> roleDataCache = new EnumMap<>(Role.class);
+    /** Danh sách role quản lý trên UI (từ DB, không gồm CUSTOMER). */
+    private List<AppRole> managedRoles = new ArrayList<>();
 
-    /** Quyen dang CHINH SUA tren UI cho Role dang chon (chua luu xuong DB cho toi khi bam "Lưu thay đổi"). */
+    /** Quyền theo RoleCode. */
+    private Map<String, Set<AppPermission>> roleDataCache = new LinkedHashMap<>();
+
     private final Set<AppPermission> workingSet = EnumSet.noneOf(AppPermission.class);
 
-    private Role selectedRole = Role.SALES_MANAGER;
+    private AppRole selectedRole;
 
     public RolePermissionPanel() {
         setLayout(new BorderLayout());
@@ -81,12 +87,12 @@ public class RolePermissionPanel extends JPanel {
         setBorder(new EmptyBorder(20, 24, 20, 24));
 
         SectionHeader header = new SectionHeader(FontAwesomeSolid.USER_SHIELD, AppColor.ACCENT,
-                "Phân quyền vai trò",
-                "Bật/tắt chức năng mà từng vai trò (Role) được phép sử dụng trong hệ thống");
+                Lang.get("role.permissions.title"),
+                Lang.get("role.permissions.subtitle"));
 
-        resetButton = header.addButton("Khôi phục mặc định", FontAwesomeSolid.UNDO,
+        resetButton = header.addButton(Lang.get("role.permissions.reset"), FontAwesomeSolid.UNDO,
                 SectionHeader.ButtonStyle.OUTLINE, this::onResetClicked);
-        saveButton = header.addButton("Lưu thay đổi", FontAwesomeSolid.SAVE,
+        saveButton = header.addButton(Lang.get("role.permissions.save"), FontAwesomeSolid.SAVE,
                 SectionHeader.ButtonStyle.PRIMARY, this::onSaveClicked);
 
         JPanel body = new JPanel(new BorderLayout(16, 0));
@@ -97,8 +103,10 @@ public class RolePermissionPanel extends JPanel {
         add(header, BorderLayout.NORTH);
         add(LoadingOverlay.attach(body, loadingOverlay), BorderLayout.CENTER);
 
-        selectRole(selectedRole);
         loadAllAsync();
+
+        // Role mới/sửa/xóa từ trang Quản lý vai trò → tự nạp lại danh sách
+        AutoRefresher.bind(this, DataChangedEvent.class, 400, this::loadAllAsync);
     }
 
     // ==================== Nạp dữ liệu ====================
@@ -106,25 +114,47 @@ public class RolePermissionPanel extends JPanel {
     private void loadAllAsync() {
         loadingOverlay.start("Đang tải phân quyền...");
         setControlsEnabled(false);
-        SwingWorker<Map<Role, Set<AppPermission>>, Void> worker = new SwingWorker<>() {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            private List<AppRole> roles = List.of();
+            private Map<String, Set<AppPermission>> map = new LinkedHashMap<>();
+
             @Override
-            protected Map<Role, Set<AppPermission>> doInBackground() {
-                Map<Role, Set<AppPermission>> map = new EnumMap<>(Role.class);
-                for (Role role : MANAGED_ROLES) {
-                    if (role == Role.ADMIN) {
-                        map.put(role, EnumSet.allOf(AppPermission.class));
+            protected Void doInBackground() {
+                roles = roleDao.findManagedRoles();
+                for (AppRole role : roles) {
+                    if (role.isAdmin()) {
+                        map.put(role.getRoleCode(), EnumSet.allOf(AppPermission.class));
                         continue;
                     }
-                    Set<AppPermission> fromDb = dao.getPermissionsByRole(role);
-                    map.put(role, fromDb != null ? fromDb : RolePermissions.getDefaultAppPermissions(role));
+                    Set<AppPermission> fromDb = dao.getPermissionsByRoleCode(role.getRoleCode());
+                    if (fromDb == null) {
+                        Role known = role.toEnumOrNull();
+                        fromDb = known != null
+                                ? RolePermissions.getDefaultAppPermissions(known)
+                                : EnumSet.noneOf(AppPermission.class);
+                    }
+                    map.put(role.getRoleCode(), fromDb);
                 }
-                return map;
+                return null;
             }
 
             @Override
             protected void done() {
                 try {
-                    roleDataCache = get();
+                    get();
+                    managedRoles = new ArrayList<>(roles);
+                    roleDataCache = map;
+                    if (selectedRole == null || managedRoles.stream()
+                            .noneMatch(r -> r.getRoleCode().equalsIgnoreCase(selectedRole.getRoleCode()))) {
+                        selectedRole = managedRoles.stream()
+                                .filter(r -> !r.isAdmin())
+                                .findFirst()
+                                .orElse(managedRoles.isEmpty() ? null : managedRoles.get(0));
+                    } else {
+                        selectedRole = managedRoles.stream()
+                                .filter(r -> r.getRoleCode().equalsIgnoreCase(selectedRole.getRoleCode()))
+                                .findFirst().orElse(selectedRole);
+                    }
                 } catch (Exception ex) {
                     AppAlert.error(RolePermissionPanel.this,
                             "Tải dữ liệu thất bại",
@@ -132,7 +162,8 @@ public class RolePermissionPanel extends JPanel {
                 }
                 loadingOverlay.stop();
                 setControlsEnabled(true);
-                selectRole(selectedRole);
+                if (selectedRole != null) selectRole(selectedRole);
+                else rebuildRoleList();
             }
         };
         worker.execute();
@@ -141,51 +172,148 @@ public class RolePermissionPanel extends JPanel {
     private void setControlsEnabled(boolean enabled) {
         saveButton.setEnabled(enabled);
         resetButton.setEnabled(enabled);
+        if (roleSearchField != null) roleSearchField.setEnabled(enabled);
     }
 
     // ==================== Danh sách Role (trái) ====================
 
     private JPanel buildRoleListCard() {
-        JPanel card = new JPanel();
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        JPanel card = new JPanel(new BorderLayout(0, 10));
         card.setOpaque(true);
         card.setBackground(AppColor.WHITE);
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(AppColor.BORDER, 1, true),
-                new EmptyBorder(14, 12, 14, 12)));
-        card.setPreferredSize(new Dimension(240, 10));
+                new EmptyBorder(14, 12, 12, 12)));
+        card.setPreferredSize(new Dimension(260, 10));
 
-        JLabel heading = new JLabel("VAI TRÒ");
+        // --- Header: tiêu đề + số role ---
+        JPanel head = new JPanel(new BorderLayout());
+        head.setOpaque(false);
+        JLabel heading = new JLabel(Lang.get("role.permissions.roles.heading"));
         heading.setFont(AppFont.SMALL_BOLD);
         heading.setForeground(AppColor.TEXT_MUTED);
-        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
-        heading.setBorder(new EmptyBorder(0, 6, 8, 0));
-        card.add(heading);
+        roleCountLabel = new JLabel("");
+        roleCountLabel.setFont(AppFont.SMALL);
+        roleCountLabel.setForeground(AppColor.TEXT_MUTED);
+        head.add(heading, BorderLayout.WEST);
+        head.add(roleCountLabel, BorderLayout.EAST);
+
+        // --- Ô tìm kiếm (filter realtime + gợi ý Enter chọn role đầu) ---
+        JPanel searchWrap = new JPanel(new BorderLayout(8, 0));
+        searchWrap.setOpaque(true);
+        searchWrap.setBackground(AppColor.BG_LIGHTER);
+        searchWrap.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true),
+                new EmptyBorder(6, 10, 6, 10)));
+
+        FontIcon searchIcon = FontIcon.of(FontAwesomeSolid.SEARCH, 13);
+        searchIcon.setIconColor(AppColor.TEXT_MUTED);
+        JLabel iconLabel = new JLabel(searchIcon);
+
+        roleSearchField = new JTextField();
+        roleSearchField.setOpaque(false);
+        roleSearchField.setBorder(null);
+        roleSearchField.setFont(AppFont.BODY);
+        roleSearchField.setForeground(AppColor.TEXT_PRIMARY);
+        roleSearchField.putClientProperty("JTextField.placeholderText", Lang.get("role.permissions.search"));
+        // Placeholder fallback nếu LAF không hỗ trợ clientProperty
+        roleSearchField.setToolTipText(Lang.get("role.permissions.search"));
+
+        roleSearchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void filter() { rebuildRoleList(); }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+        });
+        roleSearchField.addActionListener(e -> selectFirstFilteredRole());
+
+        searchWrap.add(iconLabel, BorderLayout.WEST);
+        searchWrap.add(roleSearchField, BorderLayout.CENTER);
+
+        JPanel north = new JPanel();
+        north.setOpaque(false);
+        north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+        head.setAlignmentX(Component.LEFT_ALIGNMENT);
+        searchWrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+        head.setMaximumSize(new Dimension(Integer.MAX_VALUE, 24));
+        searchWrap.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        north.add(head);
+        north.add(Box.createVerticalStrut(10));
+        north.add(searchWrap);
 
         roleListPanel.setLayout(new BoxLayout(roleListPanel, BoxLayout.Y_AXIS));
         roleListPanel.setOpaque(false);
-        roleListPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.add(roleListPanel);
-        card.add(Box.createVerticalGlue());
 
+        JScrollPane scroll = new JScrollPane(roleListPanel);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(14);
+
+        card.add(north, BorderLayout.NORTH);
+        card.add(scroll, BorderLayout.CENTER);
+
+        JLabel hint = new JLabel("<html><span style='color:gray;font-size:10px'>"
+                + Lang.get("role.permissions.hint") + "</span></html>");
+        hint.setBorder(new EmptyBorder(8, 2, 0, 2));
+        card.add(hint, BorderLayout.SOUTH);
         return card;
     }
 
     private void rebuildRoleList() {
         roleListPanel.removeAll();
-        for (Role role : MANAGED_ROLES) {
-            roleListPanel.add(buildRoleRow(role));
-            roleListPanel.add(Box.createVerticalStrut(6));
+        List<AppRole> filtered = getFilteredRoles();
+        if (roleCountLabel != null) {
+            int total = managedRoles != null ? managedRoles.size() : 0;
+            roleCountLabel.setText(filtered.size() == total
+                    ? total + " vai trò"
+                    : filtered.size() + "/" + total);
+        }
+        if (filtered.isEmpty()) {
+            JLabel empty = new JLabel("<html><div style='text-align:center;padding:16px 8px'>"
+                    + "Không tìm thấy vai trò phù hợp.<br/>Thử từ khóa khác.</div></html>");
+            empty.setFont(AppFont.BODY);
+            empty.setForeground(AppColor.TEXT_MUTED);
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            empty.setHorizontalAlignment(SwingConstants.CENTER);
+            roleListPanel.add(empty);
+        } else {
+            for (AppRole role : filtered) {
+                roleListPanel.add(buildRoleRow(role));
+                roleListPanel.add(Box.createVerticalStrut(6));
+            }
         }
         roleListPanel.revalidate();
         roleListPanel.repaint();
     }
 
-    private JPanel buildRoleRow(Role role) {
-        boolean selected = role == selectedRole;
-        int count = role == Role.ADMIN
+    /** Lọc role theo ô tìm kiếm (tên hoặc mã, không phân biệt hoa thường). */
+    private List<AppRole> getFilteredRoles() {
+        List<AppRole> source = managedRoles != null ? managedRoles : List.of();
+        String q = roleSearchField != null ? roleSearchField.getText() : "";
+        if (q == null || q.isBlank()) return new ArrayList<>(source);
+        String key = q.trim().toLowerCase();
+        List<AppRole> out = new ArrayList<>();
+        for (AppRole r : source) {
+            String name = r.getRoleName() != null ? r.getRoleName().toLowerCase() : "";
+            String code = r.getRoleCode() != null ? r.getRoleCode().toLowerCase() : "";
+            if (name.contains(key) || code.contains(key)) out.add(r);
+        }
+        return out;
+    }
+
+    /** Enter trên ô tìm kiếm → chọn role đầu trong danh sách đã lọc. */
+    private void selectFirstFilteredRole() {
+        List<AppRole> filtered = getFilteredRoles();
+        if (!filtered.isEmpty()) selectRole(filtered.get(0));
+    }
+
+    private JPanel buildRoleRow(AppRole role) {
+        boolean selected = selectedRole != null && role.getRoleCode().equalsIgnoreCase(selectedRole.getRoleCode());
+        int count = role.isAdmin()
                 ? AppPermission.values().length
-                : roleDataCache.getOrDefault(role, EnumSet.noneOf(AppPermission.class)).size();
+                : roleDataCache.getOrDefault(role.getRoleCode(), EnumSet.noneOf(AppPermission.class)).size();
 
         JPanel row = new JPanel(new BorderLayout(8, 0)) {
             @Override
@@ -204,17 +332,30 @@ public class RolePermissionPanel extends JPanel {
         row.setBorder(new EmptyBorder(9, 10, 9, 10));
         row.setCursor(new Cursor(Cursor.HAND_CURSOR));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 46));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
 
-        JLabel name = new JLabel(roleLabel(role));
+        JPanel textCol = new JPanel();
+        textCol.setOpaque(false);
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+
+        JLabel name = new JLabel(role.getRoleName() != null ? role.getRoleName() : role.getRoleCode());
         name.setFont(selected ? AppFont.BODY_BOLD : AppFont.BODY);
         name.setForeground(selected ? AppColor.ACCENT : AppColor.TEXT_PRIMARY);
+        name.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel code = new JLabel(role.getRoleCode() != null ? role.getRoleCode() : "");
+        code.setFont(AppFont.SMALL);
+        code.setForeground(AppColor.TEXT_MUTED);
+        code.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        textCol.add(name);
+        textCol.add(code);
 
         JLabel badge = new JLabel(count + " quyền");
         badge.setFont(AppFont.SMALL);
         badge.setForeground(AppColor.TEXT_MUTED);
 
-        row.add(name, BorderLayout.WEST);
+        row.add(textCol, BorderLayout.CENTER);
         row.add(badge, BorderLayout.EAST);
 
         row.addMouseListener(new MouseAdapter() {
@@ -244,15 +385,8 @@ public class RolePermissionPanel extends JPanel {
         return row;
     }
 
-    private static String roleLabel(Role role) {
-        switch (role) {
-            case ADMIN: return "Quản trị viên";
-            case SALES_MANAGER: return "Quản lý bán hàng";
-            case INVENTORY_MANAGER: return "Quản lý kho";
-            case SALES_STAFF: return "Nhân viên bán hàng";
-            case CUSTOMER: return "Khách hàng";
-            default: return role.name();
-        }
+    private static String roleLabel(AppRole role) {
+        return role != null && role.getRoleName() != null ? role.getRoleName() : "—";
     }
 
     // ==================== Danh sách quyền (phải) ====================
@@ -281,10 +415,11 @@ public class RolePermissionPanel extends JPanel {
         return wrapper;
     }
 
-    private void selectRole(Role role) {
+    private void selectRole(AppRole role) {
         this.selectedRole = role;
         currentRoleLabel.setText("Quyền của vai trò: " + roleLabel(role));
-        Set<AppPermission> current = roleDataCache.getOrDefault(role, EnumSet.noneOf(AppPermission.class));
+        Set<AppPermission> current = roleDataCache.getOrDefault(
+                role.getRoleCode(), EnumSet.noneOf(AppPermission.class));
         workingSet.clear();
         workingSet.addAll(current);
         rebuildRoleList();
@@ -293,7 +428,7 @@ public class RolePermissionPanel extends JPanel {
 
     private void rebuildPermissionList() {
         permissionListPanel.removeAll();
-        boolean isAdmin = selectedRole == Role.ADMIN;
+        boolean isAdmin = selectedRole != null && selectedRole.isAdmin();
 
         if (isAdmin) {
             JLabel note = new JLabel("<html>Quản trị viên luôn có <b>toàn quyền hệ thống</b> để tránh trường hợp"
@@ -882,13 +1017,16 @@ public class RolePermissionPanel extends JPanel {
     // ==================== Hành động ====================
 
     private void onResetClicked() {
-        if (selectedRole == Role.ADMIN) {
+        if (selectedRole == null || selectedRole.isAdmin()) {
             AppAlert.info(this, "Khôi phục mặc định",
                     "Quản trị viên luôn có toàn quyền hệ thống, không cần khôi phục.");
             return;
         }
         workingSet.clear();
-        workingSet.addAll(RolePermissions.getDefaultAppPermissions(selectedRole));
+        Role known = selectedRole.toEnumOrNull();
+        if (known != null) {
+            workingSet.addAll(RolePermissions.getDefaultAppPermissions(known));
+        }
         rebuildPermissionList();
         AppAlert.info(this, "Đã khôi phục",
                 "Đã khôi phục về danh sách quyền mặc định của vai trò \""
@@ -896,19 +1034,20 @@ public class RolePermissionPanel extends JPanel {
     }
 
     private void onSaveClicked() {
-        if (selectedRole == Role.ADMIN) {
+        if (selectedRole == null || selectedRole.isAdmin()) {
             AppAlert.info(this, "Lưu phân quyền",
                     "Quản trị viên luôn có toàn quyền hệ thống, không cần lưu.");
             return;
         }
-        Role roleToSave = selectedRole;
+        final String codeToSave = selectedRole.getRoleCode();
+        final String nameToSave = selectedRole.getRoleName();
         Set<AppPermission> toSave = EnumSet.copyOf(workingSet);
         setControlsEnabled(false);
         loadingOverlay.start("Đang lưu phân quyền...");
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
             @Override
             protected Boolean doInBackground() {
-                return dao.savePermissionsForRole(roleToSave, toSave);
+                return dao.savePermissionsForRole(codeToSave, toSave);
             }
 
             @Override
@@ -922,13 +1061,13 @@ public class RolePermissionPanel extends JPanel {
                     ok = false;
                 }
                 if (ok) {
-                    roleDataCache.put(roleToSave, EnumSet.copyOf(toSave.isEmpty()
+                    roleDataCache.put(codeToSave, EnumSet.copyOf(toSave.isEmpty()
                             ? EnumSet.noneOf(AppPermission.class) : toSave));
                     RolePermissions.reload();
-                    logChange(roleToSave);
+                    logChange(codeToSave, nameToSave);
                     rebuildRoleList();
                     AppAlert.success(RolePermissionPanel.this, "Lưu thành công",
-                            "Đã lưu phân quyền cho vai trò \"" + roleLabel(roleToSave)
+                            "Đã lưu phân quyền cho vai trò \"" + nameToSave
                                     + "\". Áp dụng ngay cho các lần đăng nhập tiếp theo.");
                 } else {
                     AppAlert.error(RolePermissionPanel.this, "Lưu thất bại",
@@ -939,11 +1078,11 @@ public class RolePermissionPanel extends JPanel {
         worker.execute();
     }
 
-    private void logChange(Role role) {
+    private void logChange(String roleCode, String roleName) {
         User currentUser = AuthService.getInstance().getCurrentUser();
         String username = currentUser != null ? currentUser.getUsername() : "SYSTEM";
         AppLogger.getInstance().log(username, ActivityLog.ACTION_UPDATE, ActivityLog.ENTITY_ROLE_PERMISSION,
-                "Cập nhật quyền cho vai trò \"" + roleLabel(role) + "\" (" + role.name() + ")");
+                "Cập nhật quyền cho vai trò \"" + roleName + "\" (" + roleCode + ")");
     }
 
     /**

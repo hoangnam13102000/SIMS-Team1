@@ -670,6 +670,11 @@ public class BaseTable extends JPanel {
         return setColumnRenderer(columnIndex, StatusColumn.renderer(labelFn, colorFn, rowColorProvider));
     }
 
+    /** Badge column variant with centered badge, keeping the default badge renderer unchanged. */
+    public BaseTable setCenteredBadgeColumn(int columnIndex, Function<Object, String> labelFn, Function<Object, Color> colorFn) {
+        return setColumnRenderer(columnIndex, StatusColumn.renderer(labelFn, colorFn, rowColorProvider, FlowLayout.CENTER));
+    }
+
     // ===== CUSTOM RENDERER (cho cac cot dac thu tung man hinh, vd thanh mini-progress ton kho) =====
     /**
      * Loi ra {@link #setColumnRenderer} (dang private, chi dung noi bo cho
