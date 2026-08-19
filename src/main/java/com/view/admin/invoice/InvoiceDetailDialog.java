@@ -5,6 +5,7 @@ import com.dao.InvoiceDAO;
 import com.dao.ReturnExchangeDAO;
 import com.model.Invoice;
 import com.model.InvoiceDetail;
+import com.model.InvoiceCancelRequest;
 import com.model.ReturnExchange;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
@@ -14,6 +15,7 @@ import com.utils.NumberUtil;
 import com.utils.PaginationHelper;
 import com.utils.pdf.InvoicePdfExporter;
 import com.service.AuthService;
+import com.service.InvoiceCancelRequestService;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -39,6 +41,7 @@ public class InvoiceDetailDialog extends JDialog {
 	private final Invoice invoice;
 	private final InvoiceDAO invoiceDAO;
 	private final ReturnExchangeDAO returnExchangeDAO = new ReturnExchangeDAO();
+	private final InvoiceCancelRequestService cancelRequestService = new InvoiceCancelRequestService();
 
 	private JLabel returnNoteLabel;
 	private JLabel refundedValueLabel;
@@ -417,18 +420,105 @@ public class InvoiceDetailDialog extends JDialog {
 			left.add(returnBtn);
 		}
 
-		boolean canCancelInvoice = !invoice.isCancelled()
+		InvoiceCancelRequest activeCancelRequest = cancelRequestService.getActiveForInvoice(invoice.getInvoiceId());
 
-				&& "CASH".equalsIgnoreCase(invoice.getPaymentMethod())
+		String cancelRequestStatus = invoice.getCancelRequestStatus();
 
-				&& !invoice.hasReturns()
+		boolean hasActiveCancelRequestStatus = "PENDING".equalsIgnoreCase(cancelRequestStatus)
+				|| "PROCESSING".equalsIgnoreCase(cancelRequestStatus);
 
-				&& PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL);
+		/*
+		 * Fallback: InvoicePanel đã đọc được trạng thái PENDING/PROCESSING nhưng DAO
+		 * chi tiết chưa lấy được object request thì thử lấy request mới nhất.
+		 */
+		if (activeCancelRequest == null && hasActiveCancelRequestStatus) {
+			activeCancelRequest = cancelRequestService.getLatestForInvoice(invoice.getInvoiceId());
+		}
 
-		if (canCancelInvoice) {
+		com.model.User currentUser = AuthService.getInstance().getCurrentUser();
+
+		boolean isInvoiceOwner = currentUser != null && invoice.getCreatedBy() == currentUser.getUserId();
+
+		/*
+		 * ========================================================= SALES_STAFF
+		 * =========================================================
+		 *
+		 * Nhân viên không được hủy trực tiếp. Chỉ được gửi yêu cầu hủy hóa đơn CASH của
+		 * chính mình.
+		 */
+		boolean canRequestPermission = PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL_REQUEST);
+
+		if (!invoice.isCancelled() && isInvoiceOwner && canRequestPermission) {
+
+			if (hasActiveCancelRequestStatus || activeCancelRequest != null) {
+
+				boolean processing = "PROCESSING".equalsIgnoreCase(cancelRequestStatus)
+						|| (activeCancelRequest != null && activeCancelRequest.isProcessing());
+
+				JButton pendingBtn = new JButton(processing ? "Yêu cầu hủy đang xử lý" : "Đã gửi yêu cầu hủy");
+
+				styleButton(pendingBtn, AppColor.DISABLED_BTN, Color.WHITE);
+
+				pendingBtn.setEnabled(false);
+				left.add(pendingBtn);
+
+			} else if ("CASH".equalsIgnoreCase(invoice.getPaymentMethod()) && !invoice.hasReturns()) {
+
+				JButton requestBtn = new JButton("Yêu cầu hủy");
+
+				styleButton(requestBtn, AppColor.WARNING, Color.WHITE);
+
+				requestBtn.addActionListener(e -> onRequestCancelInvoice());
+
+				left.add(requestBtn);
+			}
+		}
+
+		/*
+		 * ========================================================= SALES_MANAGER /
+		 * ADMIN =========================================================
+		 */
+		boolean canReviewCancelRequest = PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL)
+				&& PermissionManager.getInstance().can(AppPermission.INVOICE_VIEW_ALL);
+
+		/*
+		 * QUAN TRỌNG: Hiện nút xử lý dựa trên trạng thái đã được InvoiceDAO đọc từ DB,
+		 * không phụ thuộc hoàn toàn vào activeCancelRequest.
+		 */
+		if (!invoice.isCancelled() && hasActiveCancelRequestStatus && canReviewCancelRequest) {
+
+			boolean processing = "PROCESSING".equalsIgnoreCase(cancelRequestStatus)
+					|| (activeCancelRequest != null && activeCancelRequest.isProcessing());
+
+			JButton reviewBtn = new JButton(processing ? "Yêu cầu đang được xử lý" : "Xử lý yêu cầu hủy");
+
+			styleButton(reviewBtn, processing ? AppColor.DISABLED_BTN : AppColor.ERROR, Color.WHITE);
+
+			reviewBtn.setEnabled(!processing);
+
+			if (!processing) {
+				reviewBtn.addActionListener(e -> onProcessCancelRequest());
+			}
+
+			left.add(reviewBtn);
+		}
+
+		/*
+		 * Manager/Admin chỉ được hủy trực tiếp nếu hóa đơn THỰC SỰ KHÔNG có request
+		 * PENDING/PROCESSING.
+		 */
+		boolean canCancelInvoiceDirectly = !invoice.isCancelled() && !hasActiveCancelRequestStatus
+				&& activeCancelRequest == null && "CASH".equalsIgnoreCase(invoice.getPaymentMethod())
+				&& !invoice.hasReturns() && canReviewCancelRequest;
+
+		if (canCancelInvoiceDirectly) {
+
 			JButton cancelBtn = new JButton("Hủy hóa đơn");
+
 			styleButton(cancelBtn, AppColor.ERROR, Color.WHITE);
+
 			cancelBtn.addActionListener(e -> onCancelInvoice());
+
 			left.add(cancelBtn);
 		}
 
@@ -485,6 +575,224 @@ public class InvoiceDetailDialog extends JDialog {
 			// tong tien/SL da tra/con lai se duoc doc lai moi nhat.
 			dispose();
 		}
+	}
+
+	private void onRequestCancelInvoice() {
+		if (!PermissionManager.getInstance().can(AppPermission.INVOICE_CANCEL_REQUEST)) {
+			AppAlert.error(this, "Không có quyền", "Bạn không có quyền gửi yêu cầu hủy hóa đơn.");
+			return;
+		}
+
+		String reason = JOptionPane.showInputDialog(this, "Lý do yêu cầu hủy hóa đơn " + invoice.getInvoiceCode() + ":",
+				"Yêu cầu hủy hóa đơn", JOptionPane.QUESTION_MESSAGE);
+		if (reason == null)
+			return;
+		if (reason.isBlank()) {
+			AppAlert.error(this, "Thiếu lý do", "Vui lòng nhập lý do yêu cầu hủy.");
+			return;
+		}
+
+		int confirm = JOptionPane.showConfirmDialog(this,
+				"Gửi yêu cầu hủy hóa đơn " + invoice.getInvoiceCode() + " cho Quản lý bán hàng/Admin duyệt?",
+				"Xác nhận gửi yêu cầu", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (confirm != JOptionPane.YES_OPTION)
+			return;
+
+		String error = cancelRequestService.requestCancel(invoice.getInvoiceId(), reason);
+		if (error != null) {
+			AppAlert.error(this, "Không gửi được", error);
+			return;
+		}
+
+		AppAlert.success(this, "Đã gửi",
+				"Yêu cầu hủy hóa đơn " + invoice.getInvoiceCode() + " đã được gửi và đang chờ quản lý duyệt.");
+		dispose();
+	}
+
+	private void onProcessCancelRequest() {
+
+	    System.out.println(
+	            "[InvoiceCancel] code="
+	            + invoice.getInvoiceCode()
+	            + ", invoiceId="
+	            + invoice.getInvoiceId()
+	            + ", requestStatus="
+	            + invoice.getCancelRequestStatus()
+	    );
+
+	    InvoiceCancelRequest request =
+	            cancelRequestService.getActiveForInvoice(
+	                    invoice.getInvoiceId()
+	            );
+
+	    /*
+	     * Fallback:
+	     * Nếu request active không tải được thì thử lấy request mới nhất.
+	     */
+	    if (request == null) {
+	        request =
+	                cancelRequestService.getLatestForInvoice(
+	                        invoice.getInvoiceId()
+	                );
+	    }
+
+	    if (request == null) {
+	        AppAlert.error(
+	                this,
+	                "Không đọc được yêu cầu",
+	                "Không tải được chi tiết yêu cầu hủy. "
+	                + "Vui lòng làm mới danh sách rồi thử lại."
+	        );
+	        return;
+	    }
+
+	    if (!request.isPending() && !request.isProcessing()) {
+	        AppAlert.warning(
+	                this,
+	                "Yêu cầu đã xử lý",
+	                "Yêu cầu hủy này không còn ở trạng thái chờ duyệt."
+	        );
+	        return;
+	    }
+
+	    if (request.isProcessing()) {
+	        AppAlert.warning(
+	                this,
+	                "Đang xử lý",
+	                "Yêu cầu này đang được một quản lý khác xử lý."
+	        );
+	        return;
+	    }
+
+	    String requestedAt =
+	            request.getRequestedAt() != null
+	                    ? request.getRequestedAt().format(DATE_TIME)
+	                    : "—";
+
+	    String requester =
+	            request.getRequestedByName() != null
+	                    ? request.getRequestedByName()
+	                    : ("User #" + request.getRequestedBy());
+
+	    String message =
+	            "Hóa đơn: " + invoice.getInvoiceCode()
+	            + "\nNhân viên yêu cầu: " + requester
+	            + "\nThời gian: " + requestedAt
+	            + "\n\nLý do:\n"
+	            + request.getReason();
+
+	    Object[] options = {
+	            "Duyệt hủy",
+	            "Từ chối",
+	            "Đóng"
+	    };
+
+	    int choice = JOptionPane.showOptionDialog(
+	            this,
+	            message,
+	            "Xử lý yêu cầu hủy hóa đơn",
+	            JOptionPane.DEFAULT_OPTION,
+	            JOptionPane.WARNING_MESSAGE,
+	            null,
+	            options,
+	            options[2]
+	    );
+
+	    /*
+	     * DUYỆT
+	     */
+	    if (choice == 0) {
+
+	        int confirm = JOptionPane.showConfirmDialog(
+	                this,
+	                "Sau khi duyệt, hệ thống sẽ hủy hóa đơn "
+	                + "và hoàn kho/điểm theo nghiệp vụ hiện tại.\n\n"
+	                + "Bạn chắc chắn muốn duyệt yêu cầu này?",
+	                "Xác nhận duyệt hủy",
+	                JOptionPane.YES_NO_OPTION,
+	                JOptionPane.WARNING_MESSAGE
+	        );
+
+	        if (confirm != JOptionPane.YES_OPTION) {
+	            return;
+	        }
+
+	        String error =
+	                cancelRequestService.approve(
+	                        request.getRequestId(),
+	                        "Đã kiểm tra và chấp thuận yêu cầu hủy."
+	                );
+
+	        if (error != null) {
+	            AppAlert.error(
+	                    this,
+	                    "Không duyệt được",
+	                    error
+	            );
+	            return;
+	        }
+
+	        AppAlert.success(
+	                this,
+	                "Đã duyệt",
+	                "Yêu cầu hủy đã được duyệt. "
+	                + "Hóa đơn " + invoice.getInvoiceCode()
+	                + " đã được hủy."
+	        );
+
+	        dispose();
+	    }
+
+	    /*
+	     * TỪ CHỐI
+	     */
+	    else if (choice == 1) {
+
+	        String note = JOptionPane.showInputDialog(
+	                this,
+	                "Nhập lý do từ chối yêu cầu hủy:",
+	                "Từ chối yêu cầu hủy",
+	                JOptionPane.QUESTION_MESSAGE
+	        );
+
+	        if (note == null) {
+	            return;
+	        }
+
+	        if (note.isBlank()) {
+	            AppAlert.error(
+	                    this,
+	                    "Thiếu lý do",
+	                    "Vui lòng nhập lý do từ chối."
+	            );
+	            return;
+	        }
+
+	        String error =
+	                cancelRequestService.reject(
+	                        request.getRequestId(),
+	                        note.trim()
+	                );
+
+	        if (error != null) {
+	            AppAlert.error(
+	                    this,
+	                    "Không từ chối được",
+	                    error
+	            );
+	            return;
+	        }
+
+	        AppAlert.success(
+	                this,
+	                "Đã từ chối",
+	                "Yêu cầu hủy đã bị từ chối. "
+	                + "Hóa đơn " + invoice.getInvoiceCode()
+	                + " vẫn hoạt động."
+	        );
+
+	        dispose();
+	    }
 	}
 
 	private void onCancelInvoice() {

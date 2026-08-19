@@ -97,9 +97,12 @@ public final class AppPermissionCatalog {
                 "Xem tất cả hóa đơn",
                 "Xem hóa đơn của tất cả nhân viên.");
 
+        put(AppPermission.INVOICE_CANCEL_REQUEST, "Bán hàng",
+                "Yêu cầu huỷ hoá đơn",
+                "Gửi yêu cầu huỷ hoá đơn để Quản lý bán hàng/Admin duyệt hoặc từ chối.");
         put(AppPermission.INVOICE_CANCEL, "Bán hàng",
                 "Huỷ hoá đơn",
-                "Huỷ hoá đơn đã lập.");
+                "Duyệt và thực hiện huỷ hoá đơn theo thẩm quyền quản lý.");
         put(AppPermission.SHIFT_OPERATE, "Bán hàng",
                 "Vận hành ca bán hàng", "Mở ca, ghi thu/chi và đóng/đối soát ca của chính nhân viên.");
         put(AppPermission.SHIFT_VIEW_ALL, "Bán hàng",

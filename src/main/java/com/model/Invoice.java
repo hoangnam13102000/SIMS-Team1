@@ -37,6 +37,9 @@ public class Invoice {
 	private String cancelReason;
 	private LocalDateTime cancelledAt;
 
+	/** Trang thai request huy gan nhat (PENDING/PROCESSING/APPROVED/REJECTED), khong luu truc tiep trong Invoices. */
+	private String cancelRequestStatus;
+
 	private String payPalOrderId;
 	private String payPalCaptureId;
 
@@ -279,6 +282,14 @@ public class Invoice {
 
 	public void setCancelledAt(LocalDateTime cancelledAt) {
 		this.cancelledAt = cancelledAt;
+	}
+
+	public String getCancelRequestStatus() {
+		return cancelRequestStatus;
+	}
+
+	public void setCancelRequestStatus(String cancelRequestStatus) {
+		this.cancelRequestStatus = cancelRequestStatus;
 	}
 
 	public int getItemCount() {

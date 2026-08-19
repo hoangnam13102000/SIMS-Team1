@@ -60,7 +60,7 @@ public final class RolePermissions {
                 AppPermission.INVOICE_CREATE,
                 AppPermission.INVOICE_VIEW_OWN,
                 AppPermission.SHIFT_OPERATE,
-                AppPermission.INVOICE_CANCEL,
+                AppPermission.INVOICE_CANCEL_REQUEST,
                 AppPermission.RETURN_EXCHANGE_CREATE,
                 AppPermission.EXCEPTION_REPORT_CREATE,
                 AppPermission.ORDER_VIEW,

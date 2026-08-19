@@ -36,6 +36,8 @@ public class ActivityLog {
     public static final String ENTITY_PRODUCT = "PRODUCT";
     public static final String ENTITY_INVENTORY_BATCH = "INVENTORY_BATCH";
     public static final String ENTITY_INVOICE = "INVOICE";
+    /** Workflow yeu cau huy hoa don. */
+    public static final String ENTITY_INVOICE_CANCEL_REQUEST = "INVOICE_CANCEL_REQUEST";
     public static final String ENTITY_PURCHASE_RECEIPT = "PURCHASE_RECEIPT";
     public static final String ENTITY_STOCK_ALERT = "STOCK_ALERT";
     /** Ca ban hang. */
@@ -52,6 +54,13 @@ public class ActivityLog {
     
     /** Danh sach quyen (AppPermission) gan cho 1 vai tro (Role) - RolePermissionPanel. */
     public static final String ENTITY_ROLE_PERMISSION = "ROLE_PERMISSION";
+
+    /** Nhan vien gui yeu cau huy hoa don de quan ly duyet. */
+    public static final String ACTION_INVOICE_CANCEL_REQUEST = "INVOICE_CANCEL_REQUEST";
+    /** Quan ly/Admin duyet yeu cau huy hoa don. */
+    public static final String ACTION_INVOICE_CANCEL_APPROVE = "INVOICE_CANCEL_APPROVE";
+    /** Quan ly/Admin tu choi yeu cau huy hoa don. */
+    public static final String ACTION_INVOICE_CANCEL_REJECT = "INVOICE_CANCEL_REJECT";
 
     /** Nhan vien/QL phe duyet don doi/tra co gia tri lon (vuot nguong tu duyet). */
     public static final String ACTION_RETURN_APPROVE = "RETURN_APPROVE";

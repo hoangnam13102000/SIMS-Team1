@@ -43,6 +43,7 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 		super();
 		table.setBadgeColumn(6, this::statusLabel, this::statusColor);
 		table.setBadgeColumn(8, this::returnStateLabel, this::returnStateColor);
+		table.setBadgeColumn(9, this::cancelRequestLabel, this::cancelRequestColor);
 
 		table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
 			@Override
@@ -176,8 +177,8 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 	}
 
 	private void applyColumnWidths() {
-		table.setColumnWidths(165, 140, 120, 100, 110, 110, 100, 110, 120);
-		table.setColumnMinWidths(150, 100, 90, 90, 90, 90, 90, 90, 100);
+		table.setColumnWidths(160, 135, 115, 100, 105, 105, 95, 105, 110, 120);
+		table.setColumnMinWidths(145, 95, 85, 90, 90, 90, 85, 90, 95, 105);
 		if (table.getTable().getColumnModel().getColumnCount() > 0) {
 			var col = table.getTable().getColumnModel().getColumn(0);
 			col.setMinWidth(150);
@@ -208,7 +209,7 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 	@Override
 	protected String[] getColumnNames() {
 		return new String[] { "Mã hóa đơn", "Khách hàng", "Người tạo", "Ngày tạo", "Tổng tiền", "PT thanh toán",
-				"Trạng thái", "Đã hoàn", "Đổi/trả" };
+				"Trạng thái", "Đã hoàn", "Đổi/trả", "Yêu cầu hủy" };
 	}
 
 	@Override
@@ -218,7 +219,7 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 				item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_FORMAT) : "-",
 				NumberUtil.formatThousands(item.getTotalAmount() != null ? item.getTotalAmount().longValue() : 0L),
 				paymentMethodLabel(item.getPaymentMethod()), statusLabel(item), refundedLabel(item),
-				returnStateLabel(item) };
+				returnStateLabel(item), cancelRequestLabel(item) };
 	}
 
 	@Override
@@ -324,6 +325,8 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 		InvoiceDetailDialog dialog = new InvoiceDetailDialog(owner instanceof Frame ? (Frame) owner : null, item,
 				invoiceDAO);
 		dialog.setVisible(true);
+		// Request/approve/reject co the thay doi trang thai sau khi dialog dong.
+		reload();
 	}
 
 	@Override
@@ -377,6 +380,40 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 			return AppColor.WARNING;
 		if ("Trả một phần".equals(s))
 			return AppColor.ACCENT;
+		return AppColor.TEXT_MUTED;
+	}
+
+	private String cancelRequestLabel(Invoice inv) {
+		if (inv == null || inv.getCancelRequestStatus() == null || inv.getCancelRequestStatus().isBlank())
+			return "—";
+		switch (inv.getCancelRequestStatus().toUpperCase()) {
+		case "PENDING":
+			return "Chờ duyệt";
+		case "PROCESSING":
+			return "Đang xử lý";
+		case "APPROVED":
+			return "Đã duyệt";
+		case "REJECTED":
+			return "Đã từ chối";
+		default:
+			return inv.getCancelRequestStatus();
+		}
+	}
+
+	private String cancelRequestLabel(Object value) {
+		return String.valueOf(value);
+	}
+
+	private Color cancelRequestColor(Object value) {
+		String s = String.valueOf(value);
+		if ("Chờ duyệt".equals(s))
+			return AppColor.WARNING;
+		if ("Đang xử lý".equals(s))
+			return AppColor.INFO;
+		if ("Đã duyệt".equals(s))
+			return AppColor.SUCCESS;
+		if ("Đã từ chối".equals(s))
+			return AppColor.ERROR;
 		return AppColor.TEXT_MUTED;
 	}
 

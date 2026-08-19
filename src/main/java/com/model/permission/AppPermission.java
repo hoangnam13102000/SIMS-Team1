@@ -50,7 +50,9 @@ public enum AppPermission implements Permission {
     SHIFT_VIEW_ALL,
     /** Duyet / tu choi doi soat ca (man hinh giam sat ca). */
     SHIFT_APPROVE,
-    /** Huy hoa don. */
+    /** Gui yeu cau huy hoa don de Sales Manager/Admin duyet. */
+    INVOICE_CANCEL_REQUEST,
+    /** Huy hoa don (quyen quan ly/Admin; SALES_STAFF khong duoc huy truc tiep). */
     INVOICE_CANCEL,      
     /** Tao yeu cau doi/tra hang cho 1 hoa don (R4: bat buoc ghi ro ly do). */
     RETURN_EXCHANGE_CREATE,

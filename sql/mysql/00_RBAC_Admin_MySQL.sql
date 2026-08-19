@@ -73,7 +73,7 @@ INSERT INTO Roles (RoleCode, RoleName, Description)
 SELECT
     'SALES_STAFF',
     'Nhân viên bán hàng',
-    'Tạo hóa đơn, tìm sản phẩm, hủy/đổi trả'
+    'Tạo hóa đơn, tìm sản phẩm, gửi yêu cầu hủy/đổi trả'
 FROM DUAL
 WHERE NOT EXISTS (
     SELECT 1
@@ -124,9 +124,15 @@ VALUES
 
     ('INVOICE_CREATE',            'Tạo hoá đơn'),
 
+    ('INVOICE_VIEW_OWN',          'Xem hóa đơn của chính nhân viên'),
+
+    ('INVOICE_VIEW_ALL',          'Xem tất cả hóa đơn'),
+
     ('SHIFT_OPERATE',             'Vận hành ca bán hàng'),
 
     ('SHIFT_VIEW_ALL',            'Xem tất cả ca bán hàng'),
+
+    ('INVOICE_CANCEL_REQUEST',     'Gửi yêu cầu huỷ hoá đơn để quản lý duyệt'),
 
     ('INVOICE_CANCEL',             'Huỷ hoá đơn'),
 
@@ -206,6 +212,7 @@ WHERE r.RoleCode = 'SALES_MANAGER'
       'REVENUE_REPORT_VIEW',
       'PROFIT_REPORT_VIEW',
       'INVOICE_CREATE',
+      'INVOICE_VIEW_ALL',
       'INVOICE_CANCEL',
       'ORDER_VIEW',
       'ORDER_MANAGE',
@@ -260,8 +267,9 @@ WHERE r.RoleCode = 'SALES_STAFF'
       'CUSTOMER_MANAGE',
       'PRODUCT_VIEW',
       'INVOICE_CREATE',
+      'INVOICE_VIEW_OWN',
       'SHIFT_OPERATE',
-      'INVOICE_CANCEL',
+      'INVOICE_CANCEL_REQUEST',
       'RETURN_EXCHANGE_CREATE',
       'EXCEPTION_REPORT_CREATE',
       'ORDER_VIEW',

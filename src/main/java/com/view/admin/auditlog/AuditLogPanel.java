@@ -2163,6 +2163,15 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
             case ActivityLog.ACTION_SHIFT_CLOSE:
                 return "Đóng ca bán hàng";
 
+            case ActivityLog.ACTION_INVOICE_CANCEL_REQUEST:
+                return "Gửi yêu cầu hủy hóa đơn";
+
+            case ActivityLog.ACTION_INVOICE_CANCEL_APPROVE:
+                return "Duyệt hủy hóa đơn";
+
+            case ActivityLog.ACTION_INVOICE_CANCEL_REJECT:
+                return "Từ chối hủy hóa đơn";
+
             case ActivityLog.ACTION_RETURN_APPROVE:
                 return "Phê duyệt đổi/trả";
 
@@ -2192,6 +2201,7 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
             case ActivityLog.ACTION_CASH_IN:
             case ActivityLog.ACTION_SHIFT_OPEN:
             case ActivityLog.ACTION_2FA_ENABLED:
+            case ActivityLog.ACTION_INVOICE_CANCEL_APPROVE:
                 return AppColor.SUCCESS;
 
             case ActivityLog.ACTION_LOGIN:
@@ -2206,6 +2216,7 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
             case ActivityLog.ACTION_PRODUCT_PRICE_UPDATE:
             case ActivityLog.ACTION_RETURN_APPROVE:
             case ActivityLog.ACTION_CASH_OUT:
+            case ActivityLog.ACTION_INVOICE_CANCEL_REQUEST:
                 return AppColor.WARNING;
 
             case ActivityLog.ACTION_PASSWORD_RESET:
@@ -2219,6 +2230,7 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
             case "USER_LOCK":
             case ActivityLog.ACTION_LOGIN_2FA_FAILED:
             case ActivityLog.ACTION_2FA_DISABLED:
+            case ActivityLog.ACTION_INVOICE_CANCEL_REJECT:
                 return AppColor.ERROR;
 
             case ActivityLog.ACTION_2FA_BACKUP_CODE_USED:
@@ -2267,6 +2279,9 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
 
             case ActivityLog.ENTITY_INVOICE:
                 return "Hóa đơn";
+
+            case ActivityLog.ENTITY_INVOICE_CANCEL_REQUEST:
+                return "Yêu cầu hủy hóa đơn";
 
             case ActivityLog.ENTITY_PURCHASE_RECEIPT:
                 return "Phiếu nhập kho";
@@ -2319,6 +2334,9 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
             case ActivityLog.ENTITY_INVOICE:
             case ActivityLog.ENTITY_ORDER:
                 return AppColor.SUCCESS;
+
+            case ActivityLog.ENTITY_INVOICE_CANCEL_REQUEST:
+                return AppColor.WARNING;
 
             case ActivityLog.ENTITY_SUPPLIER:
             case ActivityLog.ENTITY_PURCHASE_RECEIPT:

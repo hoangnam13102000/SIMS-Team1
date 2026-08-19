@@ -76,6 +76,9 @@ INSERT INTO Permissions (PermissionCode, Description) VALUES
 ('STOCK_VIEW',          'Xem trạng thái tồn kho'),
 ('PRODUCT_SEARCH',      'Tìm kiếm sản phẩm'),
 ('INVOICE_CREATE',      'Tạo hóa đơn bán hàng'),
+('INVOICE_VIEW_OWN',    'Xem hóa đơn của chính nhân viên'),
+('INVOICE_VIEW_ALL',    'Xem tất cả hóa đơn'),
+('INVOICE_CANCEL_REQUEST', 'Gửi yêu cầu hủy hóa đơn để quản lý duyệt'),
 ('INVOICE_CANCEL',      'Hủy hóa đơn'),
 ('RETURN_EXCHANGE',     'Xử lý đổi/trả hàng'),
 ('RETURN_APPROVE',      'Phê duyệt đổi/trả giá trị lớn'),
@@ -104,9 +107,10 @@ SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'ADMIN'), PermissionID FROM Pe
 INSERT INTO RolePermissions (RoleID, PermissionID)
 SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'SALES_STAFF'), PermissionID
 FROM Permissions
-WHERE PermissionCode IN ('STOCK_VIEW','PRODUCT_SEARCH','INVOICE_CREATE','INVOICE_CANCEL',
-                          'RETURN_EXCHANGE','RETURN_EXCHANGE_CREATE','EXCEPTION_REPORT_SEND',
-                          'EXCEPTION_REPORT_CREATE','CUSTOMER_MANAGE','ORDER_VIEW','ORDER_MANAGE');
+WHERE PermissionCode IN ('STOCK_VIEW','PRODUCT_SEARCH','INVOICE_CREATE','INVOICE_VIEW_OWN',
+                          'INVOICE_CANCEL_REQUEST','RETURN_EXCHANGE','RETURN_EXCHANGE_CREATE',
+                          'EXCEPTION_REPORT_SEND','EXCEPTION_REPORT_CREATE','CUSTOMER_MANAGE',
+                          'ORDER_VIEW','ORDER_MANAGE');
 
 INSERT INTO RolePermissions (RoleID, PermissionID)
 SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'INVENTORY_MANAGER'), PermissionID
@@ -118,7 +122,8 @@ INSERT INTO RolePermissions (RoleID, PermissionID)
 SELECT (SELECT RoleID FROM Roles WHERE RoleCode = 'SALES_MANAGER'), PermissionID
 FROM Permissions
 WHERE PermissionCode IN ('REPORT_REVENUE','REPORT_PROFIT','EXCEPTION_REPORT_HANDLE',
-                          'RETURN_APPROVE','RETURN_EXCHANGE_APPROVE','AUDIT_VIEW');
+                          'RETURN_APPROVE','RETURN_EXCHANGE_APPROVE','AUDIT_VIEW',
+                          'INVOICE_VIEW_ALL','INVOICE_CANCEL');
 
 -- Khach hang (tu dang ky o client): chi duoc tim/xem san pham
 INSERT INTO RolePermissions (RoleID, PermissionID)

@@ -29,3 +29,7 @@ Luu y:
     doi/tra, doi chieu kho, canh bao ton va dong bo gia tu dong.
   - phpMyAdmin la giao dien web, khong phai JDBC URL. App Java can
     MySQL host/port/user/password rieng (thuong port 3306).
+
+Nang cap project dang chay (A1-A3 huy hoa don co phe duyet):
+  - Chay 08_INVOICE_CANCEL_APPROVAL.sql SAU khi DB hien tai da ton tai.
+  - Dang xuat/dang nhap lai de phien SALES_STAFF nap quyen moi.

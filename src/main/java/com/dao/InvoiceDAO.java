@@ -56,6 +56,8 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 				+ "inv.OriginalTotalAmount, " + "inv.PaymentMethod, inv.PayPalOrderID, inv.PayPalCaptureID, "
 				+ "inv.PayOsOrderCode, inv.PayOsPaymentLinkID, inv.BankTransferReference, "
 				+ "inv.Status, inv.CancelReason, inv.CancelledAt, "
+				+ "(SELECT r.Status FROM InvoiceCancelRequests r WHERE r.InvoiceID = inv.InvoiceID "
+				+ " ORDER BY r.RequestID DESC LIMIT 1) AS CancelRequestStatus, "
 				+ "(SELECT COUNT(*) FROM InvoiceDetails d WHERE d.InvoiceID = inv.InvoiceID) AS ItemCount";
 	}
 
@@ -117,6 +119,7 @@ public class InvoiceDAO extends BaseDAO<Invoice> {
 
 		Timestamp cancelledAt = rs.getTimestamp("CancelledAt");
 		invoice.setCancelledAt(cancelledAt != null ? cancelledAt.toLocalDateTime() : null);
+		invoice.setCancelRequestStatus(rs.getString("CancelRequestStatus"));
 
 		invoice.setItemCount(rs.getInt("ItemCount"));
 		return invoice;

@@ -330,6 +330,38 @@ CREATE TABLE Invoices (
 	    UNIQUE (PayOsPaymentLinkID)
 	) ENGINE=InnoDB;
 
+/* ============================================================
+   IV-B. YÊU CẦU HỦY HÓA ĐƠN
+   ============================================================ */
+CREATE TABLE InvoiceCancelRequests (
+    RequestID       INT AUTO_INCREMENT PRIMARY KEY,
+    InvoiceID       INT NOT NULL,
+    RequestedBy     INT NOT NULL,
+    Reason          VARCHAR(500) NOT NULL,
+    Status          VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                        CHECK (Status IN ('PENDING', 'PROCESSING', 'APPROVED', 'REJECTED')),
+    RequestedAt     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ReviewedBy      INT NULL,
+    ReviewedAt      DATETIME NULL,
+    ReviewNote      VARCHAR(500) NULL,
+
+    ActiveInvoiceID INT GENERATED ALWAYS AS (
+        CASE WHEN Status IN ('PENDING', 'PROCESSING') THEN InvoiceID ELSE NULL END
+    ) STORED,
+
+    CONSTRAINT FK_InvoiceCancelRequests_Invoice
+        FOREIGN KEY (InvoiceID) REFERENCES Invoices(InvoiceID),
+    CONSTRAINT FK_InvoiceCancelRequests_RequestedBy
+        FOREIGN KEY (RequestedBy) REFERENCES Users(UserID),
+    CONSTRAINT FK_InvoiceCancelRequests_ReviewedBy
+        FOREIGN KEY (ReviewedBy) REFERENCES Users(UserID),
+
+    UNIQUE KEY UQ_InvoiceCancelRequests_ActiveInvoice (ActiveInvoiceID),
+    KEY IX_InvoiceCancelRequests_Invoice (InvoiceID),
+    KEY IX_InvoiceCancelRequests_StatusRequestedAt (Status, RequestedAt),
+    KEY IX_InvoiceCancelRequests_RequestedBy (RequestedBy)
+) ENGINE=InnoDB;
+
 CREATE TABLE InvoiceDetails (
     InvoiceDetailID INT AUTO_INCREMENT PRIMARY KEY,
     InvoiceID       INT NOT NULL,

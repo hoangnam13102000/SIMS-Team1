@@ -353,16 +353,19 @@ final class AuditLogDetailDialog extends JDialog {
         switch (action) {
             case ActivityLog.ACTION_CREATE:
             case ActivityLog.ACTION_RESTORE:
+            case ActivityLog.ACTION_INVOICE_CANCEL_APPROVE:
                 return AppColor.SUCCESS;
             case ActivityLog.ACTION_DELETE:
             case ActivityLog.ACTION_PERMANENT_DELETE:
             case ActivityLog.ACTION_LOGIN_FAILED:
             case "USER_LOCK":
+            case ActivityLog.ACTION_INVOICE_CANCEL_REJECT:
                 return AppColor.ERROR;
             case ActivityLog.ACTION_UPDATE:
             case ActivityLog.ACTION_STATUS_CHANGE:
             case ActivityLog.ACTION_PASSWORD_RESET:
             case "USER_UNLOCK":
+            case ActivityLog.ACTION_INVOICE_CANCEL_REQUEST:
                 return AppColor.WARNING;
             case ActivityLog.ACTION_LOGIN:
             case ActivityLog.ACTION_LOGOUT:
@@ -385,6 +388,9 @@ final class AuditLogDetailDialog extends JDialog {
             case ActivityLog.ACTION_LOGIN_FAILED: return FontAwesomeSolid.EXCLAMATION_TRIANGLE;
             case ActivityLog.ACTION_PASSWORD_RESET: return FontAwesomeSolid.KEY;
             case ActivityLog.ACTION_STATUS_CHANGE: return FontAwesomeSolid.TOGGLE_ON;
+            case ActivityLog.ACTION_INVOICE_CANCEL_REQUEST: return FontAwesomeSolid.PAPER_PLANE;
+            case ActivityLog.ACTION_INVOICE_CANCEL_APPROVE: return FontAwesomeSolid.CHECK_CIRCLE;
+            case ActivityLog.ACTION_INVOICE_CANCEL_REJECT: return FontAwesomeSolid.TIMES_CIRCLE;
             case "USER_LOCK": return FontAwesomeSolid.LOCK;
             case "USER_UNLOCK": return FontAwesomeSolid.UNLOCK;
             default: return FontAwesomeSolid.HISTORY;
