@@ -31,11 +31,13 @@ public final class CloudinaryService {
     // Giới hạn kích thước
     private static final long MAX_IMAGE_SIZE = 5L * 1024L * 1024L;   // 5MB cho ảnh
     private static final long MAX_FILE_SIZE = 25L * 1024L * 1024L;    // 25MB cho file tài liệu
+    private static final long MAX_BACKUP_SIZE = 100L * 1024L * 1024L; // 100MB cho file backup DB
 
     // Các key cấu hình
     private static final String CLOUD_NAME_ENV = "CLOUDINARY_CLOUD_NAME";
     private static final String IMAGE_UPLOAD_PRESET_ENV = "CLOUDINARY_UPLOAD_PRESET";
     private static final String FILE_UPLOAD_PRESET_ENV = "CLOUDINARY_FILE_UPLOAD_PRESET";
+    private static final String BACKUP_UPLOAD_PRESET_ENV = "CLOUDINARY_BACKUP_UPLOAD_PRESET";
 
     // Định dạng ảnh được phép
     private static final String[] ALLOWED_IMAGE_EXTENSIONS = 
@@ -45,6 +47,11 @@ public final class CloudinaryService {
     private static final String[] ALLOWED_FILE_EXTENSIONS = {
             ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
             ".txt", ".csv", ".zip", ".rar", ".7z", ".mp3", ".mp4"
+    };
+
+    // Định dạng file backup DB được phép (bao gồm file đã mã hóa .enc từ EncryptingBackupStrategy)
+    private static final String[] ALLOWED_BACKUP_EXTENSIONS = {
+            ".sql", ".bak", ".gz", ".zip", ".enc"
     };
 
     private static final CloudinaryService INSTANCE = new CloudinaryService();
@@ -145,6 +152,45 @@ public final class CloudinaryService {
         // Dùng "auto" để Cloudinary tự động nhận diện resource type
         URI uploadUri = URI.create("https://api.cloudinary.com/v1_1/" + cloudName + "/auto/upload");
         return executeUpload(uploadUri, requestBody, boundary, 120);
+    }
+
+    // ================================================================
+    // UPLOAD FILE BACKUP DATABASE (.sql, .bak, .gz, .enc...)
+    // ================================================================
+
+    /**
+     * Tải file backup database lên Cloudinary để lưu bản sao ngoài local.
+     * Dùng preset riêng CLOUDINARY_BACKUP_UPLOAD_PRESET (nên đặt ở chế độ
+     * "Signed" hoặc ít nhất giới hạn resource type = raw, KHÔNG public tùy ý,
+     * vì file backup có thể chứa dữ liệu nhạy cảm dù đã được mã hóa AES-256-GCM
+     * bởi EncryptingBackupStrategy trước khi tới đây).
+     *
+     * Trả về secure_url do Cloudinary cấp cho file vừa tải lên.
+     */
+    public String uploadBackupFile(File backupFile) throws CloudinaryUploadException {
+        validateBackupFile(backupFile);
+
+        String cloudName = getRequiredConfig(CLOUD_NAME_ENV,
+                "Thiếu CLOUDINARY_CLOUD_NAME. Hãy cấu hình trong secure-config.enc hoặc biến môi trường rồi mở lại Eclipse.");
+        String uploadPreset = getRequiredConfig(BACKUP_UPLOAD_PRESET_ENV,
+                "Thiếu CLOUDINARY_BACKUP_UPLOAD_PRESET. Hãy tạo Upload Preset riêng cho file backup trên Cloudinary.");
+
+        if (!cloudName.matches("[A-Za-z0-9_-]+")) {
+            throw new CloudinaryUploadException("CLOUDINARY_CLOUD_NAME không hợp lệ.");
+        }
+
+        String boundary = "----SIMSCloudinaryBackup" + UUID.randomUUID().toString().replace("-", "");
+        byte[] requestBody;
+        try {
+            requestBody = createMultipartBody(backupFile, uploadPreset, boundary, false);
+        } catch (IOException e) {
+            throw new CloudinaryUploadException("Không đọc được file backup.", e);
+        }
+
+        // resource_type = raw: Cloudinary lưu nguyên file nhị phân (.sql/.bak/.enc),
+        // không cố xử lý như ảnh/video → tránh lỗi định dạng và không tối ưu/nén sai.
+        URI uploadUri = URI.create("https://api.cloudinary.com/v1_1/" + cloudName + "/raw/upload");
+        return executeUpload(uploadUri, requestBody, boundary, 180);
     }
 
     // ================================================================
@@ -260,6 +306,30 @@ public final class CloudinaryService {
         }
         if (!supported) {
             throw new CloudinaryUploadException("Chỉ hỗ trợ ảnh JPG, PNG, GIF hoặc WEBP.");
+        }
+    }
+
+    private static void validateBackupFile(File file) throws CloudinaryUploadException {
+        if (file == null || !file.isFile()) {
+            throw new CloudinaryUploadException("File backup không tồn tại.");
+        }
+        if (file.length() <= 0) {
+            throw new CloudinaryUploadException("File backup đang trống.");
+        }
+        if (file.length() > MAX_BACKUP_SIZE) {
+            throw new CloudinaryUploadException("File backup vượt quá giới hạn 100MB.");
+        }
+        String name = file.getName().toLowerCase();
+        boolean supported = false;
+        for (String ext : ALLOWED_BACKUP_EXTENSIONS) {
+            if (name.endsWith(ext)) {
+                supported = true;
+                break;
+            }
+        }
+        if (!supported) {
+            throw new CloudinaryUploadException(
+                    "Định dạng file backup không được hỗ trợ. Cho phép: SQL, BAK, GZ, ZIP, ENC.");
         }
     }
 

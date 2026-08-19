@@ -58,13 +58,21 @@ public class BackupStorage {
         return newTimestampedBackupFile(strategyName, extension);
     }
 
+    /** Hậu tố file sidecar lưu link Cloudinary (tạo bởi CloudinaryBackupUploader) — KHÔNG phải file backup thật. */
+    private static final String CLOUDINARY_SIDECAR_SUFFIX = ".cloudinary.url";
+
+    /** True nếu tên file là 1 file backup THẬT (loại trừ file sidecar .cloudinary.url đi kèm). */
+    private static boolean isRealBackupFile(String name) {
+        return name.startsWith("backup_") && !name.endsWith(CLOUDINARY_SIDECAR_SUFFIX);
+    }
+
     /**
      * Kiểm tra hôm nay đã có backup TỰ ĐỘNG nào thành công chưa.
      * Chỉ kiểm tra file ĐỊNH DẠNG NGÀY (yyyyMMdd), không tính các file thủ công có timestamp.
      */
     public boolean hasDailyBackupToday() {
         String todayPrefix = "backup_" + LocalDate.now().format(FILE_DATE_ONLY) + "_";
-        File[] files = directory.listFiles((dir, name) -> name.startsWith(todayPrefix));
+        File[] files = directory.listFiles((dir, name) -> name.startsWith(todayPrefix) && isRealBackupFile(name));
         if (files == null) return false;
         for (File f : files) {
             if (f.isFile() && f.length() > 0) return true;
@@ -81,7 +89,7 @@ public class BackupStorage {
     /** Liệt kê TẤT CẢ file backup (cả tự động lẫn thủ công), mới nhất lên đầu. */
     public List<File> listBackups() {
         List<File> result = new ArrayList<>();
-        File[] files = directory.listFiles((dir, name) -> name.startsWith("backup_"));
+        File[] files = directory.listFiles((dir, name) -> isRealBackupFile(name));
         if (files != null) for (File f : files) result.add(f);
         result.sort(Comparator.comparingLong(File::lastModified).reversed());
         return result;

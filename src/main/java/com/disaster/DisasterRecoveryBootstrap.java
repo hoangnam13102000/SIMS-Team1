@@ -31,6 +31,7 @@ public final class DisasterRecoveryBootstrap {
     private static volatile BackupManager backupManager;
     private static volatile FileIncidentSink incidentSink;
     private static volatile DbHealthMonitor healthMonitor;
+    private static volatile com.backup.CloudinaryBackupUploader cloudBackupUploader;
     private static volatile boolean initialized = false;
     private static volatile String lastInitFailureMessage;
 
@@ -118,6 +119,15 @@ public final class DisasterRecoveryBootstrap {
             }
         });
 
+        // Tải thêm bản backup lên Cloudinary (ngoài local) nếu được bật cấu hình.
+        // Mặc định TẮT vì cần cấu hình CLOUDINARY_CLOUD_NAME + CLOUDINARY_BACKUP_UPLOAD_PRESET
+        // trước, nếu không mỗi lần backup sẽ ghi Incident lỗi upload không cần thiết.
+        boolean cloudUploadEnabled = config.getBoolean("BACKUP_CLOUD_UPLOAD_ENABLED", false);
+        if (cloudUploadEnabled) {
+            cloudBackupUploader = new com.backup.CloudinaryBackupUploader();
+            backupManager.addListener(cloudBackupUploader);
+        }
+
         backupManager.startScheduled(1, intervalMinutes);
 
         healthMonitor = new DbHealthMonitor(
@@ -192,6 +202,16 @@ public final class DisasterRecoveryBootstrap {
     public static DbHealthMonitor getHealthMonitor() {
         if (!initialized) throw new IllegalStateException("DisasterRecoveryBootstrap.init() chua duoc goi.");
         return healthMonitor;
+    }
+
+    /** True neu tinh nang tu dong upload backup len Cloudinary dang bat (BACKUP_CLOUD_UPLOAD_ENABLED=true). */
+    public static boolean isCloudBackupUploadEnabled() {
+        return cloudBackupUploader != null;
+    }
+
+    /** Lay uploader de UI dang ky UploadFinishedListener (VD: tu refresh bang khi upload xong). Null neu tinh nang tat. */
+    public static com.backup.CloudinaryBackupUploader getCloudBackupUploader() {
+        return cloudBackupUploader;
     }
 
     /** True neu init() da chay thanh cong - cac man hinh UI nen kiem tra truoc khi goi getBackupManager()/... */

@@ -7,6 +7,7 @@ import com.components.BaseSearch;
 import com.components.BaseTable;
 import com.components.DatePickerField;
 import com.components.LoadingOverlay;
+import com.components.Pagination;
 import com.components.SectionHeader;
 import com.disaster.DisasterRecoveryBootstrap;
 import com.security.AppConfig;
@@ -48,6 +49,9 @@ public class BackupRecoveryPanel extends JPanel {
     private BaseSearch fileNameSearchBar;
     private String fileNameFilterText = "";
 
+    /** Phân trang bảng danh sách backup. */
+    private final Pagination pagination = new Pagination();
+
     public BackupRecoveryPanel() {
         setLayout(new BorderLayout());
         setBackground(AppColor.PAGE_BG);
@@ -61,23 +65,15 @@ public class BackupRecoveryPanel extends JPanel {
         backupNowButton = header.addButton("Sao lưu ngay", FontAwesomeSolid.DOWNLOAD,
                 SectionHeader.ButtonStyle.PRIMARY, this::onBackupNowClicked);
 
-        backupTable = new BaseTable(new String[]{"Tên file", "Chiến lược", "Thời gian", "Dung lượng"});
+        backupTable = new BaseTable(new String[]{"Tên file", "Chiến lược", "Thời gian", "Dung lượng", "Cloud"});
+        // Chiều cao CỐ ĐỊNH cho vùng bảng: chỉ riêng bảng cuộn nội bộ khi dữ liệu
+        // dài hơn khung nhìn — tiêu đề, bộ lọc và thanh phân trang LUÔN đứng yên,
+        // không bao giờ cần cuộn cả trang mới thấy được nút chuyển trang.
+        backupTable.setPreferredSize(new Dimension(100, 420));
 
         statusLabel = new JLabel(" ");
         statusLabel.setFont(AppFont.SMALL);
         statusLabel.setForeground(AppColor.TEXT_MUTED);
-
-        JPanel center = new JPanel();
-        center.setOpaque(false);
-        center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
-        center.add(Box.createVerticalStrut(16));
-        center.add(backupSectionCard());
-
-        JScrollPane scroll = new JScrollPane(center);
-        scroll.setBorder(null);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        scroll.setOpaque(false);
-        scroll.getViewport().setOpaque(false);
 
         JPanel headerWrap = new JPanel(new BorderLayout());
         headerWrap.setOpaque(false);
@@ -85,14 +81,45 @@ public class BackupRecoveryPanel extends JPanel {
         headerWrap.add(statusLabel, BorderLayout.SOUTH);
         headerWrap.setBorder(new EmptyBorder(0, 0, 4, 0));
 
+        JPanel cardWrap = new JPanel(new BorderLayout());
+        cardWrap.setOpaque(false);
+        cardWrap.setBorder(new EmptyBorder(16, 0, 0, 0));
+        cardWrap.add(backupSectionCard(), BorderLayout.CENTER);
+
         add(headerWrap, BorderLayout.NORTH);
-        add(LoadingOverlay.attach(scroll, loadingOverlay), BorderLayout.CENTER);
+        add(LoadingOverlay.attach(cardWrap, loadingOverlay), BorderLayout.CENTER);
 
         if (DisasterRecoveryBootstrap.isInitialized()) {
             refreshAll();
+            registerCloudUploadAutoRefresh();
         } else {
             showSubsystemUnavailable();
         }
+        bindPagination();
+    }
+
+    /** Gắn sự kiện đổi trang / đổi số dòng mỗi trang → refresh lại bảng theo trang mới. */
+    private void bindPagination() {
+        pagination.setVisiblePages(5);
+        pagination.addPropertyChangeListener("pageChanged", e -> refreshBackupTable());
+        pagination.addPropertyChangeListener("pageSizeChanged", e -> {
+            pagination.setCurrentPage(1);
+            refreshBackupTable();
+        });
+    }
+
+    /**
+     * Nếu tính năng upload Cloudinary đang bật, đăng ký lắng nghe để TỰ ĐỘNG
+     * refresh lại bảng khi upload xong — vì upload chạy bất đồng bộ ở thread
+     * riêng, thường xong SAU khi bảng đã refresh lần đầu (lúc backup local
+     * vừa hoàn tất), nên nếu không có callback này, cột "Cloud" sẽ tạm thời
+     * hiện "Chưa lưu" cho tới khi người dùng tự thao tác khác làm bảng refresh lại.
+     */
+    private void registerCloudUploadAutoRefresh() {
+        com.backup.CloudinaryBackupUploader uploader = DisasterRecoveryBootstrap.getCloudBackupUploader();
+        if (uploader == null) return;
+        uploader.addUploadFinishedListener((file, success) ->
+                SwingUtilities.invokeLater(this::refreshBackupTable));
     }
 
     private void showSubsystemUnavailable() {
@@ -137,7 +164,16 @@ public class BackupRecoveryPanel extends JPanel {
 
         card.add(north, BorderLayout.NORTH);
         card.add(backupTable, BorderLayout.CENTER);
+        card.add(paginationWrap(), BorderLayout.SOUTH);
         return card;
+    }
+
+    private JPanel paginationWrap() {
+        JPanel wrap = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        wrap.setOpaque(false);
+        wrap.setBorder(new EmptyBorder(10, 0, 0, 0));
+        wrap.add(pagination);
+        return wrap;
     }
 
     private JPanel buildBackupDateFilterBar() {
@@ -161,6 +197,7 @@ public class BackupRecoveryPanel extends JPanel {
         fileNameSearchBar.setPreferredSize(new Dimension(240, fileNameSearchBar.getPreferredSize().height));
         fileNameSearchBar.onSearch(keyword -> {
             fileNameFilterText = keyword != null ? keyword.trim().toLowerCase() : "";
+            pagination.setCurrentPage(1);
             refreshBackupTable();
         });
 
@@ -261,6 +298,7 @@ public class BackupRecoveryPanel extends JPanel {
                             || (toDateFilter != null && toDateFilter.getValue() != null));
         }
 
+        pagination.setCurrentPage(1);
         refreshBackupTable();
     }
 
@@ -271,6 +309,7 @@ public class BackupRecoveryPanel extends JPanel {
             String text = fileNameSearchBar.getText();
             fileNameFilterText = text != null ? text.trim().toLowerCase() : "";
         }
+        pagination.setCurrentPage(1);
         refreshBackupTable();
     }
 
@@ -423,7 +462,10 @@ public class BackupRecoveryPanel extends JPanel {
         }.execute();
     }
 
-    private void refreshAll() { refreshBackupTable(); }
+    private void refreshAll() {
+        pagination.setCurrentPage(1);
+        refreshBackupTable();
+    }
 
     private void refreshBackupTable() {
         backupTable.clear();
@@ -432,17 +474,55 @@ public class BackupRecoveryPanel extends JPanel {
         List<File> backups = DisasterRecoveryBootstrap.getBackupManager().getStorage().listBackups();
         SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss dd/MM/yyyy");
 
+        boolean cloudEnabled = com.disaster.DisasterRecoveryBootstrap.isCloudBackupUploadEnabled();
+
+        // ====== 1. Lọc theo ngày + tên file trước ======
+        List<File> filtered = new java.util.ArrayList<>();
         for (File f : backups) {
             if (!matchesDateFilter(f)) continue;
             if (!matchesFileNameFilter(f)) continue;
+            filtered.add(f);
+        }
+
+        // ====== 2. Cập nhật Pagination theo tổng số dòng SAU khi lọc ======
+        int totalItems = filtered.size();
+        pagination.setTotalItems(totalItems);
+
+        int pageSize = pagination.getPageSize();
+        int currentPage = pagination.getCurrentPage();
+
+        // ====== 3. Cắt đúng khoảng dữ liệu của trang hiện tại ======
+        int from = totalItems == 0 ? 0 : (currentPage - 1) * pageSize;
+        if (from >= totalItems && totalItems > 0) {
+            pagination.setCurrentPage(1);
+            currentPage = 1;
+            from = 0;
+        }
+        int to = Math.min(from + pageSize, totalItems);
+
+        for (int i = from; i < to; i++) {
+            File f = filtered.get(i);
             backupTable.addRow(new Object[]{
                     f.getName(), extractStrategyName(f.getName()),
-                    fmt.format(new java.util.Date(f.lastModified())), formatSize(f.length())
+                    fmt.format(new java.util.Date(f.lastModified())), formatSize(f.length()),
+                    cloudStatusFor(f, cloudEnabled)
             });
         }
 
         // Cập nhật lại gợi ý autocomplete (có thể có file backup mới)
         refreshSearchAutocomplete();
+    }
+
+    /**
+     * Trạng thái Cloud hiển thị trên bảng:
+     *   - "—" nếu tính năng upload Cloudinary chưa được bật (BACKUP_CLOUD_UPLOAD_ENABLED=false).
+     *   - "Đã lưu" nếu tìm thấy file sidecar .cloudinary.url (upload thành công).
+     *   - "Chưa lưu" nếu tính năng đang bật nhưng file này upload thất bại/chưa xong (VD backup cũ trước khi bật).
+     */
+    private static String cloudStatusFor(File backupFile, boolean cloudEnabled) {
+        if (!cloudEnabled) return "—";
+        String url = com.backup.CloudinaryBackupUploader.readUploadedUrl(backupFile);
+        return url != null ? "Đã lưu" : "Chưa lưu";
     }
 
     private static String extractStrategyName(String fileName) {

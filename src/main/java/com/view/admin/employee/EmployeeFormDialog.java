@@ -37,12 +37,14 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
 import java.awt.GridLayout;
 import java.io.File;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Random;
 
 /**
  * Dialog Them/Sua nhan vien - da thiet ke lai: chia thanh 2 nhom "Thong tin
@@ -65,6 +67,45 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
     private static final Employee.Gender[] GENDERS = {Employee.Gender.MALE, Employee.Gender.FEMALE, Employee.Gender.OTHER};
     private static final String[] GENDER_LABELS = {"Nam", "Nữ", "Khác"};
     private static final int AVATAR_PREVIEW = 140;
+
+    private static final Random RANDOM = new Random();
+
+    /** Du lieu mau de dien nhanh khi Demo project - khong lien quan logic nghiep vu. */
+    private static final DemoTemplate[] DEMO_TEMPLATES = {
+            new DemoTemplate("Nguyễn Văn An", "nguyenvanan", Employee.Gender.MALE),
+            new DemoTemplate("Trần Thị Bích", "tranthibich", Employee.Gender.FEMALE),
+            new DemoTemplate("Lê Hoàng Nam", "lehoangnam", Employee.Gender.MALE),
+            new DemoTemplate("Phạm Thị Hồng", "phamthihong", Employee.Gender.FEMALE),
+            new DemoTemplate("Hoàng Minh Tuấn", "hoangminhtuan", Employee.Gender.MALE),
+            new DemoTemplate("Vũ Thị Lan", "vuthilan", Employee.Gender.FEMALE),
+            new DemoTemplate("Đặng Quốc Huy", "dangquochuy", Employee.Gender.MALE),
+            new DemoTemplate("Bùi Thị Ngọc", "buithingoc", Employee.Gender.FEMALE),
+    };
+
+    /** Các đầu số di động VN hợp lệ (khớp regex phoneVn trong FormValidator/Rules), dùng để sinh SĐT demo. */
+    private static final String[] PHONE_PREFIXES = {
+            "032", "033", "034", "035", "036", "037", "038", "039",
+            "070", "076", "077", "078", "079",
+            "081", "082", "083", "084", "085", "088",
+            "090", "091", "092", "093", "094", "096", "097", "098", "099"
+    };
+
+    /** Khoang luong (VND) theo tung vai tro trong EMP_ROLES - chi dung de sinh du lieu Demo hop ly theo vai tro. */
+    private static final long[] SALARY_MIN_BY_ROLE = {15_000_000L, 12_000_000L, 10_000_000L, 6_000_000L};
+    private static final long[] SALARY_MAX_BY_ROLE = {25_000_000L, 18_000_000L, 15_000_000L, 10_000_000L};
+
+    /** Ban ghi don gian chua 1 mau du lieu Demo cho nhan vien. */
+    private static final class DemoTemplate {
+        final String fullName;
+        final String emailSlug;
+        final Employee.Gender gender;
+
+        DemoTemplate(String fullName, String emailSlug, Employee.Gender gender) {
+            this.fullName = fullName;
+            this.emailSlug = emailSlug;
+            this.gender = gender;
+        }
+    }
 
     private final EmployeeDAO employeeDAO;
 
@@ -119,6 +160,11 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
             panel.add(Box.createVerticalStrut(16));
         }
 
+        if (mode == CrudMode.ADD) {
+            panel.add(buildDemoBar());
+            panel.add(Box.createVerticalStrut(10));
+        }
+
         JPanel columns = new JPanel();
         columns.setOpaque(false);
         columns.setLayout(new BoxLayout(columns, BoxLayout.X_AXIS));
@@ -138,6 +184,72 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
                     "Mã nhân viên, tên đăng nhập và mật khẩu đăng nhập sẽ được hệ thống tự động "
                     + "tạo và gửi tới email nhân viên ở trên sau khi lưu."));
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Nút Demo — chỉ hiện khi Thêm mới, tự động điền dữ liệu mẫu
+    // ---------------------------------------------------------------
+
+    private JPanel buildDemoBar() {
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        bar.setOpaque(false);
+        bar.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+
+        JButton demoButton = new JButton("Điền dữ liệu Demo", FontIcon.of(FontAwesomeSolid.BOLT, 13, Color.WHITE));
+        demoButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        demoButton.setFocusPainted(false);
+        demoButton.setBackground(AppColor.ACCENT);
+        demoButton.setForeground(Color.WHITE);
+        demoButton.setBorder(new EmptyBorder(7, 14, 7, 14));
+        demoButton.setToolTipText("Tự động điền thông tin mẫu để giảm thời gian demo");
+        demoButton.addActionListener(e -> fillDemoData());
+        bar.add(demoButton);
+        return bar;
+    }
+
+    /** Dien nhanh mot bo du lieu mau ngau nhien vao form de phuc vu demo, khong dung cho du lieu thuc te. */
+    private void fillDemoData() {
+        DemoTemplate t = DEMO_TEMPLATES[RANDOM.nextInt(DEMO_TEMPLATES.length)];
+        int suffix = 100 + RANDOM.nextInt(900);
+        int roleIndex = RANDOM.nextInt(EMP_ROLES.length);
+
+        fullNameField.setText(t.fullName);
+        emailField.setText(t.emailSlug + suffix + "@gmail.com");
+        phoneField.setText(randomPhoneVn());
+        dobPicker.setValue(randomDob());
+        genderCombo.setSelectedIndex(indexOfGender(t.gender));
+        roleCombo.setSelectedIndex(roleIndex);
+        salaryField.setText(CurrencyDocumentFilter.format(BigDecimal.valueOf(randomSalary(roleIndex))));
+
+        showMessage(null);
+        fullNameField.requestFocusInWindow();
+    }
+
+    /** Sinh 1 SDT di dong VN ngau nhien hop le (0 + 9 chu so), chi de demo nhanh. */
+    private static String randomPhoneVn() {
+        String prefix = PHONE_PREFIXES[RANDOM.nextInt(PHONE_PREFIXES.length)];
+        StringBuilder sb = new StringBuilder(prefix);
+        for (int i = 0; i < 7; i++) {
+            sb.append(RANDOM.nextInt(10));
+        }
+        return sb.toString();
+    }
+
+    /** Sinh ngay sinh ngau nhien cho 1 nhan vien tuoi tu 20-45, chi de demo nhanh. */
+    private static LocalDate randomDob() {
+        int age = 20 + RANDOM.nextInt(26);
+        int dayOffset = RANDOM.nextInt(365);
+        return LocalDate.now().minusYears(age).minusDays(dayOffset);
+    }
+
+    /** Sinh luong ngau nhien (lam tron 500k) trong khoang hop ly theo vai tro, chi de demo nhanh. */
+    private static long randomSalary(int roleIndex) {
+        long min = SALARY_MIN_BY_ROLE[roleIndex];
+        long max = SALARY_MAX_BY_ROLE[roleIndex];
+        long step = 500_000L;
+        int steps = (int) ((max - min) / step) + 1;
+        return min + RANDOM.nextInt(steps) * step;
     }
 
     /** Cột avatar: preview tròn + nút chọn ảnh. */

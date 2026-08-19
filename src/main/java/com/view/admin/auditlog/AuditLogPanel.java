@@ -6,6 +6,7 @@ import com.components.DatePickerField;
 import com.components.FilterDropdown;
 import com.components.LoadingOverlay;
 import com.components.Pagination;
+import com.components.RowActionListener;
 import com.components.StatCard;
 import com.components.crud.BaseCrudPanel;
 import com.dao.AuditLogDAO;
@@ -845,6 +846,18 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
 
         incidentTable.enableSorting();
 
+        incidentTable.enableActions(
+                new RowActionListener() {
+                    @Override
+                    public void onView(int modelRow) {
+                        showIncidentDetail(modelRow);
+                    }
+                },
+                true,
+                false,
+                false
+        );
+
         incidentLoadingOverlay =
                 new LoadingOverlay(
                         "Đang tải dữ liệu..."
@@ -1097,6 +1110,35 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
         };
 
         worker.execute();
+    }
+
+    private void showIncidentDetail(int modelRow) {
+
+        if (allIncidentLines == null
+                || incidentPagination == null
+                || modelRow < 0) {
+            return;
+        }
+
+        int pageSize = incidentPagination.getPageSize();
+        int page = incidentPagination.getCurrentPage();
+
+        int fromIndex =
+                Math.max(
+                        0,
+                        (page - 1) * pageSize
+                );
+
+        int lineIndex = fromIndex + modelRow;
+
+        if (lineIndex < 0 || lineIndex >= allIncidentLines.size()) {
+            return;
+        }
+
+        IncidentDetailDialog.show(
+                SwingUtilities.getWindowAncestor(this),
+                allIncidentLines.get(lineIndex)
+        );
     }
 
     private static String extractJsonField(
@@ -2356,4 +2398,3 @@ public class AuditLogPanel extends BaseCrudPanel<ActivityLog> {
         }
     }
 }
-
