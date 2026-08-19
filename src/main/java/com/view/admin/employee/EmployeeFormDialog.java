@@ -5,6 +5,8 @@ import com.components.DatePickerField;
 import com.components.crud.BaseFormDialog;
 import com.components.crud.CrudMode;
 import com.dao.EmployeeDAO;
+import com.dao.RoleDAO;
+import com.model.AppRole;
 import com.model.Employee;
 import com.model.Role;
 import com.service.media.CloudinaryService;
@@ -18,59 +20,29 @@ import com.validation.Rules;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.JButton;
-import javax.swing.JComboBox;
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JSeparator;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
+import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.Frame;
-import java.awt.GridLayout;
+import java.awt.*;
 import java.io.File;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Random;
 
-/**
- * Dialog Them/Sua nhan vien - da thiet ke lai: chia thanh 2 nhom "Thong tin
- * ca nhan" / "Thong tin cong viec" voi tieu de nhom + icon cho tung nhan,
- * dung DatePickerField cho Ngay vao lam (thay vi go tay dd/MM/yyyy), the
- * hien Ma NV/Ten dang nhap (khi Sua) nhu 1 the thong tin chi doc, va banner
- * huong dan noi bat hon o cuoi form khi Them moi.
- */
 public class EmployeeFormDialog extends BaseFormDialog<Employee> {
-
-    /** Chỉ 4 vai trò nghiệp vụ - KHÔNG bao gồm Role.CUSTOMER (khách hàng không phải nhân viên). */
-    private static final Role[] EMP_ROLES = {
-            Role.ADMIN, Role.SALES_MANAGER, Role.INVENTORY_MANAGER, Role.SALES_STAFF
-    };
-    private static final String[] EMP_ROLE_LABELS = {
-            "Quản trị viên", "Quản lý bán hàng", "Quản lý kho", "Nhân viên bán hàng"
-    };
+    
+    // ❌ ĐÃ XÓA: EMP_ROLES và EMP_ROLE_LABELS hardcode
+    
+    // ⭐ DANH SÁCH VAI TRÒ TƯƠI TỪ DB
+    private List<AppRole> availableRoles;
+    
     private static final String[] STATUS_LABELS = {"Đang hoạt động", "Vô hiệu hóa"};
-
     private static final Employee.Gender[] GENDERS = {Employee.Gender.MALE, Employee.Gender.FEMALE, Employee.Gender.OTHER};
     private static final String[] GENDER_LABELS = {"Nam", "Nữ", "Khác"};
     private static final int AVATAR_PREVIEW = 140;
-
     private static final Random RANDOM = new Random();
-
-    /** Du lieu mau de dien nhanh khi Demo project - khong lien quan logic nghiep vu. */
+    
     private static final DemoTemplate[] DEMO_TEMPLATES = {
             new DemoTemplate("Nguyễn Văn An", "nguyenvanan", Employee.Gender.MALE),
             new DemoTemplate("Trần Thị Bích", "tranthibich", Employee.Gender.FEMALE),
@@ -81,36 +53,33 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
             new DemoTemplate("Đặng Quốc Huy", "dangquochuy", Employee.Gender.MALE),
             new DemoTemplate("Bùi Thị Ngọc", "buithingoc", Employee.Gender.FEMALE),
     };
-
-    /** Các đầu số di động VN hợp lệ (khớp regex phoneVn trong FormValidator/Rules), dùng để sinh SĐT demo. */
+    
     private static final String[] PHONE_PREFIXES = {
             "032", "033", "034", "035", "036", "037", "038", "039",
             "070", "076", "077", "078", "079",
             "081", "082", "083", "084", "085", "088",
             "090", "091", "092", "093", "094", "096", "097", "098", "099"
     };
-
-    /** Khoang luong (VND) theo tung vai tro trong EMP_ROLES - chi dung de sinh du lieu Demo hop ly theo vai tro. */
+    
     private static final long[] SALARY_MIN_BY_ROLE = {15_000_000L, 12_000_000L, 10_000_000L, 6_000_000L};
     private static final long[] SALARY_MAX_BY_ROLE = {25_000_000L, 18_000_000L, 15_000_000L, 10_000_000L};
-
-    /** Ban ghi don gian chua 1 mau du lieu Demo cho nhan vien. */
+    
     private static final class DemoTemplate {
         final String fullName;
         final String emailSlug;
         final Employee.Gender gender;
-
         DemoTemplate(String fullName, String emailSlug, Employee.Gender gender) {
             this.fullName = fullName;
             this.emailSlug = emailSlug;
             this.gender = gender;
         }
     }
-
+    
     private final EmployeeDAO employeeDAO;
-
-    private JTextField employeeIdField; // chi doc, chi hien thi khi Sua
-    private JTextField usernameField;   // chi doc, chi hien thi khi Sua
+    private final RoleDAO roleDAO = new RoleDAO(); // ⭐ Thêm RoleDAO
+    
+    private JTextField employeeIdField;
+    private JTextField usernameField;
     private JTextField fullNameField;
     private JTextField emailField;
     private JTextField phoneField;
@@ -120,7 +89,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
     private JComboBox<String> genderCombo;
     private JComboBox<String> roleCombo;
     private JComboBox<String> statusCombo;
-
     private JLabel avatarPreviewLabel;
     private JLabel avatarHintLabel;
     private File pendingAvatarFile;
@@ -143,14 +111,11 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return mode == CrudMode.ADD ? 640 : 660;
     }
 
-    /**
-     * Layout ngang:
-     *  - (EDIT) thẻ Mã NV / Username full-width phía trên
-     *  - 3 cột: Avatar | Thông tin cá nhân | Thông tin công việc
-     *  - (ADD) banner hướng dẫn phía dưới
-     */
     @Override
     protected void buildFields(JPanel panel) {
+        // ⭐ LOAD VAI TRÒ TỪ DB NGAY KHI BUILD FORM
+        availableRoles = roleDAO.findManagedRoles(); // Loại CUSTOMER
+        
         if (mode == CrudMode.EDIT) {
             employeeIdField = newTextField();
             employeeIdField.setEnabled(false);
@@ -159,25 +124,23 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
             panel.add(buildIdentityCard());
             panel.add(Box.createVerticalStrut(16));
         }
-
         if (mode == CrudMode.ADD) {
             panel.add(buildDemoBar());
             panel.add(Box.createVerticalStrut(10));
         }
-
+        
         JPanel columns = new JPanel();
         columns.setOpaque(false);
         columns.setLayout(new BoxLayout(columns, BoxLayout.X_AXIS));
         columns.setAlignmentX(Component.LEFT_ALIGNMENT);
         columns.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-
         columns.add(buildAvatarColumn());
         columns.add(Box.createHorizontalStrut(20));
         columns.add(buildPersonalColumn());
         columns.add(Box.createHorizontalStrut(20));
         columns.add(buildWorkColumn());
         panel.add(columns);
-
+        
         if (mode == CrudMode.ADD) {
             panel.add(Box.createVerticalStrut(14));
             panel.add(infoBanner(
@@ -186,16 +149,11 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         }
     }
 
-    // ---------------------------------------------------------------
-    // Nút Demo — chỉ hiện khi Thêm mới, tự động điền dữ liệu mẫu
-    // ---------------------------------------------------------------
-
     private JPanel buildDemoBar() {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         bar.setOpaque(false);
         bar.setAlignmentX(Component.LEFT_ALIGNMENT);
         bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-
         JButton demoButton = new JButton("Điền dữ liệu Demo", FontIcon.of(FontAwesomeSolid.BOLT, 13, Color.WHITE));
         demoButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
         demoButton.setFocusPainted(false);
@@ -208,12 +166,10 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return bar;
     }
 
-    /** Dien nhanh mot bo du lieu mau ngau nhien vao form de phuc vu demo, khong dung cho du lieu thuc te. */
     private void fillDemoData() {
         DemoTemplate t = DEMO_TEMPLATES[RANDOM.nextInt(DEMO_TEMPLATES.length)];
         int suffix = 100 + RANDOM.nextInt(900);
-        int roleIndex = RANDOM.nextInt(EMP_ROLES.length);
-
+        int roleIndex = Math.min(RANDOM.nextInt(availableRoles.size()), SALARY_MIN_BY_ROLE.length - 1);
         fullNameField.setText(t.fullName);
         emailField.setText(t.emailSlug + suffix + "@gmail.com");
         phoneField.setText(randomPhoneVn());
@@ -221,12 +177,10 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         genderCombo.setSelectedIndex(indexOfGender(t.gender));
         roleCombo.setSelectedIndex(roleIndex);
         salaryField.setText(CurrencyDocumentFilter.format(BigDecimal.valueOf(randomSalary(roleIndex))));
-
         showMessage(null);
         fullNameField.requestFocusInWindow();
     }
 
-    /** Sinh 1 SDT di dong VN ngau nhien hop le (0 + 9 chu so), chi de demo nhanh. */
     private static String randomPhoneVn() {
         String prefix = PHONE_PREFIXES[RANDOM.nextInt(PHONE_PREFIXES.length)];
         StringBuilder sb = new StringBuilder(prefix);
@@ -236,34 +190,30 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return sb.toString();
     }
 
-    /** Sinh ngay sinh ngau nhien cho 1 nhan vien tuoi tu 20-45, chi de demo nhanh. */
     private static LocalDate randomDob() {
         int age = 20 + RANDOM.nextInt(26);
         int dayOffset = RANDOM.nextInt(365);
         return LocalDate.now().minusYears(age).minusDays(dayOffset);
     }
 
-    /** Sinh luong ngau nhien (lam tron 500k) trong khoang hop ly theo vai tro, chi de demo nhanh. */
     private static long randomSalary(int roleIndex) {
-        long min = SALARY_MIN_BY_ROLE[roleIndex];
-        long max = SALARY_MAX_BY_ROLE[roleIndex];
+        int safeIdx = Math.min(roleIndex, SALARY_MIN_BY_ROLE.length - 1);
+        long min = SALARY_MIN_BY_ROLE[safeIdx];
+        long max = SALARY_MAX_BY_ROLE[safeIdx];
         long step = 500_000L;
         int steps = (int) ((max - min) / step) + 1;
         return min + RANDOM.nextInt(steps) * step;
     }
 
-    /** Cột avatar: preview tròn + nút chọn ảnh. */
     private JPanel buildAvatarColumn() {
         JPanel col = new JPanel();
         col.setOpaque(false);
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
         col.setAlignmentY(Component.TOP_ALIGNMENT);
-
         JLabel caption = iconFieldLabel(FontAwesomeSolid.USER_CIRCLE, "Ảnh đại diện", false);
         caption.setAlignmentX(Component.CENTER_ALIGNMENT);
         col.add(caption);
         col.add(Box.createVerticalStrut(8));
-
         avatarPreviewLabel = new JLabel();
         avatarPreviewLabel.setHorizontalAlignment(JLabel.CENTER);
         avatarPreviewLabel.setPreferredSize(new Dimension(AVATAR_PREVIEW, AVATAR_PREVIEW));
@@ -274,7 +224,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         avatarPreviewLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         col.add(avatarPreviewLabel);
         col.add(Box.createVerticalStrut(12));
-
         JButton chooseButton = new JButton("Chọn ảnh", FontIcon.of(FontAwesomeSolid.IMAGE, 13, AppColor.ACCENT));
         chooseButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
         chooseButton.setFocusPainted(false);
@@ -287,20 +236,17 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         chooseButton.addActionListener(e -> chooseAvatar());
         col.add(chooseButton);
         col.add(Box.createVerticalStrut(8));
-
         avatarHintLabel = new JLabel("Tùy chọn · tối đa 5MB");
         avatarHintLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         avatarHintLabel.setForeground(AppColor.TEXT_MUTED);
         avatarHintLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         col.add(avatarHintLabel);
-
         return col;
     }
 
     private void chooseAvatar() {
         File selected = FileUtil.chooseImageFile(this);
         if (selected == null) return;
-
         if (!FileUtil.isWithinSizeLimit(selected, 5)) {
             showMessage("Ảnh vượt quá 5MB, vui lòng chọn ảnh khác.");
             return;
@@ -309,7 +255,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
             showMessage("Định dạng ảnh không được hỗ trợ.");
             return;
         }
-
         pendingAvatarFile = selected;
         String displayName = fullNameField != null && fullNameField.getText() != null
                 && !fullNameField.getText().isBlank()
@@ -319,70 +264,64 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         showMessage(null);
     }
 
-    /** Cột trái — Thông tin cá nhân. */
     private JPanel buildPersonalColumn() {
         JPanel col = new JPanel();
         col.setOpaque(false);
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
         col.setAlignmentY(Component.TOP_ALIGNMENT);
         col.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         addSectionHeader(col, FontAwesomeSolid.ID_CARD, "Thông tin cá nhân");
-
         fullNameField = newTextField();
         col.add(fieldGroupIcon(FontAwesomeSolid.USER, "Họ và tên", true, fullNameField));
         col.add(Box.createVerticalStrut(12));
-
         emailField = newTextField();
         col.add(fieldGroupIcon(FontAwesomeSolid.ENVELOPE, "Email", true, emailField));
         col.add(Box.createVerticalStrut(12));
-
         phoneField = newTextField();
         col.add(fieldGroupIcon(FontAwesomeSolid.PHONE_ALT, "Số điện thoại", false, phoneField));
         col.add(Box.createVerticalStrut(12));
-
         dobPicker = new DatePickerField(null, true);
         dobPicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         dobPicker.setPreferredSize(new Dimension(160, 36));
         col.add(fieldGroupIcon(FontAwesomeSolid.CALENDAR_ALT, "Ngày sinh", false, dobPicker));
         col.add(Box.createVerticalStrut(12));
-
         genderCombo = newComboBox(GENDER_LABELS);
         col.add(fieldGroupIcon(FontAwesomeSolid.USERS, "Giới tính", false, genderCombo));
-
         return col;
     }
 
-    /** Cột phải — Thông tin công việc. */
+    /** ⭐ CẬP NHẬT: roleCombo load từ availableRoles */
     private JPanel buildWorkColumn() {
         JPanel col = new JPanel();
         col.setOpaque(false);
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
         col.setAlignmentY(Component.TOP_ALIGNMENT);
         col.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         addSectionHeader(col, FontAwesomeSolid.CLIPBOARD_LIST, "Thông tin công việc");
-
-        roleCombo = newComboBox(EMP_ROLE_LABELS);
+        
+        // ⭐ Tạo mảng tên vai trò từ DB
+        String[] roleNames = availableRoles.stream()
+                .map(AppRole::getRoleName)
+                .toArray(String[]::new);
+        roleCombo = newComboBox(roleNames);
         col.add(fieldGroupIcon(FontAwesomeSolid.USER_TIE, "Vai trò", true, roleCombo));
+        
         col.add(Box.createVerticalStrut(12));
-
         hireDatePicker = new DatePickerField(LocalDate.now());
         hireDatePicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         hireDatePicker.setPreferredSize(new Dimension(160, 36));
         col.add(fieldGroupIcon(FontAwesomeSolid.CALENDAR_ALT, "Ngày vào làm", true, hireDatePicker));
+        
         col.add(Box.createVerticalStrut(12));
-
         salaryField = newTextField();
         CurrencyDocumentFilter.install(salaryField);
         col.add(fieldGroupIcon(FontAwesomeSolid.MONEY_BILL_WAVE, "Lương", false, wrapWithSuffix(salaryField, "VNĐ")));
+        
         col.add(Box.createVerticalStrut(12));
-
         if (mode == CrudMode.EDIT) {
             statusCombo = newComboBox(STATUS_LABELS);
             col.add(fieldGroupIcon(FontAwesomeSolid.CHECK_CIRCLE, "Trạng thái", true, statusCombo));
         }
-
         return col;
     }
 
@@ -395,46 +334,33 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return combo;
     }
 
-    // ---------------------------------------------------------------
-    // Helper giao diện riêng cho dialog này (nhãn có icon, nhóm nhãn,
-    // tiêu đề nhóm, thẻ thông tin chỉ đọc, banner hướng dẫn...)
-    // ---------------------------------------------------------------
-
-    /** Tiêu đề 1 nhóm field: icon + chữ in hoa màu nhấn + đường kẻ ngăn cách kéo dài hết hàng. */
     private void addSectionHeader(JPanel panel, FontAwesomeSolid iconType, String text) {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
-
         FontIcon icon = FontIcon.of(iconType, 13);
         icon.setIconColor(AppColor.ACCENT);
         JLabel iconLabel = new JLabel(icon);
-
         JLabel textLabel = new JLabel(text.toUpperCase());
         textLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
         textLabel.setForeground(AppColor.ACCENT);
         textLabel.setBorder(new EmptyBorder(0, 8, 0, 10));
-
         JSeparator sep = new JSeparator(SwingConstants.HORIZONTAL);
         sep.setForeground(AppColor.BORDER);
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
         sep.setAlignmentY(Component.CENTER_ALIGNMENT);
-
         row.add(iconLabel);
         row.add(textLabel);
         row.add(sep);
-
         panel.add(row);
         panel.add(Box.createVerticalStrut(12));
     }
 
-    /** Nhãn field có icon nhỏ phía trước (giữ đúng phong cách fieldLabel của BaseFormDialog, chỉ thêm icon). */
     private JLabel iconFieldLabel(FontAwesomeSolid iconType, String text, boolean required) {
         FontIcon icon = FontIcon.of(iconType, 12);
         icon.setIconColor(AppColor.TEXT_MUTED_ALT);
-
         String html = "<html>" + text
                 + (required ? " <font color='" + toHex(AppColor.ERROR) + "'>*</font>" : "")
                 + "</html>";
@@ -447,7 +373,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return label;
     }
 
-    /** Giống fieldGroup() của lớp cha nhưng dùng nhãn có icon. */
     private JPanel fieldGroupIcon(FontAwesomeSolid iconType, String label, boolean required, JComponent field) {
         JPanel group = new JPanel();
         group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
@@ -459,15 +384,12 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return group;
     }
 
-    /** Bọc 1 field trong khung có hậu tố đơn vị bên phải (vd "VNĐ") ngay trong khung field. */
     private JPanel wrapWithSuffix(JTextField field, String suffix) {
         field.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 0));
-
         JLabel suffixLabel = new JLabel(suffix);
         suffixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
         suffixLabel.setForeground(AppColor.TEXT_MUTED);
         suffixLabel.setBorder(new EmptyBorder(0, 6, 0, 10));
-
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(true);
         wrapper.setBackground(AppColor.WHITE);
@@ -479,7 +401,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return wrapper;
     }
 
-    /** Thẻ nền xám nhạt hiển thị Mã nhân viên / Tên đăng nhập (chỉ đọc) - tách biệt trực quan khỏi field có thể sửa. */
     private JPanel buildIdentityCard() {
         JPanel card = new JPanel(new GridLayout(1, 2, 20, 0));
         card.setBackground(AppColor.BG_LIGHTER);
@@ -500,7 +421,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         valueField.setDisabledTextColor(AppColor.TEXT_PRIMARY);
         valueField.setAlignmentX(Component.LEFT_ALIGNMENT);
         valueField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
-
         FontIcon icon = FontIcon.of(iconType, 11);
         icon.setIconColor(AppColor.TEXT_MUTED);
         JLabel labelLabel = new JLabel(label, icon, SwingConstants.LEFT);
@@ -508,7 +428,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         labelLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         labelLabel.setForeground(AppColor.TEXT_MUTED);
         labelLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         JPanel col = new JPanel();
         col.setOpaque(false);
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
@@ -518,7 +437,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return col;
     }
 
-    /** Banner hướng dẫn nổi bật (thay cho hintLabel đơn thuần) - nền xanh nhạt + icon info + viền màu accent info. */
     private JPanel infoBanner(String text) {
         JPanel banner = new JPanel(new BorderLayout(10, 0));
         banner.setBackground(AppColor.INFO_BG);
@@ -527,18 +445,11 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         banner.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(AppColor.INFO, 1, true),
                 new EmptyBorder(10, 12, 10, 12)));
-
         FontIcon icon = FontIcon.of(FontAwesomeSolid.INFO_CIRCLE, 15);
         icon.setIconColor(AppColor.INFO);
         JLabel iconLabel = new JLabel(icon);
         iconLabel.setVerticalAlignment(SwingConstants.TOP);
         iconLabel.setBorder(new EmptyBorder(2, 0, 0, 0));
-
-        // JTextArea word-wrap THẬT (khong dung chieu "<html><div style='width:Npx'>") -
-        // cach cu doi luc khien HTML engine tinh preferred size RONG HON ca gia tri px
-        // da khai bao (dac biet voi tieng Viet co dau), lam formPanel bi day rong ra va
-        // JScrollPane phai hien thanh cuon ngang. JTextArea(rows, columns) tinh do rong
-        // theo SO KY TU, luon nam trong khoang du kien, khong bao gio vuot qua.
         JTextArea textArea = new JTextArea(text, 3, 44);
         textArea.setEditable(false);
         textArea.setFocusable(false);
@@ -548,7 +459,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         textArea.setBorder(BorderFactory.createEmptyBorder());
         textArea.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         textArea.setForeground(AppColor.TEXT_PRIMARY);
-
         banner.add(iconLabel, BorderLayout.WEST);
         banner.add(textArea, BorderLayout.CENTER);
         return banner;
@@ -558,6 +468,7 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue());
     }
 
+    /** ⭐ CẬP NHẬT: fillForm tìm role theo roleCode */
     @Override
     protected void fillForm(Employee entity) {
         if (employeeIdField != null) employeeIdField.setText(entity.getEmployeeId());
@@ -569,11 +480,13 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         salaryField.setText(entity.getSalary() != null ? CurrencyDocumentFilter.format(entity.getSalary()) : "");
         hireDatePicker.setValue(entity.getHireDate() != null ? entity.getHireDate() : LocalDate.now());
         genderCombo.setSelectedIndex(indexOfGender(entity.getGender()));
-        roleCombo.setSelectedIndex(indexOfRole(entity.getRole()));
+        
+        // ⭐ Tìm index vai trò theo roleCode
+        roleCombo.setSelectedIndex(indexOfRoleCode(entity.getRoleCode()));
+        
         if (statusCombo != null) {
             statusCombo.setSelectedIndex(entity.isDisabled() ? 1 : 0);
         }
-
         currentAvatarUrl = entity.getAvatarUrl();
         String name = entity.getFullName() != null ? entity.getFullName() : entity.getUsername();
         if (currentAvatarUrl != null && !currentAvatarUrl.isBlank()) {
@@ -588,28 +501,23 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
     @Override
     protected String validateForm() {
         int excludeId = editingEntity != null ? editingEntity.getUserId() : -1;
-
         FormValidator validator = new FormValidator();
-
         validator.field(fullNameField.getText())
                 .required("Vui lòng nhập họ và tên.");
-
         validator.field(emailField.getText())
                 .required("Vui lòng nhập email.")
                 .email("Email không đúng định dạng.")
                 .rule(Rules.custom(v -> !employeeDAO.emailExistsExcluding(v, excludeId), "Email này đã được dùng cho tài khoản khác."));
-
         String phone = phoneField.getText();
         if (phone != null && !phone.trim().isEmpty()) {
             validator.field(phone).phoneVn("Số điện thoại không đúng định dạng (vd 09xxxxxxxx).");
         }
-
         validator.field(salaryField.getText())
                 .rule(v -> isBlankOrValidSalary(v) ? null : "Lương phải là số không âm.");
-
         return validator.validate();
     }
 
+    /** ⭐ CẬP NHẬT: collectFormData dùng roleCode từ AppRole */
     @Override
     protected Employee collectFormData() {
         Employee employee = editingEntity != null ? editingEntity : new Employee();
@@ -620,49 +528,41 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         employee.setHireDate(hireDatePicker.getValue());
         employee.setSalary(parseSalaryOrNull(salaryField.getText()));
         employee.setGender(GENDERS[genderCombo.getSelectedIndex()]);
-        employee.setRole(EMP_ROLES[roleCombo.getSelectedIndex()]);
+        
+        // ⭐ Lấy AppRole từ index, set roleCode
+        int selectedIdx = roleCombo.getSelectedIndex();
+        if (selectedIdx >= 0 && selectedIdx < availableRoles.size()) {
+            AppRole selectedRole = availableRoles.get(selectedIdx);
+            employee.setRoleCode(selectedRole.getRoleCode());
+        }
+        
         if (statusCombo != null) {
             employee.setStatus(statusCombo.getSelectedIndex() == 1 ? "DISABLED" : "ACTIVE");
         } else {
             employee.setStatus("ACTIVE");
         }
-
-        // Copy avatar để ở persist() (background) — tránh đơ UI trên EDT
         employee.setAvatarUrl(currentAvatarUrl);
         return employee;
     }
 
     @Override
     protected boolean persist(Employee entity, CrudMode mode) {
-        // File I/O + DB + gửi email chạy trên SwingWorker — không block EDT
-    	if (pendingAvatarFile != null) {
-    	    try {
-    	        String cloudUrl =
-    	                CloudinaryService
-    	                        .getInstance()
-    	                        .uploadAvatar(
-    	                                pendingAvatarFile
-    	                        );
-
-    	        entity.setAvatarUrl(cloudUrl);
-
-    	        currentAvatarUrl = cloudUrl;
-    	        pendingAvatarFile = null;
-
-    	    } catch (CloudinaryUploadException e) {
-    	        setPersistFailureMessage(
-    	                e.getMessage()
-    	        );
-
-    	        return false;
-    	    }
-    	}
+        if (pendingAvatarFile != null) {
+            try {
+                String cloudUrl = CloudinaryService.getInstance().uploadAvatar(pendingAvatarFile);
+                entity.setAvatarUrl(cloudUrl);
+                currentAvatarUrl = cloudUrl;
+                pendingAvatarFile = null;
+            } catch (CloudinaryUploadException e) {
+                setPersistFailureMessage(e.getMessage());
+                return false;
+            }
+        }
         if (mode == CrudMode.ADD) {
             EmployeeDAO.EmployeeCreationResult result = employeeDAO.createEmployee(entity);
             if (!result.success) {
                 return false;
             }
-            // Dialog Swing phải chạy trên EDT (persist có thể đang ở background thread)
             if (SwingUtilities.isEventDispatchThread()) {
                 showCreationResult(entity, result);
             } else {
@@ -677,15 +577,9 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return employeeDAO.updateByAdmin(entity);
     }
 
-    /**
-     * Bao cho Admin biet Ma NV/Username vua sinh, va (neu gui email that bai)
-     * hien thi tam mat khau ngay tren man hinh de Admin cung cap thu cong -
-     * vi mat khau nay KHONG duoc luu lai o bat ky dau khac.
-     */
     private void showCreationResult(Employee entity, EmployeeDAO.EmployeeCreationResult result) {
         String info = "Mã nhân viên: " + entity.getEmployeeId() + "\n"
                 + "Tên đăng nhập: " + entity.getUsername() + "\n\n";
-
         if (result.emailSent) {
             BaseDialog.success(this, "Tạo tài khoản thành công",
                     info + "Mật khẩu đăng nhập đã được gửi tới email " + entity.getEmail() + ".");
@@ -697,10 +591,6 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         }
     }
 
-    // ---------------------------------------------------------------
-    // Helper parse/validate ngày & lương
-    // ---------------------------------------------------------------
-
     private static boolean isBlankOrValidSalary(String value) {
         if (value == null || value.trim().isEmpty()) return true;
         BigDecimal parsed = CurrencyDocumentFilter.parse(value);
@@ -711,9 +601,13 @@ public class EmployeeFormDialog extends BaseFormDialog<Employee> {
         return CurrencyDocumentFilter.parse(value);
     }
 
-    private static int indexOfRole(Role role) {
-        for (int i = 0; i < EMP_ROLES.length; i++) {
-            if (EMP_ROLES[i] == role) return i;
+    /** ⭐ MỚI: Tìm index theo roleCode (hỗ trợ vai trò tùy chỉnh) */
+    private int indexOfRoleCode(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) return 0;
+        for (int i = 0; i < availableRoles.size(); i++) {
+            if (roleCode.equalsIgnoreCase(availableRoles.get(i).getRoleCode())) {
+                return i;
+            }
         }
         return 0;
     }

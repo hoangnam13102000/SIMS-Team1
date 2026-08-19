@@ -1,15 +1,14 @@
 package com.view.admin.account;
-
 import com.components.StatBadge;
+import com.dao.RoleDAO;
+import com.model.AppRole;
 import com.model.Role;
 import com.model.User;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.ImageUtil;
-
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
-
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -28,24 +27,22 @@ import java.time.format.DateTimeFormatter;
  * badge vai trò/trạng thái + các dòng icon/label/giá trị).
  */
 public class UserDetailDialog extends JDialog {
-
     private static final int AVATAR_SIZE = 56;
     private static final int ICON_BOX_SIZE = 40;
     private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    // ✅ ĐÃ THÊM: RoleDAO de tra cuu ten vai trò tùy chinh
+    private final RoleDAO roleDAO = new RoleDAO();
 
     public UserDetailDialog(Frame owner, User user) {
         super(owner, "Chi tiết tài khoản", true);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
         setResizable(false);
-
         add(buildHeader(), BorderLayout.NORTH);
         add(buildBody(user), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
-
         getRootPane().registerKeyboardAction(e -> dispose(),
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-
         setSize(460, 560);
         setLocationRelativeTo(owner);
     }
@@ -53,14 +50,12 @@ public class UserDetailDialog extends JDialog {
     // ---------------------------------------------------------------
     // Header: tiêu đề + nút đóng (X)
     // ---------------------------------------------------------------
-
     private JPanel buildHeader() {
         JPanel header = new JPanel(new BorderLayout());
         header.setBackground(AppColor.WHITE);
         header.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, AppColor.BORDER),
                 new EmptyBorder(18, 24, 18, 20)));
-
         JLabel title = new JLabel("Chi tiết tài khoản");
         title.setFont(AppFont.DIALOG_TITLE);
         title.setForeground(AppColor.TEXT_PRIMARY);
@@ -86,18 +81,15 @@ public class UserDetailDialog extends JDialog {
     // ---------------------------------------------------------------
     // Body: avatar + tên/username + badge + các dòng thông tin
     // ---------------------------------------------------------------
-
     private JComponent buildBody(User user) {
         JPanel body = new JPanel();
         body.setBackground(AppColor.WHITE);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBorder(new EmptyBorder(22, 24, 8, 24));
-
         body.add(buildIdentitySection(user));
         body.add(Box.createVerticalStrut(18));
         body.add(buildDivider());
         body.add(Box.createVerticalStrut(18));
-
         body.add(infoRow(FontAwesomeSolid.ENVELOPE, "Email", emptyDash(user.getEmail())));
         body.add(Box.createVerticalStrut(16));
         body.add(infoRow(FontAwesomeSolid.PHONE_ALT, "Số điện thoại", emptyDash(user.getPhone())));
@@ -105,7 +97,6 @@ public class UserDetailDialog extends JDialog {
         body.add(infoRow(FontAwesomeSolid.CALENDAR_ALT, "Ngày tạo tài khoản", formatDateTime(user.getCreatedAt())));
         body.add(Box.createVerticalStrut(16));
         body.add(infoRow(FontAwesomeSolid.SHIELD_ALT, "Số lần đăng nhập sai", user.getFailedLoginCount() + " lần"));
-
         JScrollPane scroll = new JScrollPane(body);
         scroll.setBorder(null);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -122,34 +113,30 @@ public class UserDetailDialog extends JDialog {
         // username + hang badge), neu ep max height se bi cat mat 1 phan
         // (xem giai thich tuong tu trong CustomerDetailDialog).
         section.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-
         String name = user.getFullName() != null && !user.getFullName().isBlank()
                 ? user.getFullName() : user.getUsername();
         ImageIcon avatarIcon = ImageUtil.circularIcon(user.getAvatarUrl(), AVATAR_SIZE, name);
         section.add(new JLabel(avatarIcon), BorderLayout.WEST);
-
         JPanel textPanel = new JPanel();
         textPanel.setOpaque(false);
         textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
-
         JLabel nameLabel = new JLabel(name);
         nameLabel.setFont(AppFont.HEADING_MD);
         nameLabel.setForeground(AppColor.TEXT_PRIMARY);
         nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         textPanel.add(nameLabel);
-
         JLabel usernameLabel = new JLabel("@" + user.getUsername());
         usernameLabel.setFont(AppFont.BODY);
         usernameLabel.setForeground(AppColor.TEXT_MUTED);
         usernameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         textPanel.add(Box.createVerticalStrut(2));
         textPanel.add(usernameLabel);
-
         JPanel badgeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         badgeRow.setOpaque(false);
         badgeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         badgeRow.setBorder(new EmptyBorder(6, 0, 0, 0));
-        badgeRow.add(new StatBadge(roleLabel(user.getRole()), AppColor.ACCENT));
+        // ✅ ĐÃ SỬA: dung getRoleCode() thay vi getRole()
+        badgeRow.add(new StatBadge(roleLabel(user.getRoleCode()), AppColor.ACCENT));
         badgeRow.add("DISABLED".equalsIgnoreCase(user.getStatus())
                 ? new StatBadge("Vô hiệu hóa", AppColor.ERROR)
                 : new StatBadge("Đang hoạt động", AppColor.SUCCESS));
@@ -157,7 +144,6 @@ public class UserDetailDialog extends JDialog {
             badgeRow.add(new StatBadge("Đang khóa", AppColor.WARNING));
         }
         textPanel.add(badgeRow);
-
         section.add(textPanel, BorderLayout.CENTER);
         return section;
     }
@@ -168,26 +154,21 @@ public class UserDetailDialog extends JDialog {
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ICON_BOX_SIZE));
-
         row.add(iconBox(iconType), BorderLayout.WEST);
-
         JPanel textPanel = new JPanel();
         textPanel.setOpaque(false);
         textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
-
         JLabel labelLabel = new JLabel(label);
         labelLabel.setFont(AppFont.SMALL);
         labelLabel.setForeground(AppColor.TEXT_MUTED);
         labelLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         textPanel.add(labelLabel);
-
         JLabel valueLabel = new JLabel(value);
         valueLabel.setFont(AppFont.BODY_BOLD.deriveFont(14f));
         valueLabel.setForeground(AppColor.TEXT_PRIMARY);
         valueLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         textPanel.add(Box.createVerticalStrut(2));
         textPanel.add(valueLabel);
-
         row.add(textPanel, BorderLayout.CENTER);
         return row;
     }
@@ -223,7 +204,6 @@ public class UserDetailDialog extends JDialog {
     // ---------------------------------------------------------------
     // Helper hiển thị
     // ---------------------------------------------------------------
-
     private String emptyDash(String value) {
         return value == null || value.isBlank() ? "-" : value;
     }
@@ -232,29 +212,44 @@ public class UserDetailDialog extends JDialog {
         return dateTime != null ? dateTime.format(DATE_TIME_FMT) : "-";
     }
 
-    private static String roleLabel(Role role) {
-        if (role == null) return "-";
-        switch (role) {
-            case ADMIN: return "Quản trị viên";
-            case SALES_MANAGER: return "Quản lý bán hàng";
-            case INVENTORY_MANAGER: return "Quản lý kho";
-            case SALES_STAFF: return "Nhân viên bán hàng";
-            case CUSTOMER: return "Khách hàng";
-            default: return role.name();
+    /**
+     * ✅ ĐÃ SỬA HOÀN TOÀN: Hỗ trợ vai trò tùy chỉnh
+     * Lay ten hien thi cua vai trò tu roleCode.
+     * - Neu la vai trò he thong: tra ve ten tieng Viet co dinh
+     * - Neu la vai trò tuy chinh: tra cuu tu RoleDAO lay roleName
+     * - Fallback: tra ve roleCode
+     */
+    private String roleLabel(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) return "-";
+        
+        Role systemRole = Role.tryParse(roleCode);
+        if (systemRole != null) {
+            switch (systemRole) {
+                case ADMIN: return "Quản trị viên";
+                case SALES_MANAGER: return "Quản lý bán hàng";
+                case INVENTORY_MANAGER: return "Quản lý kho";
+                case SALES_STAFF: return "Nhân viên bán hàng";
+                case CUSTOMER: return "Khách hàng";
+            }
         }
+        
+        AppRole appRole = roleDAO.findByCode(roleCode);
+        if (appRole != null && appRole.getRoleName() != null && !appRole.getRoleName().isBlank()) {
+            return appRole.getRoleName();
+        }
+        
+        return roleCode;
     }
 
     // ---------------------------------------------------------------
     // Footer: nút Đóng
     // ---------------------------------------------------------------
-
     private JPanel buildFooter() {
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         footer.setBackground(AppColor.BG_LIGHT);
         footer.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
                 new EmptyBorder(12, 24, 12, 24)));
-
         JButton closeButton = new JButton("Đóng");
         closeButton.setFont(AppFont.BODY_BOLD);
         closeButton.setFocusPainted(false);
@@ -264,7 +259,6 @@ public class UserDetailDialog extends JDialog {
         closeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         closeButton.addActionListener(e -> dispose());
         footer.add(closeButton);
-
         getRootPane().setDefaultButton(closeButton);
         return footer;
     }

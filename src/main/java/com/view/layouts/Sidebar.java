@@ -1,13 +1,13 @@
 package com.view.layouts;
-
 import com.components.SidebarItem;
+import com.dao.RoleDAO;
 import com.i18n.Lang;
+import com.model.AppRole;
 import com.model.Role;
 import com.model.User;
 import com.service.AuthService;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
-
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.plaf.basic.BasicScrollBarUI;
@@ -27,14 +27,12 @@ import java.util.function.Consumer;
  * Section mặc định đóng; menu dài có scroll dọc (thanh cuộn tối, mỏng).
  */
 public class Sidebar extends JPanel {
-
     private static final Color BG_COLOR = new Color(24, 33, 48);
     private static final Color TEXT_MUTED = new Color(100, 116, 139);
     private static final Color SECTION_HOVER = new Color(40, 51, 71);
     private static final Color COLLAPSE_BTN_HOVER = new Color(220, 50, 50);
     private static final Color SCROLL_THUMB = new Color(70, 85, 110);
     private static final Color SCROLL_THUMB_HOVER = new Color(100, 116, 139);
-
     private static final int SIDEBAR_WIDTH = 220;
     private static final int COLLAPSED_WIDTH = 60;
     private static final int ROW_HEIGHT = 44;
@@ -45,6 +43,9 @@ public class Sidebar extends JPanel {
     private final List<SectionGroup> sections = new ArrayList<>();
     private SectionGroup currentSection;
 
+    // ✅ ĐÃ THÊM: RoleDAO de tra cuu ten vai trò tùy chinh tu DB
+    private final RoleDAO roleDAO = new RoleDAO();
+
     private SidebarItem logoutItem;
     private JPanel userInfoPanel;
     private JLabel userRoleLabel;
@@ -53,7 +54,6 @@ public class Sidebar extends JPanel {
     private Runnable logoutListener;
     private String activeKey;
     private boolean isCollapsed = false;
-
     private JLabel menuLabel;
     private JLabel collapseButton;
     private JPanel headerPanel;
@@ -189,8 +189,8 @@ public class Sidebar extends JPanel {
         userRoleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         userRoleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         userRoleLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
-
         panel.add(userRoleLabel);
+
         return panel;
     }
 
@@ -203,22 +203,43 @@ public class Sidebar extends JPanel {
             if (userInfoPanel != null) userInfoPanel.setVisible(false);
             return;
         }
-        String role = roleLabel(user.getRole());
+        // ✅ ĐÃ SỬA: dung getRoleCode() (String) thay vi getRole() (enum chi co 5 gia tri)
+        String role = roleLabel(user.getRoleCode());
         String prefix = Lang.get("sidebar.loggedInAs");
         userRoleLabel.setText("<html>" + prefix + "<br>" + role + "</html>");
         if (userInfoPanel != null) userInfoPanel.setVisible(!isCollapsed);
     }
 
-    private static String roleLabel(Role role) {
-        if (role == null) return "-";
-        switch (role) {
-            case ADMIN: return Lang.get("sidebar.role.admin");
-            case SALES_MANAGER: return Lang.get("sidebar.role.salesManager");
-            case INVENTORY_MANAGER: return Lang.get("sidebar.role.inventoryManager");
-            case SALES_STAFF: return Lang.get("sidebar.role.salesStaff");
-            case CUSTOMER: return Lang.get("sidebar.role.customer");
-            default: return role.name();
+    /**
+     * ✅ ĐÃ SỬA HOÀN TOÀN: Hỗ trợ vai trò tùy chỉnh
+     * Lay ten hien thi cua vai trò tu roleCode.
+     * - Neu la 1 trong 5 vai trò he thong: lay ten tu Lang.get() (da hoa thien i18n)
+     * - Neu la vai trò tuy chinh (custom role): tra cuu tu RoleDAO lay roleName
+     * - Fallback: tra ve roleCode neu khong tim thay
+     */
+    private String roleLabel(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) return "-";
+        
+        // Kiem tra xem co phai vai trò he thong khong
+        Role systemRole = Role.tryParse(roleCode);
+        if (systemRole != null) {
+            switch (systemRole) {
+                case ADMIN: return Lang.get("sidebar.role.admin");
+                case SALES_MANAGER: return Lang.get("sidebar.role.salesManager");
+                case INVENTORY_MANAGER: return Lang.get("sidebar.role.inventoryManager");
+                case SALES_STAFF: return Lang.get("sidebar.role.salesStaff");
+                case CUSTOMER: return Lang.get("sidebar.role.customer");
+            }
         }
+        
+        // Vai trò tuy chinh: tra cuu tu DB lay roleName
+        AppRole appRole = roleDAO.findByCode(roleCode);
+        if (appRole != null && appRole.getRoleName() != null && !appRole.getRoleName().isBlank()) {
+            return appRole.getRoleName();
+        }
+        
+        // Fallback: hien thi roleCode
+        return roleCode;
     }
 
     private void initHeader() {
@@ -253,7 +274,6 @@ public class Sidebar extends JPanel {
     }
 
     // ===== PUBLIC API =====
-
     public void addSection(String label) {
         currentSection = new SectionGroup(label);
         sections.add(currentSection);
@@ -267,7 +287,6 @@ public class Sidebar extends JPanel {
             if (navigateListener != null) navigateListener.accept(key);
         });
         items.put(key, item);
-
         if (currentSection != null) {
             currentSection.addItem(item);
             itemToSection.put(key, currentSection);
@@ -299,7 +318,6 @@ public class Sidebar extends JPanel {
 
     public void toggleCollapse() {
         isCollapsed = !isCollapsed;
-
         // Mở: hamburger (BARS). Thu: chevron phải để gợi mở lại.
         FontAwesomeSolid iconType = isCollapsed ? FontAwesomeSolid.CHEVRON_RIGHT : FontAwesomeSolid.BARS;
         FontIcon newIcon = FontIcon.of(iconType, 16);
@@ -327,7 +345,6 @@ public class Sidebar extends JPanel {
     public boolean isCollapsed() { return isCollapsed; }
 
     // ===== SectionGroup =====
-
     private final class SectionGroup {
         final JPanel root;
         final SectionHeader header;

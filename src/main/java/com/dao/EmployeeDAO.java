@@ -8,9 +8,7 @@ import com.service.EmployeeMailService;
 import com.utils.DBConnection;
 import com.utils.PasswordUtils;
 import com.utils.RandomPasswordGenerator;
-
 import jakarta.mail.MessagingException;
-
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Date;
@@ -22,8 +20,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 public class EmployeeDAO extends BaseDAO<Employee> {
-
-    /** Dung lai cac ham kiem tra trung Username/Email da co san trong UserDAO thay vi viet lai. */
+    
     private final UserDAO userDAO = new UserDAO();
 
     @Override
@@ -44,7 +41,7 @@ public class EmployeeDAO extends BaseDAO<Employee> {
     @Override
     protected String getColumns() {
         return "u.UserID, u.Username, u.FullName, u.Email, u.Phone, u.AvatarUrl, "
-                + "u.IsLocked, u.Status, r.RoleCode, "
+                + "u.IsLocked, u.Status, r.RoleCode, r.RoleName, "
                 + "e.EmployeeID, e.DateOfBirth, e.Gender, e.Salary, e.HireDate, e.CreatedAt";
     }
 
@@ -58,6 +55,7 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         return new String[]{"u.Username", "u.FullName", "u.Email", "u.Phone", "e.EmployeeID"};
     }
 
+    // ⭐ CẬP NHẬT: Dùng setRoleCode thay vì setRole(Role.valueOf)
     @Override
     protected Employee mapResultSet(ResultSet rs) throws SQLException {
         Employee employee = new Employee();
@@ -69,8 +67,11 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         employee.setAvatarUrl(rs.getString("AvatarUrl"));
         employee.setLocked(rs.getBoolean("IsLocked"));
         employee.setStatus(rs.getString("Status"));
-        employee.setRole(Role.valueOf(rs.getString("RoleCode")));
-
+        
+        // ⭐ Dùng setRoleCode — hỗ trợ cả vai trò hệ thống và tùy chỉnh
+        String roleCode = rs.getString("RoleCode");
+        employee.setRoleCode(roleCode);
+        
         employee.setEmployeeId(rs.getString("EmployeeID"));
         Date dob = rs.getDate("DateOfBirth");
         if (dob != null) employee.setDateOfBirth(dob.toLocalDate());
@@ -82,52 +83,28 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         if (hireDate != null) employee.setHireDate(hireDate.toLocalDate());
         java.sql.Timestamp createdAt = rs.getTimestamp("CreatedAt");
         if (createdAt != null) employee.setCreatedAt(createdAt.toLocalDateTime());
-
         return employee;
     }
 
-    // ---------------------------------------------------------------
-    // Quản lý nhân viên (dành cho Admin)
-    // ---------------------------------------------------------------
-
-    /**
-     * Admin thêm 1 nhân viên mới. Trong CÙNG 1 transaction:
-     * <ol>
-     *   <li>Sinh Username tu ho ten + hau to hex ngau nhien (KHONG phu thuoc EmployeeID).</li>
-     *   <li>Sinh mật khẩu ngẫu nhiên (KHÔNG do Admin nhập).</li>
-     *   <li>INSERT Users (Username/PasswordHash/RoleID/Status), lay UserID (IDENTITY) sinh ra.</li>
-     *   <li>Sinh EmployeeID = "EMP_" + UserID dem 4 so (vd "EMP_0007") - luon
-     *       duy nhat vi dua tren UserID.</li>
-     *   <li>INSERT Employees (UserID, EmployeeID, DateOfBirth, Gender, Salary, HireDate).</li>
-     * </ol>
-     * Sau khi commit, gửi email chứa Username + mật khẩu cho nhân viên
-     * (KHÔNG nằm trong transaction - gửi email thất bại không rollback dữ
-     * liệu đã tạo, chỉ báo lại cho Admin qua {@link EmployeeCreationResult}
-     * để cung cấp mật khẩu thủ công).
-     */
+    // ⭐ CẬP NHẬT: Dùng employee.getRoleCode() thay vì employee.getRole().name()
     public EmployeeCreationResult createEmployee(Employee employee) {
         EmployeeCreationResult result = new EmployeeCreationResult();
-
         if (employee.getEmail() != null && userDAO.emailExists(employee.getEmail())) {
             AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
                     "EmployeeDAO.createEmployee - trung Email: " + employee.getEmail(), null);
             return result;
         }
-
         String username = generateUniqueUsername(employee.getFullName());
         String rawPassword = RandomPasswordGenerator.generate();
-
         String insertUserSql = "INSERT INTO Users (Username, PasswordHash, FullName, Email, Phone, AvatarUrl, RoleID, Status) "
                 + "VALUES (?, ?, ?, ?, ?, ?, (SELECT RoleID FROM Roles WHERE RoleCode = ?), 'ACTIVE')";
         String insertEmployeeSql = "INSERT INTO Employees (UserID, EmployeeID, DateOfBirth, Gender, Salary, HireDate) "
                 + "VALUES (?, ?, ?, ?, ?, ?)";
-
         Connection con = null;
         String employeeId = null;
         try {
             con = DBConnection.getConnection();
             con.setAutoCommit(false);
-
             int userId;
             try (PreparedStatement ps = con.prepareStatement(insertUserSql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, username);
@@ -136,8 +113,8 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                 ps.setString(4, employee.getEmail());
                 ps.setString(5, employee.getPhone());
                 ps.setString(6, employee.getAvatarUrl());
-                ps.setString(7, employee.getRole().name());
-
+                // ⭐ Dùng getRoleCode()
+                ps.setString(7, employee.getRoleCode());
                 if (ps.executeUpdate() == 0) {
                     con.rollback();
                     return result;
@@ -150,12 +127,7 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                     userId = keys.getInt(1);
                 }
             }
-
-            // Ma nhan vien sinh SAU KHI co UserID (IDENTITY, chi biet duoc sau INSERT
-            // Users o tren) - dung chinh UserID lam nen tang nen luon duy nhat tu
-            // nhien, khong can vong lap kiem tra trung nhu truoc (xem generateEmployeeCode()).
             employeeId = generateEmployeeCode(userId);
-
             try (PreparedStatement ps = con.prepareStatement(insertEmployeeSql)) {
                 ps.setInt(1, userId);
                 ps.setString(2, employeeId);
@@ -167,7 +139,6 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                     ps.setNull(5, java.sql.Types.DECIMAL);
                 }
                 ps.setDate(6, Date.valueOf(employee.getHireDate() != null ? employee.getHireDate() : LocalDate.now()));
-
                 if (ps.executeUpdate() == 0) {
                     con.rollback();
                     AppLogger.getInstance().error(ErrorCode.DB_INSERT_FAIL,
@@ -175,7 +146,6 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                     return result;
                 }
             }
-
             con.commit();
             employee.setUserId(userId);
         } catch (Exception e) {
@@ -200,13 +170,11 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                 }
             }
         }
-
         employee.setEmployeeId(employeeId);
         employee.setUsername(username);
         employee.setStatus("ACTIVE");
         result.success = true;
         result.rawPassword = rawPassword;
-
         try {
             new EmployeeMailService().sendCredentials(
                     employee.getEmail(), employee.getFullName(), employeeId, username, rawPassword);
@@ -217,30 +185,25 @@ public class EmployeeDAO extends BaseDAO<Employee> {
             result.emailSent = false;
             result.emailError = e.getMessage();
         }
-
         return result;
     }
 
-    /**
-     * Admin cập nhật thông tin 1 nhân viên (Users + Employees) trong cùng 1
-     * transaction. Không đổi Username/EmployeeID/mật khẩu ở đây.
-     */
+    // ⭐ CẬP NHẬT: Dùng employee.getRoleCode() thay vì employee.getRole().name()
     public boolean updateByAdmin(Employee employee) {
         String updateUserSql = "UPDATE Users SET FullName = ?, Email = ?, Phone = ?, AvatarUrl = ?, "
                 + "RoleID = (SELECT RoleID FROM Roles WHERE RoleCode = ?), Status = ? WHERE UserID = ?";
         String updateEmployeeSql = "UPDATE Employees SET DateOfBirth = ?, Gender = ?, Salary = ?, HireDate = ? WHERE UserID = ?";
-
         Connection con = null;
         try {
             con = DBConnection.getConnection();
             con.setAutoCommit(false);
-
             try (PreparedStatement ps = con.prepareStatement(updateUserSql)) {
                 ps.setString(1, employee.getFullName());
                 ps.setString(2, employee.getEmail());
                 ps.setString(3, employee.getPhone());
                 ps.setString(4, employee.getAvatarUrl());
-                ps.setString(5, employee.getRole().name());
+                // ⭐ Dùng getRoleCode()
+                ps.setString(5, employee.getRoleCode());
                 ps.setString(6, employee.getStatus());
                 ps.setInt(7, employee.getUserId());
                 if (ps.executeUpdate() == 0) {
@@ -248,7 +211,6 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                     return false;
                 }
             }
-
             try (PreparedStatement ps = con.prepareStatement(updateEmployeeSql)) {
                 ps.setDate(1, employee.getDateOfBirth() != null ? Date.valueOf(employee.getDateOfBirth()) : null);
                 ps.setString(2, employee.getGender() != null ? employee.getGender().name() : null);
@@ -264,7 +226,6 @@ public class EmployeeDAO extends BaseDAO<Employee> {
                     return false;
                 }
             }
-
             con.commit();
             return true;
         } catch (Exception e) {
@@ -292,7 +253,6 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         }
     }
 
-    /** Khoá / mở khoá 1 tài khoản nhân viên (cùng cơ chế với UserDAO.setLocked - cùng bảng Users). */
     public boolean setLocked(int userId, boolean locked) {
         String sql = locked
                 ? "UPDATE Users SET IsLocked = 1 WHERE UserID = ?"
@@ -307,46 +267,24 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         }
     }
 
-    /** Giống emailExistsExcluding() của UserDAO - dùng khi Admin sửa thông tin nhân viên. */
     public boolean emailExistsExcluding(String email, int excludeUserId) {
         return userDAO.emailExistsExcluding(email, excludeUserId);
     }
 
-    /**
-     * Sinh EmployeeID dang "EMP_" + UserID dem 4 so (vd UserID=7 -> "EMP_0007").
-     * Ngan gon, de doc va de tim kiem (khac ban UUID/hex truoc day) - va vi
-     * UserID la IDENTITY duy nhat cua Users nen EmployeeID sinh ra CHAC CHAN
-     * duy nhat, khong can vong lap kiem tra trung nhu voi UUID. %04d chi la
-     * DO RONG TOI THIEU - UserID > 9999 van in day du (vd "EMP_10023"), khong
-     * bi cat bot.
-     */
     private String generateEmployeeCode(int userId) {
         return "EMP_" + String.format("%04d", userId);
     }
 
-    /** Tong do dai username mong muon: toi thieu 5, toi da 8 ky tu. */
     private static final int USERNAME_MIN_LEN = 5;
     private static final int USERNAME_MAX_LEN = 8;
-    /** Do dai hau to hex ban dau (du 16^3 = 4096 to hop cho lan thu dau). */
     private static final int USERNAME_INITIAL_SUFFIX_LEN = 3;
 
-    /**
-     * Ghep username tu vai ky tu dau cua ho ten (bo dau, chu thuong, khong
-     * khoang trang) + hau to hex ngau nhien, tong do dai gioi han 5-8 ky tu
-     * de nhan vien de nho/de nhap. Neu trung, tang do dai hau to (va rut ngan
-     * phan ten tuong ung) de tang so to hop trong khi van giu tong do dai
-     * <= USERNAME_MAX_LEN, thu lai toi da vai lan.
-     */
     private String generateUniqueUsername(String fullName) {
         String fullSlug = slugify(fullName);
-
         int suffixLen = USERNAME_INITIAL_SUFFIX_LEN;
         String candidate = buildUsername(fullSlug, suffixLen);
-
         int attempt = 0;
         while (userDAO.usernameExists(candidate) && attempt < 5) {
-            // Tang do dai hau to de giam xac suat trung, nhung khong vuot qua
-            // USERNAME_MAX_LEN (buildUsername tu rut ngan phan ten neu can).
             suffixLen = Math.min(suffixLen + 1, USERNAME_MAX_LEN - 1);
             candidate = buildUsername(fullSlug, suffixLen);
             attempt++;
@@ -354,20 +292,11 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         return candidate;
     }
 
-    /**
-     * Ghep phan ten (rut gon vua du de tong do dai nam trong khoang
-     * [USERNAME_MIN_LEN, USERNAME_MAX_LEN]) voi hau to hex ngau nhien co do
-     * dai suffixLen.
-     */
     private String buildUsername(String fullSlug, int suffixLen) {
         int maxBaseLen = Math.max(1, USERNAME_MAX_LEN - suffixLen);
         int baseLen = Math.min(maxBaseLen, fullSlug.length());
         String base = fullSlug.substring(0, baseLen);
-
-        // Dam bao tong do dai >= USERNAME_MIN_LEN ngay ca khi ten qua ngan
-        // (vd sau khi slugify chi con 1-2 ky tu) bang cach keo dai hau to.
         int effectiveSuffixLen = Math.max(suffixLen, USERNAME_MIN_LEN - baseLen);
-
         return base + randomHexSuffix(effectiveSuffixLen);
     }
 
@@ -376,7 +305,6 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         return hex.substring(0, Math.min(length, hex.length())).toLowerCase();
     }
 
-    /** Bo dau tieng Viet, chuyen chu thuong, chi giu a-z0-9, gioi han 20 ky tu. */
     private String slugify(String fullName) {
         if (fullName == null || fullName.trim().isEmpty()) {
             return "nv";
@@ -391,7 +319,6 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         return normalized.length() > 20 ? normalized.substring(0, 20) : normalized;
     }
 
-    /** Kết quả tạo tài khoản nhân viên - dùng cho UI hiển thị mã NV/username, và mật khẩu tạm nếu gửi email thất bại. */
     public static class EmployeeCreationResult {
         public boolean success = false;
         public boolean emailSent = false;
@@ -399,12 +326,11 @@ public class EmployeeDAO extends BaseDAO<Employee> {
         public String emailError;
     }
 
-    /** Lọc theo vai trò, đồng thời hỗ trợ từ khóa tìm kiếm hiện tại. */
+    // ⭐ CẬP NHẬT: filterByRole nhận String roleCode thay vì Role enum
     public com.utils.PaginationHelper.PaginationResult<Employee> filterByRole(
-            String keyword, Role role, int pageNumber, int pageSize) {
+            String keyword, String roleCode, int pageNumber, int pageSize) {
         StringBuilder where = new StringBuilder();
         java.util.List<Object> params = new java.util.ArrayList<>();
-
         if (keyword != null && !keyword.trim().isEmpty()) {
             String escaped = keyword.trim()
                     .replace("!", "!!")
@@ -420,13 +346,11 @@ public class EmployeeDAO extends BaseDAO<Employee> {
             }
             where.append(")");
         }
-
-        if (role != null) {
+        if (roleCode != null && !roleCode.isBlank()) {
             if (where.length() > 0) where.append(" AND ");
             where.append("r.RoleCode = ?");
-            params.add(role.name());
+            params.add(roleCode);
         }
-
         if (where.length() == 0) return getPaged(pageNumber, pageSize);
         return getPaged(pageNumber, pageSize, where.toString(), params.toArray());
     }

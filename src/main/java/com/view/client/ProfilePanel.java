@@ -1,7 +1,7 @@
 package com.view.client;
-
-
 import com.dao.CustomerDAO;
+import com.dao.RoleDAO;
+import com.model.AppRole;
 import com.model.Customer;
 import com.model.Role;
 import com.theme.AppColor;
@@ -16,7 +16,6 @@ import com.validation.FormValidator;
 import com.validation.Rules;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
-
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
@@ -26,7 +25,6 @@ import java.io.File;
 import java.time.format.DateTimeFormatter;
 
 public class ProfilePanel extends JPanel {
-
 	private static final int AVATAR_SIZE = 120;
 	private static final int SIDE_CARD_WIDTH = 300;
 	private static final int BARCODE_WIDTH = 240;
@@ -34,8 +32,10 @@ public class ProfilePanel extends JPanel {
 
     private final UserDAO userDAO = new UserDAO();
     private final CustomerDAO customerDAO = new CustomerDAO();
-    private Runnable onSavedListener;
+    // ✅ ĐÃ THÊM: RoleDAO de tra cuu ten vai trò tùy chinh
+    private final RoleDAO roleDAO = new RoleDAO();
 
+    private Runnable onSavedListener;
     private JLabel avatarLabel;
     private JLabel nameLabel;
     private JLabel rolePillLabel;
@@ -47,11 +47,9 @@ public class ProfilePanel extends JPanel {
     private boolean avatarUploading;
     private JPanel barcodeCard;
     private JLabel barcodeValueLabel;
-
     private JTextField fullNameField;
     private JTextField phoneField;
     private JLabel infoMessage;
-
     private JPasswordField currentPasswordField;
     private JPasswordField newPasswordField;
     private JPasswordField confirmPasswordField;
@@ -69,7 +67,6 @@ public class ProfilePanel extends JPanel {
 
         JPanel content = new JPanel(new GridBagLayout());
         content.setOpaque(false);
-
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 0;
@@ -142,7 +139,6 @@ public class ProfilePanel extends JPanel {
         avatarRow.add(avatarWrapper);
         avatarRow.add(Box.createHorizontalGlue());
         card.add(avatarRow);
-
         card.add(Box.createVerticalStrut(14));
 
         nameLabel = new JLabel(" ");
@@ -159,7 +155,6 @@ public class ProfilePanel extends JPanel {
         nameRow.add(nameLabel);
         nameRow.add(Box.createHorizontalGlue());
         card.add(nameRow);
-
         card.add(Box.createVerticalStrut(8));
 
         rolePillLabel = new JLabel(" ");
@@ -181,7 +176,6 @@ public class ProfilePanel extends JPanel {
         pill.setOpaque(false);
         pill.setMaximumSize(new Dimension(200, 26));
         pill.add(rolePillLabel, BorderLayout.CENTER);
-
         JPanel pillRow = new JPanel();
         pillRow.setOpaque(false);
         pillRow.setLayout(new BoxLayout(pillRow, BoxLayout.X_AXIS));
@@ -197,7 +191,6 @@ public class ProfilePanel extends JPanel {
         avatarMessage.setAlignmentX(Component.CENTER_ALIGNMENT);
         avatarMessage.setBorder(new EmptyBorder(8, 0, 0, 0));
         card.add(avatarMessage);
-
         card.add(Box.createVerticalStrut(16));
         card.add(buildDivider());
         card.add(Box.createVerticalStrut(16));
@@ -208,7 +201,6 @@ public class ProfilePanel extends JPanel {
 
         phoneValueLabel = valueLabel();
         card.add(infoRow(FontAwesomeSolid.PHONE, "Số điện thoại", phoneValueLabel));
-
         card.add(Box.createVerticalStrut(16));
 
         joinedLabel = new JLabel(" ");
@@ -245,7 +237,6 @@ public class ProfilePanel extends JPanel {
         barcodeTitleRow.add(barcodeTitle);
         barcodeTitleRow.add(Box.createHorizontalGlue());
         card.add(barcodeTitleRow);
-
         card.add(Box.createVerticalStrut(8));
 
         barcodeCard = new JPanel(new BorderLayout()) {
@@ -264,7 +255,6 @@ public class ProfilePanel extends JPanel {
         barcodeCard.setAlignmentX(Component.CENTER_ALIGNMENT);
         barcodeCard.setMaximumSize(new Dimension(SIDE_CARD_WIDTH - 40, BARCODE_HEIGHT + 24));
         barcodeCard.setBorder(new EmptyBorder(6, 8, 6, 8));
-
         barcodeValueLabel = new JLabel(" ");
         barcodeValueLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
         barcodeValueLabel.setForeground(AppColor.TEXT_PRIMARY);
@@ -285,7 +275,6 @@ public class ProfilePanel extends JPanel {
 
     private JPanel infoRow(FontAwesomeSolid iconType, String label, JLabel value) {
         final int contentW = SIDE_CARD_WIDTH - 40;
-
         JPanel row = new JPanel(new BorderLayout(10, 0));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -314,11 +303,9 @@ public class ProfilePanel extends JPanel {
 
         JPanel textPanel = new JPanel(new BorderLayout());
         textPanel.setOpaque(false);
-
         JLabel labelText = new JLabel(label);
         labelText.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         labelText.setForeground(AppColor.TEXT_MUTED);
-
         value.setHorizontalAlignment(SwingConstants.LEFT);
 
         JPanel stacked = new JPanel();
@@ -329,7 +316,6 @@ public class ProfilePanel extends JPanel {
         stacked.add(labelText);
         stacked.add(Box.createVerticalStrut(2));
         stacked.add(value);
-
         textPanel.add(stacked, BorderLayout.WEST);
         row.add(textPanel, BorderLayout.CENTER);
 
@@ -348,14 +334,11 @@ public class ProfilePanel extends JPanel {
         if (avatarUploading) {
             return;
         }
-
         File selected =
                 FileUtil.chooseImageFile(this);
-
         if (selected == null) {
             return;
         }
-
         if (!FileUtil.isWithinSizeLimit(
                 selected,
                 5
@@ -366,74 +349,54 @@ public class ProfilePanel extends JPanel {
                             + "vui lòng chọn ảnh khác.",
                     AppColor.ERROR
             );
-
             return;
         }
-
         User user =
                 AuthService
                         .getInstance()
                         .getCurrentUser();
-
         if (user == null) {
             showMessage(
                     avatarMessage,
                     "Phiên đăng nhập không còn hợp lệ.",
                     AppColor.ERROR
             );
-
             return;
         }
-
         setAvatarUploading(true);
-
         showMessage(
                 avatarMessage,
                 "Đang tải ảnh lên Cloudinary...",
                 AppColor.TEXT_MUTED
         );
-
         SwingWorker<String, Void> worker =
                 new SwingWorker<>() {
-
             @Override
             protected String doInBackground()
                     throws Exception {
-
                 String cloudUrl =
                         CloudinaryService
                                 .getInstance()
                                 .uploadAvatar(selected);
-
                 boolean saved =
                         userDAO.updateAvatar(
                                 user.getUserId(),
                                 cloudUrl
                         );
-
                 if (!saved) {
                     throw new IllegalStateException(
                             "Không lưu được URL ảnh "
                                     + "vào cơ sở dữ liệu."
                     );
                 }
-
                 return cloudUrl;
             }
-
             @Override
             protected void done() {
                 setAvatarUploading(false);
-
                 try {
                     String cloudUrl = get();
-
                     user.setAvatarUrl(cloudUrl);
-
-                    /*
-                     * Hiện ngay file local vừa chọn để không
-                     * phải tải lại ảnh trên EDT.
-                     */
                     avatarLabel.setIcon(
                             ImageUtil.circularIcon(
                                     selected.getPath(),
@@ -441,27 +404,22 @@ public class ProfilePanel extends JPanel {
                                     user.getFullName()
                             )
                     );
-
                     showMessage(
                             avatarMessage,
                             "Đã cập nhật ảnh đại diện "
                                     + "trên Cloudinary.",
                             AppColor.SUCCESS
                     );
-
                     if (onSavedListener != null) {
                         onSavedListener.run();
                     }
-
                 } catch (Exception e) {
                     Throwable cause =
                             e.getCause() != null
                                     ? e.getCause()
                                     : e;
-
                     String errorMessage =
                             cause.getMessage();
-
                     showMessage(
                             avatarMessage,
                             errorMessage != null
@@ -474,7 +432,6 @@ public class ProfilePanel extends JPanel {
                 }
             }
         };
-
         worker.execute();
     }
     
@@ -482,11 +439,9 @@ public class ProfilePanel extends JPanel {
             boolean uploading
     ) {
         avatarUploading = uploading;
-
         if (cameraButton != null) {
             cameraButton.setEnabled(!uploading);
         }
-
         setCursor(
                 uploading
                         ? Cursor.getPredefinedCursor(
@@ -587,7 +542,6 @@ public class ProfilePanel extends JPanel {
         card.add(fieldLabel("Mật khẩu hiện tại"));
         currentPasswordField = new JPasswordField();
         card.add(passwordFieldWithToggle(currentPasswordField));
-
         card.add(Box.createVerticalStrut(8));
 
         JPanel row = new JPanel(new GridLayout(1, 2, 16, 0));
@@ -669,7 +623,8 @@ public class ProfilePanel extends JPanel {
 
     private void refreshSideCard(User user) {
         nameLabel.setText(user.getFullName());
-        rolePillLabel.setText(roleLabel(user.getRole()));
+        // ✅ ĐÃ SỬA: dung getRoleCode() thay vi getRole()
+        rolePillLabel.setText(roleLabel(user.getRoleCode()));
         emailValueLabel.setText(user.getEmail() == null || user.getEmail().isBlank() ? "-" : user.getEmail());
         phoneValueLabel.setText(user.getPhone() == null || user.getPhone().isBlank() ? "-" : user.getPhone());
         if (user.getCreatedAt() != null) {
@@ -681,7 +636,8 @@ public class ProfilePanel extends JPanel {
 
         // Cập nhật mã vạch
         barcodeCard.removeAll();
-        if (Role.CUSTOMER.equals(user.getRole())) {
+        // ✅ ĐÃ SỬA: dung user.isCustomer() thay vi Role.CUSTOMER.equals(user.getRole())
+        if (user.isCustomer()) {
             Customer customer = customerDAO.findById(user.getUserId());
             if (customer != null && customer.getCustomerCode() != null && !customer.getCustomerCode().isBlank()) {
                 try {
@@ -690,7 +646,6 @@ public class ProfilePanel extends JPanel {
                     JLabel barcodeLabel = new JLabel(new ImageIcon(barcodeImage));
                     barcodeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
                     barcodeCard.add(barcodeLabel, BorderLayout.CENTER);
-
                     barcodeValueLabel.setText(customer.getCustomerCode());
                     barcodeCard.add(barcodeValueLabel, BorderLayout.SOUTH);
                 } catch (Exception e) {
@@ -718,22 +673,40 @@ public class ProfilePanel extends JPanel {
         barcodeCard.repaint();
     }
 
-    private static String roleLabel(Role role) {
-        if (role == null) return "";
-        switch (role) {
-            case ADMIN: return "Quản trị viên";
-            case SALES_MANAGER: return "Quản lý bán hàng";
-            case INVENTORY_MANAGER: return "Quản lý kho";
-            case SALES_STAFF: return "Nhân viên bán hàng";
-            case CUSTOMER: return "Khách hàng";
-            default: return role.name();
+    /**
+     * ✅ ĐÃ SỬA HOÀN TOÀN: Hỗ trợ vai trò tùy chỉnh
+     * Lay ten hien thi cua vai trò tu roleCode.
+     * - Neu la vai trò he thong: tra ve ten tieng Viet co dinh
+     * - Neu la vai trò tuy chinh: tra cuu tu RoleDAO lay roleName
+     * - Fallback: tra ve roleCode
+     */
+    private String roleLabel(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) return "";
+        
+        Role systemRole = Role.tryParse(roleCode);
+        if (systemRole != null) {
+            switch (systemRole) {
+                case ADMIN: return "Quản trị viên";
+                case SALES_MANAGER: return "Quản lý bán hàng";
+                case INVENTORY_MANAGER: return "Quản lý kho";
+                case SALES_STAFF: return "Nhân viên bán hàng";
+                case CUSTOMER: return "Khách hàng";
+            }
         }
+        
+        AppRole appRole = roleDAO.findByCode(roleCode);
+        if (appRole != null && appRole.getRoleName() != null && !appRole.getRoleName().isBlank()) {
+            return appRole.getRoleName();
+        }
+        
+        return roleCode;
     }
 
     public void onSaved(Runnable listener) {
         this.onSavedListener = listener;
     }
 
+    // ===== Các helper UI (không đổi) =====
     private JPanel card() {
         JPanel card = new JPanel();
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
@@ -754,13 +727,11 @@ public class ProfilePanel extends JPanel {
                 Dimension d = super.getPreferredSize();
                 return new Dimension(SIDE_CARD_WIDTH, d.height);
             }
-
             @Override
             public Dimension getMaximumSize() {
                 Dimension d = super.getPreferredSize();
                 return new Dimension(SIDE_CARD_WIDTH, d.height);
             }
-
             @Override
             public Dimension getMinimumSize() {
                 Dimension d = super.getPreferredSize();
@@ -819,7 +790,6 @@ public class ProfilePanel extends JPanel {
     private JPanel passwordFieldWithToggle(JPasswordField field) {
         field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         field.setBorder(new EmptyBorder(6, 10, 6, 0));
-
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
         wrapper.setPreferredSize(new Dimension(wrapper.getPreferredSize().width, 40));
@@ -845,7 +815,6 @@ public class ProfilePanel extends JPanel {
             toggle.setIcon(FontIcon.of(currentlyHidden ? FontAwesomeSolid.EYE : FontAwesomeSolid.EYE_SLASH, 14, AppColor.TEXT_MUTED));
         });
         wrapper.add(toggle, BorderLayout.EAST);
-
         return wrapper;
     }
 

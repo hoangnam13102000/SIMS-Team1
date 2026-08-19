@@ -442,6 +442,20 @@ public abstract class BaseCrudPanel<T> extends JPanel {
             toolbarLeft.repaint();
         }
     }
+    // ===== ✅ ĐÃ THÊM MỚI: Xóa control lọc khỏi toolbar =====
+    /**
+     * Xóa một control đã thêm trước đó bằng addToolbarFilter().
+     * Được gọi từ EmployeePanel.setupRoleFilter() khi cần làm mới bộ lọc vai trò.
+     * 
+     * @param component Control cần xóa (FilterDropdown, JLabel, hoặc bất kỳ Component nào)
+     */
+    protected void removeToolbarFilter(Component component) {
+        if (toolbarLeft != null && component != null) {
+            toolbarLeft.remove(component);
+            toolbarLeft.revalidate();
+            toolbarLeft.repaint();
+        }
+    }
 
     /** Áp dụng lại search + các bộ lọc của subclass và quay về trang đầu. */
     protected void applyFilters() {

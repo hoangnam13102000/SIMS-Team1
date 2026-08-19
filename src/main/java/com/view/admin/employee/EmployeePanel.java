@@ -7,6 +7,8 @@ import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
 import com.dao.EmployeeDAO;
+import com.event.AppEventBus;
+import com.event.DataChangedEvent;
 import com.model.Employee;
 import com.model.Role;
 import com.model.permission.AppPermission;
@@ -28,24 +30,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.SwingUtilities;
 
-/**
- * Trang Quản lý nhân viên - dựa trên bảng Employees (kế thừa Users, xem
- * {@link com.model.Employee}), KHÔNG còn nhét thông tin nhân viên vào bảng
- * Users như trước. Thêm nhân viên KHÔNG cần Admin nhập username/mật khẩu:
- * mã nhân viên (EmployeeID - UUID), username và mật khẩu ban đầu đều do hệ
- * thống tự sinh (xem {@link EmployeeDAO#createEmployee}), mật khẩu được gửi
- * qua email nhân viên chứ không hiển thị/lưu lại trong ứng dụng.
- */
 public class EmployeePanel extends BaseCrudPanel<Employee> {
-
     private final EmployeeDAO employeeDAO = new EmployeeDAO();
-    private FilterDropdown<RoleOption> roleFilter;
+    private FilterDropdown<RoleFilterOption> roleFilter;
     private JLabel clearFiltersLink;
-    private Role selectedRole;
-
+    
+    // ⭐ Thay đổi: lưu roleCode dạng String thay vì Role enum
+    private String selectedRoleCode;
+    
     public EmployeePanel() {
         super();
-
         ActionColumn actions = new ActionColumn()
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
@@ -63,18 +57,11 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
                     row -> canManage(row));
         }
         table.setActionColumn(actions);
-
         table.setBadgeColumn(5, this::statusLabel, this::statusColor);
         table.setBadgeColumn(6, this::lockLabel, this::lockColor);
-
-        // Preferred theo tỷ lệ; minWidth đủ cho badge "Đang hoạt động" / "Bình thường"
-        // không bị clip. Không enableHorizontalScroll → cột co giãn theo khung,
-        // không scrollbar ngang. Text dài (mã NV, email...) nếu vẫn tràn sẽ hiện
-        // "..." + tooltip full khi hover (BaseTable striped renderer).
         table.setColumnWidths(110, 110, 110, 150, 120, 145, 115);
         table.setColumnMinWidths(85, 85, 90, 110, 95, 140, 110);
-
-        // Cột "Mã nhân viên" (index 0): thêm icon copy
+        
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -101,13 +88,12 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
             }
         });
         
-        // Xử lý click vào icon copy mã nhân viên
         table.getTable().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int viewCol = table.getTable().columnAtPoint(e.getPoint());
                 int viewRow = table.getTable().rowAtPoint(e.getPoint());
-                if (viewCol == 0 && viewRow >= 0) { // Cột Mã nhân viên
+                if (viewCol == 0 && viewRow >= 0) {
                     int modelRow = table.getTable().convertRowIndexToModel(viewRow);
                     Object value = table.getTable().getModel().getValueAt(modelRow, 0);
                     String text = value != null ? value.toString() : "";
@@ -118,14 +104,20 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
                 }
             }
         });
-
+        
         setupRoleFilter();
+        
+        // ⭐ LẮNG NGHE SỰ KIỆN: Khi vai trò thay đổi → reload
+        AppEventBus.getInstance().subscribe(DataChangedEvent.class, event -> {
+            if (DataChangedEvent.ROLE.equals(event.entity) 
+                || DataChangedEvent.ALL.equals(event.entity)) {
+                setupRoleFilter(); // Cập nhật lại bộ lọc vai trò
+                onDataChanged();   // Reload bảng
+            }
+        });
+        
         initialLoad();
     }
-
-    // ---------------------------------------------------------------
-    // Cấu hình BaseCrudPanel
-    // ---------------------------------------------------------------
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.USER_TIE; }
@@ -138,12 +130,10 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return canManageUsers() ? "Thêm nhân viên" : null;
     }
 
-    /** Thêm / import / khoá — USER_MANAGE. */
     private boolean canManageUsers() {
         return AuthService.getInstance().can(AppPermission.USER_MANAGE);
     }
 
-    /** Sửa — USER_MANAGE hoặc USER_EDIT. */
     private boolean canEditUsers() {
         return AuthService.getInstance().can(AppPermission.USER_MANAGE)
                 || AuthService.getInstance().can(AppPermission.USER_EDIT);
@@ -154,6 +144,7 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return new String[]{"Mã nhân viên", "Họ và tên", "Tên đăng nhập", "Email", "Vai trò", "Trạng thái", "Khóa"};
     }
 
+    // ⭐ CẬP NHẬT: Hiển thị tên vai trò từ roleCode
     @Override
     protected Object[] mapRowToColumns(Employee item) {
         return new Object[]{
@@ -161,7 +152,7 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
                 item.getFullName(),
                 item.getUsername(),
                 item.getEmail(),
-                roleLabel(item.getRole()),
+                roleLabelFromCode(item.getRoleCode()),
                 item.getStatus(),
                 item.isLocked() ? "LOCKED" : "NORMAL"
         };
@@ -169,10 +160,9 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected String getEntityLabel() { return "nhân viên"; }
-
+    
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<Employee> result) {
-        // Không còn cột STT nên không cần cập nhật pageOffset nữa.
     }
 
     @Override
@@ -180,15 +170,16 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return item.getFullName() + " (" + item.getUsername() + ")";
     }
 
+    // ⭐ CẬP NHẬT: filter dùng roleCode String
     @Override
     protected PaginationHelper.PaginationResult<Employee> fetchPage(int page, int pageSize) {
         String keyword = searchBar != null && searchBar.getText() != null ? searchBar.getText().trim() : "";
-        return employeeDAO.filterByRole(keyword, selectedRole, page, pageSize);
+        return employeeDAO.filterByRole(keyword, selectedRoleCode, page, pageSize);
     }
 
     @Override
     protected PaginationHelper.PaginationResult<Employee> searchPage(String keyword, int page, int pageSize) {
-        return employeeDAO.filterByRole(keyword, selectedRole, page, pageSize);
+        return employeeDAO.filterByRole(keyword, selectedRoleCode, page, pageSize);
     }
 
     @Override
@@ -206,40 +197,47 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         dialog.setVisible(true);
     }
 
-    /** Không hỗ trợ xóa cứng - dùng "Vô hiệu hóa" trong form Sửa thay thế, giống UserAccountPanel/CustomerPanel. */
     @Override
     protected boolean supportsDelete() { return false; }
     @Override
     protected boolean deleteItem(Employee item) { return false; }
-
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo mã NV, tên đăng nhập, họ tên, email..."; }
 
-    /** Option cho FilterDropdown vai trò - value null = "Tất cả vai trò". */
-    private static final class RoleOption {
-        final Role role;
+    // ⭐ CẬP NHẬT: RoleFilterOption dùng roleCode String
+    private static final class RoleFilterOption {
+        final String roleCode;
         final String label;
-        RoleOption(Role role, String label) {
-            this.role = role;
+        RoleFilterOption(String roleCode, String label) {
+            this.roleCode = roleCode;
             this.label = label;
         }
         @Override
         public String toString() { return label; }
     }
 
+    // ⭐ CẬP NHẬT: setupRoleFilter load từ DB thay vì hardcode
     private void setupRoleFilter() {
-        RoleOption[] roleOptions = new RoleOption[]{
-                new RoleOption(null, "Tất cả vai trò"),
-                new RoleOption(Role.ADMIN, roleLabel(Role.ADMIN)),
-                new RoleOption(Role.SALES_MANAGER, roleLabel(Role.SALES_MANAGER)),
-                new RoleOption(Role.INVENTORY_MANAGER, roleLabel(Role.INVENTORY_MANAGER)),
-                new RoleOption(Role.SALES_STAFF, roleLabel(Role.SALES_STAFF))
-        };
-
-        roleFilter = new FilterDropdown<>(FontAwesomeSolid.USER_CIRCLE, roleOptions);
+        // Xóa filter cũ nếu có
+        if (roleFilter != null) {
+            removeToolbarFilter(roleFilter);
+            if (clearFiltersLink != null) removeToolbarFilter(clearFiltersLink);
+        }
+        
+        com.dao.RoleDAO roleDAO = new com.dao.RoleDAO();
+        java.util.List<com.model.AppRole> allRoles = roleDAO.findManagedRoles();
+        
+        java.util.List<RoleFilterOption> options = new java.util.ArrayList<>();
+        options.add(new RoleFilterOption(null, "Tất cả vai trò"));
+        for (com.model.AppRole r : allRoles) {
+            options.add(new RoleFilterOption(r.getRoleCode(), r.getRoleName()));
+        }
+        
+        RoleFilterOption[] optionArray = options.toArray(new RoleFilterOption[0]);
+        roleFilter = new FilterDropdown<>(FontAwesomeSolid.USER_CIRCLE, optionArray);
         roleFilter.onChange(opt -> onFilterChanged());
         addToolbarFilter(roleFilter);
-
+        
         FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
         clearIcon.setIconColor(AppColor.TEXT_MUTED);
         clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
@@ -264,11 +262,14 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
             }
         });
         addToolbarFilter(clearFiltersLink);
+        
+        revalidate();
+        repaint();
     }
 
     private void onFilterChanged() {
-        RoleOption opt = roleFilter.getSelected();
-        selectedRole = opt == null ? null : opt.role;
+        RoleFilterOption opt = roleFilter.getSelected();
+        selectedRoleCode = opt == null ? null : opt.roleCode;
         if (clearFiltersLink != null) clearFiltersLink.setVisible(roleFilter.isFilterActive());
         applyFilters();
     }
@@ -302,11 +303,12 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
 
     @Override
     protected String getImportInstructions() {
-        return "Vai trò nhận 1 trong các giá trị: Quản trị viên, Quản lý bán hàng, Quản lý kho, Nhân viên bán hàng. "
-                + "Ngày sinh/Ngày vào làm theo định dạng dd/MM/yyyy. Giới tính: Nam, Nữ, Khác (có thể để trống). "
-                + "Số điện thoại, ngày sinh, giới tính, lương có thể để trống. Username và mật khẩu sẽ được hệ thống tự sinh và gửi qua email.";
+        return "Vai trò nhận mã vai trò (vd: ADMIN, SALES_STAFF) hoặc tên tiếng Việt. "
+                + "Ngày sinh/Ngày vào làm theo định dạng dd/MM/yyyy. Giới tính: Nam, Nữ, Khác. "
+                + "Username và mật khẩu sẽ được hệ thống tự sinh và gửi qua email.";
     }
 
+    // ⭐ CẬP NHẬT: importRow parse roleCode thay vì enum
     @Override
     protected com.importer.ImportRowResult importRow(String[] cells, int rowNumber) {
         String fullName = cellAt(cells, 0);
@@ -317,34 +319,32 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         String genderText = cellAt(cells, 5);
         String salaryText = cellAt(cells, 6);
         String hireDateText = cellAt(cells, 7);
-
+        
         if (fullName.isEmpty()) {
             return com.importer.ImportRowResult.failure("thiếu họ và tên.");
         }
-
         String emailError = com.validation.Rules.required("Thiếu email.").validate(email);
         if (emailError == null) emailError = com.validation.Rules.email("Email không đúng định dạng.").validate(email);
         if (emailError != null) {
             return com.importer.ImportRowResult.failure(emailError);
         }
-
         if (employeeDAO.emailExistsExcluding(email.trim(), -1)) {
             return com.importer.ImportRowResult.failure("email \"" + email + "\" đã được dùng.");
         }
-
         if (!phone.isEmpty()) {
             String phoneError = com.validation.Rules.phoneVn("Số điện thoại không đúng định dạng (vd 09xxxxxxxx).").validate(phone);
             if (phoneError != null) {
                 return com.importer.ImportRowResult.failure(phoneError);
             }
         }
-
-        Role role = parseRole(roleText);
-        if (role == null) {
+        
+        // ⭐ Parse roleCode từ text (hỗ trợ cả mã và tên tiếng Việt)
+        String roleCode = parseRoleCode(roleText);
+        if (roleCode == null) {
             return com.importer.ImportRowResult.failure("vai trò \"" + roleText
-                    + "\" không hợp lệ (Quản trị viên, Quản lý bán hàng, Quản lý kho, Nhân viên bán hàng).");
+                    + "\" không hợp lệ. Dùng mã (ADMIN, SALES_STAFF...) hoặc tên tiếng Việt.");
         }
-
+        
         java.time.LocalDate dob = null;
         if (!dobText.isEmpty()) {
             dob = parseDate(dobText);
@@ -352,7 +352,6 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
                 return com.importer.ImportRowResult.failure("ngày sinh \"" + dobText + "\" không đúng định dạng dd/MM/yyyy.");
             }
         }
-
         Employee.Gender gender = null;
         if (!genderText.isEmpty()) {
             gender = parseGender(genderText);
@@ -360,7 +359,6 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
                 return com.importer.ImportRowResult.failure("giới tính \"" + genderText + "\" không hợp lệ (Nam, Nữ, Khác).");
             }
         }
-
         java.math.BigDecimal salary = null;
         if (!salaryText.isEmpty()) {
             try {
@@ -372,7 +370,6 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
                 return com.importer.ImportRowResult.failure("lương \"" + salaryText + "\" không hợp lệ.");
             }
         }
-
         java.time.LocalDate hireDate = java.time.LocalDate.now();
         if (!hireDateText.isEmpty()) {
             java.time.LocalDate parsed = parseDate(hireDateText);
@@ -381,22 +378,20 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
             }
             hireDate = parsed;
         }
-
         Employee employee = new Employee();
         employee.setFullName(fullName);
         employee.setEmail(email.trim());
         employee.setPhone(phone);
-        employee.setRole(role);
+        employee.setRoleCode(roleCode); // ⭐ Dùng setRoleCode
         employee.setDateOfBirth(dob);
         employee.setGender(gender);
         employee.setSalary(salary);
         employee.setHireDate(hireDate);
-
+        
         EmployeeDAO.EmployeeCreationResult result = employeeDAO.createEmployee(employee);
         if (!result.success) {
             return com.importer.ImportRowResult.failure("lưu thất bại (email có thể đã được dùng).");
         }
-
         com.core.log.ActivityLogHelper.record(getEntityLabel(), com.model.ActivityLog.ACTION_CREATE,
                 "Đã nhập nhân viên \"" + fullName + "\" từ file", employee, null);
         return com.importer.ImportRowResult.success();
@@ -407,14 +402,26 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return v == null ? "" : v.trim();
     }
 
-    private static Role parseRole(String text) {
-        if (text == null) return null;
-        switch (text.trim().toLowerCase(java.util.Locale.forLanguageTag("vi"))) {
-            case "quản trị viên": case "admin": return Role.ADMIN;
-            case "quản lý bán hàng": case "sales_manager": return Role.SALES_MANAGER;
-            case "quản lý kho": case "inventory_manager": return Role.INVENTORY_MANAGER;
-            case "nhân viên bán hàng": case "sales_staff": return Role.SALES_STAFF;
-            default: return null;
+    // ⭐ MỚI: Parse roleCode từ text (hỗ trợ cả mã và tên tiếng Việt)
+    private static String parseRoleCode(String text) {
+        if (text == null || text.isBlank()) return null;
+        String t = text.trim();
+        
+        // Thử parse theo enum cũ trước
+        Role role = Role.tryParse(t);
+        if (role != null) return role.name();
+        
+        // Thử theo tên tiếng Việt
+        switch (t.toLowerCase(java.util.Locale.forLanguageTag("vi"))) {
+            case "quản trị viên": case "admin": return "ADMIN";
+            case "quản lý bán hàng": case "sales_manager": return "SALES_MANAGER";
+            case "quản lý kho": case "inventory_manager": return "INVENTORY_MANAGER";
+            case "nhân viên bán hàng": case "sales_staff": return "SALES_STAFF";
+            default:
+                // Thử trực tiếp như mã vai trò (cho vai trò tùy chỉnh)
+                com.dao.RoleDAO roleDAO = new com.dao.RoleDAO();
+                com.model.AppRole found = roleDAO.findByCode(t.toUpperCase());
+                return found != null ? found.getRoleCode() : null;
         }
     }
 
@@ -437,47 +444,27 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         }
     }
 
-    /**
-     * Giống UserAccountPanel/CustomerPanel: chưa có nơi nào publish DataChangedEvent
-     * cho Users/Employees nên reload() trực tiếp sau mỗi thao tác.
-     */
     @Override
     protected void onDataChanged() {
         reload();
     }
 
-    /**
-     * Sau khi thêm nhân viên mới:
-     * <ul>
-     *   <li>Không hiện dialog "Đã thêm nhân viên mới" (EmployeeFormDialog đã báo
-     *       chi tiết mã NV / username / mật khẩu-email).</li>
-     *   <li>Xóa bộ lọc vai trò + ô tìm kiếm và về trang 1 — vì danh sách ORDER BY
-     *       UserID DESC, nhân viên vừa tạo luôn nằm trang đầu. Nếu giữ nguyên
-     *       trang/filter hiện tại thì bảng trông như "không auto-refresh".</li>
-     * </ul>
-     * Khi sửa: giữ hành vi mặc định (thông báo + reload trang hiện tại).
-     */
     @Override
     protected void handleFormSaved(Employee item, CrudMode mode) {
         if (mode == CrudMode.ADD) {
-            selectedRole = null;
+            selectedRoleCode = null;
             if (roleFilter != null) {
                 roleFilter.resetToAll();
             }
             if (searchBar != null) {
                 searchBar.setText("");
             }
-            // applyFilters() luôn load trang 1 (không giữ page cũ)
             applyFilters();
             return;
         }
         BaseDialog.success(this, "Thành công", "Đã cập nhật " + getEntityLabel());
         onDataChanged();
     }
-
-    // ---------------------------------------------------------------
-    // Hành động: sửa / khóa / mở khóa
-    // ---------------------------------------------------------------
 
     private void viewRowPublic(int modelRow) {
         Employee item = rowToItem(modelRow);
@@ -498,7 +485,6 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return current != null ? current.getUserId() : -1;
     }
 
-    /** Không cho Admin tự khóa chính tài khoản đang đăng nhập. */
     private boolean canManage(int modelRow) {
         Employee item = rowToItem(modelRow);
         return item != null && item.getUserId() != currentUserId();
@@ -559,19 +545,30 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         }
     }
 
-    // ---------------------------------------------------------------
-    // Nhãn / màu hiển thị
-    // ---------------------------------------------------------------
-
-    private static String roleLabel(Role role) {
-        switch (role) {
-            case ADMIN: return "Quản trị viên";
-            case SALES_MANAGER: return "Quản lý bán hàng";
-            case INVENTORY_MANAGER: return "Quản lý kho";
-            case SALES_STAFF: return "Nhân viên bán hàng";
-            case CUSTOMER: return "Khách hàng";
-            default: return role.name();
+    // ⭐ CẬP NHẬT: roleLabel nhận roleCode String thay vì enum
+    private static String roleLabelFromCode(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) return "—";
+        Role role = Role.tryParse(roleCode);
+        if (role != null) {
+            switch (role) {
+                case ADMIN: return "Quản trị viên";
+                case SALES_MANAGER: return "Quản lý bán hàng";
+                case INVENTORY_MANAGER: return "Quản lý kho";
+                case SALES_STAFF: return "Nhân viên bán hàng";
+                case CUSTOMER: return "Khách hàng";
+                default: return role.name();
+            }
         }
+        // ⭐ Với vai trò tùy chỉnh: load tên từ DB
+        com.dao.RoleDAO roleDAO = new com.dao.RoleDAO();
+        com.model.AppRole appRole = roleDAO.findByCode(roleCode);
+        return appRole != null ? appRole.getRoleName() : roleCode;
+    }
+
+    // Giữ method cũ cho tương thích
+    @Deprecated
+    private static String roleLabel(Role role) {
+        return roleLabelFromCode(role != null ? role.name() : null);
     }
 
     private String statusLabel(Object value) {
@@ -590,18 +587,12 @@ public class EmployeePanel extends BaseCrudPanel<Employee> {
         return "LOCKED".equals(value) ? AppColor.ERROR : AppColor.TEXT_MUTED;
     }
 
-    // ---------------------------------------------------------------
-    // Helper: copy mã nhân viên vào clipboard
-    // ---------------------------------------------------------------
-
-    /** Copy chuỗi vào clipboard hệ thống. */
     private void copyToClipboard(String text) {
         try {
             StringSelection selection = new StringSelection(text);
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
             clipboard.setContents(selection, null);
         } catch (Exception ignored) {
-            // Bỏ qua nếu không copy được
         }
     }
 }

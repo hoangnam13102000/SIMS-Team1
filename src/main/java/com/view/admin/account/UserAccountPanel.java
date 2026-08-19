@@ -5,7 +5,11 @@ import com.components.FilterDropdown;
 import com.components.crud.BaseCrudPanel;
 import com.components.crud.CrudMode;
 import com.components.table.ActionColumn;
+import com.dao.RoleDAO;
 import com.dao.UserDAO;
+import com.event.AppEventBus;
+import com.event.DataChangedEvent;
+import com.model.AppRole;
 import com.model.Role;
 import com.model.User;
 import com.model.permission.AppPermission;
@@ -15,11 +19,7 @@ import com.utils.PaginationHelper;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
-import java.awt.Color;
-import java.awt.Cursor;
-import java.awt.Font;
-import java.awt.Frame;
-import java.awt.Window;
+import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
@@ -30,15 +30,15 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
 public class UserAccountPanel extends BaseCrudPanel<User> {
-
     private final UserDAO userDAO = new UserDAO();
-    private FilterDropdown<RoleOption> roleFilter;
+    private FilterDropdown<RoleFilterOption> roleFilter;
     private JLabel clearFiltersLink;
-    private Role selectedRole;
-
+    
+    // ⭐ Thay đổi: lưu roleCode dạng String
+    private String selectedRoleCode;
+    
     public UserAccountPanel() {
         super();
-
         ActionColumn actions = new ActionColumn()
                 .header("Thao tác")
                 .add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
@@ -56,23 +56,24 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
                     row -> canManage(row));
         }
         table.setActionColumn(actions);
-
         table.setBadgeColumn(4, this::statusLabel, this::statusColor);
         table.setBadgeColumn(5, this::lockLabel, this::lockColor);
-
-        // Dat do rong ro rang cho tung cot - neu khong JTable se tu chia deu
-        // theo do rong khung nhin, khien cac tieu de dai (vd "Tên đăng nhập",
-        // "Họ và tên") bi cat thanh "..." (giong da sua o CustomerPanel).
         table.setColumnWidths(115, 115, 180, 150, 130, 115);
         table.setColumnMinWidths(90, 85, 90, 110, 100, 95);
-
+        
         setupRoleFilter();
+        
+        // ⭐ LẮNG NGHE SỰ KIỆN: Khi vai trò thay đổi → cập nhật bộ lọc + reload
+        AppEventBus.getInstance().subscribe(DataChangedEvent.class, event -> {
+            if (DataChangedEvent.ROLE.equals(event.entity) 
+                || DataChangedEvent.ALL.equals(event.entity)) {
+                setupRoleFilter();
+                onDataChanged();
+            }
+        });
+        
         initialLoad();
     }
-
-    // ---------------------------------------------------------------
-    // Cấu hình BaseCrudPanel
-    // ---------------------------------------------------------------
 
     @Override
     protected FontAwesomeSolid getIcon() { return FontAwesomeSolid.USERS_COG; }
@@ -83,12 +84,10 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
     @Override
     protected String getAddButtonLabel() { return null; }
 
-    /** Khoá / mở khoá — USER_MANAGE. */
     private boolean canManageUsers() {
         return AuthService.getInstance().can(AppPermission.USER_MANAGE);
     }
 
-    /** Sửa — USER_MANAGE hoặc USER_EDIT. */
     private boolean canEditUsers() {
         return AuthService.getInstance().can(AppPermission.USER_MANAGE)
                 || AuthService.getInstance().can(AppPermission.USER_EDIT);
@@ -99,13 +98,14 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         return new String[]{"Tên đăng nhập", "Họ và tên", "Email", "Vai trò", "Trạng thái", "Khóa"};
     }
 
+    // ⭐ CẬP NHẬT: Hiển thị tên vai trò từ roleCode
     @Override
     protected Object[] mapRowToColumns(User item) {
         return new Object[]{
                 item.getUsername(),
                 item.getFullName(),
                 item.getEmail(),
-                roleLabel(item.getRole()),
+                roleLabelFromCode(item.getRoleCode()),
                 item.getStatus(),
                 item.isLocked() ? "LOCKED" : "NORMAL"
         };
@@ -113,7 +113,7 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
 
     @Override
     protected String getEntityLabel() { return "tài khoản"; }
-
+    
     @Override
     protected void afterRender(PaginationHelper.PaginationResult<User> result) {
         table.getTable().repaint();
@@ -124,15 +124,16 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         return item.getFullName() + " (" + item.getUsername() + ")";
     }
 
+    // ⭐ CẬP NHẬT: filter dùng roleCode String
     @Override
     protected PaginationHelper.PaginationResult<User> fetchPage(int page, int pageSize) {
         String keyword = searchBar != null && searchBar.getText() != null ? searchBar.getText().trim() : "";
-        return userDAO.filterByRole(keyword, selectedRole, page, pageSize);
+        return userDAO.filterByRole(keyword, selectedRoleCode, page, pageSize);
     }
 
     @Override
     protected PaginationHelper.PaginationResult<User> searchPage(String keyword, int page, int pageSize) {
-        return userDAO.filterByRole(keyword, selectedRole, page, pageSize);
+        return userDAO.filterByRole(keyword, selectedRoleCode, page, pageSize);
     }
 
     @Override
@@ -150,47 +151,47 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         dialog.setVisible(true);
     }
 
-    /** Không hỗ trợ xóa cứng - dùng "Vô hiệu hóa" trong form Sửa thay thế. */
     @Override
     protected boolean supportsDelete() { return false; }
     @Override
     protected boolean deleteItem(User item) { return false; }
-
     @Override
     protected String getSearchPlaceholder() { return "Tìm theo mã NV (tên đăng nhập), họ tên, email..."; }
 
-    /** Option cho FilterDropdown vai trò - value null = "Tất cả vai trò". */
-    private static final class RoleOption {
-        final Role role;
+    // ⭐ CẬP NHẬT: RoleFilterOption dùng roleCode String
+    private static final class RoleFilterOption {
+        final String roleCode;
         final String label;
-        RoleOption(Role role, String label) {
-            this.role = role;
+        RoleFilterOption(String roleCode, String label) {
+            this.roleCode = roleCode;
             this.label = label;
         }
         @Override
         public String toString() { return label; }
     }
 
-    /**
-     * Goi y autocomplete gom ho ten VA ten dang nhap cua toan bo tai khoan -
-     * khop voi 2 tieu chi chinh trong placeholder tim kiem o tren. Duoc
-     * BaseCrudPanel goi tren 1 background thread (SwingWorker) nen truy van
-     * userDAO.getAll() (blocking) o day an toan, khong lam treo UI.
-     */
+    // ⭐ CẬP NHẬT: setupRoleFilter load từ DB thay vì hardcode
     private void setupRoleFilter() {
-        RoleOption[] roleOptions = new RoleOption[]{
-                new RoleOption(null, "Tất cả vai trò"),
-                new RoleOption(Role.ADMIN, roleLabel(Role.ADMIN)),
-                new RoleOption(Role.SALES_MANAGER, roleLabel(Role.SALES_MANAGER)),
-                new RoleOption(Role.INVENTORY_MANAGER, roleLabel(Role.INVENTORY_MANAGER)),
-                new RoleOption(Role.SALES_STAFF, roleLabel(Role.SALES_STAFF)),
-                new RoleOption(Role.CUSTOMER, roleLabel(Role.CUSTOMER))
-        };
-
-        roleFilter = new FilterDropdown<>(FontAwesomeSolid.USER_CIRCLE, roleOptions);
+        // Xóa filter cũ nếu có
+        if (roleFilter != null) {
+            removeToolbarFilter(roleFilter);
+            if (clearFiltersLink != null) removeToolbarFilter(clearFiltersLink);
+        }
+        
+        RoleDAO roleDAO = new RoleDAO();
+        List<AppRole> allRoles = roleDAO.findAll(); // Bao gồm cả CUSTOMER
+        
+        List<RoleFilterOption> options = new ArrayList<>();
+        options.add(new RoleFilterOption(null, "Tất cả vai trò"));
+        for (AppRole r : allRoles) {
+            options.add(new RoleFilterOption(r.getRoleCode(), r.getRoleName()));
+        }
+        
+        RoleFilterOption[] optionArray = options.toArray(new RoleFilterOption[0]);
+        roleFilter = new FilterDropdown<>(FontAwesomeSolid.USER_CIRCLE, optionArray);
         roleFilter.onChange(opt -> onFilterChanged());
         addToolbarFilter(roleFilter);
-
+        
         FontIcon clearIcon = FontIcon.of(FontAwesomeSolid.TIMES, 12);
         clearIcon.setIconColor(AppColor.TEXT_MUTED);
         clearFiltersLink = new JLabel("Xóa lọc", clearIcon, SwingConstants.LEFT);
@@ -215,11 +216,14 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
             }
         });
         addToolbarFilter(clearFiltersLink);
+        
+        revalidate();
+        repaint();
     }
 
     private void onFilterChanged() {
-        RoleOption opt = roleFilter.getSelected();
-        selectedRole = opt == null ? null : opt.role;
+        RoleFilterOption opt = roleFilter.getSelected();
+        selectedRoleCode = opt == null ? null : opt.roleCode;
         if (clearFiltersLink != null) clearFiltersLink.setVisible(roleFilter.isFilterActive());
         applyFilters();
     }
@@ -235,24 +239,13 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
                 names.add(u.getUsername());
             }
         }
-        return new ArrayList<>(new LinkedHashSet<>(names)); // loai trung, giu thu tu
+        return new ArrayList<>(new LinkedHashSet<>(names));
     }
 
-    /**
-     * Chua co noi nao trong app publish DataChangedEvent cho Users (chi co
-     * hang so ORDER/PHONE), nen co che AutoRefresher (bind san trong
-     * BaseCrudPanel) khong bao gio tu kich hoat cho panel nay. Override truc
-     * tiep goi reload() de bang luon phan anh dung du lieu ngay sau khi
-     * Them/Sua/Khoa/Mo khoa thanh cong.
-     */
     @Override
     protected void onDataChanged() {
         reload();
     }
-
-    // ---------------------------------------------------------------
-    // Hành động: sửa / khóa / mở khóa
-    // ---------------------------------------------------------------
 
     private void viewRowPublic(int modelRow) {
         User item = rowToItem(modelRow);
@@ -273,7 +266,6 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         return current != null ? current.getUserId() : -1;
     }
 
-    /** Không cho Admin tự khóa chính tài khoản đang đăng nhập - tránh tự khóa mình ngoài hệ thống. */
     private boolean canManage(int modelRow) {
         User item = rowToItem(modelRow);
         return item != null && item.getUserId() != currentUserId();
@@ -334,26 +326,24 @@ public class UserAccountPanel extends BaseCrudPanel<User> {
         }
     }
 
-    // ---------------------------------------------------------------
-    // Nhãn / màu hiển thị
-    // ---------------------------------------------------------------
-
-    /**
-     * Truoc day dung mang ROLE_LABELS lap chi so theo Role.ordinal() - de vo
-     * dong bo khi enum Role them/bot gia tri (vd CUSTOMER dung ordinal 4
-     * nhung mang chi co 4 phan tu -> ArrayIndexOutOfBoundsException khi
-     * render bang). Doi sang switch tren ten enum de khong bao gio crash du
-     * enum co thay doi sau nay, va luon co gia tri fallback ro rang.
-     */
-    private static String roleLabel(Role role) {
-        switch (role) {
-            case ADMIN: return "Quản trị viên";
-            case SALES_MANAGER: return "Quản lý bán hàng";
-            case INVENTORY_MANAGER: return "Quản lý kho";
-            case SALES_STAFF: return "Nhân viên bán hàng";
-            case CUSTOMER: return "Khách hàng";
-            default: return role.name();
+    // ⭐ CẬP NHẬT: roleLabel nhận roleCode String thay vì enum
+    private static String roleLabelFromCode(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) return "—";
+        Role role = Role.tryParse(roleCode);
+        if (role != null) {
+            switch (role) {
+                case ADMIN: return "Quản trị viên";
+                case SALES_MANAGER: return "Quản lý bán hàng";
+                case INVENTORY_MANAGER: return "Quản lý kho";
+                case SALES_STAFF: return "Nhân viên bán hàng";
+                case CUSTOMER: return "Khách hàng";
+                default: return role.name();
+            }
         }
+        // ⭐ Với vai trò tùy chỉnh: load tên từ DB
+        RoleDAO roleDAO = new RoleDAO();
+        AppRole appRole = roleDAO.findByCode(roleCode);
+        return appRole != null ? appRole.getRoleName() : roleCode;
     }
 
     private String statusLabel(Object value) {
