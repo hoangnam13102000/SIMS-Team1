@@ -116,7 +116,13 @@ public final class AppPermissionCatalog {
         put(AppPermission.ORDER_VIEW, "Bán hàng",
                 "Xem đơn hàng online", "Xem đơn hàng online từ khách.");
         put(AppPermission.ORDER_MANAGE, "Bán hàng",
-                "Xử lý đơn hàng online", "Xác nhận / huỷ đơn hàng online từ khách.");
+                "Xử lý tất cả đơn online", "Xác nhận / huỷ tất cả đơn hàng online từ khách.");
+        put(AppPermission.ORDER_VIEW_ASSIGNED, "Bán hàng",
+                "Xem đơn được giao", "Chỉ xem các đơn hàng online được gán cho chính nhân viên đang đăng nhập.");
+        put(AppPermission.ORDER_PROCESS_ASSIGNED, "Bán hàng",
+                "Xử lý đơn được giao", "Chỉ xử lý trạng thái các đơn hàng online được gán cho chính nhân viên đang đăng nhập.");
+        put(AppPermission.ORDER_ASSIGN, "Bán hàng",
+                "Gán đơn cho nhân viên", "Gán hoặc đổi nhân viên bán hàng phụ trách đơn online.");
         put(AppPermission.PROMOTION_MANAGE, "Bán hàng",
                 "Quản lý khuyến mãi", "Tạo, sửa, bật/tắt, xoá khuyến mãi / mã giảm giá.");
 

@@ -7,6 +7,8 @@ import com.model.Invoice;
 import com.model.InvoiceDetail;
 import com.model.Order;
 import com.model.OrderDetail;
+import com.model.OrderStatusHistory;
+import com.model.User;
 import com.model.permission.AppPermission;
 import com.permission.PermissionManager;
 import com.service.AuthService;
@@ -26,6 +28,9 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
+import javax.swing.JComboBox;
+import javax.swing.DefaultComboBoxModel;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -223,6 +228,10 @@ public class OrderDetailDialog extends JDialog {
         infoGrid.add(infoCell("Số điện thoại", order.getCustomerPhone()));
         infoGrid.add(infoCell("Ngày đặt",
                 order.getCreatedAt() != null ? order.getCreatedAt().format(DATE_TIME_FORMAT) : "-"));
+        infoGrid.add(infoCell("Nhân viên phụ trách",
+                order.getAssignedToName() != null ? order.getAssignedToName() : "Chưa gán"));
+        infoGrid.add(infoCell("Thời gian gán",
+                order.getAssignedAt() != null ? order.getAssignedAt().format(DATE_TIME_FORMAT) : "-"));
         infoGrid.add(infoCell("Phương thức thanh toán",
                 OrderPanel.paymentMethodLabel(order.getPaymentMethod())));
         infoGrid.add(infoCell("Trạng thái thanh toán",
@@ -290,6 +299,25 @@ public class OrderDetailDialog extends JDialog {
                 BorderFactory.createEmptyBorder(0, 0, 0, 0)));
         tableScroll.setOpaque(false);
         content.add(tableScroll);
+
+        List<OrderStatusHistory> history = orderDAO.getStatusHistory(order.getOrderId());
+        content.add(Box.createVerticalStrut(20));
+        JLabel historyLabel = new JLabel("Lịch sử trạng thái (" + history.size() + ")");
+        historyLabel.setFont(AppFont.BODY_BOLD);
+        historyLabel.setForeground(AppColor.TEXT_PRIMARY);
+        historyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(historyLabel);
+        content.add(Box.createVerticalStrut(10));
+
+        JTable historyTable = buildHistoryTable(history);
+        JScrollPane historyScroll = new JScrollPane(historyTable);
+        historyScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        int historyH = Math.max(90, Math.min(220, 38 + Math.max(1, history.size()) * 34));
+        historyScroll.setPreferredSize(new Dimension(700, historyH));
+        historyScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, historyH + 20));
+        historyScroll.getViewport().setBackground(AppColor.WHITE);
+        historyScroll.setBorder(BorderFactory.createLineBorder(AppColor.BORDER, 1, true));
+        content.add(historyScroll);
 
         JScrollPane scroll = new JScrollPane(content);
         scroll.setBorder(null);
@@ -488,6 +516,33 @@ public class OrderDetailDialog extends JDialog {
         return table;
     }
 
+    private JTable buildHistoryTable(List<OrderStatusHistory> history) {
+        String[] cols = {"Thời gian", "Từ", "Sang", "Người thao tác", "Nguồn", "Ghi chú"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) { return false; }
+        };
+        for (OrderStatusHistory h : history) {
+            model.addRow(new Object[]{
+                    h.getChangedAt() != null ? h.getChangedAt().format(DATE_TIME_FORMAT) : "-",
+                    h.getFromStatus() != null ? OrderPanel.orderStatusLabel(h.getFromStatus()) : "-",
+                    OrderPanel.orderStatusLabel(h.getToStatus()),
+                    h.getChangedByName() != null ? h.getChangedByName() : "Hệ thống/Khách",
+                    h.isViaAssistant() ? "Trợ lý AI" : "Ứng dụng",
+                    h.getNote() != null ? h.getNote() : "-"
+            });
+        }
+        JTable table = new JTable(model);
+        table.setFont(AppFont.SMALL);
+        table.setRowHeight(34);
+        table.getTableHeader().setFont(AppFont.SMALL_BOLD);
+        table.getTableHeader().setReorderingAllowed(false);
+        table.setFillsViewportHeight(true);
+        table.setRowSelectionAllowed(false);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        return table;
+    }
+
     /**
      * Mau nen dong theo trang thai da tra - ap dung cung bang mau nhu
      * InvoiceDetailDialog.applyRowStyle (vang nhat = da tra het, xanh nhat =
@@ -531,10 +586,26 @@ public class OrderDetailDialog extends JDialog {
             footer.add(exportPdfButton);
         }
 
-        boolean canManage = PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
+        int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+        boolean canManageAll = PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
+        boolean canProcessAssigned = PermissionManager.getInstance().can(AppPermission.ORDER_PROCESS_ASSIGNED)
+                && order.isAssignedTo(currentUserId);
+        boolean canManage = canManageAll || canProcessAssigned;
+        boolean canAssign = PermissionManager.getInstance().can(AppPermission.ORDER_ASSIGN);
         boolean isNew = "NEW".equalsIgnoreCase(order.getOrderStatus());
         boolean isConfirmed = order.isConfirmed();
         boolean isShipping = order.isShipping();
+
+        if (canAssign && (isNew || isConfirmed)) {
+            JButton assignButton = new JButton(order.getAssignedTo() == null ? "Gán nhân viên" : "Đổi nhân viên");
+            assignButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            assignButton.setFocusPainted(false);
+            assignButton.setBackground(AppColor.ACCENT_BG_SOFT);
+            assignButton.setForeground(AppColor.ACCENT);
+            assignButton.setBorder(new EmptyBorder(8, 18, 8, 18));
+            assignButton.addActionListener(e -> handleAssign());
+            footer.add(assignButton);
+        }
 
         // Huy don chi cho phep o NEW/CONFIRMED - da giao cho DVVC (SHIPPING) thi khong huy duoc nua.
         if (canManage && (isNew || isConfirmed)) {
@@ -695,13 +766,73 @@ public class OrderDetailDialog extends JDialog {
         }
     }
 
+    private void handleAssign() {
+        List<User> staff = orderDAO.getAssignableSalesStaff();
+        if (staff.isEmpty()) {
+            BaseDialog.error(this, "Không có nhân viên", "Không tìm thấy Nhân viên bán hàng đang hoạt động để gán đơn.");
+            return;
+        }
+
+        DefaultComboBoxModel<User> model = new DefaultComboBoxModel<>();
+        for (User u : staff) model.addElement(u);
+        JComboBox<User> combo = new JComboBox<>(model);
+        combo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                JLabel lb = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof User u) {
+                    lb.setText(u.getFullName() + "  (" + u.getUsername() + ")");
+                }
+                return lb;
+            }
+        });
+        if (order.getAssignedTo() != null) {
+            for (int i = 0; i < model.getSize(); i++) {
+                if (model.getElementAt(i).getUserId() == order.getAssignedTo()) {
+                    combo.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
+
+        int option = JOptionPane.showConfirmDialog(this,
+                new Object[]{"Chọn nhân viên phụ trách:", combo},
+                order.getAssignedTo() == null ? "Gán đơn hàng" : "Đổi nhân viên phụ trách",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (option != JOptionPane.OK_OPTION) return;
+
+        User selected = (User) combo.getSelectedItem();
+        if (selected == null) return;
+        int actorId = AuthService.getInstance().getCurrentUser().getUserId();
+        String error = orderDAO.assignOrder(order.getOrderId(), selected.getUserId(), actorId);
+        if (error != null) {
+            BaseDialog.error(this, "Không thể gán đơn", error);
+            return;
+        }
+        BaseDialog.success(this, "Đã gán đơn",
+                "Đơn " + order.getOrderCode() + " đã được gán cho " + selected.getFullName() + ".");
+        dispose();
+    }
+
+    private OrderDAO.StatusUpdateResult updateStatusScoped(String newStatus, String cancelReason) {
+        int userId = AuthService.getInstance().getCurrentUser().getUserId();
+        if (PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE)) {
+            return cancelReason == null
+                    ? orderDAO.updateOrderStatus(order.getOrderId(), newStatus, userId)
+                    : orderDAO.updateOrderStatus(order.getOrderId(), newStatus, userId, cancelReason);
+        }
+        return cancelReason == null
+                ? orderDAO.updateAssignedOrderStatus(order.getOrderId(), newStatus, userId)
+                : orderDAO.updateAssignedOrderStatus(order.getOrderId(), newStatus, userId, cancelReason);
+    }
+
     private void handleConfirm() {
         boolean confirmed = BaseDialog.confirm(this, "Xác nhận đơn hàng",
                 "Xác nhận đơn hàng " + order.getOrderCode() + "?");
         if (!confirmed) return;
 
-        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
-                order.getOrderId(), "CONFIRMED", AuthService.getInstance().getCurrentUser().getUserId());
+        OrderDAO.StatusUpdateResult result = updateStatusScoped("CONFIRMED", null);
         if (!result.success) {
             BaseDialog.error(this, "Không thể xác nhận", result.errorMessage);
             return;
@@ -717,8 +848,7 @@ public class OrderDetailDialog extends JDialog {
                 "Chuyển đơn hàng " + order.getOrderCode() + " sang trạng thái đang giao?");
         if (!confirmed) return;
 
-        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
-                order.getOrderId(), "SHIPPING", AuthService.getInstance().getCurrentUser().getUserId());
+        OrderDAO.StatusUpdateResult result = updateStatusScoped("SHIPPING", null);
         if (!result.success) {
             BaseDialog.error(this, "Không thể cập nhật", result.errorMessage);
             return;
@@ -734,8 +864,7 @@ public class OrderDetailDialog extends JDialog {
                 "Xác nhận đơn hàng " + order.getOrderCode() + " đã giao thành công?");
         if (!confirmed) return;
 
-        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
-                order.getOrderId(), "COMPLETED", AuthService.getInstance().getCurrentUser().getUserId());
+        OrderDAO.StatusUpdateResult result = updateStatusScoped("COMPLETED", null);
         if (!result.success) {
             BaseDialog.error(this, "Không thể cập nhật", result.errorMessage);
             return;
@@ -747,12 +876,20 @@ public class OrderDetailDialog extends JDialog {
     }
 
     private void handleCancel() {
+        String reason = JOptionPane.showInputDialog(this,
+                "Nhập lý do hủy đơn " + order.getOrderCode() + ":",
+                "Hủy đơn hàng", JOptionPane.QUESTION_MESSAGE);
+        if (reason == null) return;
+        if (reason.isBlank()) {
+            BaseDialog.error(this, "Thiếu lý do", "Vui lòng nhập lý do hủy đơn.");
+            return;
+        }
+
         boolean confirmed = BaseDialog.confirm(this, "Hủy đơn hàng",
                 "Bạn có chắc muốn hủy đơn hàng " + order.getOrderCode() + "?");
         if (!confirmed) return;
 
-        OrderDAO.StatusUpdateResult result = orderDAO.updateOrderStatus(
-                order.getOrderId(), "CANCELLED", AuthService.getInstance().getCurrentUser().getUserId());
+        OrderDAO.StatusUpdateResult result = updateStatusScoped("CANCELLED", reason.trim());
         if (!result.success) {
             BaseDialog.error(this, "Không thể hủy đơn", result.errorMessage);
             return;

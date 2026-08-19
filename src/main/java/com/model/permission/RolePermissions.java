@@ -31,6 +31,7 @@ public final class RolePermissions {
                 AppPermission.INVOICE_CANCEL,
                 AppPermission.ORDER_VIEW,
                 AppPermission.ORDER_MANAGE,
+                AppPermission.ORDER_ASSIGN,
                 AppPermission.RETURN_EXCHANGE_APPROVE,
                 AppPermission.SHIFT_VIEW_ALL,
                 AppPermission.EXCEPTION_REPORT_HANDLE,
@@ -63,8 +64,8 @@ public final class RolePermissions {
                 AppPermission.INVOICE_CANCEL_REQUEST,
                 AppPermission.RETURN_EXCHANGE_CREATE,
                 AppPermission.EXCEPTION_REPORT_CREATE,
-                AppPermission.ORDER_VIEW,
-                AppPermission.ORDER_MANAGE
+                AppPermission.ORDER_VIEW_ASSIGNED,
+                AppPermission.ORDER_PROCESS_ASSIGNED
         ));
 
         DEFAULT_MAP.put(Role.CUSTOMER, PermissionSet.EMPTY);

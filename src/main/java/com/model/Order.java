@@ -26,6 +26,11 @@ public class Order {
     private String cancelReason;
     private LocalDateTime completedAt;
     private Integer invoiceId;
+    private Integer assignedTo;
+    private String assignedToName;
+    private LocalDateTime assignedAt;
+    private Integer assignedBy;
+    private String assignedByName;
     private int itemCount;
 
     private boolean returnRequested;
@@ -115,6 +120,25 @@ public class Order {
 
     public Integer getInvoiceId() { return invoiceId; }
     public void setInvoiceId(Integer invoiceId) { this.invoiceId = invoiceId; }
+
+    public Integer getAssignedTo() { return assignedTo; }
+    public void setAssignedTo(Integer assignedTo) { this.assignedTo = assignedTo; }
+
+    public String getAssignedToName() { return assignedToName; }
+    public void setAssignedToName(String assignedToName) { this.assignedToName = assignedToName; }
+
+    public LocalDateTime getAssignedAt() { return assignedAt; }
+    public void setAssignedAt(LocalDateTime assignedAt) { this.assignedAt = assignedAt; }
+
+    public Integer getAssignedBy() { return assignedBy; }
+    public void setAssignedBy(Integer assignedBy) { this.assignedBy = assignedBy; }
+
+    public String getAssignedByName() { return assignedByName; }
+    public void setAssignedByName(String assignedByName) { this.assignedByName = assignedByName; }
+
+    public boolean isAssignedTo(int userId) {
+        return assignedTo != null && assignedTo == userId;
+    }
 
     public int getItemCount() { return itemCount; }
     public void setItemCount(int itemCount) { this.itemCount = itemCount; }

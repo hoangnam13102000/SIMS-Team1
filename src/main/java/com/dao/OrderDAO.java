@@ -6,6 +6,8 @@ import com.event.AppEventBus;
 import com.event.DataChangedEvent;
 import com.model.Order;
 import com.model.OrderDetail;
+import com.model.OrderStatusHistory;
+import com.model.User;
 import com.utils.DBConnection;
 import com.utils.PaginationHelper;
 
@@ -45,6 +47,8 @@ public class OrderDAO extends BaseDAO<Order> {
 		return "o.OrderID, o.OrderCode, o.CustomerID, o.CustomerName, o.CustomerEmail, o.CustomerPhone, "
 				+ "o.ShippingAddress, o.CreatedAt, o.SubTotal, o.DiscountAmount, o.PromotionID, o.PromotionCode, o.TotalAmount, o.PaymentMethod, o.PaymentStatus, "
 				+ "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, o.CancelReason, o.CompletedAt, o.InvoiceID, "
+				+ "o.AssignedTo, (SELECT u.FullName FROM Users u WHERE u.UserID = o.AssignedTo) AS AssignedToName, "
+				+ "o.AssignedAt, o.AssignedBy, (SELECT u.FullName FROM Users u WHERE u.UserID = o.AssignedBy) AS AssignedByName, "
 				+ "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount, "
 				+ "CASE WHEN EXISTS (SELECT 1 FROM ReturnExchanges r " + "WHERE r.InvoiceID = o.InvoiceID) "
 				+ "THEN 1 ELSE 0 END AS ReturnRequested, "
@@ -112,6 +116,16 @@ public class OrderDAO extends BaseDAO<Order> {
 
 		int invoiceId = rs.getInt("InvoiceID");
 		order.setInvoiceId(rs.wasNull() ? null : invoiceId);
+
+		int assignedTo = rs.getInt("AssignedTo");
+		order.setAssignedTo(rs.wasNull() ? null : assignedTo);
+		order.setAssignedToName(rs.getString("AssignedToName"));
+		Timestamp assignedAt = rs.getTimestamp("AssignedAt");
+		order.setAssignedAt(assignedAt != null ? assignedAt.toLocalDateTime() : null);
+		int assignedBy = rs.getInt("AssignedBy");
+		order.setAssignedBy(rs.wasNull() ? null : assignedBy);
+		order.setAssignedByName(rs.getString("AssignedByName"));
+
 		order.setReturnRequested(rs.getBoolean("ReturnRequested"));
 		order.setLatestReturnStatus(rs.getString("LatestReturnStatus"));
 		order.setLatestReturnType(rs.getString("LatestReturnType"));
@@ -203,6 +217,9 @@ public class OrderDAO extends BaseDAO<Order> {
 					ps.executeUpdate();
 				}
 
+				insertOrderStatusHistory(con, orderId, null, "NEW", order.getCustomerId(), false,
+						"Khách hàng tạo đơn online.");
+
 				// PAYPAL da thu tien thuc su qua PayPalService.captureOrder()
 				// TRUOC khi goi ham nay (xem javadoc + CartPanel) - lap Invoice
 				// ngay de doanh thu duoc ghi nhan dung luc thu tien, khong phai
@@ -257,6 +274,16 @@ public class OrderDAO extends BaseDAO<Order> {
 	 */
 	public PaginationHelper.PaginationResult<Order> getPagedFiltered(int page, int pageSize, String keyword,
 			LocalDate fromDate, LocalDate toDate) {
+		return getPagedFiltered(page, pageSize, keyword, fromDate, toDate, null);
+	}
+
+	/**
+	 * Bien the co scope nhan vien: assignedToUserId != null thi CHI tra cac don
+	 * duoc gan cho UserID do. Dung cho SALES_STAFF de khong lo du lieu don cua
+	 * nhan vien khac.
+	 */
+	public PaginationHelper.PaginationResult<Order> getPagedFiltered(int page, int pageSize, String keyword,
+			LocalDate fromDate, LocalDate toDate, Integer assignedToUserId) {
 
 		List<String> conditions = new ArrayList<>();
 		List<Object> params = new ArrayList<>();
@@ -285,6 +312,10 @@ public class OrderDAO extends BaseDAO<Order> {
 			conditions.add("o.CreatedAt < ?");
 			params.add(Timestamp.valueOf(toDate.plusDays(1).atStartOfDay()));
 		}
+		if (assignedToUserId != null) {
+			conditions.add("o.AssignedTo = ?");
+			params.add(assignedToUserId);
+		}
 
 		String whereClause = conditions.isEmpty() ? null : String.join(" AND ", conditions);
 		return getPaged(page, pageSize, whereClause, params.toArray());
@@ -296,7 +327,22 @@ public class OrderDAO extends BaseDAO<Order> {
 
 	/** Danh sách đơn CHƯA được admin xem (dùng cho polling chuông thông báo). */
 	public List<Order> getUnseenOrders() {
-		return getByCondition("o.SeenByAdmin = 0");
+		return getUnseenOrders(null);
+	}
+
+	public List<Order> getUnseenOrders(Integer assignedToUserId) {
+		if (assignedToUserId == null) {
+			return getByCondition("o.SeenByAdmin = 0");
+		}
+		return getByCondition("o.SeenByAdmin = 0 AND o.AssignedTo = " + assignedToUserId);
+	}
+
+	public List<Order> getAssignedToUser(int userId) {
+		return getByCondition("o.AssignedTo = " + userId);
+	}
+
+	public Order getOrderById(int orderId) {
+		return getById(orderId);
 	}
 
 	/**
@@ -328,16 +374,178 @@ public class OrderDAO extends BaseDAO<Order> {
 		return executeUpdate("UPDATE Orders SET SeenByAdmin = 1 WHERE OrderID = ?", orderId);
 	}
 
-	/** Đánh dấu TẤT CẢ đơn hiện tại là đã xem (khi admin bấm vào chuông). */
+	/** Đánh dấu TẤT CẢ đơn trong scope hiện tại là đã xem. */
 	public boolean markAllSeen() {
-		try (Connection con = DBConnection.getConnection();
-				PreparedStatement ps = con
-						.prepareStatement("UPDATE Orders SET SeenByAdmin = 1 WHERE SeenByAdmin = 0")) {
+		return markAllSeen(null);
+	}
+
+	public boolean markAllSeen(Integer assignedToUserId) {
+		String sql = assignedToUserId == null
+				? "UPDATE Orders SET SeenByAdmin = 1 WHERE SeenByAdmin = 0"
+				: "UPDATE Orders SET SeenByAdmin = 1 WHERE SeenByAdmin = 0 AND AssignedTo = ?";
+		try (Connection con = DBConnection.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
+			if (assignedToUserId != null) ps.setInt(1, assignedToUserId);
 			ps.executeUpdate();
 			return true;
 		} catch (SQLException e) {
 			AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "OrderDAO.markAllSeen", e);
 			return false;
+		}
+	}
+
+	/** Danh sach nhan vien ban hang dang hoat dong de quan ly gan don. */
+	public List<User> getAssignableSalesStaff() {
+		List<User> result = new ArrayList<>();
+		String sql = "SELECT u.UserID, u.Username, u.FullName, u.Email, u.Phone "
+				+ "FROM Users u JOIN Roles r ON r.RoleID = u.RoleID "
+				+ "WHERE r.RoleCode = 'SALES_STAFF' AND u.Status = 'ACTIVE' "
+				+ "AND u.IsDeleted = 0 AND u.IsLocked = 0 ORDER BY u.FullName, u.UserID";
+		try (Connection con = DBConnection.getConnection();
+				PreparedStatement ps = con.prepareStatement(sql);
+				ResultSet rs = ps.executeQuery()) {
+			while (rs.next()) {
+				User u = new User();
+				u.setUserId(rs.getInt("UserID"));
+				u.setUsername(rs.getString("Username"));
+				u.setFullName(rs.getString("FullName"));
+				u.setEmail(rs.getString("Email"));
+				u.setPhone(rs.getString("Phone"));
+				result.add(u);
+			}
+		} catch (SQLException e) {
+			AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "OrderDAO.getAssignableSalesStaff", e);
+		}
+		return result;
+	}
+
+	/**
+	 * Gan / doi / bo gan nhan vien phu trach. DAO tu kiem tra actor co ORDER_ASSIGN
+	 * trong DB de khong chi dua vao nut UI.
+	 *
+	 * @return null neu thanh cong, nguoc lai la thong bao loi cho UI.
+	 */
+	public String assignOrder(int orderId, Integer assignedToUserId, int actorUserId) {
+		try (Connection con = DBConnection.getConnection()) {
+			con.setAutoCommit(false);
+			try {
+				if (!userHasPermission(con, actorUserId, "ORDER_ASSIGN")) {
+					con.rollback();
+					return "Bạn không có quyền gán đơn hàng cho nhân viên.";
+				}
+
+				String status;
+				Integer currentAssignedTo;
+				try (PreparedStatement ps = con.prepareStatement(
+						"SELECT OrderStatus, AssignedTo FROM Orders WHERE OrderID = ? FOR UPDATE")) {
+					ps.setInt(1, orderId);
+					try (ResultSet rs = ps.executeQuery()) {
+						if (!rs.next()) {
+							con.rollback();
+							return "Không tìm thấy đơn hàng.";
+						}
+						status = rs.getString("OrderStatus");
+						int id = rs.getInt("AssignedTo");
+						currentAssignedTo = rs.wasNull() ? null : id;
+					}
+				}
+
+				if (!("NEW".equalsIgnoreCase(status) || "CONFIRMED".equalsIgnoreCase(status))) {
+					con.rollback();
+					return "Chỉ được gán/đổi nhân viên khi đơn đang Chờ xác nhận hoặc Đã xác nhận.";
+				}
+
+				if (assignedToUserId != null && !isActiveSalesStaff(con, assignedToUserId)) {
+					con.rollback();
+					return "Nhân viên được chọn không còn hoạt động hoặc không thuộc vai trò Nhân viên bán hàng.";
+				}
+
+				if ((currentAssignedTo == null && assignedToUserId == null)
+						|| (currentAssignedTo != null && currentAssignedTo.equals(assignedToUserId))) {
+					con.commit();
+					return null;
+				}
+
+				String sql = assignedToUserId == null
+						? "UPDATE Orders SET AssignedTo=NULL, AssignedAt=NULL, AssignedBy=? WHERE OrderID=?"
+						: "UPDATE Orders SET AssignedTo=?, AssignedAt=CURRENT_TIMESTAMP, AssignedBy=? WHERE OrderID=?";
+				try (PreparedStatement ps = con.prepareStatement(sql)) {
+					if (assignedToUserId == null) {
+						ps.setInt(1, actorUserId);
+						ps.setInt(2, orderId);
+					} else {
+						ps.setInt(1, assignedToUserId);
+						ps.setInt(2, actorUserId);
+						ps.setInt(3, orderId);
+					}
+					ps.executeUpdate();
+				}
+
+				con.commit();
+				AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
+				return null;
+			} catch (SQLException e) {
+				con.rollback();
+				throw e;
+			} finally {
+				con.setAutoCommit(true);
+			}
+		} catch (SQLException e) {
+			AppLogger.getInstance().error(ErrorCode.DB_UPDATE_FAIL, "OrderDAO.assignOrder - orderId=" + orderId, e);
+			return "Không thể gán nhân viên cho đơn hàng. Vui lòng thử lại.";
+		}
+	}
+
+	public List<OrderStatusHistory> getStatusHistory(int orderId) {
+		List<OrderStatusHistory> result = new ArrayList<>();
+		String sql = "SELECT h.HistoryID, h.OrderID, h.FromStatus, h.ToStatus, h.ChangedBy, "
+				+ "u.FullName AS ChangedByName, h.ChangedAt, h.Note, h.ViaAssistant "
+				+ "FROM OrderStatusHistory h LEFT JOIN Users u ON u.UserID = h.ChangedBy "
+				+ "WHERE h.OrderID = ? ORDER BY h.ChangedAt ASC, h.HistoryID ASC";
+		try (Connection con = DBConnection.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
+			ps.setInt(1, orderId);
+			try (ResultSet rs = ps.executeQuery()) {
+				while (rs.next()) {
+					OrderStatusHistory h = new OrderStatusHistory();
+					h.setHistoryId(rs.getLong("HistoryID"));
+					h.setOrderId(rs.getInt("OrderID"));
+					h.setFromStatus(rs.getString("FromStatus"));
+					h.setToStatus(rs.getString("ToStatus"));
+					int changedBy = rs.getInt("ChangedBy");
+					h.setChangedBy(rs.wasNull() ? null : changedBy);
+					h.setChangedByName(rs.getString("ChangedByName"));
+					Timestamp changedAt = rs.getTimestamp("ChangedAt");
+					h.setChangedAt(changedAt != null ? changedAt.toLocalDateTime() : null);
+					h.setNote(rs.getString("Note"));
+					h.setViaAssistant(rs.getBoolean("ViaAssistant"));
+					result.add(h);
+				}
+			}
+		} catch (SQLException e) {
+			AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "OrderDAO.getStatusHistory - orderId=" + orderId, e);
+		}
+		return result;
+	}
+
+	private boolean userHasPermission(Connection con, int userId, String permissionCode) throws SQLException {
+		String sql = "SELECT 1 FROM Users u JOIN Roles r ON r.RoleID=u.RoleID "
+				+ "LEFT JOIN RolePermissions rp ON rp.RoleID=r.RoleID "
+				+ "LEFT JOIN Permissions p ON p.PermissionID=rp.PermissionID "
+				+ "WHERE u.UserID=? AND u.Status='ACTIVE' AND u.IsDeleted=0 "
+				+ "AND (r.RoleCode='ADMIN' OR p.PermissionCode=?) LIMIT 1";
+		try (PreparedStatement ps = con.prepareStatement(sql)) {
+			ps.setInt(1, userId);
+			ps.setString(2, permissionCode);
+			try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
+		}
+	}
+
+	private boolean isActiveSalesStaff(Connection con, int userId) throws SQLException {
+		String sql = "SELECT 1 FROM Users u JOIN Roles r ON r.RoleID=u.RoleID "
+				+ "WHERE u.UserID=? AND r.RoleCode='SALES_STAFF' AND u.Status='ACTIVE' "
+				+ "AND u.IsDeleted=0 AND u.IsLocked=0 LIMIT 1";
+		try (PreparedStatement ps = con.prepareStatement(sql)) {
+			ps.setInt(1, userId);
+			try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
 		}
 	}
 
@@ -454,13 +662,36 @@ public class OrderDAO extends BaseDAO<Order> {
 	 */
 	public StatusUpdateResult updateOrderStatus(int orderId, String newStatus, int actorUserId, String cancelReason,
 			boolean viaAssistant) {
+		return updateOrderStatusInternal(orderId, newStatus, actorUserId, cancelReason, viaAssistant, null);
+	}
+
+	/** SALES_STAFF: chi duoc xu ly don da gan cho chinh minh. */
+	public StatusUpdateResult updateAssignedOrderStatus(int orderId, String newStatus, int actorUserId) {
+		return updateOrderStatusInternal(orderId, newStatus, actorUserId, null, false, actorUserId);
+	}
+
+	public StatusUpdateResult updateAssignedOrderStatus(int orderId, String newStatus, int actorUserId, String cancelReason) {
+		return updateOrderStatusInternal(orderId, newStatus, actorUserId, cancelReason, false, actorUserId);
+	}
+
+	private StatusUpdateResult updateOrderStatusInternal(int orderId, String newStatus, int actorUserId,
+			String cancelReason, boolean viaAssistant, Integer requiredAssigneeUserId) {
 		if ("CANCELLED".equalsIgnoreCase(newStatus) && (cancelReason == null || cancelReason.trim().isEmpty())) {
 			return StatusUpdateResult.fail("Vui lòng nhập lý do hủy đơn.");
 		}
 		try (Connection con = DBConnection.getConnection()) {
 			con.setAutoCommit(false);
 			try {
+				if (requiredAssigneeUserId != null
+						&& !userHasPermission(con, actorUserId, "ORDER_PROCESS_ASSIGNED")) {
+					con.rollback();
+					return StatusUpdateResult.fail("Bạn không có quyền xử lý đơn hàng được giao.");
+				}
 				String oldStatus = getOrderStatusForUpdate(con, orderId);
+				if (requiredAssigneeUserId != null && !isOrderAssignedTo(con, orderId, requiredAssigneeUserId)) {
+					con.rollback();
+					return StatusUpdateResult.fail("Bạn chỉ được xử lý đơn hàng đã được gán cho chính mình.");
+				}
 				if (oldStatus == null || !isValidTransition(oldStatus, newStatus)) {
 					con.rollback();
 					return StatusUpdateResult.fail("Đơn hàng không ở trạng thái cho phép chuyển đổi này.");
@@ -522,6 +753,10 @@ public class OrderDAO extends BaseDAO<Order> {
 						}
 					}
 				}
+
+				String historyNote = "CANCELLED".equalsIgnoreCase(newStatus)
+						? ("Lý do hủy: " + cancelReason.trim()) : null;
+				insertOrderStatusHistory(con, orderId, oldStatus, newStatus, actorUserId, viaAssistant, historyNote);
 
 				con.commit();
 				AppEventBus.getInstance().publish(new DataChangedEvent(DataChangedEvent.ORDER));
@@ -880,6 +1115,31 @@ public class OrderDAO extends BaseDAO<Order> {
 			try (ResultSet rs = ps.executeQuery()) {
 				return rs.next() ? rs.getString(1) : null;
 			}
+		}
+	}
+
+	private boolean isOrderAssignedTo(Connection con, int orderId, int userId) throws SQLException {
+		try (PreparedStatement ps = con.prepareStatement(
+				"SELECT 1 FROM Orders WHERE OrderID=? AND AssignedTo=? LIMIT 1")) {
+			ps.setInt(1, orderId);
+			ps.setInt(2, userId);
+			try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
+		}
+	}
+
+	private void insertOrderStatusHistory(Connection con, int orderId, String fromStatus, String toStatus,
+			Integer changedBy, boolean viaAssistant, String note) throws SQLException {
+		String sql = "INSERT INTO OrderStatusHistory "
+				+ "(OrderID, FromStatus, ToStatus, ChangedBy, ChangedAt, Note, ViaAssistant) "
+				+ "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)";
+		try (PreparedStatement ps = con.prepareStatement(sql)) {
+			ps.setInt(1, orderId);
+			if (fromStatus != null) ps.setString(2, fromStatus); else ps.setNull(2, Types.VARCHAR);
+			ps.setString(3, toStatus);
+			if (changedBy != null) ps.setInt(4, changedBy); else ps.setNull(4, Types.INTEGER);
+			if (note != null && !note.isBlank()) ps.setString(5, note); else ps.setNull(5, Types.VARCHAR);
+			ps.setBoolean(6, viaAssistant);
+			ps.executeUpdate();
 		}
 	}
 

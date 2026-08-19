@@ -797,10 +797,17 @@ CREATE TABLE Orders (
     CancelReason        VARCHAR(500) NULL,
     CompletedAt         DATETIME NULL,
     InvoiceID           INT NULL,
+    AssignedTo          INT NULL,
+    AssignedAt          DATETIME NULL,
+    AssignedBy          INT NULL,
     CONSTRAINT FK_Orders_Customers
         FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID),
     CONSTRAINT FK_Orders_Invoices
         FOREIGN KEY (InvoiceID) REFERENCES Invoices(InvoiceID),
+    CONSTRAINT FK_Orders_AssignedTo
+        FOREIGN KEY (AssignedTo) REFERENCES Users(UserID),
+    CONSTRAINT FK_Orders_AssignedBy
+        FOREIGN KEY (AssignedBy) REFERENCES Users(UserID),
     CONSTRAINT CK_Orders_DiscountNotExceedSubTotal
         CHECK (DiscountAmount <= SubTotal),
 	UNIQUE KEY UX_Orders_InvoiceID (InvoiceID),
@@ -827,6 +834,27 @@ CREATE TABLE OrderDetails (
 ) ENGINE=InnoDB;
 
 CREATE INDEX IX_Orders_SeenByAdmin ON Orders(SeenByAdmin, CreatedAt);
+CREATE INDEX IX_Orders_AssignedTo_Status ON Orders(AssignedTo, OrderStatus, CreatedAt);
+
+CREATE TABLE OrderStatusHistory (
+    HistoryID       BIGINT AUTO_INCREMENT PRIMARY KEY,
+    OrderID         INT NOT NULL,
+    FromStatus      VARCHAR(20) NULL,
+    ToStatus        VARCHAR(20) NOT NULL,
+    ChangedBy       INT NULL,
+    ChangedAt       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Note            VARCHAR(500) NULL,
+    ViaAssistant    TINYINT(1) NOT NULL DEFAULT 0,
+    CONSTRAINT FK_OrderStatusHistory_Order
+        FOREIGN KEY (OrderID) REFERENCES Orders(OrderID) ON DELETE CASCADE,
+    CONSTRAINT FK_OrderStatusHistory_User
+        FOREIGN KEY (ChangedBy) REFERENCES Users(UserID),
+    CONSTRAINT CK_OrderStatusHistory_ViaAssistant
+        CHECK (ViaAssistant IN (0,1))
+) ENGINE=InnoDB;
+
+CREATE INDEX IX_OrderStatusHistory_Order_ChangedAt
+    ON OrderStatusHistory(OrderID, ChangedAt, HistoryID);
 
 CREATE TABLE StoreConfig (
     ConfigKey   VARCHAR(50) PRIMARY KEY,

@@ -33,3 +33,7 @@ Luu y:
 Nang cap project dang chay (A1-A3 huy hoa don co phe duyet):
   - Chay 08_INVOICE_CANCEL_APPROVAL.sql SAU khi DB hien tai da ton tai.
   - Dang xuat/dang nhap lai de phien SALES_STAFF nap quyen moi.
+
+09_ORDER_ASSIGNMENT_HISTORY.sql
+- Gán đơn online cho SALES_STAFF + phân quyền theo AssignedTo.
+- Lưu lịch sử chuyển trạng thái OrderStatusHistory.

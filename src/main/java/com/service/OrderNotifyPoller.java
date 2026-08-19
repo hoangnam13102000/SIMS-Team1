@@ -4,6 +4,8 @@ import com.dao.OrderDAO;
 import com.event.AppEventBus;
 import com.event.DataChangedEvent;
 import com.model.Order;
+import com.model.permission.AppPermission;
+import com.permission.PermissionManager;
 import com.settings.NotificationSettings;
 import com.utils.NotificationSound;
 
@@ -48,7 +50,15 @@ public final class OrderNotifyPoller {
         SwingWorker<List<Order>, Void> worker = new SwingWorker<>() {
             @Override
             protected List<Order> doInBackground() {
-                return orderDAO.getUnseenOrders();
+                boolean broad = PermissionManager.getInstance().can(AppPermission.ORDER_VIEW)
+                        || PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
+                boolean assigned = PermissionManager.getInstance().can(AppPermission.ORDER_VIEW_ASSIGNED)
+                        || PermissionManager.getInstance().can(AppPermission.ORDER_PROCESS_ASSIGNED);
+                Integer assignedToUserId = null;
+                if (!broad && assigned && AuthService.getInstance().getCurrentUser() != null) {
+                    assignedToUserId = AuthService.getInstance().getCurrentUser().getUserId();
+                }
+                return orderDAO.getUnseenOrders(assignedToUserId);
             }
 
             @Override

@@ -142,7 +142,13 @@ VALUES
 
     ('ORDER_VIEW',                'Xem đơn hàng online'),
 
-    ('ORDER_MANAGE',              'Xử lý đơn hàng online'),
+    ('ORDER_MANAGE',              'Xử lý tất cả đơn hàng online'),
+
+    ('ORDER_VIEW_ASSIGNED',       'Xem đơn online được giao'),
+
+    ('ORDER_PROCESS_ASSIGNED',    'Xử lý đơn online được giao'),
+
+    ('ORDER_ASSIGN',              'Gán đơn online cho nhân viên'),
 
     ('STOCK_ALERT_REPORT',        'Báo cáo hàng sắp hết'),
 
@@ -216,6 +222,7 @@ WHERE r.RoleCode = 'SALES_MANAGER'
       'INVOICE_CANCEL',
       'ORDER_VIEW',
       'ORDER_MANAGE',
+      'ORDER_ASSIGN',
       'RETURN_EXCHANGE_APPROVE',
       'SHIFT_VIEW_ALL',
       'EXCEPTION_REPORT_HANDLE',
@@ -272,8 +279,8 @@ WHERE r.RoleCode = 'SALES_STAFF'
       'INVOICE_CANCEL_REQUEST',
       'RETURN_EXCHANGE_CREATE',
       'EXCEPTION_REPORT_CREATE',
-      'ORDER_VIEW',
-      'ORDER_MANAGE'
+      'ORDER_VIEW_ASSIGNED',
+      'ORDER_PROCESS_ASSIGNED'
   );
 
 

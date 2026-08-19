@@ -10,6 +10,8 @@ import com.model.Invoice;
 import com.model.InvoiceDetail;
 import com.model.Order;
 import com.model.OrderDetail;
+import com.model.permission.AppPermission;
+import com.permission.PermissionManager;
 import com.service.AuthService;
 import com.theme.AppColor;
 import com.utils.NumberUtil;
@@ -63,8 +65,8 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         super();
 
         // Không STT / SĐT / SL — Mã đơn | Khách hàng | Ngày đặt | Tổng tiền | PTTT | Thanh toán | Trạng thái
-        table.setBadgeColumn(5, this::statusLabel, this::paymentStatusColor);
-        table.setBadgeColumn(6, this::statusLabel, this::orderStatusColor);
+        table.setBadgeColumn(6, this::statusLabel, this::paymentStatusColor);
+        table.setBadgeColumn(7, this::statusLabel, this::orderStatusColor);
 
         // Cột "Mã đơn" (index 0): thêm icon copy
         table.getTable().getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
@@ -196,8 +198,8 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     private void applyColumnWidths() {
         // Mã đơn (DH####) min đủ hiện full; các cột khác co được. Không scroll ngang.
-        table.setColumnWidths(110, 160, 130, 110, 80, 130, 125);
-        table.setColumnMinWidths(100, 120, 110, 90, 70, 110, 110);
+        table.setColumnWidths(105, 145, 145, 125, 105, 75, 120, 115);
+        table.setColumnMinWidths(95, 115, 110, 105, 90, 65, 105, 105);
         if (table.getTable().getColumnModel().getColumnCount() > 0) {
             var col = table.getTable().getColumnModel().getColumn(0);
             col.setMinWidth(100);
@@ -213,7 +215,9 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     @Override
     protected String getPageSubtitle() {
-        return "Tra cứu, xác nhận và hủy các đơn hàng khách đặt trực tuyến";
+        return isAssignedOnlyScope()
+                ? "Tra cứu và xử lý các đơn hàng online được giao cho bạn"
+                : "Tra cứu, gán nhân viên và xử lý các đơn hàng khách đặt trực tuyến";
     }
 
     @Override
@@ -222,7 +226,7 @@ public class OrderPanel extends BaseCrudPanel<Order> {
     @Override
     protected String[] getColumnNames() {
         return new String[]{
-                "Mã đơn", "Khách hàng", "Ngày đặt",
+                "Mã đơn", "Khách hàng", "Phụ trách", "Ngày đặt",
                 "Tổng tiền", "PTTT", "Thanh toán", "Trạng thái"
         };
     }
@@ -232,6 +236,7 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         return new Object[]{
                 item.getOrderCode(),
                 item.getCustomerName() != null ? item.getCustomerName() : "Khách lẻ",
+                item.getAssignedToName() != null ? item.getAssignedToName() : "Chưa gán",
                 item.getCreatedAt() != null ? item.getCreatedAt().format(DATE_TIME_FORMAT) : "-",
                 NumberUtil.formatThousands(item.getTotalAmount().longValue()),
                 paymentMethodLabel(item.getPaymentMethod()),
@@ -242,7 +247,7 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     /** Tổng tiền (chỉ số 3) — sort theo số. */
     @Override
-    protected int[] numericColumns() { return new int[]{3}; }
+    protected int[] numericColumns() { return new int[]{4}; }
 
     @Override
     protected String getEntityLabel() { return "đơn hàng"; }
@@ -255,17 +260,33 @@ public class OrderPanel extends BaseCrudPanel<Order> {
 
     @Override
     protected PaginationHelper.PaginationResult<Order> fetchPage(int page, int pageSize) {
-        return orderDAO.getPagedFiltered(page, pageSize, null, selectedFromDate(), selectedToDate());
+        return orderDAO.getPagedFiltered(page, pageSize, null, selectedFromDate(), selectedToDate(), assignedScopeUserId());
     }
 
     @Override
     protected PaginationHelper.PaginationResult<Order> searchPage(String keyword, int page, int pageSize) {
-        return orderDAO.getPagedFiltered(page, pageSize, keyword, selectedFromDate(), selectedToDate());
+        return orderDAO.getPagedFiltered(page, pageSize, keyword, selectedFromDate(), selectedToDate(), assignedScopeUserId());
     }
 
     @Override
     protected List<Order> fetchAllForExport() {
-        return orderDAO.getAll();
+        Integer userId = assignedScopeUserId();
+        return userId != null ? orderDAO.getAssignedToUser(userId) : orderDAO.getAll();
+    }
+
+    private boolean isAssignedOnlyScope() {
+        boolean broad = PermissionManager.getInstance().can(AppPermission.ORDER_VIEW)
+                || PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
+        boolean assigned = PermissionManager.getInstance().can(AppPermission.ORDER_VIEW_ASSIGNED)
+                || PermissionManager.getInstance().can(AppPermission.ORDER_PROCESS_ASSIGNED);
+        return !broad && assigned;
+    }
+
+    private Integer assignedScopeUserId() {
+        if (!isAssignedOnlyScope() || AuthService.getInstance().getCurrentUser() == null) {
+            return null;
+        }
+        return AuthService.getInstance().getCurrentUser().getUserId();
     }
 
     @Override
@@ -277,7 +298,9 @@ public class OrderPanel extends BaseCrudPanel<Order> {
     @Override
     protected List<String> fetchAutocompleteSuggestions() {
         List<String> names = new ArrayList<>();
-        for (Order o : orderDAO.getAll()) {
+        Integer userId = assignedScopeUserId();
+        List<Order> source = userId != null ? orderDAO.getAssignedToUser(userId) : orderDAO.getAll();
+        for (Order o : source) {
             if (o.getOrderCode() != null && !o.getOrderCode().isBlank()) {
                 names.add(o.getOrderCode());
             }
@@ -319,6 +342,12 @@ public class OrderPanel extends BaseCrudPanel<Order> {
     protected boolean deleteItem(Order item) { return false; }
 
     private void openDetailDialog(Order item) {
+        Integer scopeUserId = assignedScopeUserId();
+        if (scopeUserId != null && !item.isAssignedTo(scopeUserId)) {
+            AppAlert.error(this, "Không có quyền", "Bạn chỉ được xem đơn hàng được gán cho chính mình.");
+            reload();
+            return;
+        }
         Window owner = SwingUtilities.getWindowAncestor(this);
         OrderDetailDialog dialog = new OrderDetailDialog(
                 owner instanceof Frame ? (Frame) owner : null, item, orderDAO);

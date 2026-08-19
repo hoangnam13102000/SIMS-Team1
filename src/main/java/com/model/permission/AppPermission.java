@@ -58,10 +58,16 @@ public enum AppPermission implements Permission {
     RETURN_EXCHANGE_CREATE,
     /** Duyet/tu choi yeu cau doi/tra hang gia tri lon (R4). */
     RETURN_EXCHANGE_APPROVE,
-    /** Xem don hang online tu khach. */
+    /** Xem tat ca don hang online (quan ly/Admin). */
     ORDER_VIEW,
-    /** Xac nhan / huy don hang online tu khach. */
+    /** Xac nhan / huy tat ca don hang online (quan ly/Admin). */
     ORDER_MANAGE,
+    /** Xem cac don online duoc gan cho chinh nhan vien dang nhap. */
+    ORDER_VIEW_ASSIGNED,
+    /** Xu ly trang thai cac don online duoc gan cho chinh nhan vien dang nhap. */
+    ORDER_PROCESS_ASSIGNED,
+    /** Gan / doi nhan vien phu trach don online. */
+    ORDER_ASSIGN,
     /** NV ban hang bao cao SP het/sap het hang cho Quan ly kho. */
     STOCK_ALERT_REPORT,
     /** Quan ly kho xem va xu ly cac bao cao het/sap het hang (len ke hoach nhap bo sung). */

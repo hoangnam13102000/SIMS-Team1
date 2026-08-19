@@ -8,6 +8,7 @@ import com.event.OrderStatusChangedEvent;
 import com.i18n.Lang;
 import com.i18n.LanguageManager;
 import com.dao.StockAlertDAO;
+import com.dao.OrderDAO;
 import com.model.NotificationItem;
 import com.model.Order;
 import com.model.Role;
@@ -667,7 +668,9 @@ public class AdminMainFrame extends JFrame {
                 FontAwesomeSolid.SHOPPING_CART,
                 new OrderPanel(),
                 AppPermission.ORDER_VIEW,
-                AppPermission.ORDER_MANAGE
+                AppPermission.ORDER_MANAGE,
+                AppPermission.ORDER_VIEW_ASSIGNED,
+                AppPermission.ORDER_PROCESS_ASSIGNED
         );
 
         /*
@@ -880,7 +883,11 @@ public class AdminMainFrame extends JFrame {
             }
 
             try {
-                new com.dao.OrderDAO().markAllSeen();
+                boolean broadOrderAccess = PermissionManager.getInstance().can(AppPermission.ORDER_VIEW)
+                        || PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
+                Integer assignedToUserId = (!broadOrderAccess && AuthService.getInstance().getCurrentUser() != null)
+                        ? AuthService.getInstance().getCurrentUser().getUserId() : null;
+                new OrderDAO().markAllSeen(assignedToUserId);
             } catch (Exception e) {
                 com.core.log.AppLogger.getInstance().error(
                         com.core.log.ErrorCode.ORDER_STATUS_UPDATE_FAIL,
@@ -1175,15 +1182,23 @@ public class AdminMainFrame extends JFrame {
             return;
         }
 
-        boolean canSeeOrders =
-                PermissionManager.getInstance()
-                        .can(AppPermission.ORDER_VIEW)
-                        ||
-                PermissionManager.getInstance()
-                        .can(AppPermission.ORDER_MANAGE);
+        boolean broadOrderAccess =
+                PermissionManager.getInstance().can(AppPermission.ORDER_VIEW)
+                        || PermissionManager.getInstance().can(AppPermission.ORDER_MANAGE);
+        boolean assignedOrderAccess =
+                PermissionManager.getInstance().can(AppPermission.ORDER_VIEW_ASSIGNED)
+                        || PermissionManager.getInstance().can(AppPermission.ORDER_PROCESS_ASSIGNED);
 
-        if (!canSeeOrders) {
+        if (!broadOrderAccess && !assignedOrderAccess) {
             return;
+        }
+
+        if (!broadOrderAccess && assignedOrderAccess && AuthService.getInstance().getCurrentUser() != null) {
+            Order changed = new OrderDAO().getOrderById(evt.getOrderId());
+            int currentUserId = AuthService.getInstance().getCurrentUser().getUserId();
+            if (changed == null || !changed.isAssignedTo(currentUserId)) {
+                return;
+            }
         }
 
         String code =
