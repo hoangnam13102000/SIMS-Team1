@@ -1,6 +1,7 @@
 package com.view.admin;
 
 import com.components.common.AiAssistantPanel;
+import com.components.common.AiAssistantPanel.SuggestedQuestionSet;
 import com.theme.AppColor;
 
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
@@ -12,6 +13,7 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.List;
 
 /**
  * Bong bóng nổi trợ lý AI cho màn hình nhân viên / admin (góc phải dưới),
@@ -44,6 +46,7 @@ public class AdminAiAssistantWidget extends JPanel {
 
         aiPanel.setVisible(false);
         aiPanel.onClose(this::closeWindow);
+        aiPanel.setSuggestedQuestionSets(buildDemoQuestionSets());
 
         bubbleButton.addMouseListener(new MouseAdapter() {
             @Override
@@ -123,6 +126,40 @@ public class AdminAiAssistantWidget extends JPanel {
         windowOpen = false;
         aiPanel.setVisible(false);
         bubbleButton.setOpenState(false);
+    }
+
+    /**
+     * Các bộ câu hỏi dựng sẵn để demo trợ lý AI nội bộ (admin/nhân viên).
+     * Mỗi bộ ứng với 1 nhóm chức năng (AiTool) — nhân viên không đủ quyền sẽ
+     * được trợ lý báo không thực hiện được khi bấm thử, đúng như hành vi thật.
+     */
+    private static List<SuggestedQuestionSet> buildDemoQuestionSets() {
+        return List.of(
+                new SuggestedQuestionSet("Sản phẩm & tồn kho", List.of(
+                        "Tìm sản phẩm có từ khóa \"sữa\"",
+                        "Sản phẩm SP_0001 còn tồn kho bao nhiêu?",
+                        "Danh mục sản phẩm hiện có những gì?"
+                ), FontAwesomeSolid.BOXES),
+                new SuggestedQuestionSet("Đơn hàng online", List.of(
+                        "Tìm đơn hàng của khách tên Nguyễn Văn A",
+                        "Chi tiết đơn hàng DH0001",
+                        "Xác nhận đơn hàng DH0001"
+                ), FontAwesomeSolid.SHOPPING_CART),
+                new SuggestedQuestionSet("Hóa đơn & doanh thu", List.of(
+                        "Doanh thu từ 01/08/2026 đến 20/08/2026",
+                        "Tìm hóa đơn ORD_0001"
+                ), FontAwesomeSolid.RECEIPT),
+                new SuggestedQuestionSet("Danh mục & sản phẩm", List.of(
+                        "Tạo danh mục mới tên \"Đồ uống có ga\"",
+                        "Đổi giá bán sản phẩm SP_0001 thành 25000",
+                        "Ngừng bán sản phẩm SP_0002"
+                ), FontAwesomeSolid.TAGS),
+                new SuggestedQuestionSet("Nhân viên (Admin)", List.of(
+                        "Lương của nhân viên Trần Thị B là bao nhiêu?",
+                        "Tạo tài khoản nhân viên mới tên Lê Văn C, email levanc@cofood.vn, chức vụ nhân viên bán hàng",
+                        "Khóa tài khoản nhân viên có email levanc@cofood.vn"
+                ), FontAwesomeSolid.USER_TIE)
+        );
     }
 
     /** Chỉ bắt sự kiện trên bubble / cửa sổ chat — vùng còn lại click xuyên xuống UI. */

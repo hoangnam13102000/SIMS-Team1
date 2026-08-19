@@ -78,6 +78,79 @@ public class AiAssistantPanel extends JPanel {
     /** Nhiều file/ảnh đang chờ gửi. */
     private final List<PendingAttachment> pendingAttachments = new ArrayList<>();
 
+    /** Panel "bộ câu hỏi gợi ý" hiển thị ngay dưới lời chào — ẩn đi khi user gửi tin đầu tiên. */
+    private JPanel suggestionsWrapper;
+
+    /** Bộ câu hỏi gợi ý gần nhất đã gắn (giữ lại sau khi ẩn, để nút "Gợi ý câu hỏi" mở lại được). */
+    private List<SuggestedQuestionSet> lastSuggestedSets;
+
+    /** Nút nhỏ "Gợi ý câu hỏi" hiển thị ngay dưới bong bóng trả lời mới nhất của AI. */
+    private JPanel openSuggestionsButtonRef;
+
+    /**
+     * Panel chứa toàn bộ bong bóng chat + khối gợi ý, đặt trong JScrollPane.
+     * <p>
+     * JPanel thường KHÔNG implements {@link Scrollable}, nên bề rộng thực tế của nó
+     * do chính nó tự quyết định (bằng preferred width của nội dung con), thay vì bị
+     * ép khớp với bề rộng viewport. Hàng "pill" chủ đề / chip câu hỏi gợi ý dùng
+     * {@link WrapLayout} — nếu nội dung con rộng hơn khung chat, panel này sẽ tự
+     * giãn rộng theo, và vì thanh cuộn ngang bị tắt (HORIZONTAL_SCROLLBAR_NEVER) nên
+     * phần vượt quá bề rộng khung chat bị CẮT XÉN thay vì tự xuống dòng.
+     * <p>
+     * Cài {@link Scrollable#getScrollableTracksViewportWidth()} trả về {@code true}
+     * để ép chiều rộng panel luôn khớp đúng viewport → WrapLayout tính đúng số cột,
+     * các pill/chip gợi ý tự động xuống dòng thay vì bị cắt.
+     */
+    private static final class ScrollableMessagesPanel extends JPanel implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return orientation == SwingConstants.VERTICAL ? visibleRect.height : visibleRect.width;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            // Luôn ép chiều rộng bằng viewport → nội dung con (WrapLayout) xuống dòng
+            // đúng theo bề rộng khung chat thay vì tràn ra và bị cắt.
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            // Không ép chiều cao — cho phép nội dung dài hơn viewport để còn cuộn dọc.
+            return false;
+        }
+    }
+
+    /**
+     * Một bộ câu hỏi gợi ý sẵn (dùng cho demo), có tiêu đề + danh sách câu hỏi mẫu.
+     */
+    public static final class SuggestedQuestionSet {
+        public final String title;
+        public final List<String> questions;
+        public final FontAwesomeSolid icon;
+
+        /** Dùng icon mặc định (thẻ) nếu không chỉ định — tránh phải sửa các nơi gọi cũ. */
+        public SuggestedQuestionSet(String title, List<String> questions) {
+            this(title, questions, FontAwesomeSolid.TAG);
+        }
+
+        public SuggestedQuestionSet(String title, List<String> questions, FontAwesomeSolid icon) {
+            this.title = title;
+            this.questions = questions;
+            this.icon = icon != null ? icon : FontAwesomeSolid.TAG;
+        }
+    }
+
     public AiAssistantPanel(String headerTitle, String welcomeText,
                             boolean showCloseButton, boolean clientSide) {
         this.headerTitle = headerTitle;
@@ -90,7 +163,13 @@ public class AiAssistantPanel extends JPanel {
 
         JPanel headerBar = buildHeaderBar(showCloseButton);
 
-        messagesContainer = new JPanel();
+        // Dùng JPanel implements Scrollable, ép chiều rộng luôn khớp viewport của
+        // JScrollPane (getScrollableTracksViewportWidth() = true). Nếu không, JPanel
+        // thường sẽ tự giãn theo preferred width của nội dung con (vd hàng pill/chip
+        // gợi ý dùng WrapLayout), khiến nó rộng hơn khung chat; vì thanh cuộn ngang bị
+        // tắt (HORIZONTAL_SCROLLBAR_NEVER) nên phần vượt quá bề rộng bị CẮT thay vì
+        // xuống dòng — đây chính là lỗi "câu hỏi gợi ý nằm ngang bị cắt nội dung".
+        messagesContainer = new ScrollableMessagesPanel();
         messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
         messagesContainer.setBackground(AppColor.WHITE);
         messagesContainer.setBorder(new EmptyBorder(16, 16, 16, 16));
@@ -223,6 +302,278 @@ public class AiAssistantPanel extends JPanel {
 
     public void onClose(Runnable listener) {
         this.onCloseListener = listener;
+    }
+
+    /**
+     * Gắn các bộ câu hỏi dựng sẵn (demo) — hiển thị dạng chip ngay dưới lời chào.
+     * Bấm vào 1 câu hỏi sẽ tự điền vào ô nhập và gửi luôn. Bộ gợi ý tự ẩn sau khi
+     * user gửi tin nhắn đầu tiên (kể cả gõ tay). Gọi lại nhiều lần sẽ thay thế bộ cũ.
+     */
+    public void setSuggestedQuestionSets(List<SuggestedQuestionSet> sets) {
+        hideSuggestedQuestions();
+        removeOpenSuggestionsButton();
+        lastSuggestedSets = sets;
+        if (sets == null || sets.isEmpty()) return;
+
+        suggestionsWrapper = buildSuggestionsPanel(sets);
+        messagesContainer.add(suggestionsWrapper);
+        messagesContainer.revalidate();
+        messagesContainer.repaint();
+    }
+
+    private void hideSuggestedQuestions() {
+        if (suggestionsWrapper != null) {
+            messagesContainer.remove(suggestionsWrapper);
+            suggestionsWrapper = null;
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+        }
+    }
+
+    /**
+     * Chèn nút nhỏ "Gợi ý câu hỏi" ngay dưới bong bóng trả lời mới nhất của AI — bấm vào
+     * sẽ mở lại khối gợi ý câu hỏi mẫu (đã tự ẩn sau khi user gửi tin nhắn đầu tiên).
+     * Chỉ hiển thị nếu đã từng gắn bộ câu hỏi gợi ý ({@link #setSuggestedQuestionSets})
+     * và khối gợi ý hiện không đang mở sẵn.
+     */
+    private void appendOpenSuggestionsButton() {
+        removeOpenSuggestionsButton();
+        if (lastSuggestedSets == null || lastSuggestedSets.isEmpty()) return;
+        if (suggestionsWrapper != null) return;
+
+        FontIcon icon = FontIcon.of(FontAwesomeSolid.COMMENT_DOTS, 11);
+        icon.setIconColor(AppColor.ACCENT_HOVER);
+        JButton btn = new JButton("Gợi ý câu hỏi", icon) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(AppColor.ACCENT_BG_SOFT);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+                g2.setColor(AppColor.BORDER);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        btn.setIconTextGap(6);
+        btn.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btn.setForeground(AppColor.ACCENT_HOVER);
+        btn.setOpaque(false);
+        btn.setContentAreaFilled(false);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btn.setBorder(new EmptyBorder(6, 12, 6, 12));
+        btn.setToolTipText("Xem lại các câu hỏi gợi ý");
+        btn.addActionListener(e -> {
+            removeOpenSuggestionsButton();
+            suggestionsWrapper = buildSuggestionsPanel(lastSuggestedSets);
+            messagesContainer.add(suggestionsWrapper);
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+            scrollToBottom();
+        });
+
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setBorder(new EmptyBorder(0, 0, 10, 0));
+        row.add(btn);
+
+        openSuggestionsButtonRef = row;
+        messagesContainer.add(openSuggestionsButtonRef);
+        messagesContainer.revalidate();
+        messagesContainer.repaint();
+        scrollToBottom();
+    }
+
+    private void removeOpenSuggestionsButton() {
+        if (openSuggestionsButtonRef != null) {
+            messagesContainer.remove(openSuggestionsButtonRef);
+            openSuggestionsButtonRef = null;
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+        }
+    }
+
+    private JPanel buildSuggestionsPanel(List<SuggestedQuestionSet> sets) {
+        JPanel outer = new JPanel(new BorderLayout());
+        outer.setOpaque(false);
+        outer.setAlignmentX(Component.LEFT_ALIGNMENT);
+        outer.setBorder(new EmptyBorder(2, 0, 10, 0));
+
+        // Thẻ nền bo góc, cùng ngôn ngữ hình ảnh với bong bóng chat AI (AppColor.BG_LIGHTER)
+        // để phần gợi ý trông như 1 phần của cuộc trò chuyện, không phải khối UI lạ.
+        JPanel card = new JPanel(new BorderLayout(0, 8)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(AppColor.BG_LIGHTER);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        card.setOpaque(false);
+        card.setBorder(new EmptyBorder(12, 14, 12, 14));
+
+        // ---- Header: tiêu đề nhỏ gọn + nút ẩn (đây chỉ là gợi ý, người dùng có thể bỏ qua) ----
+        JPanel headerRow = new JPanel(new BorderLayout());
+        headerRow.setOpaque(false);
+
+        JPanel headerText = new JPanel();
+        headerText.setOpaque(false);
+        headerText.setLayout(new BoxLayout(headerText, BoxLayout.Y_AXIS));
+
+        FontIcon hintIcon = FontIcon.of(FontAwesomeSolid.COMMENT_DOTS, 12);
+        hintIcon.setIconColor(AppColor.ACCENT_HOVER);
+        JLabel title = new JLabel("Gợi ý cho bạn", hintIcon, SwingConstants.LEFT);
+        title.setIconTextGap(7);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        title.setForeground(AppColor.TEXT_PRIMARY);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        headerText.add(title);
+
+        JLabel subtitle = new JLabel("Chạm vào một chủ đề để xem câu hỏi mẫu");
+        subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        subtitle.setForeground(AppColor.TEXT_MUTED);
+        subtitle.setBorder(new EmptyBorder(2, 19, 0, 0));
+        subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        headerText.add(subtitle);
+        headerRow.add(headerText, BorderLayout.WEST);
+
+        JLabel dismissBtn = new JLabel(iconOf(FontAwesomeSolid.TIMES, 11, AppColor.TEXT_MUTED));
+        dismissBtn.setToolTipText("Ẩn gợi ý");
+        dismissBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        dismissBtn.setBorder(new EmptyBorder(2, 8, 2, 2));
+        dismissBtn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                hideSuggestedQuestions();
+            }
+        });
+        headerRow.add(dismissBtn, BorderLayout.EAST);
+        card.add(headerRow, BorderLayout.NORTH);
+
+        // ---- Hàng "pill" chủ đề — chỉ 1 chủ đề mở tại 1 thời điểm để không choán hết màn hình ----
+        JPanel pillsRow = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 6));
+        pillsRow.setOpaque(false);
+        pillsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel questionsHost = new JPanel();
+        questionsHost.setOpaque(false);
+        questionsHost.setLayout(new BoxLayout(questionsHost, BoxLayout.Y_AXIS));
+        questionsHost.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel centerCol = new JPanel();
+        centerCol.setOpaque(false);
+        centerCol.setLayout(new BoxLayout(centerCol, BoxLayout.Y_AXIS));
+        centerCol.add(pillsRow);
+        centerCol.add(questionsHost);
+        card.add(centerCol, BorderLayout.CENTER);
+
+        JToggleButton[] activePill = new JToggleButton[1];
+        for (SuggestedQuestionSet set : sets) {
+            JToggleButton pill = buildCategoryPill(set);
+            pill.addActionListener(e -> {
+                boolean expand = pill.isSelected();
+                if (activePill[0] != null && activePill[0] != pill) {
+                    activePill[0].setSelected(false);
+                }
+                questionsHost.removeAll();
+                if (expand) {
+                    activePill[0] = pill;
+                    JPanel chips = buildQuestionChipsRow(set.questions);
+                    chips.setBorder(new EmptyBorder(8, 2, 0, 0));
+                    chips.setAlignmentX(Component.LEFT_ALIGNMENT);
+                    questionsHost.add(chips);
+                } else {
+                    activePill[0] = null;
+                }
+                questionsHost.revalidate();
+                questionsHost.repaint();
+                messagesContainer.revalidate();
+                messagesContainer.repaint();
+            });
+            pillsRow.add(pill);
+        }
+
+        outer.add(card, BorderLayout.CENTER);
+        return outer;
+    }
+
+    /** "Pill" chủ đề gợi ý — bấm để mở/đóng danh sách câu hỏi mẫu của chủ đề đó. */
+    private JToggleButton buildCategoryPill(SuggestedQuestionSet set) {
+        FontIcon icon = FontIcon.of(set.icon, 11);
+        icon.setIconColor(AppColor.ACCENT_HOVER);
+        JToggleButton pill = new JToggleButton(set.title, icon) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(isSelected() ? AppColor.ACCENT_SELECTION_BG : AppColor.WHITE);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+                g2.setColor(isSelected() ? AppColor.ACCENT_HOVER : AppColor.BORDER);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        pill.setIconTextGap(6);
+        pill.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        pill.setForeground(AppColor.TEXT_PRIMARY);
+        pill.setOpaque(false);
+        pill.setContentAreaFilled(false);
+        pill.setFocusPainted(false);
+        pill.setBorderPainted(false);
+        pill.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        pill.setBorder(new EmptyBorder(6, 12, 6, 12));
+        return pill;
+    }
+
+    /** Hàng chip câu hỏi mẫu của 1 chủ đề — tự xuống dòng đúng theo bề rộng khung chat (WrapLayout). */
+    private JPanel buildQuestionChipsRow(List<String> questions) {
+        JPanel row = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 6));
+        row.setOpaque(false);
+        for (String question : questions) {
+            row.add(buildSuggestionChip(question));
+        }
+        return row;
+    }
+
+    private JButton buildSuggestionChip(String question) {
+        // Câu hỏi dài (vd yêu cầu tạo tài khoản kèm email) được bọc xuống dòng ở bề rộng
+        // cố định thay vì kéo dài chip ra khỏi khung chat — đây chính là lỗi chữ bị cắt cụt.
+        String label = question.length() > 30
+                ? "<html><body style='width:180px'>" + escapeHtml(question) + "</body></html>"
+                : question;
+        JButton chip = new JButton(label) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(AppColor.ACCENT_BG_SOFT);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        chip.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        chip.setForeground(AppColor.ACCENT_HOVER);
+        chip.setOpaque(false);
+        chip.setContentAreaFilled(false);
+        chip.setFocusPainted(false);
+        chip.setBorderPainted(false);
+        chip.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        chip.setBorder(new EmptyBorder(6, 12, 6, 12));
+        chip.setToolTipText(question);
+        chip.addActionListener(e -> {
+            inputField.setText(question);
+            sendCurrentInput();
+        });
+        return chip;
     }
 
     private void setInputEnabled(boolean enabled) {
@@ -734,6 +1085,9 @@ public class AiAssistantPanel extends JPanel {
         List<PendingAttachment> atts = new ArrayList<>(pendingAttachments);
         if ((text.isEmpty() && atts.isEmpty()) || !sendButton.isEnabled()) return;
 
+        hideSuggestedQuestions();
+        removeOpenSuggestionsButton();
+
         List<AiChatMessage.ImagePart> images = new ArrayList<>();
         List<AiChatMessage.FilePart> files = new ArrayList<>();
         BufferedImage firstPreview = null;
@@ -812,6 +1166,7 @@ public class AiAssistantPanel extends JPanel {
                 }
                 history.add(new AiChatMessage("model", reply));
                 addBubble(reply, false, TIME_FORMAT.format(new Date()), null, null, null, null);
+                appendOpenSuggestionsButton();
                 lastAiReply = reply;
                 if (ttsEnabled && reply != null && !reply.isBlank()) {
                     ttsService.speakAsync(reply);
