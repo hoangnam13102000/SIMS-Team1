@@ -54,3 +54,13 @@ Nang cap project dang chay (A1-A3 huy hoa don co phe duyet):
 - Online checkout: them phuong thuc BANK_TRANSFER bang VietQR/payOS giong POS.
 - Orders luu PayOsOrderCode, PayOsPaymentLinkID, BankTransferReference.
 - Chi danh dau PAID va tao don/hoa don sau khi payOS xac nhan thanh toan.
+
+14_RETURN_TO_ORIGINAL_BATCH.sql
+- Sua logic RETURN/EXCHANGE: hang tra bat buoc cong lai dung lo goc da xuat cho hoa don/order.
+- Khong con tao lo moi LotNumber=TRA-HANG-* khi tra hang.
+- Neu hoa don cu thieu batch traceability, phe duyet bi chan/rollback thay vi tao lo gia.
+- Sua tinh ReturnableQty chi tru cac batch mapping cua dong Direction=IN.
+
+15_PREVIEW_LEGACY_TRA_HANG_BATCHES.sql
+- Chi preview cac lo TRA-HANG-* da sinh tu logic cu va cac FK dang tham chieu.
+- Khong sua/xoa du lieu. Dung de quyet dinh cach gop lo cu ve dung lo goc an toan.

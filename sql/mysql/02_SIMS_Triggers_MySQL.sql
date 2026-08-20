@@ -306,8 +306,6 @@ main: BEGIN
     DECLARE v_available INT;
     DECLARE v_stock_before INT;
     DECLARE v_stock_after INT;
-    DECLARE v_supplier_id INT;
-    DECLARE v_import_price DECIMAL(18,0);
     DECLARE v_net DECIMAL(18,0) DEFAULT 0;
     DECLARE v_sub DECIMAL(18,0);
     DECLARE v_discount DECIMAL(18,0);
@@ -344,11 +342,13 @@ main: BEGIN
                     SELECT ob.BatchID,
                            SUM(ob.OriginQty) - COALESCE(rb.ReturnedQty, 0) AS ReturnableQty
                     FROM (
+                        /* POS invoice: batch da tru khi ban la nguon tra hang duy nhat. */
                         SELECT idb.BatchID, idb.Quantity AS OriginQty
                         FROM InvoiceDetailBatches idb
                         JOIN InvoiceDetails idt ON idt.InvoiceDetailID = idb.InvoiceDetailID
                         WHERE idt.InvoiceID = v_invoice_id AND idt.ProductID = v_product_id
                         UNION ALL
+                        /* Online order: dung OrderDetailBatches neu invoice chua co mapping batch rieng. */
                         SELECT odb.BatchID, odb.Quantity AS OriginQty
                         FROM Orders o
                         JOIN OrderDetails od ON od.OrderID = o.OrderID
@@ -360,18 +360,21 @@ main: BEGIN
                               WHERE idt2.InvoiceID = v_invoice_id
                                 AND idt2.ProductID = v_product_id)
                     ) ob
+                    JOIN InventoryBatch ib ON ib.BatchID = ob.BatchID
                     LEFT JOIN (
                         SELECT reb.BatchID, SUM(reb.Quantity) AS ReturnedQty
                         FROM ReturnExchangeDetailBatches reb
                         JOIN ReturnExchangeDetails rd ON rd.ReturnDetailID = reb.ReturnDetailID
                         JOIN ReturnExchanges r ON r.ReturnID = rd.ReturnID
                         WHERE rd.ProductID = v_product_id
+                          AND rd.Direction = 'IN'
                           AND r.InvoiceID = v_invoice_id AND r.Status = 'APPROVED'
                         GROUP BY reb.BatchID
                     ) rb ON rb.BatchID = ob.BatchID
-                    GROUP BY ob.BatchID, rb.ReturnedQty
+                    GROUP BY ob.BatchID, rb.ReturnedQty, ib.ExpiryDate
                     HAVING SUM(ob.OriginQty) - COALESCE(rb.ReturnedQty, 0) > 0
-                    ORDER BY ob.BatchID;
+                    /* Partial return uu tien dung thu tu FEFO giong luc ban. */
+                    ORDER BY COALESCE(ib.ExpiryDate, '9999-12-31'), ob.BatchID;
                 DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_origin_done = 1;
 
                 OPEN c_origin;
@@ -381,7 +384,11 @@ main: BEGIN
                     SET v_take = LEAST(v_batch_qty, v_remaining);
                     UPDATE InventoryBatch
                     SET RemainingQty = RemainingQty + v_take,
-                        Status = CASE WHEN Status = 'DEPLETED' THEN 'ACTIVE' ELSE Status END
+                        Status = CASE
+                            WHEN ExpiryDate IS NOT NULL AND ExpiryDate < CURRENT_DATE THEN 'EXPIRED'
+                            WHEN Status = 'DEPLETED' THEN 'ACTIVE'
+                            ELSE Status
+                        END
                     WHERE BatchID = v_batch_id AND RemainingQty + v_take <= Quantity;
                     IF ROW_COUNT() = 1 THEN
                         INSERT INTO ReturnExchangeDetailBatches (ReturnDetailID, BatchID, Quantity)
@@ -392,31 +399,14 @@ main: BEGIN
                 CLOSE c_origin;
             END origin_block;
 
+            /*
+             * Bat buoc tra dung lo goc da xuat cho hoa don.
+             * Tuyet doi KHONG tao lo TRA-HANG-* moi neu thieu batch traceability.
+             * SIGNAL lam rollback transaction duyet, giu request o PENDING de xu ly du lieu goc.
+             */
             IF v_remaining > 0 THEN
-                SET v_supplier_id = (SELECT SupplierID FROM InventoryBatch
-                                     WHERE ProductID = v_product_id ORDER BY ImportDate DESC LIMIT 1);
-                SET v_import_price = (SELECT ImportPrice FROM InventoryBatch
-                                      WHERE ProductID = v_product_id ORDER BY ImportDate DESC LIMIT 1);
-                IF v_supplier_id IS NULL THEN
-                    SET v_supplier_id = (SELECT SupplierID FROM Suppliers ORDER BY SupplierID LIMIT 1);
-                    SET v_import_price = 0;
-                END IF;
-                IF v_supplier_id IS NULL THEN
-                    SIGNAL SQLSTATE '45000'
-                        SET MESSAGE_TEXT = 'Khong co nha cung cap de tao lo hang tra.';
-                END IF;
-                INSERT INTO InventoryBatch
-                    (BatchCode, ProductID, SupplierID, ReceiptDetailID, LotNumber,
-                     ManufactureDate, ExpiryDate, ImportPrice, Quantity, RemainingQty, Status)
-                VALUES
-                    (NULL, v_product_id, v_supplier_id, NULL, CONCAT('TRA-HANG-', p_return_id),
-                     NULL, NULL, COALESCE(v_import_price, 0), v_remaining, v_remaining, 'ACTIVE');
-                SET v_batch_id = LAST_INSERT_ID();
-                UPDATE InventoryBatch SET BatchCode = CONCAT('LOT_', LPAD(BatchID, 6, '0'))
-                WHERE BatchID = v_batch_id;
-                INSERT INTO ReturnExchangeDetailBatches (ReturnDetailID, BatchID, Quantity)
-                VALUES (v_detail_id, v_batch_id, v_remaining);
-                SET v_remaining = 0;
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Khong du lo goc cua hoa don de nhap hang tra; he thong khong tao lo moi.';
             END IF;
         ELSE
             SELECT COALESCE(SUM(RemainingQty), 0) INTO v_available
