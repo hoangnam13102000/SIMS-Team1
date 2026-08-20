@@ -236,6 +236,12 @@ public class OrderDetailDialog extends JDialog {
                 OrderPanel.paymentMethodLabel(order.getPaymentMethod())));
         infoGrid.add(infoCell("Trạng thái thanh toán",
                 OrderPanel.paymentStatusLabel(order.getPaymentStatus())));
+        if ("BANK_TRANSFER".equalsIgnoreCase(order.getPaymentMethod())) {
+            String ref = order.getBankTransferReference();
+            if (ref == null || ref.isBlank()) ref = order.getPayOsPaymentLinkId();
+            infoGrid.add(infoCell("Mã giao dịch VietQR",
+                    ref == null || ref.isBlank() ? "—" : ref));
+        }
         infoGrid.add(infoCell("Tạm tính",
                 NumberUtil.formatThousands(order.getSubTotal().longValue()) + " đ"));
 
@@ -567,11 +573,12 @@ public class OrderDetailDialog extends JDialog {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, AppColor.BORDER),
                 new EmptyBorder(12, 24, 12, 24)));
 
-        // Cho xuat PDF khi da co HĐ, hoặc đơn đã hoàn thành / PayPal đã thanh toán
+        // Cho xuat PDF khi da co HĐ, hoặc đơn đã hoàn thành / đơn trả trước đã thanh toán
         // (có thể lập bù HĐ hoặc xuất từ dữ liệu đơn để tra cứu lịch sử).
         boolean canExportPdf = order.getInvoiceId() != null
                 || "COMPLETED".equalsIgnoreCase(order.getOrderStatus())
-                || ("PAYPAL".equalsIgnoreCase(order.getPaymentMethod())
+                || (("PAYPAL".equalsIgnoreCase(order.getPaymentMethod())
+                    || "BANK_TRANSFER".equalsIgnoreCase(order.getPaymentMethod()))
                     && "PAID".equalsIgnoreCase(order.getPaymentStatus()));
         if (canExportPdf) {
             JButton exportPdfButton = new JButton("Xuất hóa đơn PDF");
@@ -676,7 +683,8 @@ public class OrderDetailDialog extends JDialog {
 
             if (invoiceId == null) {
                 boolean eligible = "COMPLETED".equalsIgnoreCase(order.getOrderStatus())
-                        || ("PAYPAL".equalsIgnoreCase(order.getPaymentMethod())
+                        || (("PAYPAL".equalsIgnoreCase(order.getPaymentMethod())
+                            || "BANK_TRANSFER".equalsIgnoreCase(order.getPaymentMethod()))
                             && "PAID".equalsIgnoreCase(order.getPaymentStatus()));
                 if (eligible) {
                     int actorId = AuthService.getInstance().getCurrentUser().getUserId();

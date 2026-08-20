@@ -22,17 +22,16 @@ import java.util.List;
 
 /**
  * Dialog "Thanh toán đơn hàng" - hiển thị tóm tắt đơn hàng + cho phép chọn
- * phương thức thanh toán (Tiền mặt khi nhận hàng / PayPal) trước khi xác nhận.
+ * phương thức thanh toán (Tiền mặt khi nhận hàng / Chuyển khoản VietQR / PayPal) trước khi xác nhận.
  * <p>
- * Dùng chung style card/border/accent voi phan con lai cua app (xem
- * {@link com.components.BaseDialog}, {@link CartPanel}) thay vi copy nguyen
- * giao dien PayPal that - he thong chua co cong thanh toan that su, day chi
- * la buoc chon phuong thuc truoc khi mo phong dat hang (xem CartPanel#handleCheckout).
+ * Dùng chung style card/border/accent với phần còn lại của app. Dialog này chỉ
+ * chọn phương thức; luồng PayPal và VietQR/payOS thật được xử lý trong
+ * {@link CartPanel#handleCheckout()}.
  */
 public final class PaymentDialog {
 
     /** Phuong thuc thanh toan nguoi dung chon trong dialog. */
-    public enum Method { COD, PAYPAL }
+    public enum Method { COD, BANK_TRANSFER, PAYPAL }
 
     private static final int WIDTH = 440;
     private static final Color SELECTED_BG = AppColor.ACCENT_BG_SOFT;
@@ -69,11 +68,14 @@ public final class PaymentDialog {
         MethodCard codCard = new MethodCard(
                 Method.COD, FontAwesomeSolid.MONEY_BILL_WAVE, new Color(220, 252, 231), new Color(22, 163, 74),
                 Lang.get("payment.method.cod.title"), Lang.get("payment.method.cod.subtitle"));
+        MethodCard bankCard = new MethodCard(
+                Method.BANK_TRANSFER, FontAwesomeSolid.QRCODE, new Color(219, 234, 254), new Color(37, 99, 235),
+                Lang.get("payment.method.bank.title"), Lang.get("payment.method.bank.subtitle"));
         MethodCard paypalCard = new MethodCard(
                 Method.PAYPAL, FontAwesomeBrands.PAYPAL, new Color(224, 231, 255), new Color(37, 99, 235),
                 Lang.get("payment.method.paypal.title"), Lang.get("payment.method.paypal.subtitle"));
 
-        MethodCard[] allCards = {codCard, paypalCard};
+        MethodCard[] allCards = {codCard, bankCard, paypalCard};
         for (MethodCard card : allCards) {
             card.addMouseListener(new MouseAdapter() {
                 @Override
@@ -86,6 +88,8 @@ public final class PaymentDialog {
         codCard.setSelected(true);
 
         body.add(fixedWidth(codCard));
+        body.add(Box.createVerticalStrut(10));
+        body.add(fixedWidth(bankCard));
         body.add(Box.createVerticalStrut(10));
         body.add(fixedWidth(paypalCard));
         body.add(Box.createVerticalStrut(20));

@@ -2,6 +2,7 @@ package com.components;
 
 import com.theme.AppColor;
 import com.theme.AppFont;
+import com.utils.NotificationSound;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -54,6 +55,11 @@ public final class AppAlert {
     public static void show(Component anchor, Type type, String title, String message, int durationMs) {
         Window owner = SwingUtilities.getWindowAncestor(anchor);
         if (owner == null) return;
+
+        // Moi toast thong bao trong app deu dung chung tieng chuong san co.
+        // NotificationSound tu ton trong cai dat "Am thanh thong bao", nen khi
+        // nguoi dung tat sound thi toast van hien nhung khong phat tieng.
+        NotificationSound.playDing();
 
         Style style = styleFor(type);
         JWindow toast = buildToastWindow(owner, style, title, message);

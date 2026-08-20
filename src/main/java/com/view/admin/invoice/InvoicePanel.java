@@ -40,6 +40,8 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 	private DatePickerField fromDateFilter;
 	private DatePickerField toDateFilter;
 	private JLabel clearDateFilterLink;
+	private JButton qrScanButton;
+	private boolean compactToolbarMode;
 
 	public InvoicePanel() {
 		super();
@@ -93,25 +95,27 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 
 		buildDateFilterBar();
 		addInvoiceQrScannerButton();
-		initialLoad();
-		applyColumnWidths();
 		table.setActionColumn(new ActionColumn()
 				.add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết", modelRow -> {
 					if (supportsView())
 						viewRow(modelRow);
 				}).add("export", FontAwesomeSolid.FILE_PDF, AppColor.ACCENT, "Xuất hóa đơn PDF", this::exportRowPdf));
+		applyColumnWidths(false);
+		installResponsiveInvoiceLayout();
+		initialLoad();
 	}
 
 	private void addInvoiceQrScannerButton() {
-		JButton scan = new JButton("Quét QR HĐ");
-		scan.setFont(new Font("Segoe UI", Font.BOLD, 13));
-		scan.setFocusPainted(false);
-		scan.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		qrScanButton = new JButton("Quét QR HĐ");
+		qrScanButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+		qrScanButton.setFocusPainted(false);
+		qrScanButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		qrScanButton.setToolTipText("Quét QR để tìm nhanh hóa đơn");
 		FontIcon icon = FontIcon.of(FontAwesomeSolid.CAMERA, 13);
 		icon.setIconColor(AppColor.ACCENT);
-		scan.setIcon(icon);
-		scan.setIconTextGap(6);
-		scan.addActionListener(e -> {
+		qrScanButton.setIcon(icon);
+		qrScanButton.setIconTextGap(6);
+		qrScanButton.addActionListener(e -> {
 			Window owner = SwingUtilities.getWindowAncestor(this);
 			BarcodeScannerDialog dialog = new BarcodeScannerDialog(owner,
 					"Quét QR hóa đơn", "Đưa QR trên hóa đơn vào giữa khung hình");
@@ -127,7 +131,7 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 			});
 			dialog.setVisible(true);
 		});
-		addToolbarFilter(scan);
+		addToolbarFilter(qrScanButton);
 	}
 
 	private void buildDateFilterBar() {
@@ -207,14 +211,70 @@ public class InvoicePanel extends BaseCrudPanel<Invoice> {
 		return toDateFilter == null ? null : toDateFilter.getValue();
 	}
 
-	private void applyColumnWidths() {
-		table.setColumnWidths(160, 135, 115, 100, 105, 105, 95, 105, 110, 120);
-		table.setColumnMinWidths(145, 95, 85, 90, 90, 90, 85, 90, 95, 105);
-		if (table.getTable().getColumnModel().getColumnCount() > 0) {
-			var col = table.getTable().getColumnModel().getColumn(0);
-			col.setMinWidth(150);
-			col.setPreferredWidth(165);
+	private void applyColumnWidths(boolean compact) {
+		if (compact) {
+			// Khi cửa sổ thu nhỏ, ưu tiên giữ cột "Thao tác" luôn nhìn thấy.
+			// Các cột text vẫn có tooltip/ellipsis nên có thể co hơn mà không mất dữ liệu.
+			table.setColumnWidths(145, 105, 95, 90, 90, 88, 85, 88, 90, 95);
+			table.setColumnMinWidths(125, 75, 70, 78, 72, 72, 75, 72, 80, 82);
+		} else {
+			table.setColumnWidths(160, 135, 115, 100, 105, 105, 95, 105, 110, 120);
+			table.setColumnMinWidths(140, 90, 82, 86, 84, 84, 82, 84, 90, 96);
 		}
+
+		int count = table.getTable().getColumnModel().getColumnCount();
+		if (count > 0) {
+			var first = table.getTable().getColumnModel().getColumn(0);
+			first.setMinWidth(compact ? 125 : 140);
+			first.setPreferredWidth(compact ? 145 : 160);
+		}
+
+		// BaseTable mặc định dành khá nhiều chỗ cho 2 icon action. Với trang hóa đơn
+		// chỉ có Xem + PDF, 92px là đủ cả header và vùng click, giúp cột không bị
+		// đẩy ra ngoài khi cửa sổ nhỏ.
+		if (count > getColumnNames().length) {
+			var action = table.getTable().getColumnModel().getColumn(count - 1);
+			action.setMinWidth(88);
+			action.setPreferredWidth(92);
+			action.setMaxWidth(100);
+		}
+	}
+
+	private void installResponsiveInvoiceLayout() {
+		addComponentListener(new java.awt.event.ComponentAdapter() {
+			@Override
+			public void componentResized(java.awt.event.ComponentEvent e) {
+				updateResponsiveInvoiceLayout();
+			}
+		});
+		SwingUtilities.invokeLater(this::updateResponsiveInvoiceLayout);
+	}
+
+	private void updateResponsiveInvoiceLayout() {
+		int width = getWidth();
+		if (width <= 0) return;
+
+		boolean compact = width < 1180;
+		if (compactToolbarMode == compact && qrScanButton != null) return;
+		compactToolbarMode = compact;
+
+		if (searchBar != null) {
+			searchBar.setPreferredWidth(compact ? 250 : 320);
+		}
+		if (fromDateFilter != null) {
+			fromDateFilter.setPreferredSize(new Dimension(compact ? 112 : 130, 34));
+		}
+		if (toDateFilter != null) {
+			toDateFilter.setPreferredSize(new Dimension(compact ? 112 : 130, 34));
+		}
+		if (qrScanButton != null) {
+			qrScanButton.setText(compact ? "QR" : "Quét QR HĐ");
+			qrScanButton.setMargin(compact ? new Insets(6, 9, 6, 9) : new Insets(6, 12, 6, 12));
+		}
+
+		applyColumnWidths(compact);
+		revalidate();
+		repaint();
 	}
 
 	@Override

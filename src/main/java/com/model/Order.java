@@ -21,6 +21,9 @@ public class Order {
     private String paymentStatus;
     private String payPalOrderId;
     private String payPalCaptureId;
+    private Long payOsOrderCode;
+    private String payOsPaymentLinkId;
+    private String bankTransferReference;
     private String orderStatus;
     private boolean seenByAdmin;
     private String cancelReason;
@@ -105,6 +108,15 @@ public class Order {
 
     public String getPayPalCaptureId() { return payPalCaptureId; }
     public void setPayPalCaptureId(String payPalCaptureId) { this.payPalCaptureId = payPalCaptureId; }
+
+    public Long getPayOsOrderCode() { return payOsOrderCode; }
+    public void setPayOsOrderCode(Long payOsOrderCode) { this.payOsOrderCode = payOsOrderCode; }
+
+    public String getPayOsPaymentLinkId() { return payOsPaymentLinkId; }
+    public void setPayOsPaymentLinkId(String payOsPaymentLinkId) { this.payOsPaymentLinkId = payOsPaymentLinkId; }
+
+    public String getBankTransferReference() { return bankTransferReference; }
+    public void setBankTransferReference(String bankTransferReference) { this.bankTransferReference = bankTransferReference; }
 
     public String getOrderStatus() { return orderStatus; }
     public void setOrderStatus(String orderStatus) { this.orderStatus = orderStatus; }

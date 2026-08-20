@@ -172,10 +172,6 @@ CREATE TABLE Shifts (
     OpeningNote     VARCHAR(500) NULL,
     ClosingNote     VARCHAR(500) NULL,
     ClosedBy        INT NULL,
-    -- Snapshot tuong thich nguoc; nguon truth duyet la ShiftReconciliations.
-    ApprovedBy      INT NULL,
-    ApprovedAt      DATETIME NULL,
-    ApprovalNote    VARCHAR(500) NULL,
     LastUpdatedAt   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                         ON UPDATE CURRENT_TIMESTAMP,
 
@@ -190,41 +186,7 @@ CREATE TABLE Shifts (
     CONSTRAINT FK_Shifts_ClosedBy
         FOREIGN KEY (ClosedBy) REFERENCES Users(UserID),
 
-    CONSTRAINT FK_Shifts_ApprovedBy
-        FOREIGN KEY (ApprovedBy) REFERENCES Users(UserID),
-
     UNIQUE KEY UQ_Shifts_OneOpenPerUser (OpenUserID)
-) ENGINE=InnoDB;
-
-/* ============================================================
-   DOI SOAT QUY CA - tach rieng khoi Shifts.Status
-   ============================================================ */
-CREATE TABLE ShiftReconciliations (
-    ReconciliationID BIGINT AUTO_INCREMENT PRIMARY KEY,
-    ShiftID          INT NOT NULL,
-    RevisionNo       INT NOT NULL,
-    ExpectedCash     DECIMAL(18,0) NOT NULL DEFAULT 0,
-    CountedCash      DECIMAL(18,0) NOT NULL DEFAULT 0,
-    DifferenceAmount DECIMAL(18,0) NOT NULL DEFAULT 0,
-    ClosingNote      VARCHAR(500) NULL,
-    Status           VARCHAR(20) NOT NULL DEFAULT 'PENDING'
-                         CHECK (Status IN ('PENDING','APPROVED','REJECTED')),
-    SubmittedBy      INT NOT NULL,
-    SubmittedAt      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ReviewedBy       INT NULL,
-    ReviewedAt       DATETIME NULL,
-    ReviewNote       VARCHAR(500) NULL,
-
-    CONSTRAINT FK_ShiftReconciliations_Shift
-        FOREIGN KEY (ShiftID) REFERENCES Shifts(ShiftID),
-    CONSTRAINT FK_ShiftReconciliations_SubmittedBy
-        FOREIGN KEY (SubmittedBy) REFERENCES Users(UserID),
-    CONSTRAINT FK_ShiftReconciliations_ReviewedBy
-        FOREIGN KEY (ReviewedBy) REFERENCES Users(UserID),
-
-    UNIQUE KEY UQ_ShiftReconciliations_Revision (ShiftID, RevisionNo),
-    KEY IX_ShiftReconciliations_Status (Status, SubmittedAt),
-    KEY IX_ShiftReconciliations_ShiftLatest (ShiftID, RevisionNo)
 ) ENGINE=InnoDB;
 
 /* ============================================================
@@ -865,11 +827,14 @@ CREATE TABLE Orders (
                         ) STORED,
     TotalAmount         DECIMAL(18,0) NOT NULL DEFAULT 0,
     PaymentMethod       VARCHAR(20) NOT NULL DEFAULT 'COD'
-                            CHECK (PaymentMethod IN ('COD', 'PAYPAL')),
+                            CHECK (PaymentMethod IN ('COD', 'BANK_TRANSFER', 'PAYPAL')),
     PaymentStatus       VARCHAR(20) NOT NULL DEFAULT 'PENDING'
                             CHECK (PaymentStatus IN ('PENDING', 'PAID', 'FAILED')),
     PayPalOrderID       VARCHAR(50) NULL,
     PayPalCaptureID     VARCHAR(50) NULL,
+    PayOsOrderCode      BIGINT NULL,
+    PayOsPaymentLinkID  VARCHAR(64) NULL,
+    BankTransferReference VARCHAR(100) NULL,
     OrderStatus         VARCHAR(20) NOT NULL DEFAULT 'NEW'
                             CHECK (OrderStatus IN ('NEW', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED')),
     SeenByAdmin         TINYINT(1) NOT NULL DEFAULT 0,
@@ -895,7 +860,13 @@ CREATE TABLE Orders (
 	    UNIQUE (PayPalOrderID),
 
 	CONSTRAINT UQ_Orders_PayPalCaptureID
-	    UNIQUE (PayPalCaptureID)
+	    UNIQUE (PayPalCaptureID),
+
+	CONSTRAINT UQ_Orders_PayOsOrderCode
+	    UNIQUE (PayOsOrderCode),
+
+	CONSTRAINT UQ_Orders_PayOsPaymentLinkID
+	    UNIQUE (PayOsPaymentLinkID)
 	) ENGINE=InnoDB;
 
 CREATE TABLE OrderDetails (

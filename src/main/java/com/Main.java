@@ -7,6 +7,7 @@ import com.incident.IncidentType;
 import com.security.AppConfig;
 import com.theme.ThemeManager;
 import com.utils.AppIcon;
+import com.utils.NotificationSound;
 import com.view.LoginFrame;
 
 import javax.swing.JOptionPane;
@@ -33,6 +34,11 @@ public class Main {
         // Ap dung theme Light/Dark da luu tu lan truoc (mac dinh Light neu
         // chua tung doi).
         ThemeManager.getInstance().applyStartupLookAndFeel();
+
+        // Dong bo am thanh thong bao tren toan app: AppAlert dung truc tiep
+        // NotificationSound, con cac JOptionPane.showMessageDialog legacy se
+        // duoc hook tai day de cung phat dung tieng chuong san co cua project.
+        NotificationSound.installGlobalDialogSoundHook();
 
         // Icon ung dung tren Dock (macOS) / mot so taskbar Linux. Tren
         // Windows, AppIcon.apply(frame) trong tung JFrame (Login/Admin/

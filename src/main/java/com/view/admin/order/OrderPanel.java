@@ -383,6 +383,7 @@ public class OrderPanel extends BaseCrudPanel<Order> {
         if (method == null) return "-";
         switch (method) {
             case "COD": return "COD";
+            case "BANK_TRANSFER": return "Chuyển khoản";
             case "PAYPAL": return "PayPal";
             default: return method;
         }
@@ -413,7 +414,7 @@ public class OrderPanel extends BaseCrudPanel<Order> {
     // ---------------------------------------------------------------
     // Xuất hóa đơn PDF trực tiếp từ icon trên bảng (không cần mở dialog).
     // Ưu tiên hóa đơn đã liên kết; nếu thiếu (dữ liệu cũ) thì tự lập lại
-    // cho đơn đã hoàn thành / PayPal đã thanh toán; cuối cùng fallback
+    // cho đơn đã hoàn thành / đơn trả trước đã thanh toán; cuối cùng fallback
     // xuất PDF từ chính dữ liệu đơn hàng để luôn tra cứu lịch sử được.
     // ---------------------------------------------------------------
 
@@ -427,7 +428,8 @@ public class OrderPanel extends BaseCrudPanel<Order> {
             // Đơn đã hoàn thành / đã thanh toán nhưng chưa có HĐ → lập bù
             if (invoiceId == null) {
                 boolean eligible = "COMPLETED".equalsIgnoreCase(item.getOrderStatus())
-                        || ("PAYPAL".equalsIgnoreCase(item.getPaymentMethod())
+                        || (("PAYPAL".equalsIgnoreCase(item.getPaymentMethod())
+                            || "BANK_TRANSFER".equalsIgnoreCase(item.getPaymentMethod()))
                             && "PAID".equalsIgnoreCase(item.getPaymentStatus()));
                 if (eligible) {
                     int actorId = AuthService.getInstance().getCurrentUser().getUserId();

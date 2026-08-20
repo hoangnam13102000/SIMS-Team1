@@ -10,11 +10,13 @@ import com.model.OrderDetail;
 import com.service.AuthService;
 import com.service.CartService;
 import com.service.payment.PayPalService;
+import com.service.payment.VietQrPayOsService;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.theme.AppSpacing;
 import com.utils.ImageUtil;
 import com.utils.NumberUtil;
+import com.utils.QrCodeUtil;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 import org.kordamp.ikonli.swing.FontIcon;
 
@@ -24,6 +26,8 @@ import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.math.BigDecimal;
@@ -31,6 +35,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CartPanel extends JPanel {
 
@@ -712,6 +717,9 @@ public class CartPanel extends JPanel {
             order.setPaymentMethod("COD");
             order.setPaymentStatus("PENDING");
             persistOrderAndFinish(order, details);
+        } else if (method == PaymentDialog.Method.BANK_TRANSFER) {
+            order.setPaymentMethod("BANK_TRANSFER");
+            payWithVietQrThenPersist(order, details, payable);
         } else {
             order.setPaymentMethod("PAYPAL");
             payWithPayPalThenPersist(order, details, payable);
@@ -748,6 +756,331 @@ public class CartPanel extends JPanel {
             }
         };
         worker.execute();
+    }
+
+
+    /**
+     * Chuyển khoản online qua VietQR/payOS, dùng cùng cổng thanh toán với POS.
+     * Chỉ lưu Order sau khi payOS xác nhận PAID. Khi tiền đã vào nhưng DB không
+     * lưu được đơn, hệ thống báo rõ để khách KHÔNG chuyển lại.
+     */
+    private void payWithVietQrThenPersist(Order order, List<OrderDetail> details, BigDecimal totalVnd) {
+        long amountVnd;
+        try {
+            amountVnd = totalVnd.longValueExact();
+        } catch (Exception ex) {
+            BaseDialog.error(this, "Thanh toán chuyển khoản",
+                    "Số tiền đơn hàng không hợp lệ để tạo VietQR.");
+            return;
+        }
+        if (amountVnd <= 0) {
+            BaseDialog.error(this, "Thanh toán chuyển khoản",
+                    "Số tiền đơn hàng phải lớn hơn 0.");
+            return;
+        }
+
+        final VietQrPayOsService vietQrService;
+        try {
+            vietQrService = new VietQrPayOsService();
+        } catch (Exception ex) {
+            BaseDialog.error(this, "Chưa cấu hình chuyển khoản",
+                    "Không thể khởi tạo payOS/VietQR: " + ex.getMessage());
+            return;
+        }
+
+        JLabel qrLabel = new JLabel("Đang tạo mã VietQR...", SwingConstants.CENTER);
+        qrLabel.setPreferredSize(new Dimension(280, 280));
+        qrLabel.setMinimumSize(new Dimension(280, 280));
+        qrLabel.setMaximumSize(new Dimension(280, 280));
+        qrLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel amountLabel = new JLabel(NumberUtil.formatThousands(amountVnd) + " đ");
+        amountLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        amountLabel.setForeground(AppColor.ACCENT_HOVER);
+        amountLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel statusLabel = new JLabel("Đang kết nối payOS...");
+        statusLabel.setFont(AppFont.SMALL);
+        statusLabel.setForeground(AppColor.TEXT_MUTED);
+        statusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JButton openPageBtn = new JButton("Mở trang thanh toán");
+        openPageBtn.setEnabled(false);
+        openPageBtn.setFocusPainted(false);
+        openPageBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        AtomicBoolean paymentLocked = new AtomicBoolean(false);
+        AtomicBoolean userCancelled = new AtomicBoolean(false);
+        String[] checkoutUrlHolder = new String[1];
+
+        JDialog waitingDialog = buildOnlineVietQrWaitingDialog(
+                qrLabel, amountLabel, statusLabel, openPageBtn, () -> {
+                    if (paymentLocked.get()) {
+                        BaseDialog.info(CartPanel.this, "Đang hoàn tất thanh toán",
+                                "payOS đã xác nhận thanh toán. Hệ thống đang tạo đơn hàng, không thể hủy lúc này.");
+                        return;
+                    }
+                    userCancelled.set(true);
+                    statusLabel.setText("Đang hủy yêu cầu thanh toán...");
+                });
+
+        openPageBtn.addActionListener(e -> {
+            String url = checkoutUrlHolder[0];
+            if (url == null || url.isBlank()) return;
+            try {
+                vietQrService.openCheckoutPage(url);
+            } catch (Exception ex) {
+                BaseDialog.error(CartPanel.this, "Không thể mở trang thanh toán",
+                        ex.getMessage() == null ? "Không mở được trình duyệt." : ex.getMessage());
+            }
+        });
+
+        SwingWorker<OnlineVietQrResult, VietQrPayOsService.CreatedPayment> worker = new SwingWorker<>() {
+            @Override
+            protected OnlineVietQrResult doInBackground() throws Exception {
+                VietQrPayOsService.CreatedPayment created = vietQrService.createPayment(amountVnd);
+                checkoutUrlHolder[0] = created.checkoutUrl();
+                publish(created);
+
+                String paymentId = created.paymentLinkId();
+                long deadlineNanos = System.nanoTime()
+                        + Duration.ofSeconds(vietQrService.getExpireSeconds() + 15L).toNanos();
+                Exception lastStatusError = null;
+
+                while (System.nanoTime() < deadlineNanos) {
+                    if (userCancelled.get()) {
+                        VietQrPayOsService.PaymentStatus finalStatus;
+                        try {
+                            finalStatus = vietQrService.cancelPayment(paymentId, "Online customer cancelled");
+                        } catch (Exception cancelError) {
+                            try {
+                                finalStatus = vietQrService.getPaymentStatus(paymentId);
+                            } catch (Exception readError) {
+                                return new OnlineVietQrResult(false, "STATUS_UNKNOWN", created.orderCode(),
+                                        paymentId, null,
+                                        "Không thể xác định giao dịch đã thanh toán hay chưa. "
+                                      + "Không chuyển lại tiền cho đến khi kiểm tra được trạng thái.");
+                            }
+                        }
+
+                        if (finalStatus.isPaid()) {
+                            paymentLocked.set(true);
+                            return finishPaidOnlineVietQr(order, details, amountVnd, created, finalStatus);
+                        }
+
+                        return new OnlineVietQrResult(false, "CANCELLED", created.orderCode(), paymentId,
+                                finalStatus.reference(), "Đã hủy giao dịch VietQR. Giỏ hàng vẫn được giữ nguyên.");
+                    }
+
+                    try {
+                        Thread.sleep(vietQrService.getPollIntervalMillis());
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        return new OnlineVietQrResult(false, "STATUS_UNKNOWN", created.orderCode(), paymentId,
+                                null, "Luồng kiểm tra VietQR bị gián đoạn. Hãy kiểm tra giao dịch trước khi thử lại.");
+                    }
+
+                    try {
+                        VietQrPayOsService.PaymentStatus status = vietQrService.getPaymentStatus(paymentId);
+                        lastStatusError = null;
+
+                        if (status.isPaid()) {
+                            paymentLocked.set(true);
+                            return finishPaidOnlineVietQr(order, details, amountVnd, created, status);
+                        }
+
+                        if (status.isCancelledOrExpired()) {
+                            return new OnlineVietQrResult(false, status.status(), created.orderCode(),
+                                    paymentId, status.reference(), "Giao dịch VietQR không còn hiệu lực.");
+                        }
+                    } catch (Exception statusError) {
+                        lastStatusError = statusError; // lỗi mạng tạm thời, tiếp tục polling
+                    }
+                }
+
+                try {
+                    VietQrPayOsService.PaymentStatus finalStatus =
+                            vietQrService.cancelPayment(paymentId, "Online payment timeout");
+                    if (finalStatus.isPaid()) {
+                        paymentLocked.set(true);
+                        return finishPaidOnlineVietQr(order, details, amountVnd, created, finalStatus);
+                    }
+                    return new OnlineVietQrResult(false, "TIMEOUT", created.orderCode(), paymentId,
+                            finalStatus.reference(), "Mã VietQR đã hết thời gian chờ và được hủy.");
+                } catch (Exception finalError) {
+                    String detail = lastStatusError != null ? lastStatusError.getMessage() : finalError.getMessage();
+                    return new OnlineVietQrResult(false, "STATUS_UNKNOWN", created.orderCode(), paymentId, null,
+                            "Không thể xác định trạng thái cuối của VietQR"
+                                    + (detail == null || detail.isBlank() ? "." : ": " + detail)
+                                    + " Không chuyển lại tiền cho đến khi kiểm tra được giao dịch.");
+                }
+            }
+
+            @Override
+            protected void process(List<VietQrPayOsService.CreatedPayment> chunks) {
+                if (chunks.isEmpty()) return;
+                VietQrPayOsService.CreatedPayment created = chunks.get(chunks.size() - 1);
+                try {
+                    BufferedImage qr = QrCodeUtil.generate(created.qrContent(), 280);
+                    qrLabel.setText(null);
+                    qrLabel.setIcon(new ImageIcon(qr));
+                } catch (Exception ex) {
+                    qrLabel.setIcon(null);
+                    qrLabel.setText("<html><center>Không tạo được ảnh QR.<br>"
+                            + "Hãy dùng nút Mở trang thanh toán.</center></html>");
+                }
+                amountLabel.setText(NumberUtil.formatThousands(created.amount()) + " đ");
+                statusLabel.setText("Nội dung: " + created.description() + " · Đang chờ chuyển khoản...");
+                openPageBtn.setEnabled(created.checkoutUrl() != null && !created.checkoutUrl().isBlank());
+            }
+
+            @Override
+            protected void done() {
+                waitingDialog.dispose();
+                try {
+                    OnlineVietQrResult result = get();
+                    if (result.success()) {
+                        CartService.getInstance().clear();
+                        promoCodeField.setText("");
+                        promoCodeField.setEditable(true);
+                        promoStatusLabel.setText(" ");
+                        BaseDialog.success(CartPanel.this, Lang.get("cart.checkout.success.title"),
+                                "Chuyển khoản đã được xác nhận và đơn hàng đã tạo thành công.");
+                        if (onCheckoutSuccess != null) onCheckoutSuccess.run();
+                        return;
+                    }
+
+                    if ("CANCELLED".equalsIgnoreCase(result.status())) {
+                        BaseDialog.info(CartPanel.this, "Đã hủy chuyển khoản", result.message());
+                    } else if ("TIMEOUT".equalsIgnoreCase(result.status())
+                            || "EXPIRED".equalsIgnoreCase(result.status())) {
+                        BaseDialog.error(CartPanel.this, "VietQR đã hết hạn", result.message());
+                    } else if ("PAID_ORDER_FAILED".equalsIgnoreCase(result.status())) {
+                        BaseDialog.error(CartPanel.this, "Đã nhận tiền nhưng chưa tạo được đơn",
+                                result.message());
+                    } else if ("PAYMENT_MISMATCH".equalsIgnoreCase(result.status())) {
+                        BaseDialog.error(CartPanel.this, "Dữ liệu thanh toán không khớp", result.message());
+                    } else {
+                        BaseDialog.error(CartPanel.this, "Thanh toán chuyển khoản thất bại", result.message());
+                    }
+                } catch (Exception ex) {
+                    BaseDialog.error(CartPanel.this, "Thanh toán chuyển khoản thất bại",
+                            ex.getMessage() == null ? "Không thể hoàn tất giao dịch." : ex.getMessage());
+                }
+            }
+        };
+
+        worker.execute();
+        waitingDialog.setVisible(true);
+    }
+
+    private OnlineVietQrResult finishPaidOnlineVietQr(Order order, List<OrderDetail> details, long amountVnd,
+            VietQrPayOsService.CreatedPayment created, VietQrPayOsService.PaymentStatus paymentStatus) {
+
+        if (paymentStatus.orderCode() != created.orderCode()
+                || paymentStatus.amount() != amountVnd
+                || paymentStatus.amountPaid() < amountVnd) {
+            return new OnlineVietQrResult(false, "PAYMENT_MISMATCH", created.orderCode(),
+                    created.paymentLinkId(), paymentStatus.reference(),
+                    "payOS báo thanh toán nhưng mã hoặc số tiền không khớp đơn hàng hiện tại.");
+        }
+
+        order.setPaymentMethod("BANK_TRANSFER");
+        order.setPaymentStatus("PAID");
+        order.setPayOsOrderCode(created.orderCode());
+        order.setPayOsPaymentLinkId(created.paymentLinkId());
+        order.setBankTransferReference(paymentStatus.reference());
+
+        if (orderDAO.createOrder(order, details)) {
+            return new OnlineVietQrResult(true, "COMPLETED", created.orderCode(),
+                    created.paymentLinkId(), paymentStatus.reference(), null);
+        }
+
+        // Recovery: JDBC có thể lỗi sau COMMIT. Kiểm tra orderCode payOS duy nhất trước
+        // khi kết luận thất bại để không khiến khách chuyển tiền lần hai.
+        Order recovered = orderDAO.findByPayOsOrderCode(created.orderCode());
+        if (recovered != null
+                && "BANK_TRANSFER".equalsIgnoreCase(recovered.getPaymentMethod())
+                && "PAID".equalsIgnoreCase(recovered.getPaymentStatus())
+                && recovered.getTotalAmount() != null
+                && recovered.getTotalAmount().compareTo(BigDecimal.valueOf(amountVnd)) == 0) {
+            order.setOrderId(recovered.getOrderId());
+            order.setOrderCode(recovered.getOrderCode());
+            return new OnlineVietQrResult(true, "COMPLETED_RECOVERED", created.orderCode(),
+                    created.paymentLinkId(), paymentStatus.reference(), null);
+        }
+
+        return new OnlineVietQrResult(false, "PAID_ORDER_FAILED", created.orderCode(),
+                created.paymentLinkId(), paymentStatus.reference(),
+                "payOS đã xác nhận nhận " + NumberUtil.formatThousands(amountVnd)
+                        + " đ nhưng SIMS chưa lưu được đơn hàng. "
+                        + "Không chuyển lại tiền. Mã payOS: " + created.orderCode()
+                        + ". Vui lòng liên hệ cửa hàng để đối soát.");
+    }
+
+    private JDialog buildOnlineVietQrWaitingDialog(JLabel qrLabel, JLabel amountLabel, JLabel statusLabel,
+            JButton openPageBtn, Runnable onCancel) {
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this),
+                "Thanh toán chuyển khoản VietQR", Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setResizable(false);
+        dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBackground(AppColor.WHITE);
+        body.setBorder(new EmptyBorder(22, 30, 18, 30));
+
+        JLabel title = new JLabel("Quét VietQR để chuyển khoản");
+        title.setFont(AppFont.HEADING_MD);
+        title.setForeground(AppColor.TEXT_TITLE);
+        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel hint = new JLabel("<html><div style='text-align:center;width:360px'>"
+                + "Quét bằng ứng dụng ngân hàng. Số tiền và nội dung đã được điền sẵn. "
+                + "Đơn hàng chỉ được tạo sau khi payOS xác nhận đã thanh toán."
+                + "</div></html>");
+        hint.setFont(AppFont.SMALL);
+        hint.setForeground(AppColor.TEXT_MUTED);
+        hint.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
+        buttons.setOpaque(false);
+        JButton cancel = new JButton("Hủy");
+        cancel.setFocusPainted(false);
+        cancel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cancel.addActionListener(e -> {
+            if (onCancel != null) onCancel.run();
+        });
+        buttons.add(openPageBtn);
+        buttons.add(cancel);
+
+        body.add(title);
+        body.add(Box.createVerticalStrut(6));
+        body.add(hint);
+        body.add(Box.createVerticalStrut(12));
+        body.add(qrLabel);
+        body.add(Box.createVerticalStrut(8));
+        body.add(amountLabel);
+        body.add(Box.createVerticalStrut(6));
+        body.add(statusLabel);
+        body.add(Box.createVerticalStrut(14));
+        body.add(buttons);
+
+        dialog.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                if (onCancel != null) onCancel.run();
+            }
+        });
+
+        dialog.getContentPane().add(body);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        return dialog;
+    }
+
+    private record OnlineVietQrResult(boolean success, String status, long orderCode,
+            String paymentLinkId, String reference, String message) {
     }
 
     /**

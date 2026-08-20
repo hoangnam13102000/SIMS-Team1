@@ -468,6 +468,11 @@ public class OrderHistoryPanel extends JPanel {
         body.add(infoLine("Địa chỉ giao hàng", order.getShippingAddress()));
         body.add(infoLine("Phương thức thanh toán", paymentMethodLabel(order.getPaymentMethod())));
         body.add(infoLine("Trạng thái thanh toán", paymentStatusLabel(order.getPaymentStatus())));
+        if ("BANK_TRANSFER".equalsIgnoreCase(order.getPaymentMethod())) {
+            String ref = order.getBankTransferReference();
+            if (ref == null || ref.isBlank()) ref = order.getPayOsPaymentLinkId();
+            body.add(infoLine("Mã giao dịch VietQR", ref == null || ref.isBlank() ? "—" : ref));
+        }
 
         // Khi đơn đã hủy, hiển thị rõ lý do hủy trong chi tiết đơn hàng của khách.
         if (order.isCancelled()) {
@@ -760,6 +765,7 @@ public class OrderHistoryPanel extends JPanel {
         if (method == null) return "-";
         switch (method) {
             case "COD": return "COD";
+            case "BANK_TRANSFER": return "Chuyển khoản";
             case "PAYPAL": return "PayPal";
             default: return method;
         }

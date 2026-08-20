@@ -46,7 +46,8 @@ public class OrderDAO extends BaseDAO<Order> {
 	protected String getColumns() {
 		return "o.OrderID, o.OrderCode, o.CustomerID, o.CustomerName, o.CustomerEmail, o.CustomerPhone, "
 				+ "o.ShippingAddress, o.CreatedAt, o.SubTotal, o.DiscountAmount, o.PromotionID, o.PromotionCode, o.TotalAmount, o.PaymentMethod, o.PaymentStatus, "
-				+ "o.PayPalOrderID, o.PayPalCaptureID, o.OrderStatus, o.SeenByAdmin, o.CancelReason, o.CompletedAt, o.InvoiceID, "
+				+ "o.PayPalOrderID, o.PayPalCaptureID, o.PayOsOrderCode, o.PayOsPaymentLinkID, o.BankTransferReference, "
+				+ "o.OrderStatus, o.SeenByAdmin, o.CancelReason, o.CompletedAt, o.InvoiceID, "
 				+ "o.AssignedTo, (SELECT u.FullName FROM Users u WHERE u.UserID = o.AssignedTo) AS AssignedToName, "
 				+ "o.AssignedAt, o.AssignedBy, (SELECT u.FullName FROM Users u WHERE u.UserID = o.AssignedBy) AS AssignedByName, "
 				+ "(SELECT COUNT(*) FROM OrderDetails d WHERE d.OrderID = o.OrderID) AS ItemCount, "
@@ -107,6 +108,10 @@ public class OrderDAO extends BaseDAO<Order> {
 		order.setPaymentStatus(rs.getString("PaymentStatus"));
 		order.setPayPalOrderId(rs.getString("PayPalOrderID"));
 		order.setPayPalCaptureId(rs.getString("PayPalCaptureID"));
+		long payOsOrderCode = rs.getLong("PayOsOrderCode");
+		order.setPayOsOrderCode(rs.wasNull() ? null : payOsOrderCode);
+		order.setPayOsPaymentLinkId(rs.getString("PayOsPaymentLinkID"));
+		order.setBankTransferReference(rs.getString("BankTransferReference"));
 		order.setOrderStatus(rs.getString("OrderStatus"));
 		order.setSeenByAdmin(rs.getBoolean("SeenByAdmin"));
 		order.setCancelReason(rs.getString("CancelReason"));
@@ -149,8 +154,9 @@ public class OrderDAO extends BaseDAO<Order> {
 	public boolean createOrder(Order order, List<OrderDetail> items) {
 		String insertOrderSql = "INSERT INTO Orders (CustomerID, CustomerName, CustomerEmail, CustomerPhone, "
 				+ "ShippingAddress, SubTotal, DiscountAmount, PromotionID, PromotionCode, TotalAmount, "
-				+ "PaymentMethod, PaymentStatus, PayPalOrderID, PayPalCaptureID) "
-				+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+				+ "PaymentMethod, PaymentStatus, PayPalOrderID, PayPalCaptureID, PayOsOrderCode, "
+				+ "PayOsPaymentLinkID, BankTransferReference) "
+				+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 		String insertDetailSql = "INSERT INTO OrderDetails (OrderID, ProductID, ProductName, Quantity, UnitPrice) "
 				+ "VALUES (?, ?, ?, ?, ?)";
 
@@ -189,6 +195,13 @@ public class OrderDAO extends BaseDAO<Order> {
 					ps.setString(12, order.getPaymentStatus());
 					ps.setString(13, order.getPayPalOrderId());
 					ps.setString(14, order.getPayPalCaptureId());
+					if (order.getPayOsOrderCode() != null) {
+						ps.setLong(15, order.getPayOsOrderCode());
+					} else {
+						ps.setNull(15, Types.BIGINT);
+					}
+					ps.setString(16, order.getPayOsPaymentLinkId());
+					ps.setString(17, order.getBankTransferReference());
 					ps.executeUpdate();
 
 					try (ResultSet keys = ps.getGeneratedKeys()) {
@@ -225,10 +238,13 @@ public class OrderDAO extends BaseDAO<Order> {
 				// ngay de doanh thu duoc ghi nhan dung luc thu tien, khong phai
 				// doi admin xac nhan giao hang xong (COMPLETED) nhu don COD.
 				// Kho KHONG bi dung toi o day (van tru o buoc CONFIRMED).
-				if ("PAYPAL".equals(order.getPaymentMethod()) && "PAID".equals(order.getPaymentStatus())) {
+				boolean prepaidPaid = ("PAYPAL".equalsIgnoreCase(order.getPaymentMethod())
+						|| "BANK_TRANSFER".equalsIgnoreCase(order.getPaymentMethod()))
+						&& "PAID".equalsIgnoreCase(order.getPaymentStatus());
+				if (prepaidPaid) {
 					Integer adminActorId = getFallbackAdminUserId(con);
 					if (adminActorId == null) {
-						throw new SQLException("Khong tim thay tai khoan ADMIN nao de lap hoa don cho don PayPal.");
+						throw new SQLException("Khong tim thay tai khoan ADMIN nao de lap hoa don cho don online da thanh toan.");
 					}
 					createInvoiceForOrder(con, orderId, adminActorId);
 				}
@@ -794,10 +810,9 @@ public class OrderDAO extends BaseDAO<Order> {
 	 * <p>
 	 * Duoc goi o 2 thoi diem khac nhau tuy phuong thuc thanh toan:
 	 * <ul>
-	 * <li>PAYPAL: ngay luc {@link #createOrder} (OrderStatus con dang NEW) - vi
-	 * tien da thuc su duoc thu qua PayPalService.captureOrder() luc khach checkout,
-	 * nen doanh thu can duoc ghi nhan ngay, khong phai doi den luc admin xac nhan
-	 * giao hang xong (COMPLETED) nhu COD.</li>
+	 * <li>PAYPAL / BANK_TRANSFER: ngay luc {@link #createOrder} (OrderStatus con dang NEW)
+	 * - vi tien da thuc su duoc xac nhan thanh toan luc khach checkout, nen doanh thu
+	 * can duoc ghi nhan ngay, khong phai doi den luc giao hang xong.</li>
 	 * <li>COD: luc {@link #updateOrderStatus} chuyen sang COMPLETED - vi tien mat
 	 * chi thuc su thu duoc khi giao hang xong.</li>
 	 * </ul>
@@ -811,6 +826,9 @@ public class OrderDAO extends BaseDAO<Order> {
 		String paymentMethod;
 		String payPalOrderId = null;
 		String payPalCaptureId = null;
+		Long payOsOrderCode = null;
+		String payOsPaymentLinkId = null;
+		String bankTransferReference = null;
 		java.math.BigDecimal vatRate;
 		java.math.BigDecimal subTotal;
 		java.math.BigDecimal totalAmount;
@@ -818,9 +836,9 @@ public class OrderDAO extends BaseDAO<Order> {
 		Integer promotionId = null;
 		String promotionCode = null;
 
-		// Copy DiscountAmount / PromotionID / PromotionCode tu don de hoa don
-		// online (PayPal) van giu dung so tien giam va ma KM da ap dung.
+		// Copy metadata thanh toan + khuyen mai tu don sang hoa don online.
 		String selectSql = "SELECT CustomerID, PaymentMethod, PayPalOrderID, PayPalCaptureID, "
+				+ "PayOsOrderCode, PayOsPaymentLinkID, BankTransferReference, "
 				+ "VATRate, SubTotal, TotalAmount, DiscountAmount, PromotionID, PromotionCode "
 				+ "FROM Orders WHERE OrderID = ?";
 		try (PreparedStatement ps = con.prepareStatement(selectSql)) {
@@ -831,9 +849,20 @@ public class OrderDAO extends BaseDAO<Order> {
 				int cust = rs.getInt("CustomerID");
 				if (!rs.wasNull())
 					customerId = cust;
-				paymentMethod = "PAYPAL".equals(rs.getString("PaymentMethod")) ? "PAYPAL" : "CASH";
+				String orderPaymentMethod = rs.getString("PaymentMethod");
+				if ("PAYPAL".equalsIgnoreCase(orderPaymentMethod)) {
+					paymentMethod = "PAYPAL";
+				} else if ("BANK_TRANSFER".equalsIgnoreCase(orderPaymentMethod)) {
+					paymentMethod = "BANK_TRANSFER";
+				} else {
+					paymentMethod = "CASH";
+				}
 				payPalOrderId = rs.getString("PayPalOrderID");
 				payPalCaptureId = rs.getString("PayPalCaptureID");
+				long poc = rs.getLong("PayOsOrderCode");
+				payOsOrderCode = rs.wasNull() ? null : poc;
+				payOsPaymentLinkId = rs.getString("PayOsPaymentLinkID");
+				bankTransferReference = rs.getString("BankTransferReference");
 				vatRate = rs.getBigDecimal("VATRate");
 				subTotal = rs.getBigDecimal("SubTotal");
 				totalAmount = rs.getBigDecimal("TotalAmount");
@@ -858,9 +887,10 @@ public class OrderDAO extends BaseDAO<Order> {
 
 		int invoiceId;
 		String insertInvoiceSql = "INSERT INTO Invoices " + "(" + "InvoiceCode, " + "ShiftID, " + "CreatedBy, "
-				+ "CustomerID, " + "PaymentMethod, " + "PayPalOrderID, " + "PayPalCaptureID, " + "VATRate, "
+				+ "CustomerID, " + "PaymentMethod, " + "PayPalOrderID, " + "PayPalCaptureID, "
+				+ "PayOsOrderCode, " + "PayOsPaymentLinkID, " + "BankTransferReference, " + "VATRate, "
 				+ "SubTotal, " + "TotalAmount, " + "OriginalTotalAmount, " + "DiscountAmount, " + "PromotionID, "
-				+ "PromotionCode" + ") " + "VALUES (" + "?, ?, ?, ?, ?, ?, ?, ?, " + "?, ?, ?, ?, ?, ?" + ")";
+				+ "PromotionCode" + ") " + "VALUES (" + "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + "?, ?, ?, ?, ?, ?, ?" + ")";
 		try (PreparedStatement ps = con.prepareStatement(insertInvoiceSql, Statement.RETURN_GENERATED_KEYS)) {
 
 			ps.setString(1, "TMP-" + System.nanoTime());
@@ -889,32 +919,48 @@ public class OrderDAO extends BaseDAO<Order> {
 				ps.setNull(7, Types.VARCHAR);
 			}
 
-			ps.setBigDecimal(8, vatRate);
+			if (payOsOrderCode != null) {
+				ps.setLong(8, payOsOrderCode);
+			} else {
+				ps.setNull(8, Types.BIGINT);
+			}
+			if (payOsPaymentLinkId != null && !payOsPaymentLinkId.isBlank()) {
+				ps.setString(9, payOsPaymentLinkId);
+			} else {
+				ps.setNull(9, Types.VARCHAR);
+			}
+			if (bankTransferReference != null && !bankTransferReference.isBlank()) {
+				ps.setString(10, bankTransferReference);
+			} else {
+				ps.setNull(10, Types.VARCHAR);
+			}
 
-			ps.setBigDecimal(9, subTotal);
+			ps.setBigDecimal(11, vatRate);
+
+			ps.setBigDecimal(12, subTotal);
 
 			/*
 			 * Giá trị hiện tại.
 			 */
-			ps.setBigDecimal(10, totalAmount);
+			ps.setBigDecimal(13, totalAmount);
 
 			/*
 			 * Giá trị ban đầu. Hai cột bằng nhau tại thời điểm bán.
 			 */
-			ps.setBigDecimal(11, totalAmount);
+			ps.setBigDecimal(14, totalAmount);
 
-			ps.setBigDecimal(12, discountAmount);
+			ps.setBigDecimal(15, discountAmount);
 
 			if (promotionId != null) {
-				ps.setInt(13, promotionId);
+				ps.setInt(16, promotionId);
 			} else {
-				ps.setNull(13, Types.INTEGER);
+				ps.setNull(16, Types.INTEGER);
 			}
 
 			if (promotionCode != null) {
-				ps.setString(14, promotionCode);
+				ps.setString(17, promotionCode);
 			} else {
-				ps.setNull(14, Types.VARCHAR);
+				ps.setNull(17, Types.VARCHAR);
 			}
 
 			ps.executeUpdate();
@@ -961,23 +1007,28 @@ public class OrderDAO extends BaseDAO<Order> {
 		// transaction. Don COD duoc ghi CASH khi COMPLETED; PayPal duoc ghi
 		// PAYPAL ngay sau capture thanh cong.
 		insertInvoicePaymentForOrder(con, invoiceId, orderId, actorUserId, paymentMethod,
-				totalAmount, payPalOrderId, payPalCaptureId);
+				totalAmount, payPalOrderId, payPalCaptureId, payOsOrderCode, payOsPaymentLinkId,
+				bankTransferReference);
 	}
 
 	private void insertInvoicePaymentForOrder(Connection con, int invoiceId, int orderId, int actorUserId,
-			String paymentMethod, java.math.BigDecimal totalAmount, String payPalOrderId, String payPalCaptureId)
-			throws SQLException {
+			String paymentMethod, java.math.BigDecimal totalAmount, String payPalOrderId, String payPalCaptureId,
+			Long payOsOrderCode, String payOsPaymentLinkId, String bankTransferReference) throws SQLException {
 		boolean paypal = "PAYPAL".equalsIgnoreCase(paymentMethod);
-		String ledgerMethod = paypal ? "PAYPAL" : "CASH";
+		boolean bankTransfer = "BANK_TRANSFER".equalsIgnoreCase(paymentMethod);
+		String ledgerMethod = paypal ? "PAYPAL" : (bankTransfer ? "BANK_TRANSFER" : "CASH");
 		java.math.BigDecimal amount = totalAmount != null ? totalAmount : java.math.BigDecimal.ZERO;
-		java.math.BigDecimal tendered = paypal ? java.math.BigDecimal.ZERO : amount;
-		String provider = paypal ? "PAYPAL" : null;
-		String providerTxn = paypal ? payPalCaptureId : null;
-		String providerPayment = paypal ? payPalOrderId : null;
+		java.math.BigDecimal tendered = (paypal || bankTransfer) ? java.math.BigDecimal.ZERO : amount;
+		String provider = paypal ? "PAYPAL" : (bankTransfer ? "PAYOS" : null);
+		String providerTxn = paypal ? payPalCaptureId
+				: (bankTransfer ? firstNonBlank(bankTransferReference, payOsPaymentLinkId) : null);
+		String providerPayment = paypal ? payPalOrderId : (bankTransfer ? payOsPaymentLinkId : null);
 
 		String idempotencyKey;
 		if (paypal && payPalCaptureId != null && !payPalCaptureId.isBlank()) {
 			idempotencyKey = "PAYPAL:" + payPalCaptureId.trim();
+		} else if (bankTransfer && payOsOrderCode != null) {
+			idempotencyKey = "PAYOS:" + payOsOrderCode;
 		} else {
 			idempotencyKey = "ORDER:" + orderId + ":" + ledgerMethod;
 		}
@@ -999,6 +1050,12 @@ public class OrderDAO extends BaseDAO<Order> {
 			ps.setInt(9, actorUserId);
 			ps.executeUpdate();
 		}
+	}
+
+	private static String firstNonBlank(String a, String b) {
+		if (a != null && !a.isBlank()) return a.trim();
+		if (b != null && !b.isBlank()) return b.trim();
+		return null;
 	}
 
 	/**
@@ -1065,13 +1122,19 @@ public class OrderDAO extends BaseDAO<Order> {
 		return list.isEmpty() ? null : list.get(0);
 	}
 
+	/** Tìm đơn đã ghi nhận theo PayOS orderCode duy nhất - dùng recovery sau khi thanh toán. */
+	public Order findByPayOsOrderCode(long payOsOrderCode) {
+		List<Order> list = getByCondition("o.PayOsOrderCode = " + payOsOrderCode);
+		return list.isEmpty() ? null : list.get(0);
+	}
+
 	/**
 	 * Đảm bảo đơn đã có hóa đơn liên kết. Dùng khi in lại lịch sử hóa đơn cho đơn
 	 * online đã thanh toán / hoàn thành nhưng InvoiceID còn null (dữ liệu cũ, hoặc
 	 * lần lập hóa đơn trước đó bị lỗi).
 	 * <ul>
 	 * <li>Nếu đã có InvoiceID → trả về luôn.</li>
-	 * <li>Nếu đơn COMPLETED, hoặc PayPal đã PAID → lập hóa đơn rồi trả về ID
+	 * <li>Nếu đơn COMPLETED, hoặc PayPal/VietQR đã PAID → lập hóa đơn rồi trả về ID
 	 * mới.</li>
 	 * <li>Còn lại → trả về null (chưa đủ điều kiện lập hóa đơn).</li>
 	 * </ul>
@@ -1105,8 +1168,10 @@ public class OrderDAO extends BaseDAO<Order> {
 					}
 				}
 
-				boolean canCreate = "COMPLETED".equalsIgnoreCase(status)
-						|| ("PAYPAL".equalsIgnoreCase(paymentMethod) && "PAID".equalsIgnoreCase(paymentStatus));
+				boolean prepaidPaid = ("PAYPAL".equalsIgnoreCase(paymentMethod)
+						|| "BANK_TRANSFER".equalsIgnoreCase(paymentMethod))
+						&& "PAID".equalsIgnoreCase(paymentStatus);
+				boolean canCreate = "COMPLETED".equalsIgnoreCase(status) || prepaidPaid;
 				if (!canCreate) {
 					con.rollback();
 					return null;
