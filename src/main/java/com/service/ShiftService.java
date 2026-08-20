@@ -11,6 +11,7 @@ import com.model.ActivityLog;
 import com.model.Shift;
 import com.model.ShiftCashSummary;
 import com.model.ShiftCashTransaction;
+import com.model.ShiftReconciliation;
 import com.model.User;
 import com.model.permission.AppPermission;
 import com.service.payment.ElectronicPaymentGuard;
@@ -342,7 +343,7 @@ public class ShiftService {
 
 			publishChanged();
 
-			return OperationResult.success("Đóng ca thành công. Ca đang chờ quản lý duyệt đối soát.", closedShift);
+			return OperationResult.success("Đóng ca thành công. Ca đã đóng và đối soát đang chờ quản lý duyệt.", closedShift);
 
 		} catch (SQLException e) {
 			logMutationError("ShiftService.closeMyShift", e);
@@ -362,7 +363,7 @@ public class ShiftService {
 		if (user == null) {
 			return OperationResult.failure("Phiên đăng nhập đã hết hạn.");
 		}
-		if (!authService.can(AppPermission.SHIFT_VIEW_ALL)) {
+		if (!authService.can(AppPermission.SHIFT_APPROVE)) {
 			return OperationResult.failure("Tài khoản không có quyền duyệt đối soát ca.");
 		}
 
@@ -403,12 +404,12 @@ public class ShiftService {
 		if (user == null) {
 			return OperationResult.failure("Phiên đăng nhập đã hết hạn.");
 		}
-		if (!authService.can(AppPermission.SHIFT_VIEW_ALL)) {
-			return OperationResult.failure("Tài khoản không có quyền từ chối đối soát ca.");
+		if (!authService.can(AppPermission.SHIFT_APPROVE)) {
+			return OperationResult.failure("Tài khoản không có quyền yêu cầu kiểm lại đối soát ca.");
 		}
 
 		if (rejectionNote == null || rejectionNote.isBlank()) {
-			return OperationResult.failure("Phải nhập lý do từ chối.");
+			return OperationResult.failure("Phải nhập lý do yêu cầu kiểm lại.");
 		}
 
 		Shift current = shiftDAO.findById(shiftId);
@@ -416,7 +417,7 @@ public class ShiftService {
 			return OperationResult.failure("Không tìm thấy ca #" + shiftId + ".");
 		}
 		if (!current.isPendingApproval()) {
-			return OperationResult.failure("Chỉ từ chối được ca đang chờ đối soát.");
+			return OperationResult.failure("Chỉ yêu cầu kiểm lại được ca đang chờ đối soát.");
 		}
 
 		try {
@@ -428,10 +429,65 @@ public class ShiftService {
 					current,
 					rejected);
 			publishChanged();
-			return OperationResult.success("Đã từ chối đối soát ca #" + rejected.getShiftId() + ".", rejected);
+			return OperationResult.success("Đã yêu cầu kiểm lại đối soát ca #" + rejected.getShiftId() + ".", rejected);
 		} catch (SQLException e) {
 			logMutationError("ShiftService.rejectShift", e);
-			return OperationResult.failure(friendlySqlMessage(e, "Không thể từ chối ca. Vui lòng thử lại."));
+			return OperationResult.failure(friendlySqlMessage(e, "Không thể yêu cầu kiểm lại ca. Vui lòng thử lại."));
+		}
+	}
+
+	/** Quan ly duoc xem quỹ he thong truoc khi nhan vien chot blind count. */
+	public boolean canViewSystemCashBeforeClose() {
+		return authService.getCurrentUser() != null && authService.can(AppPermission.SHIFT_VIEW_ALL);
+	}
+
+	/** Nguoi dung hien tai co quyen phe duyet doi soat hay khong. */
+	public boolean canApproveReconciliation() {
+		return authService.getCurrentUser() != null && authService.can(AppPermission.SHIFT_APPROVE);
+	}
+
+	/** Lich su cac lan kiem dem/duyet cua mot ca neu nguoi dung duoc phep xem. */
+	public List<ShiftReconciliation> getReconciliations(int shiftId) {
+		User user = authService.getCurrentUser();
+		if (user == null) return Collections.emptyList();
+		Shift shift = shiftDAO.findById(shiftId);
+		if (shift == null) return Collections.emptyList();
+		boolean own = shift.getUserId() == user.getUserId();
+		if (!own && !authService.can(AppPermission.SHIFT_VIEW_ALL)) return Collections.emptyList();
+		return shiftDAO.findReconciliations(shiftId);
+	}
+
+	/**
+	 * Nhan vien gui lai doi soat sau khi quan ly yeu cau kiem dem lai.
+	 * Ca van CLOSED; chi tao revision PENDING moi.
+	 */
+	public OperationResult<Shift> resubmitMyReconciliation(int shiftId, BigDecimal countedCash, String closingNote) {
+		User user = authService.getCurrentUser();
+		String permissionError = validateOperator(user);
+		if (permissionError != null) return OperationResult.failure(permissionError);
+		String moneyError = validateMoney(countedCash, true);
+		if (moneyError != null) return OperationResult.failure("Tiền kiểm thực tế: " + moneyError);
+		if (closingNote != null && closingNote.trim().length() > 500) {
+			return OperationResult.failure("Giải trình không được vượt quá 500 ký tự.");
+		}
+		Shift current = shiftDAO.findById(shiftId);
+		if (current == null) return OperationResult.failure("Không tìm thấy ca #" + shiftId + ".");
+		if (current.getUserId() != user.getUserId()) {
+			return OperationResult.failure("Bạn chỉ được gửi lại đối soát của ca mình.");
+		}
+		if (!current.isRejected()) {
+			return OperationResult.failure("Chỉ gửi lại được ca đang ở trạng thái cần kiểm lại.");
+		}
+		try {
+			Shift updated = shiftDAO.resubmitReconciliation(shiftId, user.getUserId(), countedCash, closingNote);
+			ActivityLogHelper.record("đối soát ca", ActivityLog.ACTION_STATUS_CHANGE,
+					"Gui lai doi soat ca #" + shiftId + " revision " + updated.getReconciliationRevisionNo(),
+					current, updated);
+			publishChanged();
+			return OperationResult.success("Đã gửi lại đối soát ca #" + shiftId + " cho quản lý.", updated);
+		} catch (SQLException e) {
+			logMutationError("ShiftService.resubmitMyReconciliation", e);
+			return OperationResult.failure(friendlySqlMessage(e, "Không thể gửi lại đối soát."));
 		}
 	}
 

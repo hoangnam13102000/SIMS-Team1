@@ -336,20 +336,53 @@ public class SalesStaffFullFlowIT {
 
     @Test
     @Order(8)
-    void closeShift_thenManagerApprove_finishesFullFlow() {
+    void shiftReconciliation_closed_rejected_resubmitted_approved_fullFlow() throws Exception {
         login(staffUser);
         ShiftService.OperationResult<ShiftCashSummary> preview = SHIFT_SERVICE.previewClose();
         assertTrue(preview.isSuccess(), preview.getMessage());
 
         BigDecimal counted = preview.getData().getExpectedCash();
-        ShiftService.OperationResult<Shift> closed = SHIFT_SERVICE.closeMyShift(counted, runTag + " exact reconciliation");
+        ShiftService.OperationResult<Shift> closed = SHIFT_SERVICE.closeMyShift(
+                counted, runTag + " blind-count reconciliation");
         assertTrue(closed.isSuccess(), closed.getMessage());
-        assertTrue(closed.getData().isPendingApproval() || closed.getData().isClosed());
+        assertEquals("CLOSED", queryString("SELECT Status FROM Shifts WHERE ShiftID=?", shiftId),
+                "Dong ca phai CLOSED ngay, khong dung PENDING_APPROVAL trong Shifts");
+        assertTrue(closed.getData().isPendingApproval(), "Doi soat revision 1 phai PENDING");
+        assertEquals(1, queryInt("SELECT COUNT(*) FROM ShiftReconciliations WHERE ShiftID=?", shiftId));
+        assertEquals("PENDING", queryString(
+                "SELECT Status FROM ShiftReconciliations WHERE ShiftID=? ORDER BY RevisionNo DESC LIMIT 1", shiftId));
 
         login(managerUser);
-        ShiftService.OperationResult<Shift> approved = SHIFT_SERVICE.approveShift(shiftId, runTag + " approve shift");
+        ShiftService.OperationResult<Shift> rejected = SHIFT_SERVICE.rejectShift(
+                shiftId, runTag + " manager requests recount");
+        assertTrue(rejected.isSuccess(), rejected.getMessage());
+        assertTrue(rejected.getData().isRejected());
+        assertEquals("CLOSED", queryString("SELECT Status FROM Shifts WHERE ShiftID=?", shiftId),
+                "Tu choi doi soat khong duoc mo lai ca");
+        assertEquals("REJECTED", queryString(
+                "SELECT Status FROM ShiftReconciliations WHERE ShiftID=? ORDER BY RevisionNo DESC LIMIT 1", shiftId));
+
+        login(staffUser);
+        ShiftService.OperationResult<Shift> resubmitted = SHIFT_SERVICE.resubmitMyReconciliation(
+                shiftId, counted, runTag + " recount checked");
+        assertTrue(resubmitted.isSuccess(), resubmitted.getMessage());
+        assertTrue(resubmitted.getData().isPendingApproval());
+        assertEquals("CLOSED", queryString("SELECT Status FROM Shifts WHERE ShiftID=?", shiftId));
+        assertEquals(2, queryInt("SELECT COUNT(*) FROM ShiftReconciliations WHERE ShiftID=?", shiftId),
+                "Gui lai phai tao revision moi, khong overwrite revision cu");
+        assertEquals(2, queryInt(
+                "SELECT RevisionNo FROM ShiftReconciliations WHERE ShiftID=? ORDER BY RevisionNo DESC LIMIT 1", shiftId));
+        assertEquals("PENDING", queryString(
+                "SELECT Status FROM ShiftReconciliations WHERE ShiftID=? ORDER BY RevisionNo DESC LIMIT 1", shiftId));
+
+        login(managerUser);
+        ShiftService.OperationResult<Shift> approved = SHIFT_SERVICE.approveShift(
+                shiftId, runTag + " approve recount");
         assertTrue(approved.isSuccess(), approved.getMessage());
         assertTrue(approved.getData().isApproved());
+        assertEquals("CLOSED", queryString("SELECT Status FROM Shifts WHERE ShiftID=?", shiftId));
+        assertEquals("APPROVED", queryString(
+                "SELECT Status FROM ShiftReconciliations WHERE ShiftID=? ORDER BY RevisionNo DESC LIMIT 1", shiftId));
     }
 
     // ---------------------------------------------------------------------
@@ -382,6 +415,7 @@ public class SalesStaffFullFlowIT {
         assertTable("OrderStatusHistory");
         assertTable("InvoiceCancelRequests");
         assertTable("ReturnExchangeEvidence");
+        assertTable("ShiftReconciliations");
     }
 
     private static void seedFixture() throws Exception {

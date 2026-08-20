@@ -2,6 +2,7 @@ package com.view.admin.shift;
 
 import com.components.Pagination;
 import com.components.AppAlert;
+import com.components.BaseDialog;
 import com.components.BaseSearch;
 import com.components.BaseTable;
 import com.components.DatePickerField;
@@ -113,7 +114,7 @@ public class ShiftManagementPanel extends JPanel {
 	private final BaseSearch historySearchField = new BaseSearch("Tìm mã ca, nhân viên...");
 
 	private final FilterDropdown<String> historyStatusFilter =
-			new FilterDropdown<>(FontAwesomeSolid.FILTER, new String[] { "Tất cả trạng thái", "Đang mở", "Chờ duyệt", "Đã duyệt", "Từ chối" });
+			new FilterDropdown<>(FontAwesomeSolid.FILTER, new String[] { "Tất cả trạng thái", "Đang mở", "Chờ duyệt", "Đã duyệt", "Cần kiểm lại" });
 
 	private DatePickerField historyDateFrom;
 	private DatePickerField historyDateTo;
@@ -180,7 +181,7 @@ public class ShiftManagementPanel extends JPanel {
 		SectionHeader header = new SectionHeader(
 		        FontAwesomeSolid.CLOCK,
 		        AppColor.ACCENT,
-		        "Ca bán hàng & đối soát quỹ",
+		        "Ca của tôi & đối soát quỹ",
 		        subtitle
 		);
 
@@ -268,6 +269,8 @@ public class ShiftManagementPanel extends JPanel {
 		 * toan bo giao dich thu/chi cua ca do - khong phai doi/lam moi tab.
 		 */
 		historyTable.setActionColumn(new ActionColumn()
+				.add("resubmit", FontAwesomeSolid.REDO, AppColor.WARNING, "Kiểm đếm lại & gửi",
+						this::resubmitShiftAtModelRow, this::isRejectedAtModelRow)
 				.add("view", FontAwesomeSolid.EYE, AppColor.TABLE_VIEW_ACTION, "Xem chi tiết",
 						this::viewShiftDetail));
 
@@ -752,9 +755,9 @@ public class ShiftManagementPanel extends JPanel {
 
 			movementsCard.setValue("+" + money(shift.getCashIn()) + " / -" + money(shift.getCashOut()));
 
-			BigDecimal expected = expectedOf(shift);
-
-			expectedCard.setValue(money(expected));
+			// P5 blind count: nhan vien khong duoc thay con so quy he thong khi ca dang mo.
+			expectedCard.setValue("••••••");
+			expectedCard.setTrend("Ẩn đến khi xác nhận tiền đếm", false);
 
 		} else {
 			statusCard.setValue("CHƯA MỞ CA");
@@ -926,7 +929,7 @@ public class ShiftManagementPanel extends JPanel {
 
 	        BigDecimal expected =
 	                shift.isOpen()
-	                        ? expectedOf(shift)
+	                        ? null
 	                        : shift.getExpectedCash();
 
 
@@ -1039,6 +1042,21 @@ public class ShiftManagementPanel extends JPanel {
 		if (modelRow < 0 || modelRow >= pagedShifts.size()) return;
 		Shift shift = pagedShifts.get(modelRow);
 		ShiftDetailDialog.show(SwingUtilities.getWindowAncestor(this), shift, shiftService);
+	}
+
+	private boolean isRejectedAtModelRow(int modelRow) {
+		return canOperate && modelRow >= 0 && modelRow < pagedShifts.size()
+				&& pagedShifts.get(modelRow).isRejected();
+	}
+
+	private void resubmitShiftAtModelRow(int modelRow) {
+		if (modelRow < 0 || modelRow >= pagedShifts.size()) return;
+		Shift shift = pagedShifts.get(modelRow);
+		if (!shift.isRejected()) {
+			AppAlert.warning(this, "Chỉ có ca bị yêu cầu kiểm lại mới được gửi lại đối soát.");
+			return;
+		}
+		showResubmitDialog(shift);
 	}
 
 	private void loadSelectedTransactions() {
@@ -1325,7 +1343,7 @@ public class ShiftManagementPanel extends JPanel {
 
 	        BigDecimal expected =
 	                shift.isOpen()
-	                        ? expectedOf(shift)
+	                        ? null
 	                        : shift.getExpectedCash();
 
 
@@ -1795,67 +1813,43 @@ public class ShiftManagementPanel extends JPanel {
 	 * Dialog đóng ca — hiển thị công thức quỹ + nhập tiền đếm (format 1,200,000).
 	 */
 	private void showCloseDialog(ShiftCashSummary summary) {
-		JTextField countedField = moneyInputField(summary.getExpectedCash());
+		// P5 - blind cash count: KHONG hien ExpectedCash va KHONG prefill tien dem.
+		JTextField countedField = moneyInputField(null);
 		JTextArea noteArea = styledNoteArea("");
 
-		JDialog dialog = buildShiftDialog("Đóng ca — gửi đối soát");
-
+		JDialog dialog = buildShiftDialog("Đóng ca — kiểm đếm độc lập");
 		JPanel body = dialogBody();
 		body.add(dialogHeader(FontAwesomeSolid.LOCK, AppColor.ERROR,
 				"Đóng ca bán hàng",
-				"Nhập số tiền đếm thực tế. Hệ thống sẽ gửi ca cho quản lý đối soát duyệt."));
+				"Hãy đếm tiền mặt thực tế trước. Số quỹ hệ thống được ẩn cho tới khi bạn xác nhận số đã đếm."));
 		body.add(Box.createVerticalStrut(14));
 
-		// Card tóm tắt quỹ hệ thống
-		JPanel fundCard = new JPanel();
-		fundCard.setLayout(new BoxLayout(fundCard, BoxLayout.Y_AXIS));
-		fundCard.setOpaque(true);
-		fundCard.setBackground(AppColor.BG_LIGHTER != null ? AppColor.BG_LIGHTER : new Color(248, 250, 252));
-		fundCard.setBorder(BorderFactory.createCompoundBorder(
-				new LineBorder(AppColor.BORDER, 1, true),
-				new EmptyBorder(12, 14, 12, 14)
-		));
-		fundCard.setAlignmentX(Component.LEFT_ALIGNMENT);
-		fundCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
-
-		JLabel fundTitle = new JLabel("Quỹ hệ thống (dự kiến)");
-		fundTitle.setFont(AppFont.SMALL_BOLD);
-		fundTitle.setForeground(AppColor.TEXT_MUTED);
-		fundTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
-		fundCard.add(fundTitle);
-		fundCard.add(Box.createVerticalStrut(6));
-
-		JLabel fundValue = new JLabel(money(summary.getExpectedCash()));
-		fundValue.setFont(AppFont.HEADING_MD != null ? AppFont.HEADING_MD : AppFont.BODY.deriveFont(Font.BOLD, 18f));
-		fundValue.setForeground(AppColor.ACCENT);
-		fundValue.setAlignmentX(Component.LEFT_ALIGNMENT);
-		fundCard.add(fundValue);
-		fundCard.add(Box.createVerticalStrut(8));
-
-		JLabel formula = new JLabel("<html><div style='width:380px;color:#64748b;font-size:11px'>"
-				+ money(summary.getOpeningCash()) + " đầu ca"
-				+ " + " + money(summary.getCashSales()) + " DT tiền mặt"
-				+ " + " + money(summary.getCashIn()) + " thu"
-				+ " − " + money(summary.getCashOut()) + " chi"
-				+ " − " + money(summary.getCashRefunds()) + " hoàn"
-				+ "</div></html>");
-		formula.setAlignmentX(Component.LEFT_ALIGNMENT);
-		fundCard.add(formula);
-
-		body.add(fundCard);
+		JPanel blindCard = new JPanel(new BorderLayout(10, 0));
+		blindCard.setOpaque(true);
+		blindCard.setBackground(AppColor.INFO_BG != null ? AppColor.INFO_BG : new Color(239, 246, 255));
+		blindCard.setBorder(BorderFactory.createCompoundBorder(
+				new LineBorder(AppColor.INFO, 1, true), new EmptyBorder(12, 14, 12, 14)));
+		blindCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+		blindCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 74));
+		JLabel blindText = new JLabel("<html><b>Kiểm đếm độc lập</b><br>"
+				+ "Tiền hệ thống sẽ chỉ được hiện sau khi bạn nhập và xác nhận tiền thực tế.</html>");
+		blindText.setFont(AppFont.BODY);
+		blindText.setForeground(AppColor.TEXT_PRIMARY);
+		blindCard.add(blindText, BorderLayout.CENTER);
+		body.add(blindCard);
 		body.add(Box.createVerticalStrut(14));
-		body.add(fieldLabel("Tiền đếm thực tế *"));
+		body.add(fieldLabel("Tiền mặt đếm thực tế *"));
 		body.add(Box.createVerticalStrut(6));
 		body.add(moneyFieldWithSuffix(countedField));
 		body.add(Box.createVerticalStrut(4));
-		body.add(hintLabel("Mặc định = quỹ hệ thống. Sửa theo số tiền bạn đếm được."));
+		body.add(hintLabel("Không nhìn số hệ thống trước khi đếm để giảm sai lệch chủ quan."));
 		body.add(Box.createVerticalStrut(14));
 		body.add(fieldLabel("Giải trình (bắt buộc nếu có chênh lệch)"));
 		body.add(Box.createVerticalStrut(6));
 		body.add(wrapNote(noteArea));
 
 		JButton cancel = dialogSecondaryButton("Hủy");
-		JButton ok = dialogPrimaryButton("Đóng ca & gửi duyệt", AppColor.ERROR, AppColor.ERROR_HOVER);
+		JButton ok = dialogPrimaryButton("Đối chiếu & đóng ca", AppColor.ERROR, AppColor.ERROR_HOVER);
 		cancel.addActionListener(e -> dialog.dispose());
 		ok.addActionListener(e -> {
 			BigDecimal countedCash = CurrencyDocumentFilter.parse(countedField.getText());
@@ -1865,15 +1859,74 @@ public class ShiftManagementPanel extends JPanel {
 			}
 			BigDecimal difference = summary.differenceFrom(countedCash);
 			if (difference.signum() != 0 && (noteArea.getText() == null || noteArea.getText().isBlank())) {
-				AppAlert.warning(dialog,
-						"Chênh lệch " + signedMoneyOrDash(difference)
-								+ ". Bạn phải nhập giải trình trước khi đóng ca.");
+				AppAlert.warning(dialog, "Sau khi đối chiếu phát hiện chênh lệch "
+						+ signedMoneyOrDash(difference) + ". Vui lòng nhập giải trình rồi xác nhận lại.");
 				return;
 			}
+
+			String confirm = "Bạn đã xác nhận số tiền đếm thực tế.\n\n"
+					+ "Tiền hệ thống: " + money(summary.getExpectedCash()) + "\n"
+					+ "Tiền thực tế:  " + money(countedCash) + "\n"
+					+ "Chênh lệch:     " + signedMoneyOrDash(difference) + "\n\n"
+					+ "Đóng ca và gửi kết quả này cho quản lý?";
+			if (!BaseDialog.confirm(dialog, "Xác nhận đối soát", confirm)) return;
 			dialog.dispose();
 			runOperation(() -> shiftService.closeMyShift(countedCash, noteArea.getText()));
 		});
 
+		dialog.add(body, BorderLayout.CENTER);
+		dialog.add(dialogFooter(cancel, ok), BorderLayout.SOUTH);
+		dialog.getRootPane().setDefaultButton(ok);
+		showShiftDialog(dialog);
+	}
+
+	/** P4: nhan vien kiem dem lai ca bi quan ly tu choi, tao revision moi. */
+	private void showResubmitDialog(Shift shift) {
+		JTextField countedField = moneyInputField(null);
+		JTextArea noteArea = styledNoteArea("");
+		JDialog dialog = buildShiftDialog("Kiểm đếm lại ca #" + shift.getShiftId());
+		JPanel body = dialogBody();
+		body.add(dialogHeader(FontAwesomeSolid.REDO, AppColor.WARNING,
+				"Kiểm đếm lại & gửi đối soát",
+				"Ca vẫn đã đóng. Hệ thống chỉ tạo một lần đối soát mới, không sửa/xóa lịch sử cũ."));
+		body.add(Box.createVerticalStrut(12));
+		if (shift.getApprovalNote() != null && !shift.getApprovalNote().isBlank()) {
+			body.add(hintLabel("Yêu cầu của quản lý: " + shift.getApprovalNote()));
+			body.add(Box.createVerticalStrut(12));
+		}
+		body.add(fieldLabel("Tiền mặt đếm lại *"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(moneyFieldWithSuffix(countedField));
+		body.add(Box.createVerticalStrut(12));
+		body.add(fieldLabel("Giải trình / kết quả kiểm lại"));
+		body.add(Box.createVerticalStrut(6));
+		body.add(wrapNote(noteArea));
+
+		JButton cancel = dialogSecondaryButton("Hủy");
+		JButton ok = dialogPrimaryButton("Đối chiếu & gửi lại", AppColor.WARNING, AppColor.WARNING);
+		cancel.addActionListener(e -> dialog.dispose());
+		ok.addActionListener(e -> {
+			BigDecimal counted = CurrencyDocumentFilter.parse(countedField.getText());
+			if (counted == null) {
+				AppAlert.warning(dialog, "Tiền đếm lại phải là số nguyên VND không âm.");
+				return;
+			}
+			BigDecimal expected = shift.getExpectedCash() != null ? shift.getExpectedCash() : BigDecimal.ZERO;
+			BigDecimal difference = counted.subtract(expected);
+			if (difference.signum() != 0 && (noteArea.getText() == null || noteArea.getText().isBlank())) {
+				AppAlert.warning(dialog, "Vẫn còn chênh lệch " + signedMoneyOrDash(difference)
+						+ ". Hãy nhập giải trình trước khi gửi lại.");
+				return;
+			}
+			String message = "Tiền hệ thống: " + money(expected) + "\n"
+					+ "Tiền đếm lại:  " + money(counted) + "\n"
+					+ "Chênh lệch:     " + signedMoneyOrDash(difference) + "\n\n"
+					+ "Gửi revision đối soát mới cho quản lý?";
+			if (!BaseDialog.confirm(dialog, "Gửi lại đối soát", message)) return;
+			dialog.dispose();
+			runOperation(() -> shiftService.resubmitMyReconciliation(
+					shift.getShiftId(), counted, noteArea.getText()));
+		});
 		dialog.add(body, BorderLayout.CENTER);
 		dialog.add(dialogFooter(cancel, ok), BorderLayout.SOUTH);
 		dialog.getRootPane().setDefaultButton(ok);
@@ -2139,7 +2192,7 @@ public class ShiftManagementPanel extends JPanel {
 				value -> {
 					if ("Đang mở".equals(value)) return AppColor.SUCCESS;
 					if ("Chờ duyệt".equals(value)) return AppColor.WARNING;
-					if ("Từ chối".equals(value)) return AppColor.ERROR;
+					if ("Cần kiểm lại".equals(value)) return AppColor.ERROR;
 					return AppColor.TEXT_MUTED;
 				});
 

@@ -39,6 +39,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -61,7 +62,7 @@ public class ShiftMonitorPanel extends JPanel {
 
     // ── StatCard tổng quan — dùng chung với AuditLogPanel/DashboardPanel ──
     private final StatCard openCountCard =
-            new StatCard("Tổng ca", "0", FontAwesomeSolid.CLOCK, AppColor.ACCENT, true);
+            new StatCard("Cần xử lý", "0", FontAwesomeSolid.EXCLAMATION_TRIANGLE, AppColor.ERROR, true);
     private final StatCard pendingCountCard =
             new StatCard("Chờ duyệt", "0", FontAwesomeSolid.HOURGLASS_HALF, AppColor.WARNING, true);
     private final StatCard totalExpectedCard =
@@ -73,7 +74,7 @@ public class ShiftMonitorPanel extends JPanel {
     private final BaseSearch searchField = new BaseSearch("Tìm theo tên nhân viên hoặc mã ca...");
     private final FilterDropdown<String> statusFilter = new FilterDropdown<>(
             FontAwesomeSolid.FILTER,
-            new String[]{"Tất cả trạng thái", "Đang mở", "Chờ duyệt", "Đã duyệt", "Từ chối"}
+            new String[]{"Tất cả trạng thái", "Đang mở", "Chờ duyệt", "Đã duyệt", "Cần kiểm lại"}
     );
     private DatePickerField dateFrom;
     private DatePickerField dateTo;
@@ -246,7 +247,7 @@ public class ShiftMonitorPanel extends JPanel {
         // tiết" (buildFundBreakdownCard) và trong Xuất CSV/Excel, bảng ở
         // đây chỉ cần đủ để quét nhanh + ra quyết định duyệt/từ chối.
         BaseTable table = new BaseTable(new String[]{
-                "Mã ca", "Nhân viên", "Trạng thái", "Thời gian", "HĐ", "Tiền đầu"
+                "Mã ca", "Nhân viên", "Đối soát", "Thời gian", "HĐ", "Tiền đầu", "Chênh lệch"
         });
         table.getTable().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.enableSorting();
@@ -259,7 +260,7 @@ public class ShiftMonitorPanel extends JPanel {
                     String v = String.valueOf(value);
                     if ("Đang mở".equals(v)) return AppColor.SUCCESS;
                     if ("Chờ duyệt".equals(v)) return AppColor.WARNING;
-                    if ("Từ chối".equals(v)) return AppColor.ERROR;
+                    if ("Cần kiểm lại".equals(v)) return AppColor.ERROR;
                     return AppColor.TEXT_MUTED;
                 });
 
@@ -271,10 +272,11 @@ public class ShiftMonitorPanel extends JPanel {
         // "Thời gian" -> 2 dòng (mốc bắt đầu + phụ đề mờ bên dưới).
         table.setCustomColumn(3, timeRenderer(table.rowColorProvider()));
 
-        // "Tiền đầu" -> căn phải như mọi cột tiền khác trong app.
+        // "Tiền đầu" va "Chênh lệch" -> can phai.
         table.setCustomColumn(5, moneyRenderer(table.rowColorProvider(), false));
+        table.setCustomColumn(6, signedMoneyRenderer(table.rowColorProvider()));
 
-        table.setColumnWidths(70, 150, 110, 210, 55, 130);
+        table.setColumnWidths(70, 150, 110, 210, 55, 120, 120);
         table.setRowHeight(52);
         return table;
     }
@@ -284,7 +286,7 @@ public class ShiftMonitorPanel extends JPanel {
                 .header("Thao tác")
                 .add("approve", FontAwesomeSolid.CHECK_CIRCLE, AppColor.SUCCESS, "Duyệt đối soát",
                         this::approveAtModelRow, this::isPendingAtModelRow)
-                .add("reject", FontAwesomeSolid.TIMES_CIRCLE, AppColor.ERROR, "Từ chối",
+                .add("reject", FontAwesomeSolid.TIMES_CIRCLE, AppColor.ERROR, "Yêu cầu kiểm lại",
                         this::rejectAtModelRow, this::isPendingAtModelRow)
                 .add("detail", FontAwesomeSolid.EYE, AppColor.ACCENT, "Xem chi tiết",
                         this::detailAtModelRow);
@@ -304,6 +306,46 @@ public class ShiftMonitorPanel extends JPanel {
                 return c;
             }
         };
+    }
+
+    private static TableCellRenderer signedMoneyRenderer(RowColorProvider rowColorProvider) {
+        return new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
+                                                             boolean hasFocus, int row, int column) {
+                JLabel c = (JLabel) super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, column);
+                c.setBackground(rowColorProvider.colorFor(row, isSelected));
+                c.setHorizontalAlignment(SwingConstants.RIGHT);
+                c.setBorder(new EmptyBorder(0, 8, 0, 12));
+                c.setFont(AppFont.BODY_BOLD);
+                String text = String.valueOf(value);
+                c.setForeground(text.startsWith("-") ? AppColor.ERROR
+                        : text.startsWith("+") ? AppColor.WARNING : AppColor.SUCCESS);
+                return c;
+            }
+        };
+    }
+
+    private static int riskScore(Shift s) {
+        if (s == null) return 0;
+
+        BigDecimal d = s.getCashDifference();
+        boolean hasDifference = d != null && d.signum() != 0;
+
+        // Chi uu tien cac ca con can hanh dong. Ca da duyet khong nen noi len
+        // chi vi trong lich su tung co chenh lech da duoc quan ly chap nhan.
+        if (s.isRejected()) return 120 + (hasDifference ? 30 : 0);
+        if (s.isPendingApproval()) return 80 + (hasDifference ? 30 : 0);
+        if (s.isOpen()) return 10;
+        return 0;
+    }
+
+    private static String signedMoney(BigDecimal value) {
+        if (value == null) return "—";
+        int sign = value.signum();
+        if (sign == 0) return "0 đ";
+        String formatted = money(value.abs());
+        return (sign > 0 ? "+" : "-") + formatted;
     }
 
     /**
@@ -458,6 +500,10 @@ public class ShiftMonitorPanel extends JPanel {
                 try {
                     List<Shift> result = get();
                     if (result == null) result = new ArrayList<>();
+                    // P6: ca rui ro/can xu ly len dau truoc khi phan trang.
+                    result.sort(Comparator
+                            .comparingInt(ShiftMonitorPanel::riskScore).reversed()
+                            .thenComparing(Shift::getStartTime, Comparator.nullsLast(Comparator.reverseOrder())));
                     if (!"Tất cả trạng thái".equals(fStatusSel) && !"Đang mở".equals(fStatusSel)) {
                         result = result.stream()
                                 .filter(s -> fStatusSel.equals(s.getStatusLabel()))
@@ -513,15 +559,15 @@ public class ShiftMonitorPanel extends JPanel {
         for (int i = fromIdx; i < toIdx; i++) {
             Shift s = filteredShifts.get(i);
             pageShifts.add(s);
-            // Cột bảng: Mã ca | NV | Trạng thái | Thời gian | HĐ | Tiền đầu
-            // (phải khớp đúng số cột header — trước đây add thừa cột nên Tiền đầu bị lệch)
+            // Cột bảng: Mã ca | NV | Đối soát | Thời gian | HĐ | Tiền đầu | Chênh lệch
             table.addRow(new Object[]{
                     "#" + s.getShiftId(),
                     s.getUserName() != null ? s.getUserName() : "—",
                     s.getStatusLabel(),
                     timeRangeHtml(s),
                     s.getInvoiceCount(),
-                    money(s.getOpeningCash())
+                    money(s.getOpeningCash()),
+                    signedMoney(s.getCashDifference())
             });
         }
         updateCountLabel();
@@ -536,7 +582,7 @@ public class ShiftMonitorPanel extends JPanel {
 
     private boolean isPendingAtModelRow(int modelRow) {
         Shift s = shiftAtModelRow(modelRow);
-        return s != null && s.isPendingApproval();
+        return s != null && s.isPendingApproval() && shiftService.canApproveReconciliation();
     }
 
     private void approveAtModelRow(int modelRow) {
@@ -556,12 +602,14 @@ public class ShiftMonitorPanel extends JPanel {
         BigDecimal totalExpected = BigDecimal.ZERO;
         BigDecimal totalSales = BigDecimal.ZERO;
         int pending = 0;
+        int risk = 0;
         for (Shift s : shifts) {
             totalExpected = totalExpected.add(expectedCash(s));
             totalSales = totalSales.add(nullSafe(s.getCashSales()));
             if (s.isPendingApproval()) pending++;
+            if (s.isPendingApproval() || s.isRejected()) risk++;
         }
-        openCountCard.setValue(String.valueOf(shifts.size()));
+        openCountCard.setValue(String.valueOf(risk));
         pendingCountCard.setValue(String.valueOf(pending));
         totalExpectedCard.setValue(money(totalExpected));
         totalSalesCard.setValue(money(totalSales));
@@ -672,22 +720,22 @@ public class ShiftMonitorPanel extends JPanel {
 
     private void doReject(Shift shift) {
         if (shift == null || !shift.isPendingApproval()) {
-            AppAlert.error(this, "Chỉ từ chối được ca đang chờ đối soát.");
+            AppAlert.error(this, "Chỉ yêu cầu kiểm lại được ca đang chờ đối soát.");
             return;
         }
 
         String note = BaseDialog.inputTextArea(
                 this,
-                "Từ chối đối soát ca #" + shift.getShiftId(),
-                "Lý do từ chối",
+                "Yêu cầu kiểm lại ca #" + shift.getShiftId(),
+                "Lý do cần kiểm lại",
                 "Bắt buộc nhập lý do để nhân viên biết cần xử lý gì tiếp theo.",
                 "",
-                "Từ chối ca",
+                "Yêu cầu kiểm lại",
                 500
         );
         if (note == null) return; // Hủy
         if (note.isBlank()) {
-            AppAlert.error(this, "Phải nhập lý do từ chối.");
+            AppAlert.error(this, "Phải nhập lý do yêu cầu kiểm lại.");
             return;
         }
 
@@ -784,7 +832,7 @@ public class ShiftMonitorPanel extends JPanel {
         ));
 
         if (shift.isPendingApproval()) {
-            JButton rejectBtn = primaryActionButton("Từ chối", AppColor.ERROR);
+            JButton rejectBtn = primaryActionButton("Yêu cầu kiểm lại", AppColor.ERROR);
             rejectBtn.addActionListener(e -> {
                 dialog.dispose();
                 doReject(shift);
@@ -976,7 +1024,7 @@ public class ShiftMonitorPanel extends JPanel {
         }
         if (hasApproval) {
             if (hasOpen || hasClose) card.add(Box.createVerticalStrut(8));
-            card.add(noteBlock("Duyệt / Từ chối (QL)", shift.getApprovalNote()));
+            card.add(noteBlock("Phản hồi quản lý", shift.getApprovalNote()));
         }
         return card;
     }

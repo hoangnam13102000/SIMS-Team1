@@ -5,6 +5,7 @@ import com.core.log.ErrorCode;
 import com.model.Shift;
 import com.model.ShiftCashSummary;
 import com.model.ShiftCashTransaction;
+import com.model.ShiftReconciliation;
 import com.utils.DBConnection;
 
 import java.math.BigDecimal;
@@ -51,42 +52,37 @@ public class ShiftDAO {
 	 */
 
 	private static final String SHIFT_SELECT = "SELECT " + "s.ShiftID, " + "s.UserID, " + "u.FullName AS UserName, "
-			+ "s.StartTime, " + "s.EndTime, " + "s.Status, " + "s.OpeningCash, " + "s.ExpectedCash, "
-			+ "s.CountedCash, " + "s.CashDifference, " + "s.OpeningNote, " + "s.ClosingNote, " + "s.ClosedBy, "
-			+ "closer.FullName AS ClosedByName, "
-			+ "s.ApprovedBy, " + "approver.FullName AS ApprovedByName, "
-			+ "s.ApprovedAt, " + "s.ApprovalNote, "
-
-			// Tổng số hóa đơn ACTIVE của ca
-			+ "(SELECT COUNT(*) " + " FROM Invoices inv " + " WHERE inv.ShiftID = s.ShiftID "
-			+ "   AND inv.Status = 'ACTIVE'" + ") AS InvoiceCount, "
-
-			// Tiền CASH thực tế đã thu tại thời điểm bán. InvoicePayments hỗ trợ split payment.
-			+ "COALESCE(( SELECT SUM(CASE "
-			+ " WHEN EXISTS (SELECT 1 FROM InvoicePayments px WHERE px.InvoiceID=inv.InvoiceID) "
-			+ " THEN COALESCE((SELECT SUM(p.Amount) FROM InvoicePayments p WHERE p.InvoiceID=inv.InvoiceID "
-			+ "   AND p.PaymentStatus='COMPLETED' AND p.PaymentMethod='CASH'),0) "
-			+ " WHEN inv.PaymentMethod='CASH' THEN inv.OriginalTotalAmount ELSE 0 END) "
-			+ " FROM Invoices inv WHERE inv.ShiftID=s.ShiftID AND inv.Status='ACTIVE'), 0) AS CashSales, "
-
-			// Thu tiền mặt trong ca
-			+ "COALESCE((" + " SELECT SUM(t.Amount) " + " FROM ShiftCashTransactions t "
-			+ " WHERE t.ShiftID = s.ShiftID " + "   AND t.Status = 'ACTIVE' " + "   AND t.TransactionType = 'CASH_IN'"
-			+ "), 0) AS CashIn, "
-
-			// Chi tiền mặt trong ca
-			+ "COALESCE((" + " SELECT SUM(t.Amount) " + " FROM ShiftCashTransactions t "
-			+ " WHERE t.ShiftID = s.ShiftID " + "   AND t.Status = 'ACTIVE' " + "   AND t.TransactionType = 'CASH_OUT'"
-			+ "), 0) AS CashOut, "
-
-			// Chỉ refund CASH đã hoàn thành của đúng ca
-			+ "COALESCE((" + " SELECT SUM(r.TotalValue) " + " FROM ReturnExchanges r "
-			+ " WHERE r.RefundShiftID = s.ShiftID " + "   AND r.Type = 'RETURN' " + "   AND r.Status = 'APPROVED' "
-			+ "   AND r.RefundMethod = 'CASH' " + "   AND r.RefundStatus = 'COMPLETED'" + "), 0) AS CashRefunds "
-
-			+ "FROM Shifts s " + "JOIN Users u " + "  ON u.UserID = s.UserID " + "LEFT JOIN Users closer "
-			+ "  ON closer.UserID = s.ClosedBy " + "LEFT JOIN Users approver "
-			+ "  ON approver.UserID = s.ApprovedBy ";
+            + "s.StartTime, " + "s.EndTime, " + "s.Status, " + "s.OpeningCash, "
+            + "COALESCE(rec.ExpectedCash, s.ExpectedCash) AS ExpectedCash, "
+            + "COALESCE(rec.CountedCash, s.CountedCash) AS CountedCash, "
+            + "COALESCE(rec.DifferenceAmount, s.CashDifference) AS CashDifference, "
+            + "s.OpeningNote, " + "COALESCE(rec.ClosingNote, s.ClosingNote) AS ClosingNote, "
+            + "s.ClosedBy, " + "closer.FullName AS ClosedByName, "
+            + "rec.ReconciliationID, " + "rec.RevisionNo AS ReconciliationRevisionNo, "
+            + "rec.Status AS ReconciliationStatus, " + "rec.SubmittedAt AS ReconciliationSubmittedAt, "
+            + "rec.ReviewedBy AS ApprovedBy, " + "reviewer.FullName AS ApprovedByName, "
+            + "rec.ReviewedAt AS ApprovedAt, " + "rec.ReviewNote AS ApprovalNote, "
+            + "(SELECT COUNT(*) FROM Invoices inv WHERE inv.ShiftID=s.ShiftID AND inv.Status='ACTIVE') AS InvoiceCount, "
+            + "COALESCE(( SELECT SUM(CASE "
+            + " WHEN EXISTS (SELECT 1 FROM InvoicePayments px WHERE px.InvoiceID=inv.InvoiceID) "
+            + " THEN COALESCE((SELECT SUM(p.Amount) FROM InvoicePayments p WHERE p.InvoiceID=inv.InvoiceID "
+            + "   AND p.PaymentStatus='COMPLETED' AND p.PaymentMethod='CASH'),0) "
+            + " WHEN inv.PaymentMethod='CASH' THEN inv.OriginalTotalAmount ELSE 0 END) "
+            + " FROM Invoices inv WHERE inv.ShiftID=s.ShiftID AND inv.Status='ACTIVE'),0) AS CashSales, "
+            + "COALESCE((SELECT SUM(t.Amount) FROM ShiftCashTransactions t WHERE t.ShiftID=s.ShiftID "
+            + " AND t.Status='ACTIVE' AND t.TransactionType='CASH_IN'),0) AS CashIn, "
+            + "COALESCE((SELECT SUM(t.Amount) FROM ShiftCashTransactions t WHERE t.ShiftID=s.ShiftID "
+            + " AND t.Status='ACTIVE' AND t.TransactionType='CASH_OUT'),0) AS CashOut, "
+            + "COALESCE((SELECT SUM(r.TotalValue) FROM ReturnExchanges r WHERE r.RefundShiftID=s.ShiftID "
+            + " AND r.Type='RETURN' AND r.Status='APPROVED' AND r.RefundMethod='CASH' "
+            + " AND r.RefundStatus='COMPLETED'),0) AS CashRefunds "
+            + "FROM Shifts s "
+            + "JOIN Users u ON u.UserID=s.UserID "
+            + "LEFT JOIN Users closer ON closer.UserID=s.ClosedBy "
+            + "LEFT JOIN ShiftReconciliations rec ON rec.ReconciliationID=("
+            + " SELECT r2.ReconciliationID FROM ShiftReconciliations r2 "
+            + " WHERE r2.ShiftID=s.ShiftID ORDER BY r2.RevisionNo DESC,r2.ReconciliationID DESC LIMIT 1) "
+            + "LEFT JOIN Users reviewer ON reviewer.UserID=rec.ReviewedBy ";
 
 	/**
 	 * Ham tam thoi de PosPanel cu van bien dich.
@@ -473,92 +469,72 @@ public class ShiftDAO {
 	 * Dong ca va luu ket qua doi soat.
 	 */
 	public Shift closeShift(int shiftId, int actorUserId, BigDecimal countedCash, String closingNote)
-			throws SQLException {
+            throws SQLException {
 
-		String updateSql = "UPDATE Shifts SET " + "EndTime = CURRENT_TIMESTAMP, " + "Status = 'PENDING_APPROVAL', "
-				+ "ExpectedCash = ?, " + "CountedCash = ?, " + "CashDifference = ?, " + "ClosingNote = ?, "
-				+ "ClosedBy = ? " + "WHERE ShiftID = ? " + "  AND Status = 'OPEN'";
+        String updateSql = "UPDATE Shifts SET EndTime=CURRENT_TIMESTAMP, Status='CLOSED', "
+                + "ExpectedCash=?, CountedCash=?, CashDifference=?, ClosingNote=?, ClosedBy=? "
+                + "WHERE ShiftID=? AND Status='OPEN'";
 
-		try (Connection con = DBConnection.getConnection()) {
+        String insertReconciliation = "INSERT INTO ShiftReconciliations ("
+                + "ShiftID,RevisionNo,ExpectedCash,CountedCash,DifferenceAmount,ClosingNote,Status,SubmittedBy,SubmittedAt) "
+                + "VALUES (?,1,?,?,?,?, 'PENDING', ?, CURRENT_TIMESTAMP)";
 
-			con.setAutoCommit(false);
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                lockOwnedOpenShift(con, shiftId, actorUserId);
+                ShiftCashSummary summary = calculateCashSummary(con, shiftId);
+                BigDecimal expectedCash = summary.getExpectedCash();
+                BigDecimal difference = summary.differenceFrom(countedCash);
 
-			try {
-				/*
-				 * Khoa ca de khong co giao dich quy khac chen vao trong luc dang dong ca.
-				 */
-				lockOwnedOpenShift(con, shiftId, actorUserId);
+                if (difference.signum() != 0 && (closingNote == null || closingNote.isBlank())) {
+                    throw new SQLException("Phai nhap giai trinh khi tien kiem thuc te bi chenh lech", "45000");
+                }
 
-				/*
-				 * Tinh lai tien he thong ngay trong transaction.
-				 */
-				ShiftCashSummary summary = calculateCashSummary(con, shiftId);
+                try (PreparedStatement ps = con.prepareStatement(updateSql)) {
+                    ps.setBigDecimal(1, expectedCash);
+                    ps.setBigDecimal(2, countedCash);
+                    ps.setBigDecimal(3, difference);
+                    setNullableString(ps, 4, closingNote);
+                    ps.setInt(5, actorUserId);
+                    ps.setInt(6, shiftId);
+                    if (ps.executeUpdate() != 1) {
+                        throw new SQLException("Ca da duoc dong boi tien trinh khac", "45000");
+                    }
+                }
 
-				BigDecimal expectedCash = summary.getExpectedCash();
+                try (PreparedStatement ps = con.prepareStatement(insertReconciliation)) {
+                    ps.setInt(1, shiftId);
+                    ps.setBigDecimal(2, expectedCash);
+                    ps.setBigDecimal(3, countedCash);
+                    ps.setBigDecimal(4, difference);
+                    setNullableString(ps, 5, closingNote);
+                    ps.setInt(6, actorUserId);
+                    ps.executeUpdate();
+                }
 
-				BigDecimal difference = summary.differenceFrom(countedCash);
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE HeldCarts SET Status='EXPIRED', ExpiredAt=CURRENT_TIMESTAMP "
+                        + "WHERE ShiftID=? AND Status='HELD'")) {
+                    ps.setInt(1, shiftId);
+                    ps.executeUpdate();
+                }
 
-				/*
-				 * Neu co chenh lech thi bat buoc giai trinh.
-				 */
-				if (difference.signum() != 0 && (closingNote == null || closingNote.isBlank())) {
-					throw new SQLException("Phai nhap giai trinh khi tien " + "kiem thuc te bi chenh lech", "45000");
-				}
-
-				try (PreparedStatement ps = con.prepareStatement(updateSql)) {
-
-					ps.setBigDecimal(1, expectedCash);
-
-					ps.setBigDecimal(2, countedCash);
-
-					ps.setBigDecimal(3, difference);
-
-					setNullableString(ps, 4, closingNote);
-
-					ps.setInt(5, actorUserId);
-
-					ps.setInt(6, shiftId);
-
-					int updatedRows = ps.executeUpdate();
-
-					if (updatedRows != 1) {
-						throw new SQLException("Ca da duoc dong boi tien trinh khac");
-					}
-				}
-
-				/* Gio tam giu chi co hieu luc trong ca da tao. Khi dong ca,
-				 * tu dong het han de ca sau khong khoi phuc nham du lieu cu. */
-				try (PreparedStatement ps = con.prepareStatement(
-						"UPDATE HeldCarts SET Status='EXPIRED', ExpiredAt=CURRENT_TIMESTAMP "
-						+ "WHERE ShiftID=? AND Status='HELD'")) {
-					ps.setInt(1, shiftId);
-					ps.executeUpdate();
-				}
-
-				Shift closedShift = findById(con, shiftId);
-
-				if (closedShift == null) {
-					throw new SQLException("Dong ca thanh cong nhung " + "khong doc lai duoc ca");
-				}
-
-				con.commit();
-
-				return closedShift;
-
-			} catch (Exception e) {
-				con.rollback();
-
-				if (e instanceof SQLException sqlException) {
-					throw sqlException;
-				}
-
-				throw new SQLException("Khong the dong ca", e);
-
-			} finally {
-				con.setAutoCommit(true);
-			}
-		}
-	}
+                Shift closedShift = findById(con, shiftId);
+                if (closedShift == null) {
+                    throw new SQLException("Dong ca thanh cong nhung khong doc lai duoc ca");
+                }
+                con.commit();
+                return closedShift;
+            } catch (Exception e) {
+                con.rollback();
+                if (e instanceof SQLException sqlException) throw sqlException;
+                throw new SQLException("Khong the dong ca", e);
+            } finally {
+                con.setAutoCommit(true);
+            }
+        }
+    }
 
 	ShiftCashSummary calculateCashSummary(Connection con, int shiftId) throws SQLException {
 
@@ -649,121 +625,220 @@ public class ShiftDAO {
 	}
 
 
-	/**
-	 * Duyet doi soat ca dang PENDING_APPROVAL.
-	 */
-	public Shift approveShift(int shiftId, int actorUserId, String approvalNote) throws SQLException {
-		// Database dang chay va du lieu lich su dung CLOSED de bieu dien ca da duoc
-		// quan ly duyet. Shift#isApproved() cung coi CLOSED la da duyet.
-		// Khong ghi APPROVED o day de tranh lech schema/trang thai voi DB hien tai.
-		String updateSql = "UPDATE Shifts SET "
-				+ "Status = 'CLOSED', "
-				+ "ApprovedBy = ?, "
-				+ "ApprovedAt = CURRENT_TIMESTAMP, "
-				+ "ApprovalNote = ? "
-				+ "WHERE ShiftID = ? "
-				+ "  AND Status = 'PENDING_APPROVAL'";
+	/** Duyet lan doi soat PENDING moi nhat; Shift van CLOSED. */
+    public Shift approveShift(int shiftId, int actorUserId, String approvalNote) throws SQLException {
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                long reconciliationId = lockLatestPendingReconciliation(con, shiftId);
+                String sql = "UPDATE ShiftReconciliations SET Status='APPROVED', ReviewedBy=?, "
+                        + "ReviewedAt=CURRENT_TIMESTAMP, ReviewNote=? "
+                        + "WHERE ReconciliationID=? AND Status='PENDING'";
+                try (PreparedStatement ps = con.prepareStatement(sql)) {
+                    ps.setInt(1, actorUserId);
+                    setNullableString(ps, 2, approvalNote);
+                    ps.setLong(3, reconciliationId);
+                    if (ps.executeUpdate() != 1) {
+                        throw new SQLException("Doi soat da duoc xu ly boi nguoi khac", "45000");
+                    }
+                }
+                updateLegacyReviewSnapshot(con, shiftId, actorUserId, approvalNote);
+                Shift shift = findById(con, shiftId);
+                if (shift == null) throw new SQLException("Duyet thanh cong nhung khong doc lai duoc ca");
+                con.commit();
+                return shift;
+            } catch (Exception e) {
+                con.rollback();
+                if (e instanceof SQLException sqlException) throw sqlException;
+                throw new SQLException("Khong the duyet ca", e);
+            } finally {
+                con.setAutoCommit(true);
+            }
+        }
+    }
 
-		try (Connection con = DBConnection.getConnection()) {
-			con.setAutoCommit(false);
-			try {
-				lockPendingShift(con, shiftId);
+    /** Tu choi lan doi soat PENDING moi nhat; ca KHONG duoc mo lai. */
+    public Shift rejectShift(int shiftId, int actorUserId, String rejectionNote) throws SQLException {
+        if (rejectionNote == null || rejectionNote.isBlank()) {
+            throw new SQLException("Phai nhap ly do tu choi", "45000");
+        }
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                long reconciliationId = lockLatestPendingReconciliation(con, shiftId);
+                String sql = "UPDATE ShiftReconciliations SET Status='REJECTED', ReviewedBy=?, "
+                        + "ReviewedAt=CURRENT_TIMESTAMP, ReviewNote=? "
+                        + "WHERE ReconciliationID=? AND Status='PENDING'";
+                try (PreparedStatement ps = con.prepareStatement(sql)) {
+                    ps.setInt(1, actorUserId);
+                    ps.setString(2, rejectionNote.trim());
+                    ps.setLong(3, reconciliationId);
+                    if (ps.executeUpdate() != 1) {
+                        throw new SQLException("Doi soat da duoc xu ly boi nguoi khac", "45000");
+                    }
+                }
+                updateLegacyReviewSnapshot(con, shiftId, actorUserId, rejectionNote.trim());
+                Shift shift = findById(con, shiftId);
+                if (shift == null) throw new SQLException("Tu choi thanh cong nhung khong doc lai duoc ca");
+                con.commit();
+                return shift;
+            } catch (Exception e) {
+                con.rollback();
+                if (e instanceof SQLException sqlException) throw sqlException;
+                throw new SQLException("Khong the tu choi ca", e);
+            } finally {
+                con.setAutoCommit(true);
+            }
+        }
+    }
 
-				try (PreparedStatement ps = con.prepareStatement(updateSql)) {
-					ps.setInt(1, actorUserId);
-					setNullableString(ps, 2, approvalNote);
-					ps.setInt(3, shiftId);
-					int updated = ps.executeUpdate();
-					if (updated != 1) {
-						throw new SQLException("Ca khong o trang thai cho duyet hoac da duoc xu ly boi nguoi khac", "45000");
-					}
-				}
+    /** Tao revision moi sau khi quan ly yeu cau kiem lai. */
+    public Shift resubmitReconciliation(int shiftId, int actorUserId, BigDecimal countedCash, String closingNote)
+            throws SQLException {
+        String lockSql = "SELECT s.UserID,s.Status,r.RevisionNo,r.ExpectedCash,r.Status AS RecStatus "
+                + "FROM Shifts s JOIN ShiftReconciliations r ON r.ReconciliationID=("
+                + " SELECT r2.ReconciliationID FROM ShiftReconciliations r2 WHERE r2.ShiftID=s.ShiftID "
+                + " ORDER BY r2.RevisionNo DESC,r2.ReconciliationID DESC LIMIT 1) "
+                + "WHERE s.ShiftID=? FOR UPDATE";
+        String insertSql = "INSERT INTO ShiftReconciliations (ShiftID,RevisionNo,ExpectedCash,CountedCash,"
+                + "DifferenceAmount,ClosingNote,Status,SubmittedBy,SubmittedAt) "
+                + "VALUES (?,?,?,?,?,?, 'PENDING', ?, CURRENT_TIMESTAMP)";
 
-				Shift shift = findById(con, shiftId);
-				if (shift == null) {
-					throw new SQLException("Duyet thanh cong nhung khong doc lai duoc ca");
-				}
-				con.commit();
-				return shift;
-			} catch (Exception e) {
-				con.rollback();
-				if (e instanceof SQLException sqlException) {
-					throw sqlException;
-				}
-				throw new SQLException("Khong the duyet ca", e);
-			} finally {
-				con.setAutoCommit(true);
-			}
-		}
-	}
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                int nextRevision;
+                BigDecimal expectedCash;
+                try (PreparedStatement ps = con.prepareStatement(lockSql)) {
+                    ps.setInt(1, shiftId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) throw new SQLException("Khong tim thay ca hoac doi soat", "45000");
+                        if (rs.getInt("UserID") != actorUserId) {
+                            throw new SQLException("Chi nhan vien so huu ca moi duoc gui lai doi soat", "45000");
+                        }
+                        if (!"CLOSED".equalsIgnoreCase(rs.getString("Status"))) {
+                            throw new SQLException("Ca phai da dong truoc khi gui lai doi soat", "45000");
+                        }
+                        if (!ShiftReconciliation.STATUS_REJECTED.equalsIgnoreCase(rs.getString("RecStatus"))) {
+                            throw new SQLException("Chi gui lai duoc doi soat bi yeu cau kiem lai", "45000");
+                        }
+                        nextRevision = rs.getInt("RevisionNo") + 1;
+                        expectedCash = rs.getBigDecimal("ExpectedCash");
+                    }
+                }
 
-	/**
-	 * Tu choi doi soat ca dang PENDING_APPROVAL (bat buoc ly do).
-	 */
-	public Shift rejectShift(int shiftId, int actorUserId, String rejectionNote) throws SQLException {
-		if (rejectionNote == null || rejectionNote.isBlank()) {
-			throw new SQLException("Phai nhap ly do tu choi", "45000");
-		}
+                BigDecimal difference = countedCash.subtract(expectedCash);
+                if (difference.signum() != 0 && (closingNote == null || closingNote.isBlank())) {
+                    throw new SQLException("Phai nhap giai trinh khi tien kiem thuc te bi chenh lech", "45000");
+                }
 
-		String updateSql = "UPDATE Shifts SET "
-				+ "Status = 'REJECTED', "
-				+ "ApprovedBy = ?, "
-				+ "ApprovedAt = CURRENT_TIMESTAMP, "
-				+ "ApprovalNote = ? "
-				+ "WHERE ShiftID = ? "
-				+ "  AND Status = 'PENDING_APPROVAL'";
+                try (PreparedStatement ps = con.prepareStatement(insertSql)) {
+                    ps.setInt(1, shiftId);
+                    ps.setInt(2, nextRevision);
+                    ps.setBigDecimal(3, expectedCash);
+                    ps.setBigDecimal(4, countedCash);
+                    ps.setBigDecimal(5, difference);
+                    setNullableString(ps, 6, closingNote);
+                    ps.setInt(7, actorUserId);
+                    ps.executeUpdate();
+                }
 
-		try (Connection con = DBConnection.getConnection()) {
-			con.setAutoCommit(false);
-			try {
-				lockPendingShift(con, shiftId);
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE Shifts SET CountedCash=?,CashDifference=?,ClosingNote=?,"
+                        + "ApprovedBy=NULL,ApprovedAt=NULL,ApprovalNote=NULL WHERE ShiftID=?")) {
+                    ps.setBigDecimal(1, countedCash);
+                    ps.setBigDecimal(2, difference);
+                    setNullableString(ps, 3, closingNote);
+                    ps.setInt(4, shiftId);
+                    ps.executeUpdate();
+                }
 
-				try (PreparedStatement ps = con.prepareStatement(updateSql)) {
-					ps.setInt(1, actorUserId);
-					ps.setString(2, rejectionNote.trim());
-					ps.setInt(3, shiftId);
-					int updated = ps.executeUpdate();
-					if (updated != 1) {
-						throw new SQLException("Ca khong o trang thai cho duyet hoac da duoc xu ly boi nguoi khac", "45000");
-					}
-				}
+                Shift shift = findById(con, shiftId);
+                if (shift == null) throw new SQLException("Gui lai thanh cong nhung khong doc lai duoc ca");
+                con.commit();
+                return shift;
+            } catch (Exception e) {
+                con.rollback();
+                if (e instanceof SQLException sqlException) throw sqlException;
+                throw new SQLException("Khong the gui lai doi soat", e);
+            } finally {
+                con.setAutoCommit(true);
+            }
+        }
+    }
 
-				Shift shift = findById(con, shiftId);
-				if (shift == null) {
-					throw new SQLException("Tu choi thanh cong nhung khong doc lai duoc ca");
-				}
-				con.commit();
-				return shift;
-			} catch (Exception e) {
-				con.rollback();
-				if (e instanceof SQLException sqlException) {
-					throw sqlException;
-				}
-				throw new SQLException("Khong the tu choi ca", e);
-			} finally {
-				con.setAutoCommit(true);
-			}
-		}
-	}
+    public List<ShiftReconciliation> findReconciliations(int shiftId) {
+        List<ShiftReconciliation> result = new ArrayList<>();
+        String sql = "SELECT r.ReconciliationID,r.ShiftID,r.RevisionNo,r.ExpectedCash,r.CountedCash,"
+                + "r.DifferenceAmount,r.ClosingNote,r.Status,r.SubmittedBy,su.FullName AS SubmittedByName,"
+                + "r.SubmittedAt,r.ReviewedBy,ru.FullName AS ReviewedByName,r.ReviewedAt,r.ReviewNote "
+                + "FROM ShiftReconciliations r JOIN Users su ON su.UserID=r.SubmittedBy "
+                + "LEFT JOIN Users ru ON ru.UserID=r.ReviewedBy WHERE r.ShiftID=? "
+                + "ORDER BY r.RevisionNo DESC,r.ReconciliationID DESC";
+        try (Connection con = DBConnection.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, shiftId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(mapReconciliation(rs));
+            }
+        } catch (SQLException e) {
+            AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+                    "ShiftDAO.findReconciliations - shiftId=" + shiftId, e);
+        }
+        return result;
+    }
 
-	/**
-	 * Khoa dong ca PENDING_APPROVAL de tranh hai QL duyet/tu choi dong thoi.
-	 */
-	void lockPendingShift(Connection con, int shiftId) throws SQLException {
-		String sql = "SELECT Status FROM Shifts WHERE ShiftID = ? FOR UPDATE";
-		try (PreparedStatement ps = con.prepareStatement(sql)) {
-			ps.setInt(1, shiftId);
-			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) {
-					throw new SQLException("Khong tim thay ca #" + shiftId, "45000");
-				}
-				String status = rs.getString("Status");
-				if (!"PENDING_APPROVAL".equals(status)) {
-					throw new SQLException("Chi duyet/tu choi duoc ca dang cho doi soat", "45000");
-				}
-			}
-		}
-	}
+    private long lockLatestPendingReconciliation(Connection con, int shiftId) throws SQLException {
+        String sql = "SELECT s.Status AS ShiftStatus,r.ReconciliationID,r.Status AS RecStatus "
+                + "FROM Shifts s JOIN ShiftReconciliations r ON r.ReconciliationID=("
+                + " SELECT r2.ReconciliationID FROM ShiftReconciliations r2 WHERE r2.ShiftID=s.ShiftID "
+                + " ORDER BY r2.RevisionNo DESC,r2.ReconciliationID DESC LIMIT 1) "
+                + "WHERE s.ShiftID=? FOR UPDATE";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, shiftId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) throw new SQLException("Khong tim thay ca/doi soat #" + shiftId, "45000");
+                if (!"CLOSED".equalsIgnoreCase(rs.getString("ShiftStatus"))) {
+                    throw new SQLException("Chi duyet doi soat cua ca da dong", "45000");
+                }
+                if (!ShiftReconciliation.STATUS_PENDING.equalsIgnoreCase(rs.getString("RecStatus"))) {
+                    throw new SQLException("Chi duyet/tu choi duoc doi soat dang cho xu ly", "45000");
+                }
+                return rs.getLong("ReconciliationID");
+            }
+        }
+    }
+
+    private void updateLegacyReviewSnapshot(Connection con, int shiftId, int actorUserId, String note)
+            throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE Shifts SET ApprovedBy=?,ApprovedAt=CURRENT_TIMESTAMP,ApprovalNote=? WHERE ShiftID=?")) {
+            ps.setInt(1, actorUserId);
+            setNullableString(ps, 2, note);
+            ps.setInt(3, shiftId);
+            ps.executeUpdate();
+        }
+    }
+
+    private ShiftReconciliation mapReconciliation(ResultSet rs) throws SQLException {
+        ShiftReconciliation r = new ShiftReconciliation();
+        r.setReconciliationId(rs.getLong("ReconciliationID"));
+        r.setShiftId(rs.getInt("ShiftID"));
+        r.setRevisionNo(rs.getInt("RevisionNo"));
+        r.setExpectedCash(rs.getBigDecimal("ExpectedCash"));
+        r.setCountedCash(rs.getBigDecimal("CountedCash"));
+        r.setDifference(rs.getBigDecimal("DifferenceAmount"));
+        r.setClosingNote(rs.getString("ClosingNote"));
+        r.setStatus(rs.getString("Status"));
+        r.setSubmittedBy(rs.getInt("SubmittedBy"));
+        r.setSubmittedByName(rs.getString("SubmittedByName"));
+        r.setSubmittedAt(toLocalDateTime(rs.getTimestamp("SubmittedAt")));
+        int reviewedBy = rs.getInt("ReviewedBy");
+        r.setReviewedBy(rs.wasNull() ? null : reviewedBy);
+        r.setReviewedByName(rs.getString("ReviewedByName"));
+        r.setReviewedAt(toLocalDateTime(rs.getTimestamp("ReviewedAt")));
+        r.setReviewNote(rs.getString("ReviewNote"));
+        return r;
+    }
 
 	private Shift mapShift(ResultSet rs) throws SQLException {
 		Shift shift = new Shift();
@@ -802,15 +877,18 @@ public class ShiftDAO {
 
 		shift.setClosedByName(rs.getString("ClosedByName"));
 
-		int approvedBy = rs.getInt("ApprovedBy");
-		if (rs.wasNull()) {
-			shift.setApprovedBy(null);
-		} else {
-			shift.setApprovedBy(approvedBy);
-		}
-		shift.setApprovedByName(rs.getString("ApprovedByName"));
-		shift.setApprovedAt(toLocalDateTime(rs.getTimestamp("ApprovedAt")));
-		shift.setApprovalNote(rs.getString("ApprovalNote"));
+        long reconciliationId = rs.getLong("ReconciliationID");
+        shift.setReconciliationId(rs.wasNull() ? null : reconciliationId);
+        int revisionNo = rs.getInt("ReconciliationRevisionNo");
+        shift.setReconciliationRevisionNo(rs.wasNull() ? null : revisionNo);
+        shift.setReconciliationStatus(rs.getString("ReconciliationStatus"));
+        shift.setReconciliationSubmittedAt(toLocalDateTime(rs.getTimestamp("ReconciliationSubmittedAt")));
+
+        int approvedBy = rs.getInt("ApprovedBy");
+        shift.setApprovedBy(rs.wasNull() ? null : approvedBy);
+        shift.setApprovedByName(rs.getString("ApprovedByName"));
+        shift.setApprovedAt(toLocalDateTime(rs.getTimestamp("ApprovedAt")));
+        shift.setApprovalNote(rs.getString("ApprovalNote"));
 
 		shift.setInvoiceCount(rs.getInt("InvoiceCount"));
 

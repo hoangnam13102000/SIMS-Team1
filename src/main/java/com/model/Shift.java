@@ -7,20 +7,22 @@ import java.time.LocalDateTime;
  * Mot ca lam viec tai quay. Cac so lieu doi soat da dong duoc luu lai de
  * lich su khong bi thay doi khi du lieu giao dich phat sinh sau nay.
  *
- * Vong doi trang thai:
- * OPEN → (dong ca) → PENDING_APPROVAL → (duyet) APPROVED
- *                                       → (tu choi) REJECTED
+ * Vong doi ca ban hang chi gom OPEN -> CLOSED.
+ * Trang thai doi soat (PENDING/APPROVED/REJECTED) duoc tach rieng trong
+ * ShiftReconciliations de giu lich su nhieu lan kiem dem.
  *
- * Du lieu cu co the van con Status = CLOSED (coi nhu da duyet).
+ * Cac hang du lieu cu PENDING_APPROVAL/APPROVED/REJECTED duoc migration 12
+ * chuyen ve CLOSED va tao ban ghi doi soat tuong ung.
  */
 public class Shift {
 
     public static final String STATUS_OPEN = "OPEN";
-    public static final String STATUS_PENDING_APPROVAL = "PENDING_APPROVAL";
-    public static final String STATUS_APPROVED = "APPROVED";
-    public static final String STATUS_REJECTED = "REJECTED";
-    /** Tương thích dữ liệu cũ (đóng ca trước khi có luồng duyệt). */
     public static final String STATUS_CLOSED = "CLOSED";
+
+    /** Legacy constants - chi de doc du lieu cu truoc migration 12. */
+    @Deprecated public static final String STATUS_PENDING_APPROVAL = "PENDING_APPROVAL";
+    @Deprecated public static final String STATUS_APPROVED = "APPROVED";
+    @Deprecated public static final String STATUS_REJECTED = "REJECTED";
 
     private int shiftId;
     private int userId;
@@ -42,7 +44,13 @@ public class Shift {
     private BigDecimal cashOut = BigDecimal.ZERO;
     private BigDecimal cashRefunds = BigDecimal.ZERO;
 
-    // Duyệt / từ chối đối soát
+    // Trang thai doi soat MOI NHAT (nguon that: ShiftReconciliations).
+    private Long reconciliationId;
+    private Integer reconciliationRevisionNo;
+    private String reconciliationStatus;
+    private LocalDateTime reconciliationSubmittedAt;
+
+    // Duyet / tu choi doi soat moi nhat (giu getter cu de UI tuong thich).
     private Integer approvedBy;
     private String approvedByName;
     private LocalDateTime approvedAt;
@@ -89,6 +97,15 @@ public class Shift {
     public BigDecimal getCashRefunds() { return cashRefunds; }
     public void setCashRefunds(BigDecimal cashRefunds) { this.cashRefunds = valueOrZero(cashRefunds); }
 
+    public Long getReconciliationId() { return reconciliationId; }
+    public void setReconciliationId(Long reconciliationId) { this.reconciliationId = reconciliationId; }
+    public Integer getReconciliationRevisionNo() { return reconciliationRevisionNo; }
+    public void setReconciliationRevisionNo(Integer reconciliationRevisionNo) { this.reconciliationRevisionNo = reconciliationRevisionNo; }
+    public String getReconciliationStatus() { return reconciliationStatus; }
+    public void setReconciliationStatus(String reconciliationStatus) { this.reconciliationStatus = reconciliationStatus; }
+    public LocalDateTime getReconciliationSubmittedAt() { return reconciliationSubmittedAt; }
+    public void setReconciliationSubmittedAt(LocalDateTime reconciliationSubmittedAt) { this.reconciliationSubmittedAt = reconciliationSubmittedAt; }
+
     public Integer getApprovedBy() { return approvedBy; }
     public void setApprovedBy(Integer approvedBy) { this.approvedBy = approvedBy; }
     public String getApprovedByName() { return approvedByName; }
@@ -102,45 +119,54 @@ public class Shift {
         return STATUS_OPEN.equalsIgnoreCase(status);
     }
 
-    /** Ca đã đóng (không còn OPEN) — gồm chờ duyệt / đã duyệt / từ chối. */
+    /** Ca ban hang da ket thuc; trang thai doi soat khong lam mo lai ca. */
     public boolean isClosed() {
-        return status != null && !STATUS_OPEN.equalsIgnoreCase(status);
+        return STATUS_CLOSED.equalsIgnoreCase(status)
+                || STATUS_PENDING_APPROVAL.equalsIgnoreCase(status)
+                || STATUS_APPROVED.equalsIgnoreCase(status)
+                || STATUS_REJECTED.equalsIgnoreCase(status);
     }
 
-    /** Ca đã đóng và đang chờ quản lý duyệt đối soát. */
     public boolean isPendingApproval() {
-        return STATUS_PENDING_APPROVAL.equalsIgnoreCase(status);
+        return ShiftReconciliation.STATUS_PENDING.equalsIgnoreCase(reconciliationStatus)
+                || (reconciliationStatus == null && STATUS_PENDING_APPROVAL.equalsIgnoreCase(status));
     }
 
     public boolean isRejected() {
-        return STATUS_REJECTED.equalsIgnoreCase(status);
+        return ShiftReconciliation.STATUS_REJECTED.equalsIgnoreCase(reconciliationStatus)
+                || (reconciliationStatus == null && STATUS_REJECTED.equalsIgnoreCase(status));
     }
 
     public boolean isApproved() {
-        return STATUS_APPROVED.equalsIgnoreCase(status)
-                || STATUS_CLOSED.equalsIgnoreCase(status);
+        if (ShiftReconciliation.STATUS_APPROVED.equalsIgnoreCase(reconciliationStatus)) return true;
+        if (reconciliationStatus != null) return false;
+        return STATUS_APPROVED.equalsIgnoreCase(status) || STATUS_CLOSED.equalsIgnoreCase(status);
+    }
+
+    /** Trang thai vat ly cua ca, khong tron voi ket qua doi soat. */
+    public String getShiftStatusLabel() {
+        if (isOpen()) return "Đang mở";
+        if (isClosed()) return "Đã đóng";
+        return status == null || status.isBlank() ? "—" : status;
+    }
+
+    public String getReconciliationStatusLabel() {
+        if (isOpen()) return "Chưa đối soát";
+        if (isPendingApproval()) return "Chờ duyệt";
+        if (isRejected()) return "Cần kiểm lại";
+        if (isApproved()) return "Đã duyệt";
+        return "Chưa đối soát";
     }
 
     /**
-     * Nhãn hiển thị trên UI (bảng, chip, filter).
+     * Nhan workflow de cac bang cu van hien thi mot cot ngan gon.
      */
     public String getStatusLabel() {
-        if (status == null || status.isBlank()) {
-            return "—";
-        }
-        if (STATUS_OPEN.equalsIgnoreCase(status)) {
-            return "Đang mở";
-        }
-        if (STATUS_PENDING_APPROVAL.equalsIgnoreCase(status)) {
-            return "Chờ duyệt";
-        }
-        if (STATUS_REJECTED.equalsIgnoreCase(status)) {
-            return "Từ chối";
-        }
-        if (STATUS_APPROVED.equalsIgnoreCase(status) || STATUS_CLOSED.equalsIgnoreCase(status)) {
-            return "Đã duyệt";
-        }
-        return status;
+        if (isOpen()) return "Đang mở";
+        if (isPendingApproval()) return "Chờ duyệt";
+        if (isRejected()) return "Cần kiểm lại";
+        if (isApproved()) return "Đã duyệt";
+        return "Đã đóng";
     }
 
     private BigDecimal valueOrZero(BigDecimal value) {

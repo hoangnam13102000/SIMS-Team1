@@ -11,7 +11,7 @@ Chạy một chuỗi JUnit 5 trên MySQL thật để kiểm tra các luồng đ
 5. Nhân viên gửi yêu cầu hủy hóa đơn -> quản lý duyệt.
 6. Đổi/trả dưới 500.000đ tự APPROVED.
 7. Quản lý gán đơn online -> SALES_STAFF xác nhận -> giao -> hoàn thành -> OrderStatusHistory.
-8. Đóng ca -> quản lý duyệt đối soát.
+8. Đóng ca -> CLOSED + đối soát PENDING -> quản lý yêu cầu kiểm lại -> nhân viên đếm lại/gửi lại revision mới -> quản lý duyệt APPROVED.
 
 Suite còn kiểm tra invariant A12: hóa đơn được tạo từ đơn online cũng phải có InvoicePayments. Nếu test này FAIL với thông báo `Hoa don tu don online chua co InvoicePayments`, đây là lỗi thật cần sửa ở `OrderDAO#createInvoiceForOrder`, không phải lỗi test.
 
@@ -61,4 +61,5 @@ Vì vậy integration test **không tắt trigger/FK và không DELETE cưỡng 
 Bản fix A13 đồng thời kiểm tra hai invariant production:
 
 - Hóa đơn sinh từ đơn online phải có `InvoicePayments`.
-- Duyệt đối soát ca dùng trạng thái lịch sử `CLOSED`, mà `Shift.isApproved()` coi là đã duyệt, để tương thích database đang chạy.
+- Vòng đời vật lý của ca chỉ còn `OPEN -> CLOSED`; trạng thái duyệt nằm riêng trong `ShiftReconciliations`.
+- Test P7 xác nhận `CLOSED + PENDING -> REJECTED -> PENDING (revision mới) -> APPROVED` và ca không bị mở lại khi quản lý yêu cầu kiểm lại.

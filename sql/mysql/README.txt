@@ -48,3 +48,10 @@ Nang cap project dang chay (A1-A3 huy hoa don co phe duyet):
 - A10-A12: QR hóa đơn, nhiều dòng InvoicePayments, tiền khách đưa/tiền thừa và thanh toán kết hợp CASH + CARD.
 - Tạo ReturnExchangeEvidence để lưu URL ảnh bằng chứng đổi/trả trên Cloudinary.
 - Backfill hóa đơn cũ sang InvoicePayments; không dùng information_schema.
+
+12_SHIFT_RECONCILIATION_WORKFLOW.sql
+- P1-P7 ca ban hang: tach Shift.Status (OPEN/CLOSED) khoi trang thai doi soat.
+- Tao ShiftReconciliations co RevisionNo + PENDING/APPROVED/REJECTED.
+- Backfill ca cu, chuyen PENDING_APPROVAL/APPROVED/REJECTED ve CLOSED.
+- Cap SHIFT_APPROVE cho ADMIN/SALES_MANAGER; cho phep REJECTED -> revision moi PENDING.
+- Phai chay migration nay truoc khi mo app code P1-P7.

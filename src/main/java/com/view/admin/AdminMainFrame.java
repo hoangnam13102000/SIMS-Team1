@@ -580,8 +580,7 @@ public class AdminMainFrame extends JFrame {
                 Lang.get("sidebar.shifts"),
                 FontAwesomeSolid.CLOCK,
                 new ShiftManagementPanel(),
-                AppPermission.SHIFT_OPERATE,
-                AppPermission.SHIFT_VIEW_ALL
+                AppPermission.SHIFT_OPERATE
         );
 
         /*

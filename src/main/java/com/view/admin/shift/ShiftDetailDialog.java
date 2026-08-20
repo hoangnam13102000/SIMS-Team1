@@ -2,6 +2,7 @@ package com.view.admin.shift;
 
 import com.model.Shift;
 import com.model.ShiftCashTransaction;
+import com.model.ShiftReconciliation;
 import com.service.ShiftService;
 import com.theme.AppColor;
 import com.theme.AppFont;
@@ -54,12 +55,16 @@ import java.util.List;
  */
 final class ShiftDetailDialog extends JDialog {
 
+    private final boolean hideOpenExpected;
+
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm 'ngày' dd/MM/yyyy");
 
     private ShiftDetailDialog(Window owner, Shift shift, ShiftService shiftService) {
         super(owner, "Chi tiết ca bán hàng", ModalityType.APPLICATION_MODAL);
 
+        this.hideOpenExpected = shift.isOpen() && !shiftService.canViewSystemCashBeforeClose();
         List<ShiftCashTransaction> transactions = loadTransactions(shiftService, shift.getShiftId());
+        List<ShiftReconciliation> reconciliations = loadReconciliations(shiftService, shift.getShiftId());
 
         setSize(680, 720);
         setMinimumSize(new Dimension(560, 480));
@@ -68,7 +73,7 @@ final class ShiftDetailDialog extends JDialog {
         getContentPane().setBackground(AppColor.WHITE);
 
         add(buildHeader(shift), BorderLayout.NORTH);
-        add(buildScrollBody(shift, transactions), BorderLayout.CENTER);
+        add(buildScrollBody(shift, transactions, reconciliations), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
         getRootPane().registerKeyboardAction(e -> dispose(),
@@ -87,6 +92,15 @@ final class ShiftDetailDialog extends JDialog {
     private List<ShiftCashTransaction> loadTransactions(ShiftService shiftService, int shiftId) {
         try {
             List<ShiftCashTransaction> list = shiftService.getTransactions(shiftId);
+            return list != null ? list : Collections.emptyList();
+        } catch (Exception ex) {
+            return Collections.emptyList();
+        }
+    }
+
+    private List<ShiftReconciliation> loadReconciliations(ShiftService shiftService, int shiftId) {
+        try {
+            List<ShiftReconciliation> list = shiftService.getReconciliations(shiftId);
             return list != null ? list : Collections.emptyList();
         } catch (Exception ex) {
             return Collections.emptyList();
@@ -124,7 +138,7 @@ final class ShiftDetailDialog extends JDialog {
         employeeLabel.setFont(AppFont.BODY_BOLD);
         employeeLabel.setForeground(AppColor.TEXT_SECONDARY);
 
-        StatusInfo status = StatusInfo.of(shift.getStatus());
+        StatusInfo status = StatusInfo.of(shift);
         JLabel statusChip = chip(status.icon, shift.getStatusLabel(), status.accent, status.bg);
 
         subtitleRow.add(employeeLabel);
@@ -143,8 +157,9 @@ final class ShiftDetailDialog extends JDialog {
     // Body (scroll)
     // ---------------------------------------------------------------
 
-    private JScrollPane buildScrollBody(Shift shift, List<ShiftCashTransaction> transactions) {
-        JPanel content = buildBody(shift, transactions);
+    private JScrollPane buildScrollBody(Shift shift, List<ShiftCashTransaction> transactions,
+                                        List<ShiftReconciliation> reconciliations) {
+        JPanel content = buildBody(shift, transactions, reconciliations);
         JScrollPane scroll = new JScrollPane(content);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getViewport().setBackground(AppColor.WHITE);
@@ -153,7 +168,8 @@ final class ShiftDetailDialog extends JDialog {
         return scroll;
     }
 
-    private JPanel buildBody(Shift shift, List<ShiftCashTransaction> transactions) {
+    private JPanel buildBody(Shift shift, List<ShiftCashTransaction> transactions,
+                             List<ShiftReconciliation> reconciliations) {
         JPanel content = new JPanel();
         content.setBackground(AppColor.WHITE);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
@@ -182,6 +198,11 @@ final class ShiftDetailDialog extends JDialog {
         JPanel approval = buildApprovalSection(shift);
         if (approval != null) {
             content.add(approval);
+            content.add(Box.createVerticalStrut(18));
+        }
+
+        if (reconciliations != null && !reconciliations.isEmpty()) {
+            content.add(buildReconciliationHistory(reconciliations));
             content.add(Box.createVerticalStrut(18));
         }
 
@@ -228,7 +249,9 @@ final class ShiftDetailDialog extends JDialog {
             JPanel wrap = new JPanel(new BorderLayout());
             wrap.setOpaque(false);
 
-            JPanel expectedCard = statCard("TIỀN HỆ THỐNG", money(expected), "tạm tính đến hiện tại",
+            JPanel expectedCard = statCard("TIỀN HỆ THỐNG",
+                    hideOpenExpected ? "••••••" : money(expected),
+                    hideOpenExpected ? "ẩn đến khi nhân viên chốt tiền đếm" : "tạm tính đến hiện tại",
                     AppColor.TEXT_PRIMARY, AppColor.BG_LIGHT, AppColor.BORDER);
             wrap.add(expectedCard, BorderLayout.CENTER);
 
@@ -485,7 +508,7 @@ final class ShiftDetailDialog extends JDialog {
         meta.setAlignmentX(Component.LEFT_ALIGNMENT);
         meta.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
         meta.add(metaChip(FontAwesomeSolid.USER, "Người đóng ca", hasClosedBy ? shift.getClosedByName() : "—"));
-        meta.add(metaChip(FontAwesomeSolid.USER_TIE, rejected ? "Người từ chối" : "Người duyệt",
+        meta.add(metaChip(FontAwesomeSolid.USER_TIE, rejected ? "Người yêu cầu kiểm lại" : "Người duyệt",
                 hasApprovedBy ? shift.getApprovedByName() : "—"));
         section.add(meta);
 
@@ -494,7 +517,7 @@ final class ShiftDetailDialog extends JDialog {
             JPanel timeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
             timeRow.setOpaque(false);
             timeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-            timeRow.add(metaChip(FontAwesomeSolid.CLOCK, rejected ? "Thời gian từ chối" : "Thời gian duyệt",
+            timeRow.add(metaChip(FontAwesomeSolid.CLOCK, rejected ? "Thời gian yêu cầu" : "Thời gian duyệt",
                     dateTime(shift.getApprovedAt())));
             section.add(timeRow);
         }
@@ -503,10 +526,72 @@ final class ShiftDetailDialog extends JDialog {
             section.add(Box.createVerticalStrut(10));
             Color accent = rejected ? AppColor.ERROR : AppColor.SUCCESS;
             Color bg = rejected ? AppColor.ERROR_BG : AppColor.SUCCESS_BG;
-            String title = rejected ? "Lý do từ chối" : "Ghi chú duyệt";
+            String title = rejected ? "Lý do cần kiểm lại" : "Ghi chú duyệt";
             section.add(buildNoteCallout(title, shift.getApprovalNote(), FontAwesomeSolid.COMMENT_DOTS, accent, bg));
         }
 
+        return section;
+    }
+
+    // ---------------------------------------------------------------
+    // Lich su doi soat theo revision (P3)
+    // ---------------------------------------------------------------
+
+    private JPanel buildReconciliationHistory(List<ShiftReconciliation> items) {
+        JPanel section = new JPanel();
+        section.setOpaque(false);
+        section.setLayout(new BoxLayout(section, BoxLayout.Y_AXIS));
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
+        section.add(sectionTitle(FontAwesomeSolid.HISTORY, "Lịch sử đối soát"));
+        section.add(Box.createVerticalStrut(8));
+
+        for (ShiftReconciliation r : items) {
+            Color accent = r.isRejected() ? AppColor.ERROR : r.isApproved() ? AppColor.SUCCESS : AppColor.WARNING;
+            Color bg = r.isRejected() ? AppColor.ERROR_BG : r.isApproved() ? AppColor.SUCCESS_BG : AppColor.WARNING_BG;
+            RoundedPanel card = new RoundedPanel(10, bg, accent);
+            card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+            card.setBorder(new EmptyBorder(10, 12, 10, 12));
+            card.setAlignmentX(Component.LEFT_ALIGNMENT);
+            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180));
+
+            JLabel head = new JLabel("Lần #" + r.getRevisionNo() + " · " + r.getStatusLabel());
+            head.setFont(AppFont.BODY_BOLD);
+            head.setForeground(accent);
+            head.setAlignmentX(Component.LEFT_ALIGNMENT);
+            card.add(head);
+
+            String who = r.getSubmittedByName() != null ? r.getSubmittedByName() : "—";
+            String submitted = r.getSubmittedAt() != null ? dateTime(r.getSubmittedAt()) : "—";
+            JLabel values = new JLabel("<html>Người gửi: " + escapeHtml(who) + " · " + submitted
+                    + "<br>Hệ thống: <b>" + money(r.getExpectedCash()) + "</b> · Đếm: <b>"
+                    + money(r.getCountedCash()) + "</b> · Chênh: <b>" + signedMoney(r.getDifference()) + "</b></html>");
+            values.setFont(AppFont.SMALL);
+            values.setForeground(AppColor.TEXT_PRIMARY);
+            values.setAlignmentX(Component.LEFT_ALIGNMENT);
+            values.setBorder(new EmptyBorder(5, 0, 0, 0));
+            card.add(values);
+
+            if (hasNote(r.getClosingNote())) {
+                JLabel note = new JLabel("<html>Giải trình: " + escapeHtml(r.getClosingNote()) + "</html>");
+                note.setFont(AppFont.SMALL);
+                note.setForeground(AppColor.TEXT_SECONDARY);
+                note.setAlignmentX(Component.LEFT_ALIGNMENT);
+                note.setBorder(new EmptyBorder(4, 0, 0, 0));
+                card.add(note);
+            }
+            if (hasNote(r.getReviewNote())) {
+                String reviewer = r.getReviewedByName() != null ? r.getReviewedByName() : "Quản lý";
+                JLabel review = new JLabel("<html>Phản hồi " + escapeHtml(reviewer) + ": "
+                        + escapeHtml(r.getReviewNote()) + "</html>");
+                review.setFont(AppFont.SMALL);
+                review.setForeground(accent);
+                review.setAlignmentX(Component.LEFT_ALIGNMENT);
+                review.setBorder(new EmptyBorder(4, 0, 0, 0));
+                card.add(review);
+            }
+            section.add(card);
+            section.add(Box.createVerticalStrut(8));
+        }
         return section;
     }
 
@@ -872,15 +957,18 @@ final class ShiftDetailDialog extends JDialog {
             this.icon = icon;
         }
 
-        static StatusInfo of(String status) {
-            if (Shift.STATUS_OPEN.equalsIgnoreCase(status)) {
+        static StatusInfo of(Shift shift) {
+            if (shift != null && shift.isOpen()) {
                 return new StatusInfo(AppColor.SUCCESS, AppColor.SUCCESS_BG, FontAwesomeSolid.PLAY_CIRCLE);
             }
-            if (Shift.STATUS_PENDING_APPROVAL.equalsIgnoreCase(status)) {
+            if (shift != null && shift.isPendingApproval()) {
                 return new StatusInfo(AppColor.WARNING, AppColor.WARNING_BG, FontAwesomeSolid.HOURGLASS_HALF);
             }
-            if (Shift.STATUS_REJECTED.equalsIgnoreCase(status)) {
+            if (shift != null && shift.isRejected()) {
                 return new StatusInfo(AppColor.ERROR, AppColor.ERROR_BG, FontAwesomeSolid.TIMES_CIRCLE);
+            }
+            if (shift != null && shift.isApproved()) {
+                return new StatusInfo(AppColor.SUCCESS, AppColor.SUCCESS_BG, FontAwesomeSolid.CHECK_CIRCLE);
             }
             return new StatusInfo(AppColor.TEXT_MUTED, AppColor.BG_LIGHT, FontAwesomeSolid.CHECK_CIRCLE);
         }
