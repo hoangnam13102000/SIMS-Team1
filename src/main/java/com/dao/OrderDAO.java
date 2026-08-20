@@ -956,6 +956,49 @@ public class OrderDAO extends BaseDAO<Order> {
 				ps.executeUpdate();
 			}
 		}
+
+		// A12 invariant: moi hoa don moi phai co payment ledger trong cung
+		// transaction. Don COD duoc ghi CASH khi COMPLETED; PayPal duoc ghi
+		// PAYPAL ngay sau capture thanh cong.
+		insertInvoicePaymentForOrder(con, invoiceId, orderId, actorUserId, paymentMethod,
+				totalAmount, payPalOrderId, payPalCaptureId);
+	}
+
+	private void insertInvoicePaymentForOrder(Connection con, int invoiceId, int orderId, int actorUserId,
+			String paymentMethod, java.math.BigDecimal totalAmount, String payPalOrderId, String payPalCaptureId)
+			throws SQLException {
+		boolean paypal = "PAYPAL".equalsIgnoreCase(paymentMethod);
+		String ledgerMethod = paypal ? "PAYPAL" : "CASH";
+		java.math.BigDecimal amount = totalAmount != null ? totalAmount : java.math.BigDecimal.ZERO;
+		java.math.BigDecimal tendered = paypal ? java.math.BigDecimal.ZERO : amount;
+		String provider = paypal ? "PAYPAL" : null;
+		String providerTxn = paypal ? payPalCaptureId : null;
+		String providerPayment = paypal ? payPalOrderId : null;
+
+		String idempotencyKey;
+		if (paypal && payPalCaptureId != null && !payPalCaptureId.isBlank()) {
+			idempotencyKey = "PAYPAL:" + payPalCaptureId.trim();
+		} else {
+			idempotencyKey = "ORDER:" + orderId + ":" + ledgerMethod;
+		}
+
+		String sql = "INSERT INTO InvoicePayments "
+				+ "(InvoiceID, PaymentMethod, Amount, TenderedAmount, ChangeAmount, Provider, "
+				+ "ProviderTransactionID, ProviderPaymentID, IdempotencyKey, PaymentStatus, CreatedBy) "
+				+ "VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, 'COMPLETED', ?)";
+
+		try (PreparedStatement ps = con.prepareStatement(sql)) {
+			ps.setInt(1, invoiceId);
+			ps.setString(2, ledgerMethod);
+			ps.setBigDecimal(3, amount);
+			ps.setBigDecimal(4, tendered);
+			if (provider != null) ps.setString(5, provider); else ps.setNull(5, Types.VARCHAR);
+			if (providerTxn != null && !providerTxn.isBlank()) ps.setString(6, providerTxn); else ps.setNull(6, Types.VARCHAR);
+			if (providerPayment != null && !providerPayment.isBlank()) ps.setString(7, providerPayment); else ps.setNull(7, Types.VARCHAR);
+			ps.setString(8, idempotencyKey);
+			ps.setInt(9, actorUserId);
+			ps.executeUpdate();
+		}
 	}
 
 	/**

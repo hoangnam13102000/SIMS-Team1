@@ -653,8 +653,11 @@ public class ShiftDAO {
 	 * Duyet doi soat ca dang PENDING_APPROVAL.
 	 */
 	public Shift approveShift(int shiftId, int actorUserId, String approvalNote) throws SQLException {
+		// Database dang chay va du lieu lich su dung CLOSED de bieu dien ca da duoc
+		// quan ly duyet. Shift#isApproved() cung coi CLOSED la da duyet.
+		// Khong ghi APPROVED o day de tranh lech schema/trang thai voi DB hien tai.
 		String updateSql = "UPDATE Shifts SET "
-				+ "Status = 'APPROVED', "
+				+ "Status = 'CLOSED', "
 				+ "ApprovedBy = ?, "
 				+ "ApprovedAt = CURRENT_TIMESTAMP, "
 				+ "ApprovalNote = ? "
