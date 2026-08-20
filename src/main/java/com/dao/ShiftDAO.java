@@ -227,6 +227,49 @@ public class ShiftDAO {
 	}
 
 	/**
+	 * Các ca có lần đối soát mới nhất đang PENDING (NV đã gửi duyệt).
+	 * Dùng cho chuông thông báo QL/Admin trên Header.
+	 */
+	public List<Shift> findPendingApproval(int limit) {
+		int safeLimit = Math.max(1, Math.min(limit, 50));
+		String sql = SHIFT_SELECT
+				+ "WHERE rec.Status = 'PENDING' "
+				+ "ORDER BY COALESCE(rec.SubmittedAt, s.EndTime) DESC, s.ShiftID DESC "
+				+ "LIMIT ?";
+		List<Shift> result = new ArrayList<>();
+		try (Connection con = DBConnection.getConnection();
+				PreparedStatement ps = con.prepareStatement(sql)) {
+			ps.setInt(1, safeLimit);
+			try (ResultSet rs = ps.executeQuery()) {
+				while (rs.next()) {
+					result.add(mapShift(rs));
+				}
+			}
+		} catch (SQLException e) {
+			AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL,
+					"ShiftDAO.findPendingApproval limit=" + limit, e);
+		}
+		return result;
+	}
+
+	/** Số ca đang chờ duyệt đối soát (badge / chuông). */
+	public int countPendingApproval() {
+		String sql = "SELECT COUNT(*) FROM ShiftReconciliations r "
+				+ "INNER JOIN ("
+				+ "  SELECT ShiftID, MAX(RevisionNo) AS MaxRev FROM ShiftReconciliations GROUP BY ShiftID"
+				+ ") latest ON latest.ShiftID = r.ShiftID AND latest.MaxRev = r.RevisionNo "
+				+ "WHERE r.Status = 'PENDING'";
+		try (Connection con = DBConnection.getConnection();
+				PreparedStatement ps = con.prepareStatement(sql);
+				ResultSet rs = ps.executeQuery()) {
+			return rs.next() ? rs.getInt(1) : 0;
+		} catch (SQLException e) {
+			AppLogger.getInstance().error(ErrorCode.DB_QUERY_FAIL, "ShiftDAO.countPendingApproval", e);
+			return 0;
+		}
+	}
+
+	/**
 	 * Lay cac giao dich thu/chi dang ACTIVE cua mot ca.
 	 */
 	public List<ShiftCashTransaction> findTransactions(int shiftId) {

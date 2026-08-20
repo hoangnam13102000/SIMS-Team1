@@ -1,7 +1,6 @@
 package com.view.admin.shift;
 
 import com.components.AppAlert;
-import com.components.BaseDialog;
 import com.components.BaseSearch;
 import com.components.BaseTable;
 import com.components.DatePickerField;
@@ -698,18 +697,12 @@ public class ShiftMonitorPanel extends JPanel {
             return;
         }
 
-        String staff = shift.getUserName() != null ? shift.getUserName() : "nhân viên";
-        String message =
-                "Xác nhận duyệt đối soát ca #" + shift.getShiftId()
-                + " của " + staff + "?\n\n"
-                + "Tiền đếm: " + money(shift.getCountedCash()) + "\n"
-                + "Quỹ hệ thống: " + money(expectedCash(shift)) + "\n"
-                + "Chênh lệch: " + money(shift.getCashDifference());
+        // Đồng bộ UI form hệ thống (banner + tóm tắt quỹ + ghi chú tùy chọn)
+        String note = ShiftReviewDialog.show(this, ShiftReviewDialog.Mode.APPROVE, shift);
+        if (note == null) return; // Hủy
 
-        boolean ok = BaseDialog.confirm(this, "Duyệt đối soát ca", message);
-        if (!ok) return;
-
-        ShiftService.OperationResult<Shift> r = shiftService.approveShift(shift.getShiftId(), null);
+        ShiftService.OperationResult<Shift> r = shiftService.approveShift(
+                shift.getShiftId(), note.isBlank() ? null : note);
         if (r.isSuccess()) {
             AppAlert.success(this, r.getMessage());
             loadData();
@@ -724,15 +717,7 @@ public class ShiftMonitorPanel extends JPanel {
             return;
         }
 
-        String note = BaseDialog.inputTextArea(
-                this,
-                "Yêu cầu kiểm lại ca #" + shift.getShiftId(),
-                "Lý do cần kiểm lại",
-                "Bắt buộc nhập lý do để nhân viên biết cần xử lý gì tiếp theo.",
-                "",
-                "Yêu cầu kiểm lại",
-                500
-        );
+        String note = ShiftReviewDialog.show(this, ShiftReviewDialog.Mode.REJECT, shift);
         if (note == null) return; // Hủy
         if (note.isBlank()) {
             AppAlert.error(this, "Phải nhập lý do yêu cầu kiểm lại.");

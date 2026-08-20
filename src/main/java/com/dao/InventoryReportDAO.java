@@ -477,6 +477,7 @@ public class InventoryReportDAO {
      * Nguon:
      * - Phieu nhap: PurchaseReceiptDetails -> InventoryBatch
      * - Hoa don ban/huy hoa don: InvoiceDetailBatches
+    * - Don hang online/huy don online: OrderDetailBatches
      * - Doi/tra: ReturnExchangeDetailBatches
      * - Huy hang: StockDisposalDetails
      * - Tra NCC: SupplierReturnDetails
@@ -517,6 +518,20 @@ public class InventoryReportDAO {
                 " JOIN InventoryBatch b ON b.BatchID = idb.BatchID " +
                 " JOIN Products p ON p.ProductID = d.ProductID " +
                 " JOIN Users u ON u.UserID = i.CreatedBy " +
+                " UNION ALL " +
+                // Don online: batch allocation ghi nhan FEFO; don huy hoan lai dung batch da tru.
+                " SELECT o.CreatedAt, " +
+                "        CASE WHEN o.OrderStatus = 'CANCELLED' THEN 'HỦY ĐƠN ONLINE' ELSE 'ĐƠN ONLINE' END, " +
+                "        COALESCE(o.OrderCode, CONCAT('DH_', LPAD(o.OrderID, 6, '0'))), " +
+                "        b.BatchCode, b.LotNumber, p.ProductCode, p.ProductName, " +
+                "        odb.Quantity, CASE WHEN o.OrderStatus = 'CANCELLED' THEN 'IN' ELSE 'OUT' END, " +
+                "        COALESCE(u.FullName, o.CustomerName), o.OrderStatus " +
+                " FROM OrderDetailBatches odb " +
+                " JOIN OrderDetails od ON od.OrderDetailID = odb.OrderDetailID " +
+                " JOIN Orders o ON o.OrderID = od.OrderID " +
+                " JOIN InventoryBatch b ON b.BatchID = odb.BatchID " +
+                " JOIN Products p ON p.ProductID = od.ProductID " +
+                " LEFT JOIN Users u ON u.UserID = o.AssignedTo " +
                 " UNION ALL " +
                 // Doi/tra hang: batch nao duoc nhap/xuat lai deu co lien ket.
                 " SELECT r.CreatedAt, " +
