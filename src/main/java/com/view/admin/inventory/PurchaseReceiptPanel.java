@@ -269,6 +269,12 @@ public class PurchaseReceiptPanel extends BaseCrudPanel<PurchaseReceipt> {
                     if (d.getProductName() != null && !d.getProductName().isBlank()) {
                         names.add(d.getProductName());
                     }
+                    if (d.getBatchCode() != null && !d.getBatchCode().isBlank()) {
+                        names.add(d.getBatchCode());
+                    }
+                    if (d.getLotNumber() != null && !d.getLotNumber().isBlank()) {
+                        names.add(d.getLotNumber());
+                    }
                 }
             }
         }

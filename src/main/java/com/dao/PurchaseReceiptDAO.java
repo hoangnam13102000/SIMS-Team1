@@ -65,7 +65,11 @@ public class PurchaseReceiptDAO extends BaseDAO<PurchaseReceipt> {
                 "(SELECT GROUP_CONCAT(CONCAT_WS(' ', p.ProductCode, p.ProductName) SEPARATOR ' ') "
                         + "FROM PurchaseReceiptDetails d "
                         + "JOIN Products p ON p.ProductID = d.ProductID "
-                        + "WHERE d.ReceiptID = r.ReceiptID)"
+                + "WHERE d.ReceiptID = r.ReceiptID)",
+            "(SELECT GROUP_CONCAT(CONCAT_WS(' ', b.BatchCode, d.LotNumber) SEPARATOR ' ') "
+                + "FROM PurchaseReceiptDetails d "
+                + "LEFT JOIN InventoryBatch b ON b.ReceiptDetailID = d.ReceiptDetailID "
+                + "WHERE d.ReceiptID = r.ReceiptID)"
         };
     }
 
