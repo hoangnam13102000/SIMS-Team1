@@ -4,6 +4,7 @@ import com.model.InvoicePayment;
 import com.theme.AppColor;
 import com.theme.AppFont;
 import com.utils.NumberUtil;
+import com.utils.CurrencyDocumentFilter;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -34,6 +35,8 @@ public final class PosPaymentDialog extends JDialog {
         this.total = total;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setResizable(false);
+        configureMoneyField(cashAppliedField);
+        configureMoneyField(cashTenderedField);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
         add(buildBody(), BorderLayout.CENTER);
@@ -85,15 +88,15 @@ public final class PosPaymentDialog extends JDialog {
         body.add(Box.createVerticalStrut(18));
 
         if (mode == Mode.CASH_CARD) {
-            body.add(fieldRow("Tiền mặt áp dụng", cashAppliedField));
+            body.add(moneyFieldRow("Tiền mặt áp dụng", cashAppliedField));
             body.add(Box.createVerticalStrut(10));
             body.add(readOnlyRow("Phần còn lại qua thẻ", cardAmountLabel));
             body.add(Box.createVerticalStrut(10));
         }
 
         if (mode == Mode.CASH || mode == Mode.CASH_CARD) {
-            if (mode == Mode.CASH) cashAppliedField.setText(String.valueOf(total));
-            body.add(fieldRow("Khách đưa tiền mặt", cashTenderedField));
+            if (mode == Mode.CASH) cashAppliedField.setText(CurrencyDocumentFilter.format(total));
+            body.add(moneyFieldRow("Khách đưa tiền mặt", cashTenderedField));
             body.add(Box.createVerticalStrut(10));
             body.add(readOnlyRow("Tiền thừa", changeLabel));
             body.add(Box.createVerticalStrut(10));
@@ -118,6 +121,47 @@ public final class PosPaymentDialog extends JDialog {
         cashTenderedField.getDocument().addDocumentListener(listener);
 
         return body;
+    }
+
+
+    private void configureMoneyField(JTextField field) {
+        field.setFont(AppFont.FIELD);
+        field.setHorizontalAlignment(SwingConstants.RIGHT);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(
+                        AppColor.FIELD_BORDER != null ? AppColor.FIELD_BORDER : AppColor.BORDER, 1, true),
+                new EmptyBorder(8, 12, 8, 12)));
+        CurrencyDocumentFilter.install(field);
+    }
+
+    /**
+     * Ô tiền tại POS dùng cùng kiểu nhập với màn "Ca của tôi & đối soát quỹ":
+     * tự format hàng nghìn (30,000), căn phải và có hậu tố VNĐ.
+     */
+    private JPanel moneyFieldRow(String label, JTextField field) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+
+        JLabel l = new JLabel(label);
+        l.setFont(AppFont.BODY);
+        l.setForeground(AppColor.TEXT_SECONDARY);
+        l.setPreferredSize(new Dimension(155, 40));
+
+        JPanel inputWrap = new JPanel(new BorderLayout(8, 0));
+        inputWrap.setOpaque(false);
+        field.setPreferredSize(new Dimension(205, 40));
+        inputWrap.add(field, BorderLayout.CENTER);
+
+        JLabel suffix = new JLabel("VNĐ");
+        suffix.setFont(AppFont.BODY_BOLD);
+        suffix.setForeground(AppColor.TEXT_MUTED);
+        inputWrap.add(suffix, BorderLayout.EAST);
+
+        row.add(l, BorderLayout.WEST);
+        row.add(inputWrap, BorderLayout.CENTER);
+        return row;
     }
 
     private JPanel fieldRow(String label, JTextField field) {
@@ -214,11 +258,13 @@ public final class PosPaymentDialog extends JDialog {
     }
 
     private long parseMoney(String raw) {
-        if (raw == null) return 0;
-        String digits = raw.replaceAll("[^0-9]", "");
-        if (digits.isEmpty()) return 0;
-        try { return Long.parseLong(digits); }
-        catch (NumberFormatException ex) { throw new IllegalArgumentException("Số tiền không hợp lệ."); }
+        BigDecimal value = CurrencyDocumentFilter.parse(raw);
+        if (value == null) return 0;
+        try {
+            return value.longValueExact();
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException("Số tiền không hợp lệ.");
+        }
     }
 
     private void updateCalculatedLabels() {

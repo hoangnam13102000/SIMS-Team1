@@ -578,7 +578,9 @@ public class SalesStaffDashboardPanel extends JPanel {
         JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
+        // 52px không đủ cho: dòng mã HĐ + badge + dòng phương thức/thời gian
+        // + padding trên/dưới, làm chữ meta bị cắt nửa. Giữ chiều cao 68px ổn định.
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 68));
         var padding = new EmptyBorder(8, 4, 8, 4);
         row.setBorder(isLast ? padding
                 : new CompoundBorder(new MatteBorder(0, 0, 1, 0, AppColor.BORDER), padding));
@@ -595,6 +597,7 @@ public class SalesStaffDashboardPanel extends JPanel {
         JPanel line1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         line1.setOpaque(false);
         line1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        line1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
         JLabel code = new JLabel(item.invoiceCode != null ? item.invoiceCode : "—");
         code.setFont(AppFont.BODY_BOLD);
         code.setForeground(AppColor.TEXT_PRIMARY);
@@ -607,8 +610,13 @@ public class SalesStaffDashboardPanel extends JPanel {
         meta.setFont(AppFont.SMALL);
         meta.setForeground(AppColor.TEXT_MUTED);
         meta.setAlignmentX(Component.LEFT_ALIGNMENT);
+        meta.setBorder(new EmptyBorder(3, 0, 1, 0));
+        meta.setMinimumSize(new Dimension(0, 22));
+        meta.setPreferredSize(new Dimension(meta.getPreferredSize().width, 22));
+        meta.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
 
         left.add(line1);
+        left.add(Box.createVerticalStrut(1));
         left.add(meta);
 
         JLabel amount = new JLabel(NumberUtil.formatThousands(item.totalAmount.longValue()) + " đ");

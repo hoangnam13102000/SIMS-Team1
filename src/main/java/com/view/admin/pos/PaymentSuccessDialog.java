@@ -42,8 +42,8 @@ public class PaymentSuccessDialog extends JDialog {
         this.invoice = invoice;
         this.invoiceDAO = invoiceDAO;
 
-        setSize(480, 650);
-        setMinimumSize(new Dimension(420, 600));
+        setSize(480, 670);
+        setMinimumSize(new Dimension(420, 630));
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         getContentPane().setBackground(AppColor.WHITE);
@@ -64,10 +64,16 @@ public class PaymentSuccessDialog extends JDialog {
         content.setBackground(AppColor.WHITE);
         content.setBorder(new EmptyBorder(28, 32, 20, 32));
 
-        // Icon thanh cong tron xanh voi hieu ung glow
+        // Icon thành công có vùng hiển thị cố định để BoxLayout không ép chiều cao
+        // khi dialog có thêm QR / thông tin thanh toán. Glow cũng được vẽ bên trong
+        // bounds nên không còn bị cắt mất icon.
         JPanel iconPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
         iconPanel.setOpaque(false);
         iconPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        Dimension iconHolderSize = new Dimension(160, 112);
+        iconPanel.setPreferredSize(iconHolderSize);
+        iconPanel.setMinimumSize(iconHolderSize);
+        iconPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 112));
 
         JPanel circlePanel = new JPanel() {
             @Override
@@ -75,13 +81,19 @@ public class PaymentSuccessDialog extends JDialog {
                 super.paintComponent(g);
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int size = Math.min(getWidth(), getHeight());
-                int x = (getWidth() - size) / 2;
-                int y = (getHeight() - size) / 2;
+
+                final int glowInset = 6;
+                final int circleInset = 12;
+                int outer = Math.max(1, Math.min(getWidth(), getHeight()) - glowInset * 2);
+                int outerX = (getWidth() - outer) / 2;
+                int outerY = (getHeight() - outer) / 2;
 
                 g2.setColor(new Color(16, 185, 129, 30));
-                g2.fillOval(x - 8, y - 8, size + 16, size + 16);
+                g2.fillOval(outerX, outerY, outer, outer);
 
+                int size = Math.max(1, Math.min(getWidth(), getHeight()) - circleInset * 2);
+                int x = (getWidth() - size) / 2;
+                int y = (getHeight() - size) / 2;
                 g2.setColor(AppColor.SUCCESS);
                 g2.fillOval(x, y, size, size);
 
@@ -89,16 +101,18 @@ public class PaymentSuccessDialog extends JDialog {
                 g2.setStroke(new BasicStroke(4, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 int cx = x + size / 2;
                 int cy = y + size / 2;
-                int s = size / 4;
-                g2.drawLine(cx - s, cy, cx - s / 3, cy + s);
-                g2.drawLine(cx - s / 3, cy + s, cx + s, cy - s / 2);
+                int check = Math.max(10, size / 4);
+                g2.drawLine(cx - check, cy, cx - check / 3, cy + check);
+                g2.drawLine(cx - check / 3, cy + check, cx + check, cy - check / 2);
 
                 g2.dispose();
             }
         };
         circlePanel.setOpaque(false);
-        circlePanel.setPreferredSize(new Dimension(96, 96));
-        circlePanel.setMaximumSize(new Dimension(96, 96));
+        Dimension circleSize = new Dimension(104, 104);
+        circlePanel.setPreferredSize(circleSize);
+        circlePanel.setMinimumSize(circleSize);
+        circlePanel.setMaximumSize(circleSize);
         iconPanel.add(circlePanel);
 
         content.add(iconPanel);
