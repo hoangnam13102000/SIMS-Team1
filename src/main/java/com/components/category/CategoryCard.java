@@ -69,7 +69,7 @@ public class CategoryCard extends JPanel {
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(categoryTint(category.getCategoryName()));
+                g2.setColor(tintFor(category.getCategoryName()));
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), AppRadius.MEDIUM, AppRadius.MEDIUM);
                 g2.dispose();
                 super.paintComponent(g);
@@ -80,8 +80,8 @@ public class CategoryCard extends JPanel {
         iconBadge.setMaximumSize(new Dimension(ICON_BADGE_SIZE, ICON_BADGE_SIZE));
         iconBadge.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        FontIcon icon = FontIcon.of(categoryIcon(category.getCategoryName()), 24);
-        icon.setIconColor(categoryIconColor(category.getCategoryName()));
+        FontIcon icon = FontIcon.of(iconFor(category.getCategoryName()), 24);
+        icon.setIconColor(iconColorFor(category.getCategoryName()));
         iconBadge.add(new JLabel(icon));
 
         JLabel nameLabel = new JLabel(category.getCategoryName());
@@ -104,8 +104,12 @@ public class CategoryCard extends JPanel {
         return content;
     }
 
-    /** Chon icon dai dien don gian theo ten danh muc - suy doan tu chuoi, giong ProductCard. */
-    private FontAwesomeSolid categoryIcon(String categoryName) {
+    /**
+     * Chon icon dai dien don gian theo ten danh muc - suy doan tu chuoi, giong ProductCard.
+     * Public static de dung chung o noi khac can "xem truoc" the danh muc se trong nhu the
+     * nao (vd form Them/Sua danh muc o trang Admin) ma khong phai tao instance CategoryCard.
+     */
+    public static FontAwesomeSolid iconFor(String categoryName) {
         if (categoryName == null) return FontAwesomeSolid.TAGS;
         String c = categoryName.toLowerCase();
         if (c.contains("điện thoại") || c.contains("phone")) return FontAwesomeSolid.MOBILE_ALT;
@@ -121,8 +125,8 @@ public class CategoryCard extends JPanel {
         return FontAwesomeSolid.TAGS;
     }
 
-    /** Mau nen icon thay doi nhe theo danh muc, giong logic categoryTint cua ProductCard. */
-    private Color categoryTint(String categoryName) {
+    /** Mau nen icon thay doi nhe theo danh muc - public static, xem javadoc {@link #iconFor}. */
+    public static Color tintFor(String categoryName) {
         int hue = categoryName == null ? 0 : Math.floorMod(categoryName.toLowerCase().hashCode(), 5);
         return switch (hue) {
             case 1 -> new Color(255, 244, 230);
@@ -133,7 +137,8 @@ public class CategoryCard extends JPanel {
         };
     }
 
-    private Color categoryIconColor(String categoryName) {
+    /** Mau icon tuong ung voi {@link #tintFor} - public static, xem javadoc {@link #iconFor}. */
+    public static Color iconColorFor(String categoryName) {
         int hue = categoryName == null ? 0 : Math.floorMod(categoryName.toLowerCase().hashCode(), 5);
         return switch (hue) {
             case 1 -> new Color(217, 119, 6);

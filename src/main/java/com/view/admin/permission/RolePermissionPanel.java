@@ -30,6 +30,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import javax.swing.JTextField;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -62,6 +63,28 @@ public class RolePermissionPanel extends JPanel {
      */
     private final RolePermissionDAO dao = new RolePermissionDAO();
     private final RoleDAO roleDao = new RoleDAO();
+
+    /**
+     * Thu tu hien thi CO CHU DICH cua danh sach vai tro ben trai trang nay -
+     * theo cap bac quan ly (Admin -> Quan ly kho -> Quan ly ban hang -> Nhan
+     * vien ban hang), KHONG PHAI alphabet nhu RoleDAO.findAll() dang dung o
+     * cac man hinh khac (vd combo chon Role trong UserFormDialog). Sap xep
+     * rieng o day - khong doi ORDER BY trong RoleDAO - de khong anh huong
+     * thu tu Role o nhung noi khac dang phu thuoc vao no.
+     * Vai tro tuy chinh (Admin tao them, khong co trong danh sach nay) duoc
+     * xep sau cung, theo ten A-Z (xem {@link #ROLE_DISPLAY_ORDER}).
+     */
+    private static final List<String> ROLE_DISPLAY_PRIORITY = List.of(
+            "ADMIN", "INVENTORY_MANAGER", "SALES_MANAGER", "SALES_STAFF");
+
+    /** Comparator ap dung {@link #ROLE_DISPLAY_PRIORITY}; role khong co trong danh sach xep sau cung, theo ten A-Z. */
+    private static final Comparator<AppRole> ROLE_DISPLAY_ORDER = Comparator
+            .comparingInt((AppRole r) -> {
+                int idx = ROLE_DISPLAY_PRIORITY.indexOf(r.getRoleCode() == null ? "" : r.getRoleCode().toUpperCase());
+                return idx < 0 ? Integer.MAX_VALUE : idx;
+            })
+            .thenComparing(r -> r.getRoleName() == null ? "" : r.getRoleName(), String.CASE_INSENSITIVE_ORDER);
+
     private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang tải phân quyền...");
     private final JPanel roleListPanel = new JPanel();
     private final JPanel permissionListPanel = new ScrollableFormPanel();
@@ -143,6 +166,7 @@ public class RolePermissionPanel extends JPanel {
                 try {
                     get();
                     managedRoles = new ArrayList<>(roles);
+                    managedRoles.sort(ROLE_DISPLAY_ORDER);
                     roleDataCache = map;
                     if (selectedRole == null || managedRoles.stream()
                             .noneMatch(r -> r.getRoleCode().equalsIgnoreCase(selectedRole.getRoleCode()))) {

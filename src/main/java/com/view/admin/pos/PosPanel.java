@@ -108,8 +108,35 @@ public class PosPanel extends JPanel {
 	private final JButton checkoutButton = new JButton();
 	private final LoadingOverlay loadingOverlay = new LoadingOverlay("Đang lập hóa đơn...");
 	private String selectedPaymentMethod = "CASH";
-	private final java.util.Map<String, JToggleButton> paymentButtons = new java.util.LinkedHashMap<>();
+	private final JComboBox<PaymentMethodOption> paymentMethodCombo = new JComboBox<>();
+	private final java.util.Map<String, PaymentMethodOption> paymentMethodOptions = new java.util.LinkedHashMap<>();
 	private final Runnable cartListener = this::refreshCartSummary;
+	// Cho phep keo dan chieu rong khu vuc gio hang/thanh toan (ben phai) va
+	// chieu cao khu vuc gio hang so voi khu vuc thanh toan - phuc vu man hinh nho.
+	private JSplitPane bodySplitPane;
+	private JSplitPane rightSplitPane;
+	private boolean bodyDividerInitialized = false;
+	private boolean rightDividerInitialized = false;
+
+	// ================================================================
+	// ====== THÊM: PaymentMethodOption - lựa chọn hình thức thanh toán
+	// dạng dropdown (thay cho hàng nút bấm chiếm nhiều chỗ trên màn hình nhỏ) ======
+	// ================================================================
+	private static final class PaymentMethodOption {
+		final String code;
+		final String label;
+
+		PaymentMethodOption(String code, String label) {
+			this.code = code;
+			this.label = label;
+		}
+
+		@Override
+		public String toString() {
+			return label;
+		}
+	}
+	// ================================================================
 
 	// ================================================================
 	// ====== THÊM: CategoryOption class (chuẩn FilterDropdown) ======
@@ -149,14 +176,43 @@ public class PosPanel extends JPanel {
 		loadCategories();
 		// ================================================================
 
-		JPanel body = new JPanel(new BorderLayout(AppSpacing.LG, 0));
+		// ================================================================
+		// ====== MỚI: Bọc khu vực trái (lưới sản phẩm) và phải (giỏ hàng +
+		// thanh toán) trong JSplitPane để người dùng có thể KÉO DÃN đường
+		// phân chia - hữu ích khi làm việc trên màn hình nhỏ, có thể kéo
+		// rộng khu giỏ hàng ra khi cần thấy rõ hơn. ======
+		// ================================================================
+		JPanel leftPanel = buildLeftPanel(); // ← BÂY GIỜ categoryFilter ĐÃ TỒN TẠI
+		leftPanel.setMinimumSize(new Dimension(260, 10));
+		JPanel right = buildRightPanel();
+		right.setMinimumSize(new Dimension(300, 10));
+
+		bodySplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, right);
+		bodySplitPane.setOpaque(false);
+		bodySplitPane.setBorder(null);
+		bodySplitPane.setDividerSize(8);
+		bodySplitPane.setContinuousLayout(true);
+		bodySplitPane.setOneTouchExpandable(true);
+		bodySplitPane.setResizeWeight(1.0); // ưu tiên co giãn lưới sản phẩm khi resize cửa sổ
+		styleSplitDivider(bodySplitPane);
+		// Đặt vị trí thanh chia lần đầu khi panel đã có kích thước thật (tránh
+		// vị trí 0 lúc chưa layout xong), mặc định dành ~420px cho khu bên phải.
+		bodySplitPane.addComponentListener(new java.awt.event.ComponentAdapter() {
+			@Override
+			public void componentResized(java.awt.event.ComponentEvent e) {
+				if (!bodyDividerInitialized && bodySplitPane.getWidth() > 0) {
+					int preferredRight = 420;
+					int loc = Math.max(260, bodySplitPane.getWidth() - preferredRight - bodySplitPane.getDividerSize());
+					bodySplitPane.setDividerLocation(loc);
+					bodyDividerInitialized = true;
+				}
+			}
+		});
+
+		JPanel body = new JPanel(new BorderLayout(0, 0));
 		body.setOpaque(false);
 		body.setBorder(new EmptyBorder(AppSpacing.LG, 0, 0, 0));
-		body.add(buildLeftPanel(), BorderLayout.CENTER); // ← BÂY GIỜ categoryFilter ĐÃ TỒN TẠI
-		JPanel right = buildRightPanel();
-		right.setPreferredSize(new Dimension(420, 10));
-		right.setMinimumSize(new Dimension(360, 10));
-		body.add(right, BorderLayout.EAST);
+		body.add(bodySplitPane, BorderLayout.CENTER);
 		add(LoadingOverlay.attach(body, loadingOverlay), BorderLayout.CENTER);
 
 		loadProducts(null, null);
@@ -379,7 +435,6 @@ public class PosPanel extends JPanel {
 		top.add(fixedHeight(buildCustomerSearchRow(), 34));
 		top.add(Box.createVerticalStrut(2));
 		top.add(fixedHeight(buildCustomerStatusRow(), 20));
-		panel.add(top, BorderLayout.NORTH);
 
 		JPanel cartSection = new JPanel(new BorderLayout(0, 2));
 		cartSection.setOpaque(false);
@@ -392,9 +447,22 @@ public class PosPanel extends JPanel {
 		cartScroll.setOpaque(false);
 		cartScroll.getViewport().setOpaque(false);
 		cartScroll.getVerticalScrollBar().setUnitIncrement(14);
-		cartScroll.setMinimumSize(new Dimension(10, 240));
+		// Bo chieu cao toi thieu qua lon (240) - de gio hang co the thu nho toi
+		// khi keo thanh chia, va nguoi dung tu quyet dinh muon xem bao nhieu.
+		cartScroll.setMinimumSize(new Dimension(10, 60));
 		cartSection.add(cartScroll, BorderLayout.CENTER);
-		panel.add(cartSection, BorderLayout.CENTER);
+
+		// ================================================================
+		// ====== MỚI: Ghép "Khách hàng" + "Giỏ hàng" thành 1 khối, đặt
+		// trong JSplitPane (chiều dọc) cùng khối "Thanh toán" bên dưới -
+		// người dùng có thể KÉO thanh chia để GIÃN khu vực giỏ hàng lớn hơn
+		// khi màn hình nhỏ khiến giỏ hàng bị co lại quá bé. ======
+		// ================================================================
+		JPanel topAndCart = new JPanel(new BorderLayout(0, 6));
+		topAndCart.setOpaque(false);
+		topAndCart.add(top, BorderLayout.NORTH);
+		topAndCart.add(cartSection, BorderLayout.CENTER);
+		topAndCart.setMinimumSize(new Dimension(10, 120));
 
 		JPanel bottom = new JPanel() {
 			@Override
@@ -434,12 +502,43 @@ public class PosPanel extends JPanel {
 		bottom.add(fixedHeight(summaryRow(new JLabel("Tổng cộng"), totalValue, AppFont.HEADING_MD, AppColor.TEXT_TITLE),
 				26));
 		bottom.add(Box.createVerticalStrut(6));
-		bottom.add(fixedHeight(buildPaymentMethodRow(), 68));
+		// ====== ĐỔI: hàng thanh toán giờ là 1 dropdown gọn (40px) thay vì
+		// lưới 2x3 nút bấm (68px) - tiết kiệm chiều cao đáng kể trên màn hình nhỏ.
+		bottom.add(fixedHeight(buildPaymentMethodRow(), 44));
 		bottom.add(Box.createVerticalStrut(6));
 		bottom.add(fixedHeight(buildHeldCartActions(), 34));
 		bottom.add(Box.createVerticalStrut(6));
 		bottom.add(fixedHeight(buildCheckoutButton(), 42));
-		panel.add(bottom, BorderLayout.SOUTH);
+
+		// Bọc khối thanh toán trong JScrollPane: nếu người dùng kéo thanh chia
+		// khiến khu vực này nhỏ hơn nội dung, nó sẽ CUỘN thay vì bị cắt/che mất
+		// nút "Thanh toán" - đảm bảo luôn bấm được nút thanh toán trên màn hình nhỏ.
+		JScrollPane bottomScroll = new JScrollPane(bottom);
+		bottomScroll.setBorder(null);
+		bottomScroll.setOpaque(false);
+		bottomScroll.getViewport().setOpaque(false);
+		bottomScroll.getVerticalScrollBar().setUnitIncrement(14);
+		bottomScroll.setMinimumSize(new Dimension(10, 42));
+
+		rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topAndCart, bottomScroll);
+		rightSplitPane.setOpaque(false);
+		rightSplitPane.setBorder(null);
+		rightSplitPane.setDividerSize(8);
+		rightSplitPane.setContinuousLayout(true);
+		rightSplitPane.setResizeWeight(0.55); // ưu tiên giỏ hàng khi resize cửa sổ
+		styleSplitDivider(rightSplitPane);
+		rightSplitPane.addComponentListener(new java.awt.event.ComponentAdapter() {
+			@Override
+			public void componentResized(java.awt.event.ComponentEvent e) {
+				if (!rightDividerInitialized && rightSplitPane.getHeight() > 0) {
+					int preferredBottom = 300;
+					int loc = Math.max(120, rightSplitPane.getHeight() - preferredBottom - rightSplitPane.getDividerSize());
+					rightSplitPane.setDividerLocation(loc);
+					rightDividerInitialized = true;
+				}
+			}
+		});
+		panel.add(rightSplitPane, BorderLayout.CENTER);
 		return panel;
 	}
 
@@ -588,6 +687,41 @@ public class PosPanel extends JPanel {
 		return comp;
 	}
 
+	// ================================================================
+	// ====== THÊM: Style lại thanh chia (divider) của JSplitPane cho khớp
+	// theme SIMS thay vì giao diện mặc định của Look and Feel. ======
+	// ================================================================
+	private void styleSplitDivider(JSplitPane splitPane) {
+		splitPane.setUI(new javax.swing.plaf.basic.BasicSplitPaneUI() {
+			@Override
+			public javax.swing.plaf.basic.BasicSplitPaneDivider createDefaultDivider() {
+				return new javax.swing.plaf.basic.BasicSplitPaneDivider(this) {
+					@Override
+					public void paint(Graphics g) {
+						Graphics2D g2 = (Graphics2D) g.create();
+						g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+						g2.setColor(AppColor.PAGE_BG);
+						g2.fillRect(0, 0, getWidth(), getHeight());
+						boolean horizontal = getOrientation() == JSplitPane.HORIZONTAL_SPLIT;
+						int gripX = horizontal ? getWidth() / 2 - 1 : Math.max(6, getWidth() / 2 - 10);
+						int gripY = horizontal ? Math.max(6, getHeight() / 2 - 10) : getHeight() / 2 - 1;
+						g2.setColor(AppColor.BORDER);
+						if (horizontal) {
+							g2.fillRoundRect(gripX, gripY, 3, 20, 2, 2);
+						} else {
+							g2.fillRoundRect(gripX, gripY, 20, 3, 2, 2);
+						}
+						g2.dispose();
+					}
+				};
+			}
+		});
+		splitPane.setBackground(AppColor.PAGE_BG);
+		splitPane.setCursor(new Cursor(
+				splitPane.getOrientation() == JSplitPane.HORIZONTAL_SPLIT ? Cursor.E_RESIZE_CURSOR : Cursor.N_RESIZE_CURSOR));
+	}
+	// ================================================================
+
 	// ---------------- Khach hang ----------------
 	private JPanel buildCustomerSearchRow() {
 		JPanel row = new JPanel(new BorderLayout(AppSpacing.SM, 0));
@@ -722,49 +856,64 @@ public class PosPanel extends JPanel {
 	}
 
 	// ---------------- Phuong thuc thanh toan ----------------
+	// ================================================================
+	// ====== ĐỔI: Dùng JComboBox (dropdown) thay cho lưới 2x3 JToggleButton.
+	// Lưới nút cũ chiếm ~68px chiều cao cố định và dễ bị vỡ layout / khó
+	// bấm trên màn hình nhỏ; dropdown chỉ chiếm ~1 dòng, vẫn đủ rõ ràng vì
+	// có nhãn "Hình thức thanh toán" phía trên. ======
+	// ================================================================
 	private JPanel buildPaymentMethodRow() {
-		JPanel row = new JPanel(new GridLayout(2, 3, 6, 6));
-		row.setOpaque(false);
+		JPanel wrap = new JPanel(new BorderLayout(0, 4));
+		wrap.setOpaque(false);
+
+		JLabel label = sectionLabel("Hình thức thanh toán");
+		label.setFont(AppFont.SMALL_BOLD);
+		wrap.add(label, BorderLayout.NORTH);
+
 		String[] methods = { "CASH", "BANK_TRANSFER", "PAYPAL", "CARD", "MIXED" };
 		String[] labels = { "Tiền mặt", "Chuyển khoản", "PayPal (Sandbox)", "Thẻ", "Kết hợp" };
-		ButtonGroup group = new ButtonGroup();
+		paymentMethodOptions.clear();
+		DefaultComboBoxModel<PaymentMethodOption> model = new DefaultComboBoxModel<>();
+		PaymentMethodOption selectedOption = null;
 		for (int i = 0; i < methods.length; i++) {
-			String method = methods[i];
-			JToggleButton btn = new JToggleButton(labels[i]);
-			btn.setFont(AppFont.SMALL_BOLD);
-			btn.setFocusPainted(false);
-			btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-			btn.setSelected(method.equals(selectedPaymentMethod));
-			styleToggle(btn);
-			btn.addActionListener(e -> {
-				selectedPaymentMethod = method;
-				for (JToggleButton other : paymentButtons.values())
-					styleToggle(other);
-			});
-			group.add(btn);
-			paymentButtons.put(method, btn);
-			row.add(btn);
+			PaymentMethodOption option = new PaymentMethodOption(methods[i], labels[i]);
+			paymentMethodOptions.put(methods[i], option);
+			model.addElement(option);
+			if (methods[i].equals(selectedPaymentMethod)) selectedOption = option;
 		}
-		return row;
+		paymentMethodCombo.setModel(model);
+		paymentMethodCombo.setFont(AppFont.BODY_BOLD);
+		paymentMethodCombo.setFocusable(false);
+		paymentMethodCombo.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		paymentMethodCombo.setBackground(AppColor.WHITE);
+		paymentMethodCombo.setForeground(AppColor.TEXT_PRIMARY);
+		paymentMethodCombo.setBorder(BorderFactory.createCompoundBorder(new LineBorder(AppColor.BORDER, 1, true),
+				new EmptyBorder(2, 8, 2, 8)));
+		if (selectedOption != null) {
+			paymentMethodCombo.setSelectedItem(selectedOption);
+		}
+		for (var al : paymentMethodCombo.getActionListeners()) {
+			paymentMethodCombo.removeActionListener(al);
+		}
+		paymentMethodCombo.addActionListener(e -> {
+			PaymentMethodOption sel = (PaymentMethodOption) paymentMethodCombo.getSelectedItem();
+			if (sel != null) selectedPaymentMethod = sel.code;
+		});
+		wrap.add(paymentMethodCombo, BorderLayout.CENTER);
+		return wrap;
 	}
 
 	private void selectPaymentMethod(String method) {
 		String normalized = method != null ? method.trim().toUpperCase() : "CASH";
-		if (!paymentButtons.containsKey(normalized)) normalized = "CASH";
-		selectedPaymentMethod = normalized;
-		for (var entry : paymentButtons.entrySet()) {
-			entry.getValue().setSelected(entry.getKey().equals(normalized));
-			styleToggle(entry.getValue());
+		PaymentMethodOption option = paymentMethodOptions.get(normalized);
+		if (option == null) {
+			normalized = "CASH";
+			option = paymentMethodOptions.get(normalized);
 		}
-	}
-
-	private void styleToggle(JToggleButton btn) {
-		boolean selected = btn.isSelected();
-		btn.setOpaque(true);
-		btn.setBackground(selected ? AppColor.ACCENT_BG_SOFT : AppColor.WHITE);
-		btn.setForeground(selected ? AppColor.ACCENT_HOVER : AppColor.TEXT_SECONDARY);
-		btn.setBorder(BorderFactory.createLineBorder(selected ? AppColor.ACCENT_HOVER : AppColor.BORDER,
-				selected ? 2 : 1, true));
+		selectedPaymentMethod = normalized;
+		if (option != null) {
+			paymentMethodCombo.setSelectedItem(option);
+		}
 	}
 
 	// ---------------- Gio hang ----------------

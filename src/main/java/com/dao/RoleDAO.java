@@ -14,8 +14,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -79,7 +81,20 @@ public class RoleDAO {
     }
 
     /**
+     * Thứ tự hiển thị cố định trên trang Phân quyền / danh sách role hệ thống.
+     * ADMIN luôn đứng đầu; role tùy chỉnh (không nằm trong map) xếp sau, theo tên.
+     */
+    private static final Map<String, Integer> MANAGED_ROLE_ORDER = Map.of(
+            "ADMIN", 0,
+            "INVENTORY_MANAGER", 1,
+            "SALES_MANAGER", 2,
+            "SALES_STAFF", 3
+    );
+
+    /**
      * Role quản lý trên trang RBAC (loại CUSTOMER — không dùng AdminMainFrame).
+     * Sắp xếp: Quản trị viên → Quản lý kho → Quản lý bán hàng → Nhân viên bán hàng
+     * → các role tùy chỉnh (theo tên).
      */
     public List<AppRole> findManagedRoles() {
         List<AppRole> all = findAll();
@@ -87,6 +102,12 @@ public class RoleDAO {
         for (AppRole r : all) {
             if (!r.isCustomer()) managed.add(r);
         }
+        managed.sort(Comparator
+                .comparingInt((AppRole r) -> MANAGED_ROLE_ORDER.getOrDefault(
+                        r.getRoleCode() != null ? r.getRoleCode().toUpperCase(Locale.ROOT) : "",
+                        100))
+                .thenComparing(r -> r.getRoleName() != null ? r.getRoleName() : "",
+                        String.CASE_INSENSITIVE_ORDER));
         return managed;
     }
 
