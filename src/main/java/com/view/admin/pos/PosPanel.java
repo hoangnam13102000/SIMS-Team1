@@ -987,15 +987,16 @@ public class PosPanel extends JPanel {
 			AppAlert.warning(this, "Giỏ hàng đang trống.");
 			return;
 		}
-		String note = JOptionPane.showInputDialog(this,
-				"Ghi chú cho giỏ tạm giữ (có thể bỏ trống):",
-				"Tạm giữ giỏ hàng", JOptionPane.QUESTION_MESSAGE);
-		if (note == null) return;
-
-		int confirm = JOptionPane.showConfirmDialog(this,
-				"Tạm giữ giỏ hiện tại? Sau khi lưu, POS sẽ được làm trống để phục vụ khách khác.",
-				"Xác nhận tạm giữ", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-		if (confirm != JOptionPane.YES_OPTION) return;
+		java.util.Optional<String> input = BaseDialog.confirmWithNote(this,
+				"Tạm giữ giỏ hàng",
+				"Giỏ hàng hiện tại sẽ được lưu tạm để phục vụ khách khác. POS sẽ được làm trống ngay sau khi lưu, "
+						+ "bạn có thể tìm và khôi phục lại giỏ này bất cứ lúc nào trong ca làm việc.",
+				"Ghi chú cho giỏ tạm giữ",
+				"Không bắt buộc. VD: khách quay lại lấy hàng sau, đang chờ xác nhận thanh toán...",
+				"Tạm giữ giỏ hàng",
+				FontAwesomeSolid.PAUSE, 300);
+		if (input.isEmpty()) return;
+		String note = input.get();
 
 		HeldCartService.Result<com.model.HeldCart> result = heldCartService.holdCurrentCart(cart, "MIXED".equals(selectedPaymentMethod) ? "CASH" : selectedPaymentMethod, note);
 		if (!result.isSuccess()) {

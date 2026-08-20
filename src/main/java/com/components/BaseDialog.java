@@ -236,6 +236,161 @@ public final class BaseDialog {
     }
 
     // ---------------------------------------------------------------------
+    // XAC NHAN HANH DONG KEM GHI CHU KHONG BAT BUOC
+    // (thay cho cap JOptionPane.showInputDialog + showConfirmDialog rieng le)
+    // ---------------------------------------------------------------------
+    /**
+     * Gop 1 dialog duy nhat: vua nhap ghi chu (co the bo trong) vua xac nhan hanh dong,
+     * thay vi 2 hop thoai JOptionPane rieng biet nhu truoc. Tra ve Optional.empty()
+     * neu nguoi dung bam Huy/dong dialog; tra ve Optional cua chuoi (co the la "")
+     * neu nguoi dung xac nhan.
+     * <p>
+     * Vi du: BaseDialog.confirmWithNote(this, "Tạm giữ giỏ hàng",
+     *   "Giỏ hàng hiện tại sẽ được lưu tạm để phục vụ khách khác.",
+     *   "Ghi chú cho giỏ tạm giữ", "VD: khách quay lại lấy hàng sau...",
+     *   "Tạm giữ giỏ hàng", FontAwesomeSolid.PAUSE, 300);
+     */
+    public static java.util.Optional<String> confirmWithNote(Component parent, String title, String message,
+                                                               String noteLabel, String noteHint,
+                                                               String confirmText, FontAwesomeSolid icon, int maxLength) {
+        Object[] resultHolder = {null}; // null = huy; String (co the rong) = da xac nhan
+        JDialog dialog = buildBaseDialog(parent, title);
+
+        JPanel body = new JPanel();
+        body.setBackground(AppColor.WHITE);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(new EmptyBorder(24, 24, 8, 24));
+
+        JPanel headerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        headerRow.setOpaque(false);
+        headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        FontIcon headerIcon = FontIcon.of(icon, 26);
+        headerIcon.setIconColor(AppColor.ACCENT);
+        headerRow.add(new JLabel(headerIcon));
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(AppFont.DIALOG_TITLE);
+        titleLabel.setForeground(AppColor.TEXT_PRIMARY);
+        headerRow.add(titleLabel);
+        body.add(headerRow);
+        body.add(Box.createVerticalStrut(14));
+
+        if (message != null && !message.isBlank()) {
+            JLabel messageLabel = new JLabel("<html><div style='width:380px'>" + message + "</div></html>");
+            messageLabel.setFont(AppFont.BODY);
+            messageLabel.setForeground(AppColor.TEXT_MUTED);
+            messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            body.add(messageLabel);
+            body.add(Box.createVerticalStrut(16));
+        }
+
+        JLabel fieldLabel = new JLabel(noteLabel);
+        fieldLabel.setFont(AppFont.BODY_BOLD);
+        fieldLabel.setForeground(AppColor.TEXT_PRIMARY);
+        fieldLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(fieldLabel);
+        body.add(Box.createVerticalStrut(6));
+
+        JTextArea textArea = new JTextArea(3, 32);
+        textArea.setFont(AppFont.FIELD);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setForeground(AppColor.TEXT_PRIMARY);
+        textArea.setBackground(AppColor.WHITE);
+        textArea.setCaretColor(AppColor.ACCENT);
+        textArea.setBorder(new EmptyBorder(10, 12, 10, 12));
+
+        if (maxLength > 0) {
+            ((AbstractDocument) textArea.getDocument()).setDocumentFilter(new DocumentFilter() {
+                @Override
+                public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+                    if (string == null) return;
+                    if (fb.getDocument().getLength() + string.length() <= maxLength) {
+                        super.insertString(fb, offset, string, attr);
+                    }
+                }
+                @Override
+                public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+                    String safeText = text == null ? "" : text;
+                    if (fb.getDocument().getLength() - length + safeText.length() <= maxLength) {
+                        super.replace(fb, offset, length, safeText, attrs);
+                    }
+                }
+            });
+        }
+
+        JScrollPane scrollPane = new JScrollPane(textArea, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true));
+        scrollPane.setViewportBorder(BorderFactory.createEmptyBorder());
+        scrollPane.getViewport().setBackground(AppColor.WHITE);
+        scrollPane.setPreferredSize(new Dimension(400, 90));
+        scrollPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        body.add(scrollPane);
+
+        textArea.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.ACCENT, 2, true));
+            }
+            @Override
+            public void focusLost(FocusEvent e) {
+                scrollPane.setBorder(BorderFactory.createLineBorder(AppColor.FIELD_BORDER, 1, true));
+            }
+        });
+
+        if (noteHint != null && !noteHint.isBlank()) {
+            body.add(Box.createVerticalStrut(4));
+            JLabel hintLabel = new JLabel("<html><div style='width:380px'>" + noteHint + "</div></html>");
+            hintLabel.setFont(AppFont.SMALL);
+            hintLabel.setForeground(AppColor.TEXT_MUTED);
+            hintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            body.add(hintLabel);
+        }
+
+        JLabel counterLabel = new JLabel();
+        counterLabel.setFont(AppFont.SMALL);
+        counterLabel.setForeground(AppColor.TEXT_MUTED);
+        JPanel counterRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 4));
+        counterRow.setOpaque(false);
+        counterRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        counterRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+        counterRow.add(counterLabel);
+        body.add(counterRow);
+
+        Runnable updateCounter = () -> {
+            int len = textArea.getDocument().getLength();
+            counterLabel.setText(maxLength > 0 ? (len + "/" + maxLength) : (len + " ký tự"));
+            if (maxLength > 0) {
+                counterLabel.setForeground(len >= maxLength ? AppColor.ERROR
+                        : len >= (int) (maxLength * 0.9) ? AppColor.WARNING : AppColor.TEXT_MUTED);
+            }
+        };
+        updateCounter.run();
+        textArea.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { updateCounter.run(); }
+            @Override public void removeUpdate(DocumentEvent e) { updateCounter.run(); }
+            @Override public void changedUpdate(DocumentEvent e) { updateCounter.run(); }
+        });
+
+        dialog.add(body, BorderLayout.CENTER);
+
+        JButton cancelButton = createModernButton("Hủy", AppColor.CANCEL_BG, AppColor.CANCEL_HOVER, AppColor.TEXT_PRIMARY);
+        JButton confirmButton = createModernButton(confirmText, AppColor.ACCENT, AppColor.ACCENT_HOVER, Color.WHITE);
+        cancelButton.addActionListener(e -> dialog.dispose());
+        confirmButton.addActionListener(e -> {
+            resultHolder[0] = textArea.getText().trim();
+            dialog.dispose();
+        });
+        dialog.add(buildFooter(cancelButton, confirmButton), BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(confirmButton);
+
+        SwingUtilities.invokeLater(textArea::requestFocusInWindow);
+        showCentered(dialog);
+        return java.util.Optional.ofNullable((String) resultHolder[0]);
+    }
+
+    // ---------------------------------------------------------------------
     // CHON TU DANH SACH (thay cho JOptionPane.showInputDialog voi mang lua chon)
     // ---------------------------------------------------------------------
     /** Vi du: BaseDialog.select(this, "Cập nhật trạng thái", "Trạng thái mới:", STATUSES, order.getStatus()). */
